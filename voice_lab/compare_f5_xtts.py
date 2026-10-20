@@ -25,6 +25,13 @@ def main():
     out=Path("voice_lab/comparison");out.mkdir(parents=True,exist_ok=True)
     start=time.monotonic()
     if opts.model=="f5":
+        # Work around torchaudio 2.9/torchcodec CUDA-library mismatch on free CPU runners.
+        # Only replaces audio *reading*, not the generation model or its parameters.
+        import torchaudio, torch, soundfile as sf
+        def _soundfile_load(path, *args, **kwargs):
+            data,rate=sf.read(path,dtype="float32",always_2d=True)
+            return torch.from_numpy(data.T.copy()), rate
+        torchaudio.load=_soundfile_load
         from f5_tts.api import F5TTS
         print("Loading F5-TTS CC-BY-NC voice model",flush=True)
         model=F5TTS(model="F5TTS_v1_Base",device="cpu")
