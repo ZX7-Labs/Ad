@@ -11,7 +11,7 @@ from studio_next.providers import LocalCreativeModel, LocalModelSettings
 PITCH = """You are a film director and writer pitching visually DISTINCT story concepts, not a chatbot composing interchangeable marketing copy.
 Understand specific people, human stakes, sensory events, tension and a satisfying narrative consequence.
 Avoid generic slogans: unlock, unleash, transform, elevate, game changer, future of, discover the power, next level.
-Every approach should have a concrete dramatic incident and image: not a different filter on the same montage.
+Every approach needs a concrete dramatic incident and visual with a CAUSAL link to the supplied real product benefit or educational mechanism. Not a different filter on the same montage. A fictional crisis can exist, but don't add a medical emergency or lost-email subplot merely to create stakes. When the central subject is removed, the film idea must lose its reason to exist.
 You own the artistic choices. Do not assume footage, features, customers or legal rights not present in the owner facts.
 Return concise JSON only:
 {"candidates":[{"id":"a","idea":"original dramatic premise","opening":"actual first image or exact line","viewer_reason":"human reason to care","visual_principle":"how story is depicted","originality_risk":"how it could turn generic"},{"id":"b","idea":"different dramatic premise","opening":"actual first image or exact line","viewer_reason":"human reason to care","visual_principle":"different visual storytelling","originality_risk":"specific risk"}]}.
@@ -19,12 +19,12 @@ These two concepts are only for this controlled evaluation, not a limit on the p
 
 SELECT = """You are a skeptical film screenplay editor choosing the more compelling of TWO pitches for this specific owner brief.
 Compare originality, natural language, honest factual basis, a scene worth watching, human stakes and meaningful image-to-script connection.
-Identify an ACTUAL flaw in each pitch, then choose an ID; do not automatically favor fancy words.
+Identify an ACTUAL flaw in each pitch. Perform the causality test: remove the product, or remove the explanatory mechanism. If the scene would be identical, it is probably ornamental drama, not a strong concept. Prefer a surprising truthful connection over fake emotional stakes, futuristic styling or fancy words. Then choose an ID.
 Return JSON only: {"selected_id":"a or b","why_this_concept":"precise reason","weaknesses":[{"id":"a","specific_issue":"flaw"},{"id":"b","specific_issue":"flaw"}],"revision_note":"specific needed narrative refinement","evidence_risks":["actual missing facts if any"]}.
 Choose only given IDs."""
 
 SCRIPT = """You are now the writer/director making the selected concept into a fully realized cinematic SCRIPT and ART TREATMENT.
-Write authentic, natural human narration or dialogue. Avoid mechanical AI slogans and corporate filler. Let specific scenes SHOW a consequence rather than describe generic superlatives.
+Write authentic, natural human narration or dialogue. Avoid mechanical AI slogans and corporate filler. Let specific scenes SHOW a consequence rather than describe generic superlatives. Every key scene must causally connect to the demonstrated owner facts or explanatory mechanism. Invent fictional characters only for a genuinely needed dramatic mechanism, and do not create impossible product rescues, implied claims or fictional UI. For teaching, visual analogies must still reveal the real mechanism.
 Choose scene count, scene lengths, style, narrative type, opening, camera, music, typography, sound and voice independently. A video does not always need voice, CTA or 3D. Make the meaning and rhythm evident to someone who has never read the brief.
 Do not invent product specs, buttons, pricing, outcomes or proof. Every asserted owner fact must cite its supplied fact ID.
 The original production capability is not known. Specify any unknown footage/assets/render tools honestly instead of pretending they exist.
@@ -33,7 +33,7 @@ Return one complete JSON object, no Markdown:
 Every scene should make the film BETTER. Elaborate where useful, but do not impose a preset number of shots."""
 
 CRITIC = """You are an independent skeptical film editor evaluating ANOTHER writer's work, not an approving assistant.
-Judge originality, real human speech, specific shot visual details, narrative arc, effects feasibility, honest claims, meaningful sound and the viewer's reason to stay.
+First test CAUSAL STORY INTEGRITY: would the story still work unchanged if the advertised product or teaching subject disappeared? Does it invent a medical emergency, product mechanism, customer outcome or UI to manufacture emotion? Then judge originality, real human speech, specific shot visual details, effects feasibility, honest claims, meaningful sound, and the viewer's reason to stay. A spectacular but irrelevant subplot must not pass.
 Identify unnatural AI slogans and invented product screens. Ground any criticism in actual scene IDs and excerpts.
 Return concise JSON only: {"approved_for_human_audition":false,"strongest_beat":"specific good moment and why","blockers":[{"location":"scene id or field","problem":"actual problem","repair":"specific remedy"}],"uncertainties":["specific evidence that must be verified before production"]}.
 Never claim a good video was rendered. Approval means a script is worth having a HUMAN audition, not production completion."""
@@ -79,7 +79,9 @@ def audit(brief,pitches,selection,treatment,review):
             errors.append(f"Scene {n} fact_refs should be list")
         else:
             for ref in refs:
-                if not isinstance(ref,str) or ref not in brief["facts"]:
+                valid=(isinstance(ref,str) and (ref in brief["facts"] or
+                       (ref.startswith("owner.facts.") and ref[len("owner.facts."):] in brief["facts"])))
+                if not valid:
                     errors.append(f"Scene {n} invents fact reference {ref}")
         if not isinstance(scene.get("assets_needed"),list):
             errors.append(f"Scene {n} lacks asset requirements")
@@ -143,11 +145,11 @@ def main():
     if not isinstance(brief.get("request"),str) or not isinstance(brief.get("facts"),dict):
         raise ValueError("Creative experiment requires request and owner fact ledger")
     notes=[];generated={}
-    stages=[("pitches",PITCH,lambda:{"owner":brief},1050,.75),
-            ("selection",SELECT,lambda:{"owner":brief,"pitches":generated["pitches"]},600,.25),
+    stages=[("pitches",PITCH,lambda:{"owner":brief},1700,.72),
+            ("selection",SELECT,lambda:{"owner":brief,"pitches":generated["pitches"]},1000,.24),
             ("treatment",SCRIPT,lambda:{"owner":brief,"selection":generated["selection"],
-                                         "pitches":generated["pitches"]},2400,.7),
-            ("review",CRITIC,lambda:{"owner":brief,"treatment":generated["treatment"]},650,.2)]
+                                         "pitches":generated["pitches"]},3200,.63),
+            ("review",CRITIC,lambda:{"owner":brief,"treatment":generated["treatment"]},1100,.18)]
     try:
         for stage,system,make_input,tokens,temp in stages:
             print("START "+stage,flush=True)
