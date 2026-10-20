@@ -52,6 +52,11 @@ jobs:
             assert path.with_suffix(".mp3").stat().st_size>20000
             print("PASS",voice,round(f.duration,2),"sec")
           PY
+      - name: Finish approved narrators with gentle studio EQ (preserve raw)
+        run: |
+          python voice_lab/studio_finish.py \
+            --input-dir voice_lab/supertonic_results \
+            --output-dir voice_lab/supertonic_results/studio
       - name: Share male and female audio
         uses: actions/upload-artifact@v6
         with:
