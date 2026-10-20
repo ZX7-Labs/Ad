@@ -4,7 +4,7 @@ import argparse, asyncio, math, os, re, shutil, subprocess, sys
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
-BG=(247,247,245); DARK=(23,24,26); GREY=(104,106,111); ORANGE=(224,100,63)
+BG=(247,247,245); DARK=(23,24,26); GREY=(104,106,111); ORANGE=(224,100,63); BORDER=(225,227,224)
 W,H=720,1280
 ROOT=Path(__file__).resolve().parent.parent
 OUT=ROOT/'output'
@@ -195,9 +195,9 @@ def scene(im,topic,points,t,seconds,timeline=None,captions=None):
     # Whip-style fast visual transition, without blowing up GPU usage.
     enter=1-appear(q,0,.09)
     if enter>.02:
-        width=int(enter*800)
-        d.polygon(((0,0),(width,0),(width-185,190),(0,290)),fill=DARK)
-        d.polygon(((W-width,H),(W,H),(W,H-60),(W-width+140,H-270)),fill=ORANGE)
+        band_w=int(enter*800)
+        d.polygon(((0,0),(band_w,0),(band_w-185,190),(0,290)),fill=DARK)
+        d.polygon(((W-band_w,H),(W,H),(W,H-60),(W-band_w+140,H-270)),fill=ORANGE)
     rounded(d,(36,1220,684,1225),2,(227,227,223))
     rounded(d,(36,1220,36+648*clamp(t/seconds),1225),2,ORANGE)
     if captions:
