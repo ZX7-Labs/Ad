@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 import json
 import re
 from typing import Any
+from types import MappingProxyType
 
 _IDENTIFIER = re.compile(r"^[a-z][a-z0-9_.-]{1,100}$")
 CAPABILITY_STATES = {"installed", "unavailable", "needs_setup"}
@@ -30,7 +31,7 @@ class ToolSpec:
     operation_schema: dict = field(default_factory=dict)
     limitations: tuple[str, ...] = ()
     def __post_init__(self):
-        if not _IDENTIFIER.fullmatch(self.tool_id):
+        if not isinstance(self.tool_id,str) or not _IDENTIFIER.fullmatch(self.tool_id):
             raise ValueError(f"Invalid tool identifier {self.tool_id!r}")
         _string(self.capability, "capability")
         _string(self.description, "description")
@@ -55,17 +56,22 @@ class OwnerBrief:
     hard_limits: dict = field(default_factory=dict)
     def __post_init__(self):
         _string(self.request, "request")
+        if not isinstance(self.owner_facts,dict) or not isinstance(self.asset_rights,dict):
+            raise ValueError("Facts and rights must be dictionaries")
         for key, value in self.owner_facts.items():
             _string(key, "fact id")
             _string(value, "fact value")
         for key, value in self.asset_rights.items():
             _string(key, "asset id")
             _string(value, "asset rights")
-        _json_like(self.preferences);_json_like(self.hard_limits)
+        object.__setattr__(self,"owner_facts",MappingProxyType(dict(self.owner_facts)))
+        object.__setattr__(self,"asset_rights",MappingProxyType(dict(self.asset_rights)))
+        object.__setattr__(self,"preferences",_json_like(self.preferences))
+        object.__setattr__(self,"hard_limits",_json_like(self.hard_limits))
     def public(self):
-        return {"request": self.request,"facts":self.owner_facts,
-                "asset_rights":self.asset_rights,"preferences":self.preferences,
-                "hard_limits":self.hard_limits}
+        return {"request": self.request,"facts":dict(self.owner_facts),
+                "asset_rights":dict(self.asset_rights),"preferences":_json_like(self.preferences),
+                "hard_limits":_json_like(self.hard_limits)}
 
 def audit_proposal(plan, brief: OwnerBrief, available_tool_ids: set[str]):
     """A deterministic feasibility gate, not a creative-quality evaluator.
@@ -87,7 +93,8 @@ def audit_proposal(plan, brief: OwnerBrief, available_tool_ids: set[str]):
         ident=scene.get("id")
         if not isinstance(ident,str) or not ident.strip() or ident in ids:
             errors.append(f"Scene {i}: missing or duplicate id")
-        ids.add(ident)
+        else:
+            ids.add(ident)
         if not isinstance(scene.get("purpose"),str) or not scene["purpose"].strip():
             errors.append(f"Scene {i}: missing story purpose")
         # Creative timing is not fixed. Validate only if the director specified it.
@@ -95,12 +102,14 @@ def audit_proposal(plan, brief: OwnerBrief, available_tool_ids: set[str]):
             d=scene["duration_seconds"]
             if isinstance(d,bool) or not isinstance(d,(int,float)) or not 0 < d < float("inf"):
                 errors.append(f"Scene {i}: invalid duration")
-        for ref in scene.get("fact_refs",[]):
-            if ref not in brief.owner_facts:
-                errors.append(f"Scene {i}: unknown caller fact {ref}")
-        for ref in scene.get("asset_refs",[]):
-            if ref not in brief.asset_rights:
-                errors.append(f"Scene {i}: no evidence of rights for asset {ref}")
+        for key,registry,label in (("fact_refs",brief.owner_facts,"caller fact"),
+                                   ("asset_refs",brief.asset_rights,"rights for asset")):
+            refs=scene.get(key,[])
+            if not isinstance(refs,list):
+                errors.append(f"Scene {i}: {key} must be an array");continue
+            for ref in refs:
+                if not isinstance(ref,str) or ref not in registry:
+                    errors.append(f"Scene {i}: unknown {label} {ref}")
     requested=plan.get("tool_route",[])
     if not isinstance(requested,list):
         errors.append("tool_route must be a list")
@@ -109,7 +118,7 @@ def audit_proposal(plan, brief: OwnerBrief, available_tool_ids: set[str]):
         if not isinstance(tool,dict):
             errors.append(f"Tool step {index}: not an object");continue
         tool_id=tool.get("tool_id")
-        if tool_id not in available_tool_ids:
+        if not isinstance(tool_id,str) or tool_id not in available_tool_ids:
             errors.append(f"Tool step {index}: unavailable or unregistered tool {tool_id}")
         if not isinstance(tool.get("reason"),str) or not tool["reason"].strip():
             errors.append(f"Tool step {index}: director must justify tool choice")
