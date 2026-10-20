@@ -1,0 +1,84 @@
+name: Grounded Director — two genre evaluation
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  evaluate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install and test contracts
+        run: |
+          python -m pip install -r director_research/requirements.txt
+          python -m unittest discover -s director_research -p 'test_*.py' -v
+      - name: Get pinned CPU runtime
+        run: |
+          mkdir -p /tmp/grounded-runtime
+          curl --fail --location --silent --show-error --retry 2 \
+            https://github.com/ggml-org/llama.cpp/releases/download/b11750/llama-b11750-bin-ubuntu-x64.tar.gz \
+            -o /tmp/grounded-runtime/runtime.tar.gz
+          tar --no-same-owner -xzf /tmp/grounded-runtime/runtime.tar.gz -C /tmp/grounded-runtime
+          echo "LLAMA_RUNTIME=/tmp/grounded-runtime/llama-b11750" >> "$GITHUB_ENV"
+      - uses: actions/cache@v4
+        with:
+          path: models/director35
+          key: qwen35-4b-soai-q4km-0c82e2
+      - name: Download pinned model weights
+        run: |
+          mkdir -p models/director35
+          if [ ! -f models/director35/Qwen3.5-4B-Q4_K_M.gguf ]; then
+            curl --fail --location --silent --show-error --retry 2 \
+              https://huggingface.co/SoAIHQ/Qwen3.5-4B-GGUF/resolve/0c82e2f4c9582ecd5f49c0f02a21b4d60c4ad603/Qwen3.5-4B-Q4_K_M.gguf \
+              -o models/director35/download.gguf
+            mv models/director35/download.gguf models/director35/Qwen3.5-4B-Q4_K_M.gguf
+          fi
+          test "$(stat -c %s models/director35/Qwen3.5-4B-Q4_K_M.gguf)" -eq 2783447136
+      - name: Evaluate both genres with one local model server
+        run: |
+          mkdir -p output/grounded
+          export LD_LIBRARY_PATH="$LLAMA_RUNTIME"
+          "$LLAMA_RUNTIME/llama-server" \
+            --model models/director35/Qwen3.5-4B-Q4_K_M.gguf \
+            --alias ad-director-qwen35-4b-0c82e2 \
+            --host 127.0.0.1 --port 8085 --ctx-size 16384 \
+            --threads 4 --parallel 1 --reasoning-budget 0 --no-webui \
+            > output/grounded/server.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          python - <<'PY'
+          import time, urllib.request
+          for attempt in range(60):
+              try:
+                  with urllib.request.urlopen('http://127.0.0.1:8085/health', timeout=2) as response:
+                      if response.status == 200:
+                          break
+              except OSError:
+                  time.sleep(1)
+          else:
+              raise SystemExit('Model server did not become healthy')
+          PY
+          python - <<'PY'
+          import json, subprocess, sys
+          from pathlib import Path
+          results=[]
+          for genre, brief in [('software','examples/sample-brief.json'),
+                               ('physical','examples/physical-product-brief.json')]:
+              status=subprocess.run([sys.executable,'-u','-m','director_research.grounded',
+                  '--brief',brief,'--out','output/grounded/'+genre]).returncode
+              results.append({'genre':genre,'exit_code':status})
+          Path('output/grounded/suite.json').write_text(json.dumps(results,indent=2))
+          raise SystemExit(0 if all(r['exit_code']==0 for r in results) else 2)
+          PY
+      - name: Save full plans, rejected drafts, model responses and traces
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: grounded-director-two-genres
+          path: output/grounded/
+          if-no-files-found: error
+          retention-days: 7

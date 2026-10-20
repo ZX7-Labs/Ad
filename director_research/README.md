@@ -1,5 +1,52 @@
 # Film Direction Research — Qwen3.5 / CineCrew-inspired (experimental)
 
+## Grounded Director iteration
+
+`python -m director_research.grounded` adds a separate capability-aware experiment.
+It preserves full art/sound/shot detail, chooses **3–10 shots** rather than a fixed
+five-shot sequence, checks immutable owner-reported evidence, constrains model
+outputs using JSON Schema, and allows **one complete revision** after a skeptical
+review. Every draft, raw response and timing trace is retained. A timeout or critic
+failure cannot erase a finished draft or turn it into an approved film.
+
+The JSON-schema wrapper follows the pinned runtime's implementation in
+[server-common.cpp](https://github.com/ggml-org/llama.cpp/blob/b11750/tools/server/server-common.cpp).
+An adversarial runtime probe first verifies that constrained generation actually
+works; JSON syntax alone is insufficient. Responses are then validated again with
+`jsonschema`.
+
+The available registry describes **primitive drawing/audio operations already in
+the repository**, not an arbitrary-scene renderer. It cannot execute a free-form
+film proposal. No renderer adapter, real 3D, fluid solver or media-rights system is
+claimed. Known unavailable techniques, invented UI, unsupported promises,
+missing evidence references, impossible narration timing and omitted CTA are
+blocked. These lexical/structural checks do not prove semantic truth; the critic
+can also be wrong. All expert roles currently use the **same local 4B model** in
+separate passes. A `proposal_passed_text_review` state is not a rendered or
+human-approved production result. `render_ready` remains false.
+
+Run a local llama.cpp b11750 server with the documented Qwen3.5 GGUF, 16K context,
+thinking disabled, and a stable model alias, then:
+
+```bash
+python -m pip install -r director_research/requirements.txt
+python -m director_research.grounded --brief examples/sample-brief.json --out output/grounded/software
+python -m director_research.grounded --brief examples/physical-product-brief.json --out output/grounded/physical
+```
+
+`--resume` reuses a checkpoint only when the model alias, prompt, full input,
+schema and sampling settings match. Use a new alias when changing model weights.
+The local endpoint is restricted to loopback HTTP; no hosted API or credentials
+are used. Do not treat resumed elapsed time as a fresh speed benchmark.
+
+[Two-genre cloud evaluation](https://github.com/oyzitjfzj/Ad/actions/workflows/director-grounded.yml)
+is manual to avoid spending runner resources on every edit. It tests the fictional
+software brief and a separate 18-second paper-notebook brief, retains blocked
+plans, and fails the job if either proposal remains rejected. Structural regression
+tests run independently without downloading a model. The current phone Issue
+interface still uses the earlier Director Lab; this experiment is not silently
+connected to that workflow.
+
 This is an **isolated research benchmark**, not a replacement for the current Creative Director or Video Studio V3. It does **not** create video, render animation, use 3D tools, generate music or alter the owner-approved Supertonic voice samples.
 
 ## Research basis

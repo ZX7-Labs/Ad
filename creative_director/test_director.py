@@ -64,8 +64,9 @@ class Tests(unittest.TestCase):
             calls=0
             def ask(self,*args,**kwargs):
                 self.calls+=1
-                if self.calls in (1,3):
-                    p=treatment();p["beats"][1]["narration"]="Guaranteed 100%";return p
+                if self.calls in (1,2):
+                    p=treatment();p["beats"][1]["narration"]="Guaranteed 100%"
+                    return p if self.calls==1 else {"beats":p["beats"]}
                 return {"approved":True,"issues":[],"repairs":[],"strongest_moment":"Clear"}
         r=make_plan(Fake(),BRIEF)
         self.assertEqual(r["state"],"blocked_for_review")
