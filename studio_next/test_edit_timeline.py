@@ -34,8 +34,8 @@ class MultiEngineTimelineTests(unittest.TestCase):
             (root/"vector.mp4").touch();(root/"real3d.mp4").touch()
             s=sample();s["format"].update(width=3840,height=1600,fps=48)
             self.assertIs(validate_edit(s,root),s)
-            s["clips"]=s["clips"]*20
-            for i,x in enumerate(s["clips"]):x["id"]=f"unique{i}"
+            s["clips"]=[dict(original, id=f"unique{i}")
+                        for i, original in enumerate(s["clips"]*20)]
             self.assertEqual(len(validate_edit(s,root)["clips"]),40)
 
     def test_no_unverified_external_or_malicious_paths(self):
