@@ -66,7 +66,7 @@ class CapabilityRoutingTests(unittest.TestCase):
     def test_tool_requires_explicit_free_cost_evidence(self):
         r=self.route(film(),self.c,{"blender.scene","blender.camera"})
         self.assertFalse(r.executable)
-        self.assertEqual(r.unresolved[1]["unmet_options"][0]["missing_capabilities"],
+        self.assertEqual(r.unresolved[0]["unmet_options"][0]["missing_capabilities"],
                          ["edit.timeline"])
 
     def test_nonstandard_freeform_capabilities_not_hardcoded(self):
