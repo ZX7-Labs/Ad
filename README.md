@@ -2,6 +2,12 @@
 
 **Latest: V3** — zero-fee creative-brief-to-video prototype, rendered in the cloud. Made for Android-only workflows.
 
+The intended product and current acceptance boundaries are recorded in
+[PROJECT_SCOPE.md](PROJECT_SCOPE.md). The latest isolated
+[grounded Director experiment](director_research/README.md#grounded-director-iteration)
+adds adaptive shots, factual/capability checks and bounded revision. It is still
+preproduction research; it is not silently connected to V3 or the phone Issue flow.
+
 ## New experimental Creative Director (planning only)
 
 [Talk to the Director on your phone](https://github.com/oyzitjfzj/Ad/issues/new?template=talk-to-director.yml). Describe the idea in your own words and reply to any one-question follow-up. A local free open-weight Qwen3-4B-Instruct model designs a concept, timed storyboard, visual grammar, justified 3D, soundtrack and preferred M3/F2 voice, then runs an independent critic and deterministic truth/timing/rights checks. It produces a **creative treatment and QA report, not an MP4**. The V3 video renderer and approved voice profiles are unchanged. See [Director Lab](creative_director/README.md) for precise limitations and public-Issue privacy warnings.
