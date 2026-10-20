@@ -85,12 +85,14 @@ def validate_film_ir(ir:dict, *, installed_tool_ids:set[str], fact_ids:set[str])
             if isinstance(duration,bool) or not isinstance(duration,(float,int)) or (
                 not math.isfinite(duration) or duration<=0):
                 errors.append(f"Shot {idx} invalid duration")
-        for a in shot.get("asset_refs",[]):
-            if a not in asset_ids:
-                errors.append(f"Shot {idx} references unknown media {a}")
-        for f in shot.get("fact_refs",[]):
-            if f not in fact_ids:
-                errors.append(f"Shot {idx} cites unprovided fact {f}")
+        for field,allowed,label in (("asset_refs",asset_ids,"unknown media"),
+                                    ("fact_refs",fact_ids,"unprovided fact")):
+            refs=shot.get(field,[])
+            if not isinstance(refs,list):
+                errors.append(f"Shot {idx} {field} must be an array");continue
+            for ref in refs:
+                if not isinstance(ref,str) or ref not in allowed:
+                    errors.append(f"Shot {idx} references {label} {ref}")
         for field_name in ("camera","audio","layers","motion","typography","edit"):
             if field_name in shot:
                 try:_json_like(shot[field_name])
@@ -121,10 +123,13 @@ def validate_film_ir(ir:dict, *, installed_tool_ids:set[str], fact_ids:set[str])
         deps=node.get("depends_on",[])
         if not isinstance(deps,list):continue
         for dep in deps:
+            if not isinstance(dep,str):
+                errors.append(f"Tool node {node['id']} has malformed dependency");continue
             if dep not in known:errors.append(f"Tool node {node['id']} references missing dependency {dep}")
             if dep==node["id"]:errors.append(f"Tool node {node['id']} depends on itself")
     safe_nodes=(len(nodes)==len(known) and all(
-        isinstance(n,dict) and isinstance(n.get("depends_on",[]),list) for n in nodes))
+        isinstance(n,dict) and isinstance(n.get("depends_on",[]),list)
+        and all(isinstance(dep,str) for dep in n.get("depends_on",[])) for n in nodes))
     order=_order(nodes) if safe_nodes else None
     if order is None:
         errors.append("Tool dependency cycle or invalid tool graph")
