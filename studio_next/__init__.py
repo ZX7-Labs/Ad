@@ -1,1 +1,5 @@
-"""Next-generation modular film studio architecture (experimental).\n\nCreative logic, providers, registered tools, and rendering remain independently replaceable.\nNo claim that the current code automatically produces a final video.\n"""\n
+"""Next-generation modular film studio architecture (experimental).
+
+Creative logic, providers, registered tools, and rendering remain independently
+replaceable. This package does not automatically render final video yet.
+"""
