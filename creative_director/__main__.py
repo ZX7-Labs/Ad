@@ -4,6 +4,7 @@ import argparse,json,re
 from pathlib import Path
 from creative_director.prompts import INTAKE,STRATEGY,REVIEW,REVISE
 from creative_director.gates import audit
+from creative_director.compiler import compile_treatment
 
 def compact(s,cap=2500):
     return re.sub(r"\s+"," ",str(s or "")).strip()[:cap]
@@ -72,14 +73,14 @@ def interview(brain,messages):
     return {"state":"ready","brief":brief}
 
 def make_plan(brain,brief):
-    draft=brain.ask(STRATEGY,{"brief":brief},3100)
+    draft=compile_treatment(brain.ask(STRATEGY,{"brief":brief},3100),brief)
     initial=audit(draft,brief)
     critic=brain.ask(REVIEW,{"brief":brief,"treatment":draft,"hard_checks":initial},900)
     updated=draft
     if initial["errors"] or not critic.get("approved",False):
         try:
-            updated=brain.ask(REVISE,{"brief":brief,"treatment":draft,
-                "reviewer":critic,"hard_errors":initial["errors"]},3100)
+            updated=compile_treatment(brain.ask(REVISE,{"brief":brief,"treatment":draft,
+                "reviewer":critic,"hard_errors":initial["errors"]},3100),brief)
         except (ValueError,TypeError):
             updated=draft # leave unapproved rather than silently claiming a repair
     check=audit(updated,brief)
