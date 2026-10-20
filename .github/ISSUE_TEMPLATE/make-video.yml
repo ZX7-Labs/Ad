@@ -1,0 +1,63 @@
+name: "🎬 Create a faceless video"
+description: "Answer a few director-style questions. AD Studio makes an original motion-graphics short."
+title: "[VIDEO] "
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Creative brief
+        No prompt writing or video editing needed. Answer these short questions and press **Submit new issue**.
+        Currently supports **English narration**. Use a fictional product for experiments.
+  - type: input
+    id: product
+    attributes:
+      label: Product name
+      description: What is the brand, product, app or service called?
+      placeholder: NOVA
+    validations:
+      required: true
+  - type: dropdown
+    id: category
+    attributes:
+      label: What are you promoting?
+      options:
+        - software
+        - physical
+        - service
+    validations:
+      required: true
+  - type: textarea
+    id: audience
+    attributes:
+      label: Who is this for?
+      description: Describe the intended audience in your own words.
+      placeholder: Busy creative teams and solo founders
+    validations:
+      required: true
+  - type: textarea
+    id: benefit
+    attributes:
+      label: What's the ONE most important benefit?
+      description: State a truthful benefit. The video won't invent product claims.
+      placeholder: A calmer place to organize ideas
+    validations:
+      required: true
+  - type: input
+    id: tagline
+    attributes:
+      label: Any slogan or style direction? (optional)
+      placeholder: Less clutter. More creative flow.
+    validations:
+      required: false
+  - type: input
+    id: cta
+    attributes:
+      label: What should viewers do at the end?
+      placeholder: Discover NOVA
+    validations:
+      required: true
+  - type: markdown
+    attributes:
+      value: |
+        Video style, shots, typography, original music, motion graphics, and male voice will be selected automatically according to the product category. Your answers will be visible in this **public repository**; do not enter private contact information or secrets.
