@@ -8,6 +8,7 @@ import time
 from pathlib import Path
 from studio_next.providers import LocalCreativeModel, LocalModelSettings
 from studio_next.checkpoints import CheckpointLedger
+from studio_next.grounded_review import validate_evidence_review
 
 PITCH = """You are a film director and writer pitching visually DISTINCT story concepts, not a chatbot composing interchangeable marketing copy.
 Understand specific people, human stakes, sensory events, tension and a satisfying narrative consequence.
@@ -33,11 +34,16 @@ Return one complete JSON object, no Markdown:
 {"title":"specific title","creative_intent":"reason to make this video","story":"arc in concrete prose","audience_impact":"what viewer feels/understands","visual_language":{"imagery":"original look","typography":"font intent","composition":"specific logic","camera":"specific logic","3d":"whether and why","music":"what and why","sound":"rhythm and motifs"},"voice":{"choice":"M3 or F2 or no_voice","why":"rationale","delivery":"emotional performance, no universal speed numbers"},"scenes":[{"id":"meaningful name","purpose":"narrative work of scene","duration_seconds":4.2,"narration":"exact spoken words or empty for meaningful silence","visual":"precise visual scene and spatial objects","motion":"what actually moves and how","edit":"exact transition and reason","audio":"sound and mixing intentions","fact_refs":["owner fact IDs actually used"],"assets_needed":["specific actual or conceptual assets needed"]}],"last_image":"specific final frame","production_unknowns":["truly unavailable production dependencies"]}.
 Every scene should make the film BETTER. Elaborate where useful, but do not impose a preset number of shots."""
 
-CRITIC = """You are an independent skeptical film editor evaluating ANOTHER writer's work, not an approving assistant.
-First test CAUSAL STORY INTEGRITY: would the story still work unchanged if the advertised product or teaching subject disappeared? Does it invent a medical emergency, product mechanism, customer outcome or UI to manufacture emotion? Then judge originality, real human speech, specific shot visual details, effects feasibility, honest claims, meaningful sound, and the viewer's reason to stay. A spectacular but irrelevant subplot must not pass.
-Identify unnatural AI slogans and invented product screens. Ground any criticism in actual scene IDs and excerpts.
-Return concise JSON only: {"approved_for_human_audition":false,"strongest_beat":"specific good moment and why","blockers":[{"location":"scene id or field","problem":"actual problem","repair":"specific remedy"}],"uncertainties":["specific evidence that must be verified before production"]}.
-Never claim a good video was rendered. Approval means a script is worth having a HUMAN audition, not production completion."""
+CRITIC = """You are a skeptical INDEPENDENT FILM EDITOR auditing another person's draft.
+For each actual concern (weak opening, artificial narration, fake product claims, incorrect story cause/effect, impossible footage or poor continuity), CITE an EXACT short excerpt from the draft's existing scene narration, visual, motion, edit, audio or purpose fields. The scene_id MUST exist, and source_excerpt MUST match what was actually written.
+Do not imagine a hospital, medical emergency, product feature or evidence that is not written. An inference can be questioned but label it an inference, not an observed event.
+Only identify actionable issues. False criticisms are worse than explicitly saying you are uncertain.
+Return concise JSON ONLY:
+{"approved_for_human_audition":false,"strongest_beat":"actual scene and specific value",
+"blockers":[{"scene_id":"exact scene ID","source_excerpt":"verbatim short phrase from this scene","problem":"factual or artistic concern","repair":"realistic fix"}],
+"uncertainties":["specific unverified media rights or resources"]}.
+Approval is for a HUMAN to read the script, not a claim an MP4 exists."""
+
 
 def words(s):
     return len(re.findall(r"\b[\w'-]+\b",s))
@@ -98,11 +104,27 @@ def audit(brief,pitches,selection,treatment,review):
         errors.append("Reviewer blockers malformed");blockers=[]
     if blockers and review.get("approved_for_human_audition"):
         errors.append("Reviewer contradictory approval")
+    # Every critical review must quote actual film text. Structural agreement
+    # is insufficient: critics have hallucinated scenes that were never written.
+    evidence_issues=[]
+    if isinstance(blockers,list):
+        for item in blockers:
+            if isinstance(item,dict):
+                evidence_issues.append({"scene_id":item.get("scene_id"),
+                    "source_excerpt":item.get("source_excerpt"),
+                    "reason":item.get("problem"),"repair":item.get("repair")})
+            else:evidence_issues.append(item)
+    anchored=validate_evidence_review(treatment,{
+        "approved":review.get("approved_for_human_audition"),
+        "issues":evidence_issues})
+    if not anchored.structurally_valid:
+        errors.append("Reviewer failed evidence-anchored quality control")
     return {"structural_passed":not errors,"issues":errors,"timing_warnings":warnings,
             "concept_count":len(cs),"scene_count":len(scenes),
             "spoken_words":word_total,"planned_seconds":round(duration,2),
             "human_audition_candidate":not errors and not blockers and review.get("approved_for_human_audition",False),
-            "render_ready":False,"has_video":False}
+            "render_ready":False,"has_video":False,
+            "review_evidence":anchored.public()}
 
 def report(r):
     b=r["brief"];t=r["treatment"];ret=[
