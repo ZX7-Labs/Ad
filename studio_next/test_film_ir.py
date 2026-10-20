@@ -71,6 +71,17 @@ class FilmIRTests(unittest.TestCase):
     def test_just_artistic_story_is_not_a_render(self):
         p=film();p["assets"][0]["status"]="planned";p["tool_graph"]=[]
         self.assertFalse(self.verify(p).render_ready)
+    def test_adversarial_malformed_ir_references_cannot_crash(self):
+        cases=[
+          lambda p:p["shots"][0].update(asset_refs=[{"bad":"object"}]),
+          lambda p:p["shots"][0].update(fact_refs=[["nested"]]),
+          lambda p:p["shots"][0].update(fact_refs="pretend all"),
+          lambda p:p["tool_graph"][1].update(depends_on=[{"bad":"object"}]),
+          lambda p:p["tool_graph"][1].update(depends_on="shot1")
+        ]
+        for transform in cases:
+            p=film();transform(p)
+            self.assertTrue(self.verify(p).errors)
     def test_graph_order_deterministic(self):
         p=film();p["tool_graph"][2]["depends_on"]=["shot2","shot1"]
         self.assertEqual(self.verify(p).order,["shot1","shot2","film"])
