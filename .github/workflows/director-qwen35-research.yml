@@ -72,7 +72,7 @@ jobs:
           echo "Local server failed to become healthy"
           tail -80 output/qwen35-director/server.log
           exit 1
-      - name: Actual 24-second film direction challenge
+      - name: Four-stage direction challenge with independent art and sound design
         run: |
           python -u director_research/benchmark.py \
             --brief examples/sample-brief.json \
