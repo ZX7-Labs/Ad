@@ -1,40 +1,59 @@
-# AD Motion Studio — Version 2
+# AD Motion Studio — Open-source Faceless Video Maker
 
-Automatic faceless motion-graphics Shorts from your phone.
+**Latest: V3** — zero-fee creative-brief-to-video prototype, rendered in the cloud. Made for Android-only workflows.
 
-## Create a new video on Android
+## 🎬 New: Tell the director about your product
 
-1. Open [Generate premium-style Short V2](https://github.com/oyzitjfzj/Ad/actions/workflows/create-short.yml).
-2. Tap **Run workflow**. If you don't see it, turn on **Desktop site** in Chrome.
-3. Enter **topic** and 3 **points** separated with `|`.
-4. Choose a voice:
-   - `en-US-AndrewNeural` — recommended first try.
-   - `en-US-BrianNeural` — alternative male voice.
-   - `en-US-EmmaNeural` — female voice.
-5. Choose speed: `+8%`, `+15%` (default), `+22%`, or `+28%`.
-6. Press **Run workflow**. Open the new run and wait for **Success**.
-7. Under **Artifacts**, download `premium-short-v2` ZIP and extract `short.mp4`.
+**[Start here: Create an Ad (answer 5 short questions)](https://github.com/oyzitjfzj/Ad/issues/new?template=make-video.yml)**
 
-[Open the V2 video maker](https://github.com/oyzitjfzj/Ad/actions/workflows/create-short.yml)
+1. Sign into GitHub on your phone and open the link above.
+2. Answer the questions: name, product type, target customer, main real benefit, call to action; optional slogan.
+3. Tap **Submit new issue**. Do not enter secrets: your answers appear in this public repository.
+4. GitHub automatically makes a short video if you are the repository owner.
+5. When the issue gets a new comment with a render link, open it, download artifact **AD-original-motion-film** and unzip `short.mp4`.
 
-## What changed since V1?
+A test video without filling a form: [Run V3 demo](https://github.com/oyzitjfzj/Ad/actions/workflows/studio-v3.yml) → **Run workflow**.
 
-- 8 shorter shots, rather than 4 static long scenes.
-- More frequent animated entries, 2.5D floating elements and quick cut transitions.
-- 3 user-entered points appear in a shot-by-shot sequence.
-- 3 selectable neural voices and 4 voice speeds.
-- Spoken-word metadata drives animated 4-word caption blocks when the voice provider returns timestamps.
-- GitHub Actions updated for Node.js 24-based action versions.
+## What it does
 
-## Real limitations
+- **Open-source voice**: Kokoro 82M ONNX, full-size model in Apache 2.0 license, male narrator `am_michael`.
+- **Open-source video**: Python + Pillow, FFmpeg, NumPy, SoundFile; designed 2.5D graphics and camera-like layered motion.
+- **Original soundtrack**: music and cut accents synthesized procedurally, no stolen audio or copyrighted stock music.
+- **Content-aware visual presets**: distinct on-screen mockups for software, physical product and service; the brief controls product name, audience, benefit and CTA.
+- **Seven story beats**: hook, audience, reveal, benefit, polish, message, action. Timing follows locally synthesized voice.
+- **Export**: 1080 × 1920 MP4 with narration and audio, available as a downloadable GitHub Actions artifact.
 
-This is an **automated motion-design prototype** — not a truly cinematic 3D renderer. Templates are mostly reusable visual elements; images are not generated individually for each subject. Audio is generated through the unofficial `edge-tts` interface to Microsoft voices and may be unavailable or rate limited at any time. In that case, the renderer still exports a silent MP4.
+## Important — not an AI Creative Director yet
 
-Shorts should not be published without checking factual claims, pronunciation, visual fit, timing and quality. For a more human voice, choosing a different voice or using an independent voice recording may be necessary; TTS alone cannot guarantee a human performance. This project is separate from any existing website.
+V3 asks structured questions and uses its own rules to arrange scenes. **It does not yet autonomously reason with a language model, interview dynamically, browse product documentation, generate true 3D meshes, guarantee the accuracy of claims or create arbitrary video stories from one sentence.** It uses category-aware procedural graphics and user-provided truthful details. The demo uses an imaginary brand called NOVA.
 
-## Developer notes
+Quality is a subjective target, not a guarantee. The free GitHub-hosted runner and model downloads are subject to platform limits; GitHub hosting itself is free infrastructure, not open-source server software. For full independence, the engine can run on any Linux machine with the listed dependencies.
 
-- Source: `src/render.py`
-- GitHub Actions: `.github/workflows/create-short.yml`
-- Download: `output/short.mp4`, `output/narration.txt`, `output/metadata.json`
-- Dependencies on Ubuntu: Python 3.12, Pillow, ffmpeg, Lato / Noto fonts, edge-tts (optional).
+## Requirements / provenance
+
+Own project code: MIT license (see LICENSE). Third-party code remains under its respective licenses:
+
+- [Kokoro ONNX](https://github.com/thewh1teagle/kokoro-onnx) — MIT inference; Kokoro model — Apache 2.0.
+- [Pillow](https://github.com/python-pillow/Pillow) — HPND historical permission.
+- [NumPy](https://github.com/numpy/numpy) — BSD-3-Clause.
+- [SoundFile](https://github.com/bastibe/python-soundfile) — BSD-3-Clause.
+- [FFmpeg](https://ffmpeg.org/legal.html) — LGPL/GPL depending on compiled configuration.
+- `actions/checkout`, `actions/setup-python`, `actions/cache` and `actions/upload-artifact` have their own GitHub open-source code licenses.
+
+Model data is downloaded on the runner; it is not included in this repository.
+
+## Technical files
+
+- `src/film_v3.py`: seven-scene Open-source animation, TTS, procedural audio, export.
+- `src/issue_to_brief.py`: converts the issue form to a validated JSON creative brief.
+- `.github/ISSUE_TEMPLATE/make-video.yml`: mobile questions.
+- `.github/workflows/studio-v3.yml`: automated cloud render and downloadable artifact.
+- `examples/sample-brief.json`: sample ad for an imaginary product.
+- `src/render.py` + `.github/workflows/create-short.yml`: older V2, kept for reference.
+
+### Run V3 on your own Linux computer (optional)
+
+Install Python 3.12, FFmpeg, espeak-ng and suitable fonts; install `numpy Pillow soundfile kokoro-onnx`; download the model files `kokoro-v1.0.onnx` and `voices-v1.0.bin` from the [official Kokoro ONNX model release](https://github.com/thewh1teagle/kokoro-onnx/releases/tag/model-files-v1.1) into `models/`; run `python src/film_v3.py --brief examples/sample-brief.json`. No paid API credentials needed.
+
+**Safety:** Only video requests submitted by the repository owner are rendered by the GitHub Issue workflow, and uploaded information is handled as data (not shell commands). For private brand details, do not use public GitHub Issues.
+
