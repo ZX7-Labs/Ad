@@ -50,6 +50,28 @@ class TestContract(unittest.TestCase):
         self.assertEqual(audit_proposal(p,b,{"safe.preview"}),[])
         q=make_plan(scene_count=2,voice="original_voice_future",scene_seconds=(.8,65.4))
         self.assertEqual(audit_proposal(q,b,{"safe.preview"}),[])
+    def test_caller_evidence_cannot_be_mutated_by_model(self):
+        facts={"benefit":"real owner statement"}
+        brief=OwnerBrief(request="A careful film",owner_facts=facts)
+        facts["benefit"]="hijacked after creation"
+        self.assertEqual(brief.owner_facts["benefit"],"real owner statement")
+        with self.assertRaises(TypeError):
+            brief.owner_facts["benefit"]="inject fake claim"
+        self.assertEqual(brief.public()["facts"]["benefit"],"real owner statement")
+    def test_corrupt_model_references_fail_closed(self):
+        badcases=[
+          {"scenes":[{"id":[],"purpose":"original","fact_refs":[],"asset_refs":[]}],
+            "creative_intent":"one","story":"original","tool_route":[],"voice_choices":[]},
+          {"scenes":[{"id":"scene","purpose":"original","fact_refs":[{"bad":"object"}],"asset_refs":[]}],
+            "creative_intent":"one","story":"original","tool_route":[],"voice_choices":[]},
+          {"scenes":[{"id":"scene","purpose":"original","fact_refs":"all facts","asset_refs":[]}],
+            "creative_intent":"one","story":"original","tool_route":[],"voice_choices":[]},
+          {"scenes":[{"id":"scene","purpose":"original","fact_refs":[],"asset_refs":[]}],
+            "creative_intent":"one","story":"original","tool_route":[{"tool_id":["bad"],"reason":"test","inputs":{}}],"voice_choices":[]}
+        ]
+        for data in badcases:
+            with self.subTest(data=str(data)[:30]):
+                self.assertTrue(audit_proposal(data,good_brief(),{"safe.preview"}))
     def test_missing_or_misused_fact(self):
         p=make_plan()
         p["scenes"][0]["fact_refs"]=["made_up_5x_growth"]
