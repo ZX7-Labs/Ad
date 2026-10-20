@@ -17,6 +17,8 @@ on:
       - "studio_next/test_checkpoints.py"
       - "studio_next/blind_comparison.py"
       - "studio_next/test_blind_comparison.py"
+      - "studio_next/execution.py"
+      - "studio_next/test_execution.py"
       - "studio_next/grounded_review.py"
       - "studio_next/test_grounded_review.py"
       - "studio_next/creative_challenge.py"
