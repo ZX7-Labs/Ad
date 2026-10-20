@@ -1,0 +1,23 @@
+name: "ZX7 Specialist Resource Placement — Pure Contract Tests"
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - zx7-specialist-free-stack-20261020
+    paths:
+      - "studio_next/compute_offers.py"
+      - "studio_next/test_compute_offers.py"
+      - ".github/workflows/studio-placement-contracts.yml"
+permissions:
+  contents: read
+jobs:
+  strict-placement:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m compileall -q studio_next
+      - run: python -m unittest studio_next.test_compute_offers -v
