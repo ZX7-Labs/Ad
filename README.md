@@ -49,7 +49,7 @@ Model data is downloaded on the runner; it is not included in this repository.
 - `.github/ISSUE_TEMPLATE/make-video.yml`: mobile questions.
 - `.github/workflows/studio-v3.yml`: automated cloud render and downloadable artifact.
 - `examples/sample-brief.json`: sample ad for an imaginary product.
-- `src/render.py` + `.github/workflows/create-short.yml`: older V2, kept for reference.
+- Prior V2 exists in Git history only. Production uses only V3 open-source code and locally generated Kokoro voice.
 
 ### Run V3 on your own Linux computer (optional)
 
