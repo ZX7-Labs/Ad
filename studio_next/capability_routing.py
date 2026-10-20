@@ -37,7 +37,7 @@ def _check_ids(values, *, label):
 
 def resolve_routes(film: dict, catalog: ToolCatalog, *,
                    allowed_access=frozenset({"read"}),
-                   approved_licenses=frozenset({"MIT", "Apache-2.0", "GPL-3.0-or-later"}),
+                   approved_licenses=frozenset({"MIT", "Apache-2.0", "GPL-2.0-or-later", "GPL-3.0-or-later"}),
                    trusted_free_tool_ids=frozenset()):
     """Find a tool set for each creative requirement, retaining its exact intent.
 
