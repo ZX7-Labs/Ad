@@ -312,7 +312,8 @@ def main():
     p.add_argument("--scene",type=Path,required=True)
     p.add_argument("--out",type=Path,required=True)
     p.add_argument("--assets-root",type=Path,default=None)
-    args=p.parse_args()
+    import sys
+    args=p.parse_args(sys.argv[sys.argv.index("--")+1:] if "--" in sys.argv else None)
     job=json.loads(args.scene.read_text(encoding="utf-8"))
     print(json.dumps(render_blender_shot(job,args.out,verified_assets_root=args.assets_root),
                      indent=2),flush=True)
