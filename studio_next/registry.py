@@ -19,9 +19,12 @@ class ToolCatalog:
         self._tools[spec.tool_id]=_Entry(spec,runner)
     def discover(self):
         return [entry.spec.public() for entry in self._tools.values()]
-    def executable_ids(self):
+    def executable_ids(self, allowed_access=None):
+        """Registered is not sufficient: proposals must respect granted permissions."""
+        permitted=None if allowed_access is None else frozenset(allowed_access)
         return {k for k,v in self._tools.items()
-                if v.spec.status=="installed" and v.runner is not None}
+                if v.spec.status=="installed" and v.runner is not None
+                and (permitted is None or v.spec.access in permitted)}
     def invoke(self,tool_id,inputs,allowed_access=frozenset({"read"})):
         entry=self._tools.get(tool_id)
         if entry is None:raise ValueError(f"Unknown tool {tool_id!r}")
