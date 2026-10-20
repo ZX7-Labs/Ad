@@ -126,62 +126,140 @@ def orange_sun(d,x,y,r=88):
         d.line((x+math.cos(rad)*r*.74,y+math.sin(rad)*r*.74,
                 x+math.cos(rad)*r*1.12,y+math.sin(rad)*r*1.12),fill=ORANGE,width=12)
 
-def scene(im,topic,points,t,seconds):
+def headline(d,text,y,maxsize=68,maxwidth=610):
+    """Fit punchy headlines into 2-3 lines, retaining visual hierarchy."""
+    size=maxsize
+    while size>29:
+        lines=wrap(d,text,maxwidth,font(text,size,True),5)
+        if len(lines)<=3:break
+        size-=4
+    return center_text(d,text,y,size,True,max_w=maxwidth,line_height=int(size*1.13))
+
+def animated_card(im,name,cx,cy,t,phase,angle=0,scale=1):
+    p=appear(phase,.02,.22)
+    paste_float(im,name,cx+10*math.sin(t*4.5),cy+(1-p)*250+7*math.sin(t*5),
+                t,angle=angle+3*math.sin(t*3),scale=scale)
+
+def scene(im,topic,points,t,seconds,timeline=None,captions=None):
     d=ImageDraw.Draw(im)
-    part=t/(seconds/4)
-    section=min(3,int(part)); q=part-section
-    if section==0:
-        badge(im,46,105,'THE BIG IDEA',True)
-        pos=120+(1-appear(q,0,.22))*90
-        orange_sun(d,575+12*math.sin(t*.85),230,65)
-        h=center_text(d,topic.upper(),int(315+pos*.20),54,True,max_w=610,line_height=67)
-        center_text(d,'Made to move.',int(h+20),29,False,GREY)
-        a=appear(q,.17,.35)
-        paste_float(im,'analytics',W/2-65,835+(1-a)*240,t,angle=-7+2*math.sin(t),scale=.86)
-        paste_float(im,'small',525,970+(1-a)*270,t,angle=7+2*math.cos(t),scale=.65)
-        badge(im,78,1050,'CLEAN  /  BOLD  /  3D')
-    elif section==1:
-        badge(im,47,105,'01 / THE PROCESS',True)
-        d.text((52,204),'Make every',font=font('Make every',52,True),fill=DARK)
-        d.text((52,267),'second count.',font=font('second count.',54,True),fill=DARK)
-        a=appear(q,.04,.27)
-        paste_float(im,'phone',340,715+(1-a)*310,t,angle=4*math.sin(t*1.3),scale=.98)
-        d.ellipse((518,518,590,590),fill=(245,235,227))
-        d.arc((522,522,586,586),20,315,fill=ORANGE,width=8)
-        center_text(d,points[0],1096,25,True,GREY,max_w=630)
-    elif section==2:
-        badge(im,47,105,'02 / KEY IDEAS',True)
-        center_text(d,'Less noise.',235,53,True)
-        center_text(d,'More impact.',300,56,True,ORANGE)
-        a=appear(q,.05,.3)
-        paste_float(im,'workflow',365,750+(1-a)*255,t,angle=-3*math.sin(t),scale=1.22)
-        center_text(d,points[1],1072,26,True,GREY,max_w=610)
+    timeline=timeline or [i*seconds/8 for i in range(9)]
+    j=max(0,min(7,__import__('bisect').bisect_right(timeline,t)-1))
+    start=timeline[j];span=max(.15,timeline[j+1]-start)
+    q=clamp((t-start)/span)
+    lift=(1-appear(q,0,.23))*100
+    # Intro + 7 punchy shots; beat changes on each sentence.
+    if j==0:
+        badge(im,45,106,'DON’T BLINK',True)
+        orange_sun(d,562,262+8*math.sin(t*4),65)
+        headline(d,'ONE BIG IDEA',364+lift*.2,76)
+        center_text(d,'in seconds, not minutes',528,27,False,GREY)
+        animated_card(im,'analytics',330,862,t,q,angle=-9,scale=.92)
+        animated_card(im,'small',565,945,t,q,angle=13,scale=.67)
+    elif j==1:
+        badge(im,45,106,'TODAY’S TOPIC',True)
+        orange_sun(d,547,234,61)
+        headline(d,topic.upper(),320+lift*.25,66)
+        animated_card(im,'phone',347,837,t,q,angle=-4,scale=.96)
+    elif j==2:
+        badge(im,45,106,'THE PLAYBOOK',True)
+        center_text(d,'3 MOVES.',250+lift*.2,82,True)
+        center_text(d,'ZERO FLUFF.',352+lift*.2,57,True,ORANGE)
+        for k,p in enumerate(points):
+            y=520+k*144+(1-appear(q,.04+k*.12,.19))*65
+            rounded(d,(48,y,670,y+116),20,(255,255,255),BORDER,2)
+            d.ellipse((69,y+33,119,y+83),fill=ORANGE if k==0 else DARK)
+            d.text((85,y+44),str(k+1),font=font('1',24,True),fill='white')
+            for r,line in enumerate(wrap(d,p,485,font(p,28,True),2)):
+                d.text((139,y+25+r*35),line,font=font(line,28,True),fill=DARK)
+    elif j in [3,4,5]:
+        k=j-3
+        badge(im,45,106,'MOVE 0'+str(k+1),True)
+        d.text((48,216),'0'+str(k+1),font=font('01',86,True),fill=ORANGE)
+        headline(d,points[k].upper(),390+lift*.18,58)
+        cardname=['workflow','analytics','phone'][k]
+        animated_card(im,cardname,346,831,t,q,angle=[-6,6,-4][k],scale=[1.1,1.1,.9][k])
+        orange_sun(d,575,248,35)
+    elif j==6:
+        badge(im,45,106,'THE DIFFERENCE',True)
+        center_text(d,'LESS NOISE.',341+lift*.20,73,True)
+        center_text(d,'MORE IMPACT.',442+lift*.20,69,True,ORANGE)
+        animated_card(im,'workflow',290,848,t,q,angle=-10,scale=.91)
+        animated_card(im,'analytics',524,896,t,q,angle=9,scale=.72)
     else:
-        badge(im,47,105,'03 / TAKEAWAY',True)
-        orange_sun(d,550,250,90)
-        center_text(d,'THE NEXT',395,69,True)
-        center_text(d,'LEVEL.',482,91,True,ORANGE)
-        a=appear(q,0,.27)
-        paste_float(im,'small',252,820+(1-a)*210,t,angle=-10+2*math.sin(t),scale=.86)
-        paste_float(im,'analytics',497,895+(1-a)*270,t,angle=10-2*math.sin(t),scale=.70)
-        center_text(d,points[2],1084,24,True,GREY,max_w=650)
+        badge(im,45,106,'YOUR NEXT MOVE',True)
+        orange_sun(d,545,253,81)
+        center_text(d,'MAKE IT',381+lift*.20,84,True)
+        center_text(d,'MEMORABLE.',494+lift*.20,69,True,ORANGE)
+        animated_card(im,'small',237,840,t,q,angle=-10,scale=.89)
+        animated_card(im,'analytics',500,866,t,q,angle=10,scale=.70)
+    # Whip-style fast visual transition, without blowing up GPU usage.
+    enter=1-appear(q,0,.09)
+    if enter>.02:
+        width=int(enter*800)
+        d.polygon(((0,0),(width,0),(width-185,190),(0,290)),fill=DARK)
+        d.polygon(((W-width,H),(W,H),(W,H-60),(W-width+140,H-270)),fill=ORANGE)
     rounded(d,(36,1220,684,1225),2,(227,227,223))
     rounded(d,(36,1220,36+648*clamp(t/seconds),1225),2,ORANGE)
+    if captions:
+        words=[x for x in captions if x[0]<=t]
+        if words:
+            idx=len(words)-1
+            group=captions[(idx//4)*4:(idx//4+1)*4]
+            text=' '.join(x[2] for x in group).upper()
+            ft=font(text,25,True)
+            while width(d,text,ft)>W-140 and len(text)>5:text=text[:-2]
+            textwidth=width(d,text,ft);x=(W-textwidth)/2
+            rounded(d,(x-16,1040,x+textwidth+16,1093),12,DARK)
+            d.text((x,1052),text,font=ft,fill='white')
 
-def narrate(topic,points,hi):
-    if hi:
-        return f'{topic}। हर अच्छी चीज़ की शुरुआत एक आइडिया से होती है। {points[0]}। {points[1]}। {points[2]}। छोटे बदलाव, और बेहतरीन अनुभव।'
-    return f'{topic}. Great design starts with a clear idea. {points[0]}. {points[1]}. {points[2]}. Less noise. More impact. Make every second count.'
+def narration_segments(topic,points):
+    return ['Here is one idea worth your attention.',
+            f'Let us talk about {topic}.',
+            'Three quick moves. Zero fluff.',
+            f'First, {points[0]}.',
+            f'Next, {points[1]}.',
+            f'Then, {points[2]}.',
+            'Less noise. More impact.',
+            'Make every second count.']
 
-def get_audio(text,hi,path):
+def get_audio(text,hi,path,voice='en-US-AndrewNeural',speed='+15%'):
+    """Returns (success, word offsets in seconds). TTS endpoint is unofficial."""
     try:
         import edge_tts
-        voice='hi-IN-SwaraNeural' if hi else 'en-US-GuyNeural'
-        asyncio.run(edge_tts.Communicate(text,voice=voice,rate='+5%').save(str(path)))
-        return path.exists() and path.stat().st_size>1000
+        async def synth():
+            boundaries=[]
+            choice='hi-IN-SwaraNeural' if hi else voice
+            c=edge_tts.Communicate(text,voice=choice,rate=speed,boundary='WordBoundary')
+            with path.open('wb') as audio:
+                async for msg in c.stream():
+                    if msg['type']=='audio': audio.write(msg['data'])
+                    elif msg['type']=='WordBoundary':
+                        boundaries.append((msg['offset']/10000000,
+                                          (msg['offset']+msg['duration'])/10000000,
+                                          msg['text']))
+            return boundaries
+        offsets=asyncio.run(synth())
+        return (path.exists() and path.stat().st_size>1000,offsets)
     except Exception as exc:
-        print(f'Optional voice unavailable: {exc}',file=sys.stderr)
-        return False
+        print(f'Optional neural voice unavailable: {exc}',file=sys.stderr)
+        return False, []
+
+def scene_times(segments,word_times,secs):
+    weights=[len(x.split()) for x in segments]
+    total=sum(weights)
+    if len(word_times)>int(total*.70):
+        times=[0];pos=0
+        for w in weights[:-1]:
+            pos+=w
+            times.append(word_times[min(len(word_times)-1,pos)][0])
+        times.append(secs)
+        if all(times[i+1]-times[i]>.4 for i in range(8)):
+            return times
+    times=[0];acc=0
+    for w in weights:
+        acc+=w
+        times.append(secs*acc/total)
+    return times
 
 def audio_duration(path):
     try:
@@ -192,50 +270,57 @@ def audio_duration(path):
 def render(args):
     topic=re.sub(r'\s+',' ',args.topic.strip())[:110] or 'BUILD SOMETHING BETTER'
     hi=bool(re.search(r'[\u0900-\u097f]',topic))
-    defaults=['साफ़ सोच','बेहतर अनुभव','नई शुरुआत'] if hi else ['Clarity first','Focus on what matters','Make it memorable']
+    defaults=['साफ़ सोच','बेहतर अनुभव','नई शुरुआत'] if hi else ['Read the details','Build with purpose','Make it memorable']
     points=(args.points.split('|') if args.points else defaults)
     points=[x.strip()[:72] for x in points if x.strip()][:3]
-    while len(points)<3: points.append(defaults[len(points)])
-    narration=narrate(topic,points,hi)
+    while len(points)<3:points.append(defaults[len(points)])
+    segments=narration_segments(topic,points)
+    narration=' '.join(segments)
     (OUT/'narration.txt').write_text(narration,encoding='utf-8')
-    voiced=(not args.no_voice) and get_audio(narration,hi,OUT/'voice.mp3')
-    secs=args.seconds or (max(19,min(35,audio_duration(OUT/'voice.mp3')+1.3)) if voiced else 19)
-    fps=args.fps
-    frames=int(secs*fps)
-    silent=OUT/'silent.mp4'
+    voiced,word_times=(False,[]) if args.no_voice else get_audio(narration,hi,OUT/'voice.mp3',args.voice,args.speed)
+    secs=args.seconds or ((audio_duration(OUT/'voice.mp3')+.5) if voiced else 19)
+    if secs<4 or secs>80: secs=19
+    times=scene_times(segments,word_times,secs)
+    (OUT/'metadata.json').write_text(__import__('json').dumps(
+        {'topic':topic,'points':points,'voice':args.voice,'speed':args.speed,
+         'duration':secs,'voice_generated':voiced,'scenes':times},indent=2),encoding='utf-8')
+    frames=int(secs*args.fps)
+    raw_video=OUT/'silent.mp4'
     ff=['ffmpeg','-loglevel','error','-y','-f','rawvideo','-pixel_format','rgb24',
-        '-video_size',f'{W}x{H}','-framerate',str(fps),'-i','pipe:0',
+        '-video_size',f'{W}x{H}','-framerate',str(args.fps),'-i','pipe:0',
         '-an','-c:v','libx264','-preset','veryfast','-crf','19',
         '-vf','scale=1080:1920:flags=lanczos','-pix_fmt','yuv420p',
-        '-movflags','+faststart',str(silent)]
-    print('Rendering',frames,'frames,',secs,'seconds at',fps,'fps',flush=True)
+        '-movflags','+faststart',str(raw_video)]
+    print(f'V2: {secs:.1f} seconds, 8 fast scenes, voice={voiced}, words={len(word_times)}',flush=True)
     proc=subprocess.Popen(ff,stdin=subprocess.PIPE)
     try:
         for i in range(frames):
             im=BASE.copy()
-            scene(im,topic,points,i/fps,secs)
+            scene(im,topic,points,i/args.fps,secs,times,word_times if voiced else None)
             proc.stdin.write(im.tobytes())
-            if i%max(1,fps*3)==0: print('Frame',i,'/',frames,flush=True)
+            if i%max(1,args.fps*4)==0:print(f'{i}/{frames}',flush=True)
     except BrokenPipeError:
-        raise RuntimeError('FFmpeg stopped unexpectedly')
+        raise RuntimeError('FFmpeg stopped while encoding')
     finally:
         proc.stdin.close()
-    if proc.wait(): raise RuntimeError('FFmpeg failed')
+    if proc.wait():raise RuntimeError('FFmpeg encoder failed')
     video=OUT/'short.mp4'
     if voiced:
-        subprocess.run(['ffmpeg','-loglevel','error','-y','-i',str(silent),
-                        '-i',str(OUT/'voice.mp3'),'-filter_complex','[1:a]apad[a]',
-                        '-map','0:v:0','-map','[a]','-c:v','copy','-c:a','aac',
-                        '-t',str(secs),'-movflags','+faststart',str(video)],check=True)
-    else:
-        shutil.copy2(silent,video)
+        subprocess.run(['ffmpeg','-loglevel','error','-y','-i',str(raw_video),
+                        '-i',str(OUT/'voice.mp3'),'-map','0:v:0','-map','1:a:0','-c:v','copy',
+                        '-c:a','aac','-b:a','128k','-t',str(secs),
+                        '-movflags','+faststart',str(video)],check=True)
+    else:shutil.copy2(raw_video,video)
     print('DONE:',video,'voice=',voiced,'size=',video.stat().st_size,flush=True)
 
 if __name__=='__main__':
     parser=argparse.ArgumentParser()
-    parser.add_argument('--topic',default='Future of creative work')
-    parser.add_argument('--points',default='',help='Three short ideas separated by |')
+    parser.add_argument('--topic',default='Three coding habits that matter')
+    parser.add_argument('--points',default='Read the error first|Test one thing at a time|Ship smaller changes')
     parser.add_argument('--seconds',type=float,default=0)
     parser.add_argument('--fps',type=int,default=24)
+    parser.add_argument('--voice',choices=['en-US-AndrewNeural','en-US-BrianNeural','en-US-EmmaNeural'],
+                        default='en-US-AndrewNeural')
+    parser.add_argument('--speed',choices=['+8%','+15%','+22%','+28%'],default='+15%')
     parser.add_argument('--no-voice',action='store_true')
     render(parser.parse_args())
