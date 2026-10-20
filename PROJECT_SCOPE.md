@@ -44,6 +44,11 @@ purpose of references without copying a creator's work or inventing product fact
    probe, a caller-owned evidence ledger, a primitive capability registry,
    adaptive 3–10 shots, retained drafts, detailed review and one bounded revision.
    It remains separate from the phone Issue interface and final video production.
+5. The requested [motion sample](motion_studio/README.md) has a new declarative
+   2D/2.5D compositor, measured Supertonic M3 narration and an agent-authored FOLD
+   project. It executes authored scene graphs, not arbitrary Director prose. The
+   sample must not be attributed to the rejected local-model experiments or used
+   to claim the full autonomous application is ready.
 
 ## Conditions for connecting production
 

@@ -12,6 +12,9 @@ contains the rejected treatments, real timings, reviewer errors and follow-up fi
 The subsequent [4B/9B comparison and evidence-linked review](director_research/evaluations/2026-10-20-model-comparison/README.md)
 preserves original failures and separates reviewer mistakes from actual planning
 defects. The recovered visual direction is recorded in [REFERENCE_STYLE.md](REFERENCE_STYLE.md).
+The requested [FOLD motion sample](motion_studio/README.md) now has an executable
+scene graph, original notebook artwork and actual M3 narration. It is explicitly
+agent-directed; the local Director has not yet generated this scene representation.
 
 ## New experimental Creative Director (planning only)
 

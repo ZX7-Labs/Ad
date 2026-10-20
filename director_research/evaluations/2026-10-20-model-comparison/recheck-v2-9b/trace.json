@@ -1,0 +1,34 @@
+[
+  {
+    "stage": "runtime_contract_probe",
+    "cached": false,
+    "model": "qwen35-9b-3885219b6810b007914f3a7950a8d1b469d598a5",
+    "request_sha256": "8aa8a86db56a9024f22ce939e2af4acd5fa2ecfcec7a31cdc2652cdaa5707ffb",
+    "finish_reason": "stop",
+    "usage": {
+      "completion_tokens": 9,
+      "prompt_tokens": 230,
+      "total_tokens": 239,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      }
+    },
+    "elapsed_seconds": 19.04
+  },
+  {
+    "stage": "critic_recheck",
+    "cached": false,
+    "model": "qwen35-9b-3885219b6810b007914f3a7950a8d1b469d598a5",
+    "request_sha256": "2d2f6e6be21f4c28ebdc924e00cb5e11fa112c4aac06a4f5df2c0c2026e89593",
+    "finish_reason": "stop",
+    "usage": {
+      "completion_tokens": 525,
+      "prompt_tokens": 3213,
+      "total_tokens": 3738,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      }
+    },
+    "elapsed_seconds": 349.21
+  }
+]

@@ -29,12 +29,21 @@
       "name": "grounded-director-qwen35-9b-physical",
       "bytes": 23365,
       "sha256": "b3b2b6cac48d5cbbc423cc92f1204fa9e32afbf897eb9c27dca5c776c8c3eacd"
+    },
+    {
+      "id": 12270096409,
+      "name": "grounded-director-qwen35-9b-software",
+      "sha256": "762e51baeba9f7ff1a442de82dd51c0fa6a7765030a57f817e705ef97786c056"
     }
   ],
   "saved_result_sha256": {
     "recheck-v2-4b/result.json": "5b68002035eb1da00340f3989364dd912f966f06d9ff8ebfa33327e5a0d47257",
     "qwen35-4b-physical/result.json": "eb32dab19384407b3161b57f8e87b6d5416e06d081fb5f098b7c23bc8536e2e3",
     "qwen35-9b-physical/result.json": "21d06efaeb7acb6e705bae9932166a8ba6dc2a78bab80f303fc777dbadaa1414",
-    "qwen35-4b-software/result.json": "dee86a3e5972afd464e110fcd02269efe867f9e353a5b3c70cac9913cc39dbbc"
-  }
+    "qwen35-4b-software/result.json": "dee86a3e5972afd464e110fcd02269efe867f9e353a5b3c70cac9913cc39dbbc",
+    "recheck-v2-9b/result.json": "d48215210df76eda8109abe0e8296750494870e30d4582ed0656269270a332e7"
+  },
+  "comparison_complete": true,
+  "recheck_run_id": 39435559687,
+  "recheck_source_commit": "214b09ed7d75b37a0d47a371007719652d82fd97"
 }

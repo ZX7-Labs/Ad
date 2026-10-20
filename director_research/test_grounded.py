@@ -74,6 +74,13 @@ class GroundedTests(unittest.TestCase):
         bundle['creative']['concept'] = 'Click the Organize button and notes align'
         self.assertIn('unprovided product UI', str(self.check(bundle)))
 
+    def test_audience_pause_button_metaphor_is_not_product_ui(self):
+        bundle = proposal()
+        bundle['creative']['audience_insight'] = 'Teams crave a pause button rather than a rigid cage.'
+        self.assertTrue(self.check(bundle)['passed'])
+        bundle['scenes']['clips'][0]['composition'] = 'Show the Organize button in the product dashboard.'
+        self.assertIn('unprovided product UI', str(self.check(bundle)))
+
     def test_symbolic_label_does_not_waive_visual_promises(self):
         bundle = proposal()
         bundle['scenes']['clips'][0]['composition'] = 'A symbolic badge reading 100% guaranteed'

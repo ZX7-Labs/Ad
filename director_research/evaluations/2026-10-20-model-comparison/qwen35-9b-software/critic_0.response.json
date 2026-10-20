@@ -1,0 +1,36 @@
+{
+  "choices": [
+    {
+      "finish_reason": "length",
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "{\"approved\":false,\"score_out_of_10\":6,\"factual_support\":false,\"execution_realistic\":false,\"strongest_moment\":\"The inkblot inhaling to reveal the geometric lattice.\",\"problems\":[\"Claims '2.5d' technique which violates the 2D vector-only capability constraints.\",\"Hard errors flag unprovided product UI and unavailable photorealistic production techniques.\",\"Verified claims are false because owner facts are unverified source data, not proof.\",\"Execution is unrealistic due to reliance on forbidden 3D and photorealism.\",\"Problems list is not empty, failing the approval threshold of 8/10.\",\"Factual support is false as the evidence ledger contains no verified product features.\",\"Execution realistic is false due to capability mismatches in the proposal.\",\"Approved is false because the problems list contains critical constraint violations.\",\"Score is 6/10 due to unverified claims and technical impossibilities.\",\"Strongest moment is the visual metaphor, but it cannot be executed as described.\",\"Problems include semantic feature invention and misleading visual claims about depth.\",\"Recommended repairs include removing all 3D/photorealism references and UI elements.\",\"Repair 1: Replace '2.5d' with '2D layered vector composition' in design specs.\",\"Repair 2: Remove all photorealism claims and replace with flat vector illustration.\",\"Repair 3: Delete any mention of product UI, buttons, or interface elements.\",\"Repair 4: Mark all owner facts as 'unverified' in the final script notes.\",\"Repair 5: Replace 'photorealistic depth' lighting with 'flat 2D color contrast'.\",\"Repair 6: Ensure no scene description implies fluid simulation or live footage.\",\"Repair 7: Remove '2.5d' from all scene capability lists.\",\"Repair 8: Clarify that all visuals are symbolic illustrations, not actual software.\",\"Repair 9: Replace 'luminous' and 'weightless' with 'flat vector with soft shadows'.\",\"Repair 10: Ensure no caption implies a real-time software interface demonstration.\",\"Repair 11: Remove any reference to 'actual product UI' in the CTA scene.\",\"Repair 12: Replace 'photorealistic' lighting with 'high-key 2D vector contrast'.\",\"Repair 13: Ensure no scene implies 3D modeling or extrusion techniques.\",\"Repair 14: Replace 'luminous' with 'bright vector color' to avoid 3D implication.\",\"Repair 15: Remove any reference to 'live footage' or 'licensed media'.\",\"Repair 16: Ensure all motion is described as 2D transform (scale, rotate, translate).\",\"Repair 17: Replace 'fluids' with 'vector shape morphing' in sound design notes.\",\"Repair 18: Remove any reference to 'actual 3D' in the use_3d field.\",\"Repair 19: Ensure no scene implies a 'breathing organism' is physically real.\",\"Repair 20: Replace 'weightless' with 'floating vector elements' in lighting notes.\",\"Repair 21: Ensure no caption implies a real-time software interface demonstration.\",\"Repair 22: Remove any reference to 'photorealism' in the lighting section.\",\"Repair 23: Replace 'luminous' with 'bright vector color' to avoid 3D implication.\",\"Repair 24: Ensure all motion is described as"
+      }
+    }
+  ],
+  "created": 1792504924,
+  "model": "qwen35-9b-3885219b6810b007914f3a7950a8d1b469d598a5",
+  "system_fingerprint": "b11750-dd002b91f",
+  "object": "chat.completion",
+  "usage": {
+    "completion_tokens": 700,
+    "prompt_tokens": 3218,
+    "total_tokens": 3918,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    }
+  },
+  "id": "chatcmpl-dnnzccSKRxK9nrDwZswpARdgu9UdXl9b",
+  "timings": {
+    "cache_n": 0,
+    "prompt_n": 3218,
+    "prompt_ms": 186837.096,
+    "prompt_per_token_ms": 58.06000497203232,
+    "prompt_per_second": 17.22356035762834,
+    "predicted_n": 700,
+    "predicted_ms": 231009.82,
+    "predicted_per_token_ms": 330.4861516452074,
+    "predicted_per_second": 3.0258453947975026
+  }
+}

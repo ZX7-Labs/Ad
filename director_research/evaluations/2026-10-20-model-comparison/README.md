@@ -23,7 +23,7 @@ and SHA-256 values are retained beside each case.
 | 4B | FOLD paper notebook, 18s | 6 | 257.54 | 4 | Blocked |
 | 4B | NOVA software, 24s | 5 | 453.21 | 4 | Blocked |
 | 9B | FOLD paper notebook, 18s | 3 | 373.71 | 6 | Blocked |
-| 9B | NOVA software, 24s | Pending | Pending | Pending | Running when this checkpoint was saved |
+| 9B | NOVA software, 24s | 6 | 1340.14 | — | Complete draft saved; critic truncated at 700 tokens |
 
 Inference timings exclude weight download, runtime setup and cache transfer.
 Original critic scores are shown for auditability; the critic was demonstrably
@@ -45,6 +45,14 @@ fallible and its grades must not be treated as objective quality measurements.
   of a white field/line, seven seconds of CTA. There is no clear handwritten
   notebook action. That is a story/product-clarity concern, not impossible edit
   physics. No rendered result or audience judgement has been obtained.
+- **9B / software:** a complete six-shot draft survived a critic that filled its
+  problems list with repeated and incorrect objections until the token cap. It
+  wrongly rejected allowed 2.5D and owner-reported copy. The hard checker also
+  mistook an audience wanting a metaphorical "pause button" for a product UI.
+  After the targeted checker fixes, structural QA passes this unchanged draft;
+  creative acceptance does not follow from that. The film still repeats generic
+  breathing-circle/lattice imagery. Its original error, raw truncated response
+  and draft are preserved in `qwen35-9b-software/`.
 
 The recovered [visual reference](../../../REFERENCE_STYLE.md) was **not** supplied
 to these generation calls. They therefore do not evaluate reference adherence.
@@ -91,8 +99,13 @@ poor criticisms and attached two quotations to the wrong fields. The new review
 validator detected both, kept the result blocked, and preserved the original
 proposal. This demonstrates rejection of ungrounded feedback, **not** a proven
 quality critic. It used eight local CPU threads; its timing is not comparable to
-the four-thread cloud trials. A separate pinned 9B recheck is queued by the
-dedicated review workflow; its result will be retained separately.
+the four-thread cloud trials. The [pinned 9B recheck](recheck-v2-9b/result.json) also completed, using
+[the dedicated workflow](https://github.com/oyzitjfzj/Ad/actions/runs/39435559687)
+at source `214b09ed7d75b37a0d47a371007719652d82fd97`. It returned a bounded
+three-finding review but again misattached two quotations. The validator correctly
+blocked it as `invalid_review`; no automatic rewrite was run. Both critics still
+confuse some graphic edits with material simulation. Exact citations make those
+errors inspectable; they do not make the critic a reliable creative authority.
 
 ## Current acceptance boundary
 
@@ -101,3 +114,13 @@ selected production winner. We still need a compelling product-specific story,
 feasible detailed assets, an executable scene representation and real visual/
 audio review before connecting a premium autonomous editor. The project goal
 and owner-approved voices remain as recorded in `PROJECT_SCOPE.md`.
+
+## Requested real-video sample
+
+The owner then explicitly requested an MP4. The agent authored a different FOLD
+story and rendered it using the new [declarative compositor](../../../motion_studio/README.md),
+with original notebook artwork, real accepted M3 speech and measured cut times.
+That sample is **not output of either rejected local-model proposal**. Its
+provenance is retained with the project. Building an executable, authored
+scene graph is a concrete rendering milestone; automatic natural-language
+direction and arbitrary-scene compilation remain unfinished.

@@ -135,6 +135,11 @@ def audit_bundle(bundle, brief, ledger):
     for path, rendered in text_fields(bundle):
         for pattern, label in ((UNSUPPORTED, "unavailable production technique"),
                                (INVENTED_UI, "unprovided product UI")):
+            # Audience psychology is not an execution instruction. A team wanting
+            # a metaphorical "pause button" does not invent a product interface.
+            # Concept and actual scene instructions remain checked for fake UI.
+            if pattern is INVENTED_UI and path == "/creative/audience_insight":
+                continue
             for match in pattern.finditer(rendered):
                 if pattern is UNSUPPORTED and production_exclusion(rendered, match):
                     continue
