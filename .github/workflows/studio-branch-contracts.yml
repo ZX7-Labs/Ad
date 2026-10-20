@@ -13,6 +13,9 @@ on:
       - "studio_next/test_film_ir.py"
       - "studio_next/test_provider.py"
       - "studio_next/test_creative_challenge.py"
+      - "studio_next/checkpoints.py"
+      - "studio_next/test_checkpoints.py"
+      - "studio_next/creative_challenge.py"
       - ".github/workflows/studio-branch-contracts.yml"
 permissions:
   contents: read
