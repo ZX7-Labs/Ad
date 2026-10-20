@@ -187,6 +187,10 @@ def render_blender_shot(job, out: Path, *, verified_assets_root=None):
     scene.render.engine="CYCLES"
     scene.cycles.device="CPU"
     scene.cycles.samples=job.get("samples",8)
+    # Ubuntu free CPU builds may not include OpenImageDenoiser; do not require it.
+    for view_layer in scene.view_layers:
+        if hasattr(view_layer, "cycles") and hasattr(view_layer.cycles, "use_denoising"):
+            view_layer.cycles.use_denoising=False
     scene.render.resolution_x=job["width"]
     scene.render.resolution_y=job["height"]
     scene.render.resolution_percentage=100
