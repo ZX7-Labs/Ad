@@ -1,0 +1,29 @@
+name: "Studio Next Branch — Contract Regression"
+on:
+  workflow_dispatch:
+  push:
+    branches: [studio-vnext-independent-proof]
+    paths:
+      - "studio_next/contracts.py"
+      - "studio_next/registry.py"
+      - "studio_next/director.py"
+      - "studio_next/film_ir.py"
+      - "studio_next/providers.py"
+      - "studio_next/test_core.py"
+      - "studio_next/test_film_ir.py"
+      - "studio_next/test_provider.py"
+      - "studio_next/test_creative_challenge.py"
+      - ".github/workflows/studio-branch-contracts.yml"
+permissions:
+  contents: read
+jobs:
+  verify-contracts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m compileall -q studio_next
+      - run: python -m unittest discover -s studio_next -p 'test_*.py' -v
