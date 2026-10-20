@@ -1,12 +1,23 @@
 name: Grounded Director — two genre evaluation
 on:
   workflow_dispatch:
+  push:
+    branches: [director-grounded-planning]
+    paths: [".github/workflows/director-grounded.yml"]
 permissions:
   contents: read
 jobs:
   evaluate:
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - genre: software
+            brief: examples/sample-brief.json
+          - genre: physical
+            brief: examples/physical-product-brief.json
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -38,7 +49,10 @@ jobs:
             mv models/director35/download.gguf models/director35/Qwen3.5-4B-Q4_K_M.gguf
           fi
           test "$(stat -c %s models/director35/Qwen3.5-4B-Q4_K_M.gguf)" -eq 2783447136
-      - name: Evaluate both genres with one local model server
+      - name: Evaluate genre with a local model server
+        env:
+          BRIEF_PATH: ${{ matrix.brief }}
+          GENRE: ${{ matrix.genre }}
         run: |
           mkdir -p output/grounded
           export LD_LIBRARY_PATH="$LLAMA_RUNTIME"
@@ -62,23 +76,13 @@ jobs:
           else:
               raise SystemExit('Model server did not become healthy')
           PY
-          python - <<'PY'
-          import json, subprocess, sys
-          from pathlib import Path
-          results=[]
-          for genre, brief in [('software','examples/sample-brief.json'),
-                               ('physical','examples/physical-product-brief.json')]:
-              status=subprocess.run([sys.executable,'-u','-m','director_research.grounded',
-                  '--brief',brief,'--out','output/grounded/'+genre]).returncode
-              results.append({'genre':genre,'exit_code':status})
-          Path('output/grounded/suite.json').write_text(json.dumps(results,indent=2))
-          raise SystemExit(0 if all(r['exit_code']==0 for r in results) else 2)
-          PY
+          python -u -m director_research.grounded \
+            --brief "$BRIEF_PATH" --out "output/grounded/$GENRE"
       - name: Save full plans, rejected drafts, model responses and traces
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: grounded-director-two-genres
+          name: grounded-director-${{ matrix.genre }}
           path: output/grounded/
           if-no-files-found: error
           retention-days: 7
