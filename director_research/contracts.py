@@ -49,13 +49,6 @@ CLIP["properties"]["on_screen"] = {
     "description": "Exact on-screen caption, at most six words. No artwork or staging instructions."}
 SCENES = obj({"clips": {"type": "array", "items": CLIP, "minItems": 3, "maxItems": 10}})
 BUNDLE = obj({"creative": CONCEPT, "design": DESIGN, "scenes": SCENES})
-REVIEW = obj({
-    "approved": {"type": "boolean"},
-    "score_out_of_10": {"type": "number", "minimum": 0, "maximum": 10},
-    "factual_support": {"type": "boolean"}, "execution_realistic": {"type": "boolean"},
-    "strongest_moment": TEXT, "problems": STRINGS, "recommended_repairs": STRINGS,
-})
-
 # Detect known failure modes throughout the plan, including visual instructions.
 # These are tripwires, not a semantic verifier; the separate reviewer sees all fields.
 UNSUPPORTED = re.compile(
@@ -139,24 +132,28 @@ def audit_bundle(bundle, brief, ledger):
         if clip["technique"] == "2.5d" and "layered_transform" not in clip["capabilities"]:
             errors.append(f"Shot {index}: 2.5D lacks a layered-transform execution strategy")
     # Inspect concept, art, captions, assets and motion as well as narration.
-    for section, value in bundle.items():
-        rendered = json_text(value)
+    for path, rendered in text_fields(bundle):
         for pattern, label in ((UNSUPPORTED, "unavailable production technique"),
                                (INVENTED_UI, "unprovided product UI")):
             for match in pattern.finditer(rendered):
-                errors.append(f"{section}: {label}: {match.group(0)}")
+                if pattern is UNSUPPORTED and production_exclusion(rendered, match):
+                    continue
+                errors.append(f"{path}: {label}: {match.group(0)}")
     # A single click in an audio cue is not a one-click product claim. Inspect
     # audience-facing copy/imagery rather than treating all production notes as facts.
-    claim_surfaces = [(json_text(bundle["creative"]), True)]
-    for clip in clips:
-        claim_surfaces.extend([(json_text({key: clip[key] for key in ("narration", "on_screen")}), False),
-                               (json_text({key: clip[key] for key in ("composition", "asset")}), True)])
-    for surface, visual_note in claim_surfaces:
+    claim_surfaces = [("creative/" + key, value, True)
+                      for key, value in bundle["creative"].items()]
+    for index, clip in enumerate(clips):
+        for key in ("narration", "on_screen", "composition", "asset"):
+            claim_surfaces.append((f"scenes/clips/{index}/{key}", clip[key],
+                                   key not in ("narration", "on_screen")))
+    for path, surface, visual_note in claim_surfaces:
         for match in PROMISE.finditer(surface):
-            if visual_note and production_percentage(surface, match):
+            if visual_note and (production_percentage(surface, match)
+                                or production_timing(surface, match)):
                 continue
             if match.group(0).casefold() not in supplied:
-                errors.append("unsupported promise: " + match.group(0))
+                errors.append(path + ": unsupported promise: " + match.group(0))
     return {"passed": not errors, "hard_errors": list(dict.fromkeys(errors)),
             "duration_seconds": round(total, 2), "shot_count": len(clips),
             "verified_claims": False, "render_ready": False,
@@ -164,9 +161,25 @@ def audit_bundle(bundle, brief, ledger):
                             "No arbitrary scene renderer is connected; this is a production proposal"]}
 
 
-def json_text(value):
-    import json
-    return json.dumps(value, ensure_ascii=False)
+def text_fields(value, path=""):
+    """Yield string leaves with JSON-pointer locations for precise diagnostics."""
+    if isinstance(value, dict):
+        for key, item in value.items():
+            escaped = key.replace("~", "~0").replace("/", "~1")
+            yield from text_fields(item, path + "/" + escaped)
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            yield from text_fields(item, path + "/" + str(index))
+    elif isinstance(value, str):
+        yield path, value
+
+
+def production_exclusion(text, match):
+    """Recognize a narrow, explicit exclusion instead of requesting the effect."""
+    before = text[max(0, match.start()-70):match.start()]
+    return bool(re.search(r"\b(?:no|without|avoid|never use|exclude|excluding|not|"
+                          r"rather than|instead of)\s+(?:any\s+|using\s+|the\s+)?$", before, re.I)
+                or re.search(r"\bmore effective\b[^.;]{0,60}\bthan\s*$", before, re.I))
 
 
 def production_percentage(text, match):
@@ -184,7 +197,17 @@ def production_percentage(text, match):
                 or re.match(r"\s+" + parameters + r"\b", after, re.I))
 
 
-def review_passes(review):
-    return (not schema_errors(review, REVIEW) and review["approved"] is True
-            and review["score_out_of_10"] >= 8 and review["factual_support"] is True
-            and review["execution_realistic"] is True and not review["problems"])
+def production_timing(text, match):
+    """An instantaneous cut/appearance is editing, not product performance.
+
+    Only an adjacent animation verb qualifies, only in production prose. Literal
+    narration and captions are never exempt. Semantic claims still need review.
+    """
+    if match.group(0).casefold() != "instantly":
+        return False
+    verbs = (r"(?:cuts?|fades?|freezes?|appears?|disappears?|snaps?|stops?|"
+             r"re-forms?|transitions?|rotates?|scales?)")
+    before = text[max(0, match.start()-32):match.start()]
+    after = text[match.end():match.end()+24]
+    return bool(re.search(r"\b" + verbs + r"\s+$", before, re.I)
+                or re.match(r"\s+" + verbs + r"\b", after, re.I))

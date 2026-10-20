@@ -4,8 +4,9 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from director_research.contracts import audit_bundle, evidence, review_passes, schedule, schema_errors, BUNDLE
-from director_research.grounded import run, LocalClient
+from director_research.contracts import audit_bundle, evidence, schedule, schema_errors, BUNDLE
+from director_research.grounded import run, re_review, LocalClient
+from director_research.reviewing import review_passes, audit_review
 from director_research.test_benchmark import BRIEF, CONCEPT, scenes
 
 
@@ -28,7 +29,7 @@ def proposal(count=5):
 
 GOOD_REVIEW = dict(approved=True, score_out_of_10=8, factual_support=True,
                    execution_realistic=True, strongest_moment='The final note stays in focus.',
-                   problems=[], recommended_repairs=[])
+                   findings=[])
 
 
 class GroundedTests(unittest.TestCase):
@@ -61,6 +62,13 @@ class GroundedTests(unittest.TestCase):
         bundle['scenes']['clips'][0]['motion'] = 'Use fluid simulation to animate water'
         self.assertIn('unavailable production technique', str(self.check(bundle)))
 
+    def test_excluding_an_effect_is_not_requesting_it(self):
+        bundle = proposal()
+        bundle['design']['use_3d'] = 'No photorealistic 3D; use simple layered shapes instead.'
+        self.assertTrue(self.check(bundle)['passed'])
+        bundle['scenes']['clips'][0]['light'] = 'Use volumetric light after the cut.'
+        self.assertIn('unavailable production technique', str(self.check(bundle)))
+
     def test_ui_in_concept_is_blocked_even_with_clean_narration(self):
         bundle = proposal()
         bundle['creative']['concept'] = 'Click the Organize button and notes align'
@@ -88,6 +96,19 @@ class GroundedTests(unittest.TestCase):
     def test_visible_badge_promise_is_still_blocked(self):
         bundle = proposal()
         bundle['scenes']['clips'][0]['composition'] = 'A scaled note with a badge reading 100% better'
+        self.assertIn('unsupported promise', str(self.check(bundle)))
+
+    def test_instantaneous_edits_are_not_product_promises(self):
+        bundle = proposal()
+        bundle['creative']['visual_motif'] = 'A waveform that instantly cuts to a flat white void.'
+        bundle['scenes']['clips'][0]['composition'] = 'The line freezes instantly beside a paper outline.'
+        self.assertTrue(self.check(bundle)['passed'])
+        bundle['scenes']['clips'][0]['narration'] = 'NOVA instantly organizes ideas.'
+        self.assertIn('unsupported promise', str(self.check(bundle)))
+
+    def test_instant_feature_claim_in_concept_still_blocked(self):
+        bundle = proposal()
+        bundle['creative']['concept'] = 'The product instantly solves every problem.'
         self.assertIn('unsupported promise', str(self.check(bundle)))
 
     def test_invented_evidence_is_blocked(self):
@@ -129,8 +150,49 @@ class GroundedTests(unittest.TestCase):
     def test_rubber_stamp_reviewer_is_not_sufficient(self):
         for changes in ({'score_out_of_10': 7}, {'approved': 'true'},
                         {'factual_support': False}, {'execution_realistic': False},
-                        {'problems': ['Unresolved issue']}):
-            self.assertFalse(review_passes(dict(GOOD_REVIEW, **changes)))
+                        {'findings': [{'category': 'story', 'path': '/missing',
+                                       'excerpt': 'fake', 'reason': 'weak', 'repair': 'fix'}]}):
+            self.assertFalse(review_passes(dict(GOOD_REVIEW, **changes), proposal()))
+
+    def test_reviewer_cannot_invent_excerpt_or_evidence_location(self):
+        bundle = proposal()
+        review = dict(GOOD_REVIEW, approved=False, score_out_of_10=6,
+                      findings=[dict(category='story', path='/creative/concept',
+                                     excerpt='A quote the director never wrote',
+                                     reason='Generic metaphor', repair='Use a specific notebook action')])
+        self.assertIn('excerpt', str(audit_review(review, bundle)['errors']))
+        review['findings'][0]['path'] = '/scenes/clips/999/motion'
+        self.assertFalse(audit_review(review, bundle)['passed'])
+
+    def test_review_flags_require_a_corresponding_finding(self):
+        self.assertFalse(audit_review(dict(GOOD_REVIEW, approved=False,
+                                          factual_support=False), proposal())['passed'])
+        self.assertFalse(audit_review(dict(GOOD_REVIEW, approved=False,
+                                          execution_realistic=False), proposal())['passed'])
+
+    def test_re_review_preserves_proposal_and_rejects_mismatched_evidence(self):
+        class Fake:
+            trace = []
+            def ask(self, name, prompt, data, schema, tokens):
+                self.data = data
+                return copy.deepcopy(GOOD_REVIEW)
+        bundle = proposal()
+        with TemporaryDirectory() as temp:
+            source = Path(temp) / 'original.json'
+            source.write_text(json.dumps({'state': 'blocked_for_review', 'bundle': bundle,
+                                          'evidence': evidence(BRIEF)}))
+            before = source.read_bytes()
+            out = Path(temp)/'recheck'
+            out.mkdir()
+            fake = Fake()
+            result = re_review(fake, BRIEF, source, out)
+            self.assertEqual(result['bundle'], bundle)
+            self.assertEqual(source.read_bytes(), before)
+            self.assertFalse(result['provenance']['proposal_changed'])
+            self.assertNotIn('hard_checks', fake.data)
+            self.assertFalse(result['render_ready'])
+            with self.assertRaises(ValueError):
+                re_review(fake, dict(BRIEF, benefit='A different assertion'), source, out)
 
     def test_hard_gate_cannot_be_overridden_and_repair_is_bounded(self):
         class Fake:
@@ -167,6 +229,22 @@ class GroundedTests(unittest.TestCase):
             draft = json.loads((Path(temp)/'draft_0.json').read_text())
             self.assertEqual(draft['state'], 'unreviewed_draft')
             self.assertEqual(len(draft['bundle']['scenes']['clips']), 5)
+
+    def test_invalid_review_cannot_trigger_a_plan_rewrite(self):
+        class Fake:
+            trace = []
+            calls = []
+            def ask(self, name, *args):
+                self.calls.append(name)
+                bundle = proposal()
+                if name.startswith('critic'):
+                    return dict(GOOD_REVIEW, approved=False, factual_support=False)
+                return bundle[{'concept': 'creative', 'art_direction': 'design', 'shots': 'scenes'}[name]]
+        with TemporaryDirectory() as temp:
+            fake = Fake()
+            result = run(fake, BRIEF, temp)
+            self.assertEqual(result['block_reason'], 'invalid_review')
+            self.assertFalse(any(name.startswith('repair') for name in fake.calls))
 
     def test_remote_paid_endpoint_cannot_be_selected(self):
         with TemporaryDirectory() as temp, self.assertRaises(ValueError):

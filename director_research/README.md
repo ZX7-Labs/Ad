@@ -2,6 +2,13 @@
 
 ## Grounded Director iteration
 
+The next [controlled 4B/9B comparison](evaluations/2026-10-20-model-comparison/README.md)
+preserves real proposals and exposes both genuine planning defects and reviewer
+false positives. The current version 2 motion-design reviewer cites exact fields
+and quotations; invalid reviews cannot trigger a plan rewrite. A saved proposal
+can be re-evaluated unchanged using `--proposal path/to/result.json` with its
+original brief and a separate output directory.
+
 **Measured result:** both full genre evaluations remained blocked. The actual
 plans, timings, critic mistakes and subsequent caption/checker fixes are retained
 in the [20 October evaluation review](evaluations/2026-10-20-grounded/README.md).
@@ -25,8 +32,8 @@ film proposal. No renderer adapter, real 3D, fluid solver or media-rights system
 claimed. Known unavailable techniques, invented UI, unsupported promises,
 missing evidence references, impossible narration timing and omitted CTA are
 blocked. These lexical/structural checks do not prove semantic truth; the critic
-can also be wrong. All expert roles currently use the **same local 4B model** in
-separate passes. A `proposal_passed_text_review` state is not a rendered or
+can also be wrong. All expert roles use the **same local model** within each run
+in separate passes; the comparison tests 4B and 9B. A `proposal_passed_text_review` state is not a rendered or
 human-approved production result. `render_ready` remains false.
 
 Run a local llama.cpp b11750 server with the documented Qwen3.5 GGUF, 16K context,

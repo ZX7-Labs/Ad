@@ -1,0 +1,82 @@
+[
+  {
+    "stage": "runtime_contract_probe",
+    "cached": false,
+    "model": "qwen35-4b-0c82e2f4c9582ecd5f49c0f02a21b4d60c4ad603",
+    "request_sha256": "8df28257937f5d0d961f289e211e9a5854692845808bedfb26cedb3e19df9c01",
+    "finish_reason": "stop",
+    "usage": {
+      "completion_tokens": 9,
+      "prompt_tokens": 230,
+      "total_tokens": 239,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      }
+    },
+    "elapsed_seconds": 9.91
+  },
+  {
+    "stage": "concept",
+    "cached": false,
+    "model": "qwen35-4b-0c82e2f4c9582ecd5f49c0f02a21b4d60c4ad603",
+    "request_sha256": "05d777ea6b92e84b1d4fd61252d5a48fad16bd73c2e131d1961c44668973c661",
+    "finish_reason": "stop",
+    "usage": {
+      "completion_tokens": 171,
+      "prompt_tokens": 785,
+      "total_tokens": 956,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      }
+    },
+    "elapsed_seconds": 47.8
+  },
+  {
+    "stage": "art_direction",
+    "cached": false,
+    "model": "qwen35-4b-0c82e2f4c9582ecd5f49c0f02a21b4d60c4ad603",
+    "request_sha256": "833955e9888a6635b2beeb541f236595fb5cb801f53d7271125253478077b128",
+    "finish_reason": "stop",
+    "usage": {
+      "completion_tokens": 295,
+      "prompt_tokens": 1154,
+      "total_tokens": 1449,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      }
+    },
+    "elapsed_seconds": 75.54
+  },
+  {
+    "stage": "shots",
+    "cached": false,
+    "model": "qwen35-4b-0c82e2f4c9582ecd5f49c0f02a21b4d60c4ad603",
+    "request_sha256": "ce4c10e6b45bb2921d707aaa036c6fc1e29b7e7eeeedbfdf57398e2bb30dff69",
+    "finish_reason": "stop",
+    "usage": {
+      "completion_tokens": 1200,
+      "prompt_tokens": 1783,
+      "total_tokens": 2983,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      }
+    },
+    "elapsed_seconds": 204.87
+  },
+  {
+    "stage": "critic_0",
+    "cached": false,
+    "model": "qwen35-4b-0c82e2f4c9582ecd5f49c0f02a21b4d60c4ad603",
+    "request_sha256": "b366ee3589f304817852e6d48554a32b616b5cf307a21e770d722775027e3c07",
+    "finish_reason": "stop",
+    "usage": {
+      "completion_tokens": 123,
+      "prompt_tokens": 2559,
+      "total_tokens": 2682,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      }
+    },
+    "elapsed_seconds": 115.09
+  }
+]

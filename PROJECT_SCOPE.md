@@ -28,8 +28,9 @@ purpose of references without copying a creator's work or inventing product fact
   focus on one capability at a time and not finalize a weak output just to proceed.
 - Original source: https://chatgpt.com/share/6ad7603d-c49c-83ee-a35b-2931189c82c8
   The accessible share includes missing assistant answers and unavailable uploaded
-  media. Source files and actual run artifacts supply additional evidence; never
-  claim those missing media were watched or listened to.
+  media. A related supplied **YouTube** screen recording was subsequently
+  recovered and its sampled frames reviewed; see [REFERENCE_STYLE.md](REFERENCE_STYLE.md).
+  Do not claim absent media, complete motion or audio were reviewed.
 
 ## What exists
 

@@ -1,0 +1,289 @@
+{
+  "state": "blocked_for_review",
+  "bundle": {
+    "creative": {
+      "concept": "The 'Static Noise' Metaphor: A chaotic, vibrating digital waveform representing the noise of modern travel is abruptly severed by a single, clean vertical line, revealing a calm, static white space where the notebook exists.",
+      "audience_insight": "Travelers often feel their thoughts are being drowned out by the sensory overload of transit; they crave a moment of absolute silence where only their handwriting matters.",
+      "hook": "The world is too loud to think.",
+      "visual_motif": "A jagged, high-frequency digital waveform that instantly cuts to a flat, still white void.",
+      "why_this_concept": "This directly visualizes the stated benefit of a 'pocket notebook for handwritten ideas' by showing the physical act of paper creating a barrier against digital chaos, without inventing features or making environmental claims."
+    },
+    "design": {
+      "typography": "Clean, monospaced sans-serif for the 'MEET FOLD' call to action, rendered in high-contrast black on white to mimic ink on paper, with zero decorative flourishes to maintain the understated tone.",
+      "camera_language": "Start with a tight, static macro shot of the chaotic waveform filling the frame; execute a hard, instantaneous cut to a flat, centered composition of the notebook space, holding the final shot still to emphasize the silence.",
+      "lighting": "The chaotic section uses harsh, flat digital glare with no shadows; the revealed notebook space is lit by pure, diffuse, shadowless white light to symbolize clarity and the tactile nature of paper.",
+      "use_3d": "no, because the concept relies on the stark contrast between 2D digital noise and 2D paper texture; adding 3D depth would undermine the flat, graphic metaphor of the 'cut' and the simplicity of a pocket notebook.",
+      "music": "A low-frequency, dissonant electronic drone that abruptly stops at the exact moment of the visual cut, leaving a 10-second gap of absolute silence before a single, soft paper rustle sound.",
+      "sound_design": "The first 5 seconds feature a high-pitched, vibrating digital buzz; the transition is a hard digital 'snap'; the silence is punctuated only by the subtle, dry texture of a pen touching paper at the very end.",
+      "voice_direction": "M3 delivers the single line 'The world is too loud to think' with a calm, measured, and slightly weary tone, dropping the volume slightly on 'think' to emphasize the internal quiet, then fading out immediately.",
+      "palette": [
+        "#000000",
+        "#FFFFFF",
+        "#333333"
+      ],
+      "voice": "M3"
+    },
+    "scenes": {
+      "clips": [
+        {
+          "narration": "The world is too loud",
+          "emotion": "overwhelmed",
+          "on_screen": "too loud",
+          "composition": "Full frame filled with chaotic, jagged digital waveform lines vibrating horizontally.",
+          "camera": "Static macro, tight on the noise texture.",
+          "motion": "High-frequency jitter and rapid horizontal oscillation of the waveform lines.",
+          "light": "Harsh, flat digital glare with no shadows, creating a blinding static effect.",
+          "transition": "Hard instantaneous cut to white.",
+          "sfx": "High-pitched, vibrating digital buzz with a low-frequency dissonant drone.",
+          "music": "Dissonant electronic drone, increasing in intensity.",
+          "asset": "Procedurally generated jagged waveform vector shapes.",
+          "role": "hook",
+          "seconds": 5.0,
+          "technique": "2d",
+          "representation": "metaphor",
+          "fact_ids": [
+            "fact_1",
+            "fact_2"
+          ],
+          "capabilities": [
+            "vector_shapes",
+            "procedural_audio"
+          ],
+          "factual_basis": "The product is a paper notebook designed to offer a quiet space amidst the noise of travel."
+        },
+        {
+          "narration": "to think.",
+          "emotion": "resolute",
+          "on_screen": "think.",
+          "composition": "Centered, flat white void with a single, clean vertical line drawn across the middle.",
+          "camera": "Static, wide shot of the white space.",
+          "motion": "The chaotic waveform is severed by a sharp vertical line; the rest of the frame freezes instantly.",
+          "light": "Pure, diffuse, shadowless white light symbolizing absolute clarity and silence.",
+          "transition": "Hard cut from noise to silence.",
+          "sfx": "A sharp digital 'snap' sound followed immediately by 10 seconds of absolute silence.",
+          "music": "Abrupt cessation of all electronic sound.",
+          "asset": "Minimalist white background with a single black vector line.",
+          "role": "reveal",
+          "seconds": 6.0,
+          "technique": "2d",
+          "representation": "metaphor",
+          "fact_ids": [
+            "fact_4"
+          ],
+          "capabilities": [
+            "vector_shapes",
+            "cuts_and_fades"
+          ],
+          "factual_basis": "The product is a paper notebook for handwritten ideas, creating a barrier against digital chaos."
+        },
+        {
+          "narration": "Meet FOLD",
+          "emotion": "calm",
+          "on_screen": "MEET FOLD",
+          "composition": "Centered text on the flat white void, mimicking ink on paper.",
+          "camera": "Static, eye-level shot.",
+          "motion": "Text appears slowly as if being written; no other movement.",
+          "light": "Soft, even illumination highlighting the texture of the implied paper surface.",
+          "transition": "Fade in of text.",
+          "sfx": "Subtle, dry texture of a pen touching paper.",
+          "music": "Silence, punctuated only by the final pen sound.",
+          "asset": "Monospaced sans-serif typography rendered in high-contrast black.",
+          "role": "cta",
+          "seconds": 7.0,
+          "technique": "2d",
+          "representation": "text_only",
+          "fact_ids": [
+            "fact_3"
+          ],
+          "capabilities": [
+            "typography"
+          ],
+          "factual_basis": "The call to action is explicitly 'MEET FOLD'."
+        }
+      ]
+    }
+  },
+  "evidence": [
+    {
+      "id": "fact_1",
+      "text": "FOLD",
+      "source": "owner_reported_unverified"
+    },
+    {
+      "id": "fact_2",
+      "text": "a pocket notebook for handwritten ideas",
+      "source": "owner_reported_unverified"
+    },
+    {
+      "id": "fact_3",
+      "text": "MEET FOLD",
+      "source": "owner_reported_unverified"
+    },
+    {
+      "id": "fact_4",
+      "text": "The product is a paper notebook.",
+      "source": "owner_reported_unverified"
+    },
+    {
+      "id": "fact_5",
+      "text": "No product photographs, dimensions, price or environmental certifications are supplied.",
+      "source": "owner_reported_unverified"
+    }
+  ],
+  "qa": {
+    "passed": false,
+    "hard_errors": [
+      "unsupported promise: instantly"
+    ],
+    "duration_seconds": 18.0,
+    "shot_count": 3,
+    "verified_claims": false,
+    "render_ready": false,
+    "limitations": [
+      "Lexical tripwires do not prove semantic truth or visual feasibility",
+      "No arbitrary scene renderer is connected; this is a production proposal"
+    ]
+  },
+  "review": {
+    "approved": false,
+    "score_out_of_10": 6,
+    "factual_support": false,
+    "execution_realistic": false,
+    "strongest_moment": "The hard cut from chaotic waveform to white void,",
+    "problems": [
+      "Claims 'instantly' severed waveform implies impossible physics for 2D vector shapes.",
+      "Narration 'The world is too loud' invents a semantic promise not in source facts.",
+      "Text appears slowly as written, contradicting 'static eye-level shot' instruction.",
+      "Recommended repairs"
+    ],
+    "recommended_repairs": [
+      "Remove 'instantly' claim; describe visual cut only.",
+      "Delete 'The world is too loud' line; use only 'Meet FOLD'.",
+      "Fix timing conflict: text appears instantly, not slowly.",
+      "Clarify 'static' means no camera move, not no motion graphics."
+    ]
+  },
+  "attempts": [
+    {
+      "attempt": 0,
+      "qa": {
+        "passed": false,
+        "hard_errors": [
+          "unsupported promise: instantly"
+        ],
+        "duration_seconds": 18.0,
+        "shot_count": 3,
+        "verified_claims": false,
+        "render_ready": false,
+        "limitations": [
+          "Lexical tripwires do not prove semantic truth or visual feasibility",
+          "No arbitrary scene renderer is connected; this is a production proposal"
+        ]
+      },
+      "review": {
+        "approved": false,
+        "score_out_of_10": 6,
+        "factual_support": false,
+        "execution_realistic": false,
+        "strongest_moment": "The hard cut from chaotic waveform to white void,",
+        "problems": [
+          "Claims 'instantly' severed waveform implies impossible physics for 2D vector shapes.",
+          "Narration 'The world is too loud' invents a semantic promise not in source facts.",
+          "Text appears slowly as written, contradicting 'static eye-level shot' instruction.",
+          "Recommended repairs"
+        ],
+        "recommended_repairs": [
+          "Remove 'instantly' claim; describe visual cut only.",
+          "Delete 'The world is too loud' line; use only 'Meet FOLD'.",
+          "Fix timing conflict: text appears instantly, not slowly.",
+          "Clarify 'static' means no camera move, not no motion graphics."
+        ]
+      }
+    }
+  ],
+  "trace": [
+    {
+      "stage": "runtime_contract_probe",
+      "cached": false,
+      "model": "qwen35-9b-3885219b6810b007914f3a7950a8d1b469d598a5",
+      "request_sha256": "8aa8a86db56a9024f22ce939e2af4acd5fa2ecfcec7a31cdc2652cdaa5707ffb",
+      "finish_reason": "stop",
+      "usage": {
+        "completion_tokens": 9,
+        "prompt_tokens": 230,
+        "total_tokens": 239,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "elapsed_seconds": 6.75
+    },
+    {
+      "stage": "concept",
+      "cached": false,
+      "model": "qwen35-9b-3885219b6810b007914f3a7950a8d1b469d598a5",
+      "request_sha256": "f9b1829a0ab18b91a9b7b1bd69b54525609cd9a4ac341a3a42b9a956f510cc07",
+      "finish_reason": "stop",
+      "usage": {
+        "completion_tokens": 178,
+        "prompt_tokens": 865,
+        "total_tokens": 1043,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "elapsed_seconds": 43.77
+    },
+    {
+      "stage": "art_direction",
+      "cached": false,
+      "model": "qwen35-9b-3885219b6810b007914f3a7950a8d1b469d598a5",
+      "request_sha256": "e434080aad0e62af8ee22e5d9b0562d65c74f3b11e8566d9f8335ca86a738923",
+      "finish_reason": "stop",
+      "usage": {
+        "completion_tokens": 363,
+        "prompt_tokens": 1229,
+        "total_tokens": 1592,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "elapsed_seconds": 76.3
+    },
+    {
+      "stage": "shots",
+      "cached": false,
+      "model": "qwen35-9b-3885219b6810b007914f3a7950a8d1b469d598a5",
+      "request_sha256": "70e2eb9440879530105f2f97a0f3dfa93c00f97bd15eb3441bb465a732e37995",
+      "finish_reason": "stop",
+      "usage": {
+        "completion_tokens": 866,
+        "prompt_tokens": 1916,
+        "total_tokens": 2782,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "elapsed_seconds": 164.52
+    },
+    {
+      "stage": "critic_0",
+      "cached": false,
+      "model": "qwen35-9b-3885219b6810b007914f3a7950a8d1b469d598a5",
+      "request_sha256": "d341ebc4c81e0576d35b0003d33c25f5347f898dc97752770dc134fc8b9215b2",
+      "finish_reason": "stop",
+      "usage": {
+        "completion_tokens": 162,
+        "prompt_tokens": 2378,
+        "total_tokens": 2540,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "elapsed_seconds": 82.37
+    }
+  ],
+  "render_ready": false,
+  "human_quality_approved": false,
+  "notice": "Local planning experiment. Production V3 and M3/F2 samples unchanged."
+}

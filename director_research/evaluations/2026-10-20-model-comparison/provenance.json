@@ -1,0 +1,40 @@
+{
+  "run_id": 39432084613,
+  "source_commit": "8f78d05ba717b72eda437622ba7cc7e0bb8218e9",
+  "runtime": "llama.cpp b11750",
+  "generation_settings": {
+    "seed": 41,
+    "temperature": 0.4,
+    "top_p": 0.9,
+    "thinking": false,
+    "context": 16384,
+    "threads": 4,
+    "repairs": 0
+  },
+  "artifacts": [
+    {
+      "id": 12269350420,
+      "name": "grounded-director-qwen35-4b-physical",
+      "bytes": 26284,
+      "sha256": "64ef65e68f7a2e3b419a2af8c50fc17afc378de8624f84221116fddaed1bd6d4"
+    },
+    {
+      "id": 12269061615,
+      "name": "grounded-director-qwen35-4b-software",
+      "bytes": 24193,
+      "sha256": "dbbe9f391cf8ae9d2519d2a9d01e1fcbb364b3259ea207e989668c663f8a450e"
+    },
+    {
+      "id": 12268602886,
+      "name": "grounded-director-qwen35-9b-physical",
+      "bytes": 23365,
+      "sha256": "b3b2b6cac48d5cbbc423cc92f1204fa9e32afbf897eb9c27dca5c776c8c3eacd"
+    }
+  ],
+  "saved_result_sha256": {
+    "recheck-v2-4b/result.json": "5b68002035eb1da00340f3989364dd912f966f06d9ff8ebfa33327e5a0d47257",
+    "qwen35-4b-physical/result.json": "eb32dab19384407b3161b57f8e87b6d5416e06d081fb5f098b7c23bc8536e2e3",
+    "qwen35-9b-physical/result.json": "21d06efaeb7acb6e705bae9932166a8ba6dc2a78bab80f303fc777dbadaa1414",
+    "qwen35-4b-software/result.json": "dee86a3e5972afd464e110fcd02269efe867f9e353a5b3c70cac9913cc39dbbc"
+  }
+}
