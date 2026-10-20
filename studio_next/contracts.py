@@ -109,7 +109,8 @@ def audit_proposal(plan, brief: OwnerBrief, available_tool_ids: set[str]):
                 errors.append(f"Scene {i}: {key} must be an array");continue
             for ref in refs:
                 if not isinstance(ref,str) or ref not in registry:
-                    errors.append(f"Scene {i}: unknown {label} {ref}")
+                    message = f"unknown caller fact {ref}" if key=="fact_refs" else f"no evidence of rights for asset {ref}"
+                    errors.append(f"Scene {i}: {message}")
     requested=plan.get("tool_route",[])
     if not isinstance(requested,list):
         errors.append("tool_route must be a list")
