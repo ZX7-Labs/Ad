@@ -197,6 +197,44 @@ def author_production(treatment, facts, model, output_dir):
     return manifest
 
 
+DELIVERY_SYSTEM = """You are the final-format and performance director of an original film.
+Determine exhibition geometry, export frame rate, framing treatment,
+background in any letterboxed shots, and narrator based on actual audience,
+script, story, distribution context and resource capabilities.
+NEVER force vertical, short runtime, preset voice, default music or identical pacing.
+Do not select a voice contrary to an already specified treatment; if the film
+actually has narrated shots, 'no_voice' is NOT allowed.
+For now, installed narrator identities are M3 and F2; choose purposefully.
+Export shape and fps must be positive integers; working CPU render resources
+are bounded and huge settings may not be presently possible.
+Return JSON only:
+{"format":{"width":1080,"height":1920,"fps":24,"framing":"fit",
+"background":"#101010"},"voice":"M3","reason":"real editorial justification"}.
+These numbers are an EXAMPLE JSON SHAPE, not mandatory artistic defaults.
+"""
+
+
+def author_delivery(treatment, brief, model, out):
+    """Model-selected film-wide delivery; no default portrait preset."""
+    from .execute_film import validate_delivery
+    raw=model.decide({"treatment":treatment,"owner":brief,
+       "instruction":"Make an original appropriate film-wide delivery decision. "
+       "Do not change selected speech/voice or story."})
+    out=Path(out)
+    out.parent.mkdir(parents=True,exist_ok=True)
+    (out.parent/"delivery-raw.json").write_text(
+        json.dumps(raw,ensure_ascii=False,indent=2)+"\\n",encoding="utf-8")
+    try:
+        verified=validate_delivery(raw,treatment)
+    except (ValueError,KeyError,TypeError) as exc:
+        (out.parent/"delivery-failure.json").write_text(json.dumps(
+            {"reason":type(exc).__name__+": "+str(exc)},indent=2))
+        raise
+    out.write_text(json.dumps(verified,ensure_ascii=False,indent=2)+"\\n",
+                   encoding="utf-8")
+    return verified
+
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--treatment",type=Path,required=True)
@@ -210,7 +248,18 @@ def main():
     model=LocalCreativeModel(LocalModelSettings(base_url=a.api,model_id=a.model,
         timeout_seconds=1200,sampling={"temperature":.35,"max_tokens":2600,"top_p":.93}),
         system_prompt=PRODUCTION_SYSTEM)
-    print(json.dumps(author_production(treatment,facts,model,a.out),ensure_ascii=False,indent=2))
+    result=author_production(treatment,facts,model,a.out)
+    delivery_model=LocalCreativeModel(LocalModelSettings(base_url=a.api,model_id=a.model,
+        timeout_seconds=1200,sampling={"temperature":.25,"max_tokens":500,"top_p":.9}),
+        system_prompt=DELIVERY_SYSTEM)
+    try:
+        result["delivery"]=author_delivery(treatment,original.get("brief",{}),
+            delivery_model,a.out/"delivery.json")
+    except (ValueError,TypeError,KeyError) as exc:
+        result["delivery_error"]=str(exc)
+    (a.out/"production-manifest.json").write_text(
+        json.dumps(result,ensure_ascii=False,indent=2)+"\\n",encoding="utf-8")
+    print(json.dumps(result,ensure_ascii=False,indent=2))
 
 
 if __name__=="__main__":
