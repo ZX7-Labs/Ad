@@ -85,6 +85,7 @@ jobs:
           name: qwen35-director-filmplan-research
           path: |
             output/qwen35-director/film_plan.json
+            output/qwen35-director/film_plan_draft.json
             output/qwen35-director/storyboard.md
             output/qwen35-director/failure.json
             output/qwen35-director/server.log
