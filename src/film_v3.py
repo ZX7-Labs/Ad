@@ -7,7 +7,7 @@ import argparse, json, math, os, re, shutil, subprocess, sys, wave
 from pathlib import Path
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
-from render import font, wrap, rounded, clamp, appear, ease, width as text_width
+from shared_graphics import font, wrap, rounded, clamp, appear, ease, width as text_width
 
 ROOT=Path(__file__).resolve().parent.parent
 OUT=ROOT/"output"; OUT.mkdir(parents=True,exist_ok=True)
