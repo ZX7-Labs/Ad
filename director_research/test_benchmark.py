@@ -66,6 +66,19 @@ class ResearchTests(unittest.TestCase):
         qa=audit(plan,BRIEF)
         self.assertIn("execution not demonstrated",str(qa["warnings"]))
         self.assertEqual(plan["clips"][1]["render"]["execution"],"NOT_EXECUTED")
+    def test_model_technique_casing_normalized(self):
+        x=scenes()
+        x["clips"][0]["technique"]="2.5D"
+        x["clips"][1]["technique"]="2D"
+        p=construct_filmdsl(BRIEF,CONCEPT,x)
+        self.assertEqual(p["clips"][0]["render"]["technique"],"2.5d")
+        self.assertEqual(p["clips"][1]["render"]["technique"],"2d")
+        self.assertEqual(audit(p,BRIEF)["hard_errors"],[])
+    def test_unverified_automatic_claim_blocked(self):
+        x=scenes()
+        x["clips"][2]["narration"]="Ideas organize themselves automatically."
+        p=construct_filmdsl(BRIEF,CONCEPT,x)
+        self.assertIn("unsupported promise",str(audit(p,BRIEF)["hard_errors"]))
     def test_timing_preserves_script(self):
         x=scenes()
         x["clips"][1]["seconds"]=7
