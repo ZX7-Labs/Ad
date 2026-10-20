@@ -4,7 +4,7 @@
 
 ## New experimental Creative Director (planning only)
 
-[Talk to the Director on your phone](https://github.com/oyzitjfzj/Ad/issues/new?template=talk-to-director.yml). Describe the idea in your own words and reply to any one-question follow-up. A local free open-weight Qwen3 model designs a concept, timed storyboard, visual grammar, justified 3D, soundtrack and preferred M3/F2 voice, then runs an independent critic and deterministic truth/timing/rights checks. It produces a **creative treatment and QA report, not an MP4**. The V3 video renderer and approved voice profiles are unchanged. See [Director Lab](creative_director/README.md) for precise limitations and public-Issue privacy warnings.
+[Talk to the Director on your phone](https://github.com/oyzitjfzj/Ad/issues/new?template=talk-to-director.yml). Describe the idea in your own words and reply to any one-question follow-up. A local free open-weight Qwen3-4B-Instruct model designs a concept, timed storyboard, visual grammar, justified 3D, soundtrack and preferred M3/F2 voice, then runs an independent critic and deterministic truth/timing/rights checks. It produces a **creative treatment and QA report, not an MP4**. The V3 video renderer and approved voice profiles are unchanged. See [Director Lab](creative_director/README.md) for precise limitations and public-Issue privacy warnings.
 
 ## 🎬 New: Tell the director about your product
 
