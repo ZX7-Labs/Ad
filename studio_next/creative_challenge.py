@@ -7,6 +7,7 @@ import re
 import time
 from pathlib import Path
 from studio_next.providers import LocalCreativeModel, LocalModelSettings
+from studio_next.checkpoints import CheckpointLedger
 
 PITCH = """You are a film director and writer pitching visually DISTINCT story concepts, not a chatbot composing interchangeable marketing copy.
 Understand specific people, human stakes, sensory events, tension and a satisfying narrative consequence.
@@ -140,11 +141,12 @@ def main():
     p.add_argument("--out",type=Path,required=True)
     p.add_argument("--model",default="qwen35-4b")
     p.add_argument("--api",default="http://127.0.0.1:8085")
+    p.add_argument("--resume",action="store_true",help="Reuse verified prompt/input/model-matched creative checkpoints")
     a=p.parse_args();a.out.mkdir(parents=True,exist_ok=True)
     brief=json.loads(a.brief.read_text(encoding="utf-8"))
     if not isinstance(brief.get("request"),str) or not isinstance(brief.get("facts"),dict):
         raise ValueError("Creative experiment requires request and owner fact ledger")
-    notes=[];generated={}
+    notes=[];generated={};ledger=CheckpointLedger(a.out)
     stages=[("pitches",PITCH,lambda:{"owner":brief},1700,.72),
             ("selection",SELECT,lambda:{"owner":brief,"pitches":generated["pitches"]},1000,.24),
             ("treatment",SCRIPT,lambda:{"owner":brief,"selection":generated["selection"],
@@ -153,14 +155,22 @@ def main():
     try:
         for stage,system,make_input,tokens,temp in stages:
             print("START "+stage,flush=True)
-            engine=LocalCreativeModel(LocalModelSettings(base_url=a.api,model_id=a.model,
-                timeout_seconds=900,sampling={"temperature":temp,"top_p":.92,"max_tokens":tokens}),system)
+            sampling={"temperature":temp,"top_p":.92,"max_tokens":tokens}
+            data=make_input()
+            identity=ledger.fingerprint(name=stage,model_id=a.model,system=system,
+                                        input_data=data,sampling=sampling)
             tick=time.monotonic()
-            res=engine.decide(make_input())
-            if not isinstance(res,dict):raise ValueError("Model returned non-object at "+stage)
+            res=ledger.load(stage,identity) if a.resume else None
+            source="verified_checkpoint" if res is not None else "fresh_model"
+            if res is None:
+                engine=LocalCreativeModel(LocalModelSettings(base_url=a.api,model_id=a.model,
+                    timeout_seconds=900,sampling=sampling),system)
+                res=engine.decide(data)
+                if not isinstance(res,dict):raise ValueError("Model returned non-object at "+stage)
+                ledger.write(stage,identity,res)
             generated[stage]=res
-            (a.out/(stage+".json")).write_text(json.dumps(res,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
-            notes.append({"stage":stage,"elapsed_seconds":round(time.monotonic()-tick,2)})
+            notes.append({"stage":stage,"source":source,
+                          "elapsed_seconds":round(time.monotonic()-tick,2)})
             print("END "+stage+": "+str(notes[-1]),flush=True)
         qa=audit(brief,generated["pitches"],generated["selection"],generated["treatment"],generated["review"])
         result={"model":a.model,"brief":brief,**generated,"audit":qa,"trace":notes}
