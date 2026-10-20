@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from creative_director.gates import audit
+from creative_director.compiler import compile_treatment
 from creative_director.__main__ import from_brief,from_conversation,make_plan,interview
 
 BRIEF={"subject":"NOVA","truths":["NOVA helps organize ideas in one place"],
@@ -68,6 +69,24 @@ class Tests(unittest.TestCase):
                 return {"approved":True,"issues":[],"repairs":[],"strongest_moment":"Clear"}
         r=make_plan(Fake(),BRIEF)
         self.assertEqual(r["state"],"blocked_for_review")
+    def test_nested_model_output_unwrap(self):
+        nested={"brief":BRIEF,"treatment":treatment(),"reviewer":{}}
+        p=compile_treatment(nested,BRIEF)
+        self.assertIn("beats",p)
+        self.assertEqual(audit(p,BRIEF)["errors"],[])
+    def test_compiler_retimes_without_new_claims(self):
+        p=treatment()
+        for n,shot in enumerate(p["beats"],1):
+            shot["seconds"]=n*3
+            shot.pop("fact_basis")
+        fixed=compile_treatment(p,BRIEF)
+        self.assertEqual(round(sum(x["seconds"] for x in fixed["beats"]),1),24.0)
+        self.assertEqual(audit(fixed,BRIEF)["errors"],[])
+    def test_compiler_preserves_dangerous_claim(self):
+        p=treatment()
+        p["beats"][1]["narration"]="100% guaranteed miracle"
+        fixed=compile_treatment(p,BRIEF)
+        self.assertIn("unsupported claim",str(audit(fixed,BRIEF)["errors"]))
     def test_one_question(self):
         class Fake:
             def ask(self,*args,**kwargs):return {"state":"ask","question":"What should viewers remember?","brief":{}}
