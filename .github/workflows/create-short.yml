@@ -1,48 +1,74 @@
-name: Generate premium-style Short
+name: Generate premium-style Short V2
 on:
   workflow_dispatch:
     inputs:
       topic:
-        description: "Video topic or headline (Hindi/English)"
+        description: "Your video topic (English recommended)"
         type: string
         required: true
-        default: "Future of creative work"
+        default: "Three coding habits that matter"
       points:
-        description: "Optional: three short phrases separated by |"
+        description: "Three short visual points, separated with |"
         type: string
         required: false
-        default: ""
+        default: "Read the error first|Test one thing at a time|Ship smaller changes"
+      voice:
+        description: "Narrator voice"
+        type: choice
+        required: true
+        default: en-US-AndrewNeural
+        options:
+          - en-US-AndrewNeural
+          - en-US-BrianNeural
+          - en-US-EmmaNeural
+      speed:
+        description: "Narrator speed (higher = faster)"
+        type: choice
+        required: true
+        default: "+15%"
+        options:
+          - "+8%"
+          - "+15%"
+          - "+22%"
+          - "+28%"
   push:
     branches: [main]
     paths:
+      - "src/render.py"
       - ".github/workflows/create-short.yml"
 jobs:
   render:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 35
     permissions:
       contents: read
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Checkout project
+        uses: actions/checkout@v5
+      - name: Python 3.12
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - name: Install FFmpeg and fonts
+      - name: Install tools and fonts
         run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-lato fonts-noto-core
-      - name: Install Python dependencies
-        run: python -m pip install "Pillow>=10,<13" "edge-tts>=6,<9"
-      - name: Generate video
+      - name: Install packages
+        run: python -m pip install "Pillow>=10,<13" "edge-tts>=7,<9"
+      - name: Validate source
+        run: python -m py_compile src/render.py
+      - name: Render Short
         env:
-          TOPIC: ${{ inputs.topic || 'Future of creative work' }}
-          POINTS: ${{ inputs.points || '' }}
-        run: python src/render.py --topic "$TOPIC" --points "$POINTS"
-      - name: Package video for phone download
-        uses: actions/upload-artifact@v4
+          TOPIC: ${{ inputs.topic || 'Three coding habits that matter' }}
+          POINTS: ${{ inputs.points || 'Read the error first|Test one thing at a time|Ship smaller changes' }}
+          VOICE: ${{ inputs.voice || 'en-US-AndrewNeural' }}
+          SPEED: ${{ inputs.speed || '+15%' }}
+        run: python src/render.py --topic "$TOPIC" --points "$POINTS" --voice "$VOICE" --speed "$SPEED"
+      - name: Upload MP4 and generation notes
+        if: success()
+        uses: actions/upload-artifact@v6
         with:
-          name: your-faceless-short
+          name: premium-short-v2
           path: |
             output/short.mp4
             output/narration.txt
+            output/metadata.json
           retention-days: 7
