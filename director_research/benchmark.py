@@ -13,21 +13,34 @@ import time
 import urllib.request
 from pathlib import Path
 
-HOOK = """You are the creative lead of a world-class independent video studio.
-The brief contains user-reported product facts. Do not invent features, evidence, screenshots, customers or comparisons.
-Create one ORIGINAL and specific filmmaking IDEA, not template marketing filler.
-Choose a central visual metaphor related to the product's ONE real benefit.
-Decide visual styling, camera grammar, original sound and one EXISTING approved narrator (M3 or F2).
-You are writing a FILM TREATMENT, not a short answer. Each field should explain an intentional decision.
-No generic 'unlock your potential' language; no fictional metrics; 3D only if its real narrative value outweighs cost.
-Exactly JSON: {"concept":"one precise creative idea","audience_insight":"why this particular viewer should care",
-"hook":"specific spoken opening","visual_motif":"repeatable symbolic visual object or motif",
-"palette":["#123456","#ABCDEF","#102030"],"typography":"descriptive type system",
-"camera_language":"specific movement and framing principles",
-"lighting":"specific light and contrast","use_3d":"specific rationale or no",
-"music":"original music rhythm and tone","sound_design":"motivated sound logic",
-"voice":"M3","voice_direction":"delivery notes preserving selected voice","why_this_concept":"reason tied to user facts"}
-Respond in valid JSON, without markdown or analysis."""
+HOOK = """You are the most rigorous original film CONCEPT DIRECTOR for a premium short ad.
+Product information in the brief is owner-reported DATA, not permission to invent features.
+First choose a compelling conceptual visual metaphor that explains the REAL stated benefit.
+Avoid generic slogans, fake screenshots, made-up software automation, unverified comparisons and tired metaphors.
+Write exactly one original creative idea with an emotional arc the viewer can understand.
+Return ONLY JSON with ALL FIVE nonempty string keys:
+{"concept":"specific original concept","audience_insight":"a grounded reason this audience cares",
+"hook":"one concrete and natural spoken hook",
+"visual_motif":"one precise drawable symbol that remains consistent across all shots",
+"why_this_concept":"one specific connection to the owner's true benefit"}
+Do NOT make art direction decisions here; another expert will handle that. Keep output under 250 words."""
+
+DESIGN = """You are the independent ART DIRECTOR and SOUND DIRECTOR for an original technology advert.
+The creative CONCEPT already exists. Your job is to supply every practical visual and audio decision.
+Use 2D/2.5D unless a specific narrative reason makes extra 3D worthwhile.
+No fabricated product UI, logos other than supplied brand name, real footage, paid assets or performance promises.
+Choose an existing narrator M3 or F2 ONLY.
+Return EXACTLY valid JSON with ALL NINE fields, do not omit any:
+{"palette":["#122337","#EAF1F3","#EE7444"],
+"typography":"precise font weight, contrast and on-screen reading style",
+"camera_language":"specific framing and why shots move",
+"lighting":"specific material/light and contrast",
+"use_3d":"no, because... OR justified simple 3D and why",
+"music":"specific original instrumental rhythm, mood and layering",
+"sound_design":"motivated sound cue choices and silence",
+"voice":"M3",
+"voice_direction":"natural delivery, emotion, speed, emphasis, no voice-identity change"}
+No additional keys. No markdown. Each value should fit one or two concise sentences."""
 
 SCENES = """You are a film editor, cinematographer and motion-design lead.
 Build EXACTLY FIVE COHERENT and visually specific scenes from the concept and grounded brief, for a 24-second 9:16 film.
@@ -57,9 +70,9 @@ Do NOT flatter, rewrite scripts or rubber-stamp. A hard gate cannot be overridde
 Return ONLY this SHORT JSON with at most 2 brief issues and 2 repairs, each <=18 words:
 {"approved":false,"score_out_of_10":6,"strongest_moment":"one specific shot","problems":["one precise issue"],"recommended_repairs":["one specific fix"]}
 If creatively strong and truthful, approved can be true. Do not repeat or summarize the plan.
-No analysis. No Markdown. Keep the ENTIRE answer under 150 words."""
+Do NOT recommend screenshots or real UI unless user supplies those assets. No analysis. No Markdown. Keep the ENTIRE answer under 150 words."""
 
-BAD_CLAIMS = re.compile(r"(?i)\b(?:100%|guaranteed|clinically proven|fastest|number one|#1|zero risk|free forever|\d+[xX] faster|\d+%|cures?|best in the world)\b")
+BAD_CLAIMS = re.compile(r"(?i)\b(?:100%|guaranteed|clinically proven|fastest|number one|#1|zero risk|free forever|\d+[xX] faster|\d+%|cures?|best in the world|automatically|instantly|organize themselves|organizes itself|by itself|one.click|ai.powered)\b")
 ALLOWED_ROLES = ["hook","problem","reveal","demonstration","payoff"]
 
 def call_model(url, system, data, name, max_tokens, trace):
@@ -113,7 +126,7 @@ def construct_filmdsl(brief,concept,scenes):
           "visual_identity":{"palette":concept.get("palette",[]),
                  "typography":concept.get("typography",""),
                  "light":concept.get("lighting","")},
-          "voice":{"id":concept.get("voice"),"direction":concept.get("voice_direction")},
+          "voice":{"id":str(concept.get("voice") or "").strip().upper(),"direction":concept.get("voice_direction")},
           "sound":{"music":concept.get("music"),"design":concept.get("sound_design")},
           "limits":{"no_paid_assets":True,"no_real_footage_without_permission":True,
                     "no_video_generated":True}}
@@ -130,7 +143,7 @@ def construct_filmdsl(brief,concept,scenes):
            "staging":{"composition":x.get("composition"),"camera":x.get("camera"),
                       "light":x.get("light"),"continuity_anchor":"motif_main",
                       "asset_refs":["motif_main",asset_id],"transition":x.get("transition")},
-           "render":{"technique":x.get("technique"),
+           "render":{"technique":str(x.get("technique") or "").strip().lower(),
                      "motion":x.get("motion"),"on_screen":x.get("on_screen"),
                      "visual_prompt":x.get("composition"),"execution":"NOT_EXECUTED"},
            "audio":{"sound_effect":x.get("sfx"),"music_direction":x.get("music")}})
@@ -228,9 +241,12 @@ def main():
     try:
         brief=json.loads(a.brief.read_text(encoding="utf-8"))
         if not brief.get("product") or not brief.get("benefit"):raise ValueError("Need truthful product and benefit")
-        print("PASS 1 - original concept",flush=True)
-        concept=call_model(a.api,HOOK,{"brief":brief},"concept",950,trace)
-        print("PASS 2 - five cinematic shots",flush=True)
+        print("PASS 1/4 - original film concept",flush=True)
+        creative=call_model(a.api,HOOK,{"brief":brief},"concept",550,trace)
+        print("PASS 2/4 - art department and sound direction",flush=True)
+        design=call_model(a.api,DESIGN,{"brief":brief,"creative":creative},"art_direction",780,trace)
+        concept={**creative,**design}
+        print("PASS 3/4 - five cinematic shots",flush=True)
         scenes=call_model(a.api,SCENES,{"brief":brief,"direction":concept},"shots",1900,trace)
         bp=construct_filmdsl(brief,concept,scenes)
         qa=audit(bp,brief)
@@ -239,7 +255,7 @@ def main():
         (a.out/"film_plan_draft.json").write_text(json.dumps(
             {"blueprint":bp,"objective_quality_gate":qa,"inference_trace":trace,
              "state":"UNREVIEWED_DRAFT"},ensure_ascii=False,indent=2))
-        print("PASS 3 - skeptical reviewer",flush=True)
+        print("PASS 4/4 - skeptical reviewer",flush=True)
         # Reviewer receives a readable synopsis rather than repeated asset JSON.
         # Full draft stays unchanged for the actual artifact and hard QA.
         review_material={
