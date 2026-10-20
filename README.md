@@ -1,44 +1,40 @@
-# AD Motion Studio — Automatic Faceless Shorts
+# AD Motion Studio — Version 2
 
-फोन से topic डालकर **2.5D-style motion-graphics Short** बनाओ। Rendering GitHub के cloud computer पर होती है; फोन पर भारी software नहीं चलता।
+Automatic faceless motion-graphics Shorts from your phone.
 
-## मोबाइल पर पहला वीडियो कैसे बनाएँ
+## Create a new video on Android
 
-1. [इस repo के Actions पेज पर जाओ](https://github.com/oyzitjfzj/Ad/actions).
-2. **Generate premium-style Short** workflow खोलो।
-3. **Run workflow** दबाओ (मोबाइल पर बटन न दिखे तो Chrome में **Desktop site** चालू करो)।
-4. **topic** में वीडियो का विषय लिखो, जैसे: `3 tools every developer should know`।
-5. **points** (optional) में 3 छोटी lines `|` से अलग लिखो, जैसे: `Build faster | Test better | Ship confidently`।
-6. **Run workflow** दबाओ। Run green check होने तक इंतजार करो।
-7. उसी completed run के नीचे **Artifacts → your-faceless-short** डाउनलोड करो। ZIP से **short.mp4** निकालो।
+1. Open [Generate premium-style Short V2](https://github.com/oyzitjfzj/Ad/actions/workflows/create-short.yml).
+2. Tap **Run workflow**. If you don't see it, turn on **Desktop site** in Chrome.
+3. Enter **topic** and 3 **points** separated with `|`.
+4. Choose a voice:
+   - `en-US-AndrewNeural` — recommended first try.
+   - `en-US-BrianNeural` — alternative male voice.
+   - `en-US-EmmaNeural` — female voice.
+5. Choose speed: `+8%`, `+15%` (default), `+22%`, or `+28%`.
+6. Press **Run workflow**. Open the new run and wait for **Success**.
+7. Under **Artifacts**, download `premium-short-v2` ZIP and extract `short.mp4`.
 
-[▶️ Generate your first Short](https://github.com/oyzitjfzj/Ad/actions/workflows/create-short.yml)
+[Open the V2 video maker](https://github.com/oyzitjfzj/Ad/actions/workflows/create-short.yml)
 
-## Video में अभी क्या मिलता है?
+## What changed since V1?
 
-- 9:16 portrait MP4 (1080 × 1920 export, internal canvas 720 × 1280)
-- Clean dot-grid background, floating UI panels, shadows, angled card animation, eased motion, typography
-- Topic और 3 points पर आधारित 4 scenes
-- हिंदी या अंग्रेज़ी में optional auto voice; `edge-tts` असफल हो तो वीडियो बिना आवाज़ बनेगा
-- 19–35 सेकंड के लगभग video; export में platform watermark नहीं
-- नया वीडियो बनाने के लिए सिर्फ Actions में नया topic डालना है
+- 8 shorter shots, rather than 4 static long scenes.
+- More frequent animated entries, 2.5D floating elements and quick cut transitions.
+- 3 user-entered points appear in a shot-by-shot sequence.
+- 3 selectable neural voices and 4 voice speeds.
+- Spoken-word metadata drives animated 4-word caption blocks when the voice provider returns timestamps.
+- GitHub Actions updated for Node.js 24-based action versions.
 
-## महत्वपूर्ण सीमाएँ
+## Real limitations
 
-**यह शुरुआती prototype है, कोई fully intelligent video-editing AI नहीं।** Title और दिए हुए points वीडियो में आते हैं, लेकिन card graphics अभी fixed design templates हैं। यह अभी original factual research, scene-to-scene content-specific visuals, native true 3D या guaranteed cinematic result नहीं बनाता।
+This is an **automated motion-design prototype** — not a truly cinematic 3D renderer. Templates are mostly reusable visual elements; images are not generated individually for each subject. Audio is generated through the unofficial `edge-tts` interface to Microsoft voices and may be unavailable or rate limited at any time. In that case, the renderer still exports a silent MP4.
 
-- GitHub public repo में GitHub-hosted standard runners पर Actions उपलब्ध हैं, GitHub की policies लागू होती हैं।
-- TTS अनौपचारिक third-party online endpoint का इस्तेमाल करता है; सेवा हमेशा काम करेगी या हमेशा free रहेगी, इसकी गारंटी नहीं।
-- इंटरनेट/Runner/dependency समस्याओं पर run fail हो सकता है।
-- अपनी videos में दूसरों की copyrighted photos, music, या brands बिना permission इस्तेमाल न करें।
+Shorts should not be published without checking factual claims, pronunciation, visual fit, timing and quality. For a more human voice, choosing a different voice or using an independent voice recording may be necessary; TTS alone cannot guarantee a human performance. This project is separate from any existing website.
 
 ## Developer notes
 
-- Code: `src/render.py`
-- Workflow: `.github/workflows/create-short.yml`
-- CLI: `python src/render.py --topic "Creative motion" --points "Idea|Design|Impact"`
-- Local deps: Python 3.12, Pillow, FFmpeg, Lato/Noto fonts, optional edge-tts.
-- Output: `output/short.mp4` and `output/narration.txt`.
-- Workflow can be manually run; also renders a sample when workflow file is first pushed.
-
-अपनी वेबसाइट के repository से अलग रखा गया है।
+- Source: `src/render.py`
+- GitHub Actions: `.github/workflows/create-short.yml`
+- Download: `output/short.mp4`, `output/narration.txt`, `output/metadata.json`
+- Dependencies on Ubuntu: Python 3.12, Pillow, ffmpeg, Lato / Noto fonts, edge-tts (optional).
