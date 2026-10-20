@@ -1,0 +1,194 @@
+{
+  "state": "unreviewed_draft",
+  "bundle": {
+    "creative": {
+      "concept": "The concept is a 'Paper Gravity' study where a single sheet of paper floats in a void, defying physics until a handwritten line anchors it to reality, symbolizing how FOLD converts fleeting thoughts into permanent structure without digital abstraction.",
+      "audience_insight": "Travelers fear ideas vanish in transit; they crave a tactile anchor that feels heavier and more real than a phone screen.",
+      "hook": "'Don't let the thought drift away. Make it land.'",
+      "visual_motif": "A single, crisp white rectangle representing the paper edge, consistently positioned at the bottom center, acting as the visual ground for floating elements.",
+      "why_this_concept": "It visually demonstrates the core benefit of 'handwritten ideas' by showing the transition from ephemeral (floating) to tangible (anchored) using only symbolic motion, avoiding any unverified product claims while honoring the tactile nature of the audience's need."
+    },
+    "design": {
+      "typography": "Bold, heavy sans-serif with tight kerning to mimic the weight of pen strokes; text appears as solid ink blocks that snap into place rather than fade in.",
+      "camera_language": "Static, eye-level framing with a slight Dutch tilt to suggest instability until the paper anchors; camera remains fixed to emphasize the paper's movement against the void.",
+      "lighting": "High-contrast chiaroscuro with a single, sharp key light from the top-left casting hard shadows to create a tactile, paper-like texture on the white rectangle.",
+      "use_3d": "No, because the concept relies on symbolic representation of paper edges and floating lines which are best rendered as precise 2D vector shapes to maintain the 'illustration' aesthetic required by the building blocks.",
+      "music": "Minimalist, rhythmic cello and soft percussion that builds tension with a sudden, resonant stop when the line is written, followed by a steady, grounding pulse.",
+      "sound_design": "Subtle paper rustle and a sharp 'click' sound when the floating line becomes anchored, punctuated by brief, precise silence during the void moments.",
+      "voice_direction": "M3 delivers the hook with a measured, calm cadence, emphasizing 'land' with a slight physical weight in the voice to match the visual anchor.",
+      "palette": [
+        "#122337",
+        "#EAF1F3",
+        "#EE7444"
+      ],
+      "voice": "M3"
+    },
+    "scenes": {
+      "clips": [
+        {
+          "narration": "Don't let the thought drift away.",
+          "emotion": "Tense, floating instability",
+          "on_screen": "Don't let the thought drift away.",
+          "composition": "Centered text, heavy sans-serif, tight kerning. Text floats slightly above the visual motif (paper edge).",
+          "camera": "Static, slight Dutch tilt (15 degrees) to simulate gravity's pull on the void.",
+          "motion": "No camera movement. The text gently bobs up and down like a leaf in a windless current.",
+          "light": "High-contrast chiaroscuro. Sharp key light from top-left casts a hard shadow to the bottom-right of the text.",
+          "transition": "Hard cut to next shot.",
+          "sfx": "Low, resonant drone. Subtle, erratic paper rustle.",
+          "music": "Minimalist cello drone with irregular, stuttering percussion beats.",
+          "asset": "Text block with slight opacity jitter.",
+          "role": "hook",
+          "seconds": 4,
+          "technique": "2d",
+          "representation": "text_only",
+          "fact_ids": [
+            "fact_1"
+          ],
+          "capabilities": [
+            "typography"
+          ],
+          "factual_basis": "Narrative hook establishing the problem of fleeting ideas."
+        },
+        {
+          "narration": "Make it land.",
+          "emotion": "Anticipation, sudden release",
+          "on_screen": "Make it land.",
+          "composition": "Text centered. The white rectangle (visual motif) is now fully visible at the bottom center, casting a defined shadow.",
+          "camera": "Static, Dutch tilt remains, but the angle feels slightly more level as the 'ground' solidifies.",
+          "motion": "A single, thin vector line (representing a handwriting stroke) descends from the top center, stopping abruptly at the paper edge.",
+          "light": "Key light remains top-left. The shadow of the new line is sharp and distinct on the paper surface.",
+          "transition": "Hard cut.",
+          "sfx": "The drone cuts instantly. A crisp, synthetic 'click' sound as the line connects to the paper.",
+          "music": "Drone stops. A single, resonant low-frequency pulse begins.",
+          "asset": "Vector line connecting to the bottom-center rectangle.",
+          "role": "hook",
+          "seconds": 4,
+          "technique": "2d",
+          "representation": "text_only",
+          "fact_ids": [
+            "fact_1"
+          ],
+          "capabilities": [
+            "typography",
+            "vector_shapes"
+          ],
+          "factual_basis": "Visualizing the act of 'making it land' through symbolic connection."
+        },
+        {
+          "narration": "Paper gravity.",
+          "emotion": "Calm, structural certainty",
+          "on_screen": "Paper gravity.",
+          "composition": "Text aligned left, next to the anchored paper edge. The vector line is now a thicker, textured stroke, mimicking ink.",
+          "camera": "Static, fully leveled (0 degrees tilt). The frame feels stable.",
+          "motion": "The paper edge remains perfectly still. The ink stroke has no further movement, signifying completion.",
+          "light": "Softening slightly. The harshness of the light suggests a settled atmosphere.",
+          "transition": "Slow dissolve to the next scene.",
+          "sfx": "Silence. Then, a very faint, rhythmic scratching sound, like a pen moving slowly.",
+          "music": "Steady, grounding pulse continues. No percussion.",
+          "asset": "Text block + textured vector line.",
+          "role": "context",
+          "seconds": 4,
+          "technique": "2d",
+          "representation": "text_only",
+          "fact_ids": [
+            "fact_4"
+          ],
+          "capabilities": [
+            "typography",
+            "vector_shapes"
+          ],
+          "factual_basis": "Introducing the core concept metaphorically without claiming the product name yet."
+        },
+        {
+          "narration": "Travel. Write.",
+          "emotion": "Purposeful, active",
+          "on_screen": "Travel. Write.",
+          "composition": "Text centered. The paper edge is now shown with a slight perspective angle, suggesting a pocket or travel context, though still abstract.",
+          "camera": "Static, eye-level. No movement.",
+          "motion": "The ink stroke on the paper begins to fade outwards, revealing the white background beneath, symbolizing the idea being captured.",
+          "light": "Light source shifts subtly to top-right, creating a new shadow direction, implying a change in environment.",
+          "transition": "Hard cut.",
+          "sfx": "The scratching sound stops. A soft, airy sound effect (like a page turning) plays briefly.",
+          "music": "The steady pulse continues, now with a higher pitch layer added.",
+          "asset": "Text block fading into the background.",
+          "role": "context",
+          "seconds": 4,
+          "technique": "2d",
+          "representation": "text_only",
+          "fact_ids": [
+            "fact_2"
+          ],
+          "capabilities": [
+            "typography"
+          ],
+          "factual_basis": "Connecting the action to the audience's scenario: traveling and writing."
+        },
+        {
+          "narration": "Meet FOLD.",
+          "emotion": "Resolved, clear",
+          "on_screen": "MEET FOLD",
+          "composition": "Text centered, bold, heavy. The white rectangle is now the sole focus, large and filling the lower half of the frame. The text sits directly on top of it.",
+          "camera": "Static. The composition is perfectly balanced.",
+          "motion": "No motion. The image holds steady, emphasizing the permanence of the message.",
+          "light": "Even, clean illumination on the paper edge, with the key light still top-left but no harsh shadows on the text itself.",
+          "transition": "Hard cut to black.",
+          "sfx": "The music resolves into a final, sustained note that fades to silence.",
+          "music": "Music fades out completely on the final beat.",
+          "asset": "Large text block over a large vector shape.",
+          "role": "cta",
+          "seconds": 2,
+          "technique": "2d",
+          "representation": "text_only",
+          "fact_ids": [
+            "fact_3"
+          ],
+          "capabilities": [
+            "typography"
+          ],
+          "factual_basis": "Delivering the required CTA exactly as supplied."
+        }
+      ]
+    }
+  },
+  "evidence": [
+    {
+      "id": "fact_1",
+      "text": "FOLD",
+      "source": "owner_reported_unverified"
+    },
+    {
+      "id": "fact_2",
+      "text": "a pocket notebook for handwritten ideas",
+      "source": "owner_reported_unverified"
+    },
+    {
+      "id": "fact_3",
+      "text": "MEET FOLD",
+      "source": "owner_reported_unverified"
+    },
+    {
+      "id": "fact_4",
+      "text": "The product is a paper notebook.",
+      "source": "owner_reported_unverified"
+    },
+    {
+      "id": "fact_5",
+      "text": "No product photographs, dimensions, price or environmental certifications are supplied.",
+      "source": "owner_reported_unverified"
+    }
+  ],
+  "qa": {
+    "passed": true,
+    "hard_errors": [],
+    "duration_seconds": 18,
+    "shot_count": 5,
+    "verified_claims": false,
+    "render_ready": false,
+    "limitations": [
+      "Lexical tripwires do not prove semantic truth or visual feasibility",
+      "No arbitrary scene renderer is connected; this is a production proposal"
+    ]
+  },
+  "attempt": 0,
+  "render_ready": false
+}

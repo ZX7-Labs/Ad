@@ -87,7 +87,8 @@ class LocalClient:
 
     def ask(self, name, prompt, data, schema, tokens):
         payload = {"model": self.model_id,
-                   "messages": [{"role": "system", "content": prompt + POLICY},
+                   "messages": [{"role": "system", "content": prompt + POLICY +
+                                 "\nOUTPUT CONTRACT (field meanings and exact shape):\n" + json.dumps(schema)},
                                 {"role": "user", "content": json.dumps(data, ensure_ascii=False)}],
                    "temperature": 0.4, "top_p": 0.9, "seed": 41, "max_tokens": tokens,
                    "chat_template_kwargs": {"enable_thinking": False},

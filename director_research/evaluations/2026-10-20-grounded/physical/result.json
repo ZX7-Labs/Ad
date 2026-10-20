@@ -1,0 +1,404 @@
+{
+  "state": "blocked_for_review",
+  "bundle": {
+    "creative": {
+      "concept": "The concept shifts from a static 'Paper Gravity' study to a 'Pocket Rhythm' sequence. Instead of a void, we establish a grounded, textured reality immediately. The film visualizes the tactile act of writing as a rhythmic interaction between a physical object (the notebook) and the environment (travel). The 'gravity' is not physics, but the weight of intent; the notebook is the anchor that stops the chaos of travel. We move from the abstract problem (drifting thoughts) to the concrete solution (the tactile surface of FOLD), emphasizing the 'handwritten' aspect through visible ink texture and paper grain.",
+      "audience_insight": "Travelers feel their minds are racing and unmoored by movement. They need a physical, heavy object to 'ground' their thoughts. The tactile friction of paper and the resistance of a pen provide a sensory feedback loop that digital screens cannot match. They seek a companion that feels real and permanent.",
+      "hook": "'Ground the thought. Keep it real.'",
+      "visual_motif": "A close-up, macro-style view of a textured paper surface with a bold, inked line cutting across it. The notebook itself is implied as a pocket-sized object, occasionally framed by the edge of a pocket or hand, reinforcing the 'travel' context without needing a full product shot.",
+      "why_this_concept": "This resolves the 'static camera' and 'abstract' blockers by introducing motion (handheld sway, parallax) and texture (visible ink, paper grain). It clarifies the product identity by showing the *action* of writing on paper rather than just a floating rectangle, directly addressing the 'tactile' requirement while adhering to the lack of product photos. The rhythm of the cuts mirrors the cadence of travel and writing."
+    },
+    "design": {
+      "typography": "A custom, heavy sans-serif font with variable stroke weight. Text appears as solid, textured ink blocks that have slight imperfections (jagged edges, ink bleed) to mimic real pen strokes, avoiding the 'solid ink block' flatness that felt fake. Text wraps naturally around the paper texture.",
+      "camera_language": "Handheld, micro-movement. The camera sways gently with a 1-2mm parallax effect, simulating the instability of travel or the hand holding the pen. This creates a sense of presence and urgency, contrasting with the stability of the written line.",
+      "lighting": "Warm, directional natural light (golden hour simulation) hitting the paper at a 45-degree angle to cast deep, realistic shadows in the paper's grain and the ink's thickness. This creates the necessary warmth and texture, moving away from the cold, high-contrast chiaroscuro that felt sterile.",
+      "use_3d": "No. All visuals are constructed using 2D vector_shapes and layered_transform to maintain the 'illustration' aesthetic while simulating depth through parallax and shadow layering. This respects the building block constraints while achieving the desired tactile feel.",
+      "music": "A driving, syncopated rhythm featuring a warm acoustic guitar pluck and a deep, resonant kick drum. The rhythm mimics the heartbeat and the tapping of a pen. It builds tension with a sudden, organic stop when the line is completed, followed by a sustained, warm hum.",
+      "sound_design": "Layered, authentic Foley sounds. The rustle of a page is a dry, crisp friction sound. The 'click' is replaced by the sharp, organic sound of a pen tip hitting paper, followed by the soft, satisfying 'thud' of ink depositing. Silence is used strategically to let the sound of the paper breathe.",
+      "voice_direction": "M3 delivers the hook with a conversational, grounded cadence—like a friend speaking to you while walking. Emphasis is placed on 'Ground' and 'Real' with a physical weight in the voice, matching the visual texture of the paper.",
+      "palette": [
+        "#F4E9D6",
+        "#D4C5B0",
+        "#2C3E50",
+        "#C08552"
+      ],
+      "voice": "M3"
+    },
+    "scenes": {
+      "clips": [
+        {
+          "narration": "Ground the thought.",
+          "emotion": "Restless, unmoored",
+          "on_screen": "Close-up of a textured paper surface. A thin, shaky vector line attempts to write but blurs slightly, representing a fleeting idea.",
+          "composition": "Text centered in the upper third. The paper grain is visible, with a subtle yellow undertone (#F4E9D6) to evoke warmth. The line is thin and slightly jittery.",
+          "camera": "Handheld sway. The frame tilts slightly left and right, simulating a traveler's unstable perspective.",
+          "motion": "The camera moves slightly, causing the paper texture to shift relative to the frame edges (parallax). The shaky line wavers before stopping.",
+          "light": "Warm side-lighting from the top-right. Deep shadows in the paper's grain, highlighting the texture.",
+          "transition": "Slow dissolve (0.8s) into the next shot to smooth the transition from instability to stability.",
+          "sfx": "Low, irregular drone. Subtle, erratic rustling like a restless page.",
+          "music": "Syncopated acoustic guitar with a stuttering, anxious rhythm.",
+          "asset": "Text block + jittery vector line + paper texture layer.",
+          "role": "hook",
+          "seconds": 5.14,
+          "technique": "2d",
+          "representation": "text_only",
+          "fact_ids": [
+            "fact_1",
+            "fact_2"
+          ],
+          "capabilities": [
+            "typography",
+            "vector_shapes",
+            "layered_transform"
+          ],
+          "factual_basis": "Establishing the problem: ideas are fleeting and unstable in transit."
+        },
+        {
+          "narration": "Keep it real.",
+          "emotion": "Focusing, tactile",
+          "on_screen": "A bold, thick vector line cuts sharply across the paper, mimicking a confident pen stroke. The line has a subtle ink-bleed texture.",
+          "composition": "Text aligned left, overlapping the ink stroke. The paper texture is now sharp and detailed.",
+          "camera": "Handheld sway reduces to a gentle, rhythmic sway. The camera stabilizes slightly as the line is drawn.",
+          "motion": "The camera pans slightly right, following the direction of the pen stroke. The line appears with a slight 'snap' animation, not a fade.",
+          "light": "Lighting remains warm and directional, casting a soft shadow to the bottom-right of the thick ink line.",
+          "transition": "Hard cut to maintain the rhythmic punch of the action.",
+          "sfx": "The drone cuts instantly. A crisp, organic 'scratch' sound of a pen on paper, followed by a soft 'thud'.",
+          "music": "The guitar stops abruptly. A single, resonant low-frequency kick drum hits on the beat of the 'thud'.",
+          "asset": "Text block + textured vector line + paper grain layer.",
+          "role": "hook",
+          "seconds": 5.14,
+          "technique": "2d",
+          "representation": "text_only",
+          "fact_ids": [
+            "fact_1",
+            "fact_2"
+          ],
+          "capabilities": [
+            "typography",
+            "vector_shapes",
+            "layered_transform"
+          ],
+          "factual_basis": "Visualizing the solution: capturing the thought with a tangible, real action."
+        },
+        {
+          "narration": "Pocket size. Handwritten.",
+          "emotion": "Contained, purposeful",
+          "on_screen": "The paper is now framed by the edge of a pocket or a hand holding the notebook. The ink stroke is fully formed and static.",
+          "composition": "Text centered, wrapping around the paper edge. The pocket edge is a simple vector shape with a soft drop shadow to imply depth.",
+          "camera": "Static handheld. The frame is steady, emphasizing the containment of the idea within the pocket.",
+          "motion": "The camera performs a slow, subtle push-in (scale up by 5%) to bring the viewer closer to the texture of the paper.",
+          "light": "Warm light fills the frame, eliminating harsh shadows and creating an inviting atmosphere.",
+          "transition": "Slow dissolve (0.8s) to the final shot.",
+          "sfx": "The scratch sound fades into a soft, airy sound of a page turning, then silence.",
+          "music": "A warm, sustained acoustic hum begins, layered with a gentle, steady kick drum.",
+          "asset": "Text block + pocket edge vector shape + paper texture.",
+          "role": "context",
+          "seconds": 5.14,
+          "technique": "2d",
+          "representation": "text_only",
+          "fact_ids": [
+            "fact_2",
+            "fact_4"
+          ],
+          "capabilities": [
+            "typography",
+            "vector_shapes",
+            "layered_transform"
+          ],
+          "factual_basis": "Connecting the action to the travel context and the physical nature of the product."
+        },
+        {
+          "narration": "Meet FOLD.",
+          "emotion": "Resolved, clear",
+          "on_screen": "The pocket edge expands to fill the lower half of the screen. The text 'MEET FOLD' sits boldly over the texture.",
+          "composition": "Text centered, bold, heavy sans-serif. The paper texture is the background, with the text appearing as if stamped in ink.",
+          "camera": "Static. The composition is perfectly balanced and symmetrical.",
+          "motion": "No motion. The image holds steady, emphasizing the permanence of the message and the product.",
+          "light": "Even, clean illumination on the paper texture, with a warm glow around the edges.",
+          "transition": "Hard cut to black.",
+          "sfx": "The music resolves into a final, sustained note that fades to silence.",
+          "music": "Music fades out completely on the final beat.",
+          "asset": "Large text block over a large vector shape with paper texture.",
+          "role": "cta",
+          "seconds": 2.58,
+          "technique": "2d",
+          "representation": "text_only",
+          "fact_ids": [
+            "fact_3"
+          ],
+          "capabilities": [
+            "typography"
+          ],
+          "factual_basis": "Delivering the required CTA exactly as supplied."
+        }
+      ]
+    }
+  },
+  "evidence": [
+    {
+      "id": "fact_1",
+      "text": "FOLD",
+      "source": "owner_reported_unverified"
+    },
+    {
+      "id": "fact_2",
+      "text": "a pocket notebook for handwritten ideas",
+      "source": "owner_reported_unverified"
+    },
+    {
+      "id": "fact_3",
+      "text": "MEET FOLD",
+      "source": "owner_reported_unverified"
+    },
+    {
+      "id": "fact_4",
+      "text": "The product is a paper notebook.",
+      "source": "owner_reported_unverified"
+    },
+    {
+      "id": "fact_5",
+      "text": "No product photographs, dimensions, price or environmental certifications are supplied.",
+      "source": "owner_reported_unverified"
+    }
+  ],
+  "qa": {
+    "passed": false,
+    "hard_errors": [
+      "Shot 1: on-screen words lack reading time",
+      "Shot 2: on-screen words lack reading time",
+      "Shot 3: on-screen words lack reading time",
+      "Shot 4: on-screen words lack reading time"
+    ],
+    "duration_seconds": 18.0,
+    "shot_count": 4,
+    "verified_claims": false,
+    "render_ready": false,
+    "limitations": [
+      "Lexical tripwires do not prove semantic truth or visual feasibility",
+      "No arbitrary scene renderer is connected; this is a production proposal"
+    ]
+  },
+  "review": {
+    "approved": false,
+    "score_out_of_10": 5,
+    "factual_support": false,
+    "execution_realistic": false,
+    "strongest_moment": "Shot 3 pocket framing",
+    "problems": [
+      "On-screen text is unreadable due to excessive duration",
+      "No product photo exists to verify physical dimensions",
+      "Execution relies on unverified product claims",
+      "2D vectors cannot simulate realistic paper texture or ink"
+    ],
+    "recommended_repairs": [
+      "Reduce narration time to 1.5s per shot for legibility",
+      "Replace unverified product claims with abstract concept visuals",
+      "Use only verified facts: paper texture and writing action",
+      "Replace 2D ink with procedural audio cues to imply tactile feel"
+    ]
+  },
+  "attempts": [
+    {
+      "attempt": 0,
+      "qa": {
+        "passed": true,
+        "hard_errors": [],
+        "duration_seconds": 18,
+        "shot_count": 5,
+        "verified_claims": false,
+        "render_ready": false,
+        "limitations": [
+          "Lexical tripwires do not prove semantic truth or visual feasibility",
+          "No arbitrary scene renderer is connected; this is a production proposal"
+        ]
+      },
+      "review": {
+        "approved": false,
+        "score_out_of_10": 7,
+        "factual_support": true,
+        "execution_realistic": true,
+        "strongest_moment": "The vector line snapping to the paper edge with a sharp click sound.",
+        "problems": [
+          "Static camera fails to convey travel motion or dynamic idea capture.",
+          "Vector ink lacks texture, violating the tactile paper requirement.",
+          "No product is shown, risking audience confusion about what is being sold.",
+          "Hard cuts feel jarring in a study of gravity and flow.",
+          "Visual motif is too abstract, failing to clearly represent a physical notebook.",
+          "Sound design relies on unverified synthetic clicks that may feel fake.",
+          "Narration cadence doesn't match the rhythmic cello and percussion timing.",
+          "Duration is tight for five distinct emotional beats and transitions.",
+          "Color palette lacks warmth needed to evoke the feeling of paper texture.",
+          "Text opacity jitter creates an unstable look that contradicts the 'anchored' theme."
+        ],
+        "recommended_repairs": [
+          "Add subtle camera sway and parallax to simulate handheld travel footage.",
+          "Replace vector ink with layered, textured strokes to mimic real pen pressure.",
+          "Insert a quick cut to a realistic paper texture shot before returning to abstract.",
+          "Smooth transitions with slow fades to maintain the gravity study's emotional flow.",
+          "Ground the abstract paper in a realistic pocket shot to clarify the product identity.",
+          "Replace synthetic clicks with subtle, organic paper sounds for authenticity.",
+          "Align narration pacing with musical beats for a cohesive auditory experience.",
+          "Extend duration slightly to allow breathing room between emotional shifts.",
+          "Warm up the color palette with subtle yellow tones to enhance paper feel.",
+          "Remove opacity jitter; ensure text remains solid and stable throughout the shot."
+        ]
+      }
+    },
+    {
+      "attempt": 1,
+      "qa": {
+        "passed": false,
+        "hard_errors": [
+          "Shot 1: on-screen words lack reading time",
+          "Shot 2: on-screen words lack reading time",
+          "Shot 3: on-screen words lack reading time",
+          "Shot 4: on-screen words lack reading time"
+        ],
+        "duration_seconds": 18.0,
+        "shot_count": 4,
+        "verified_claims": false,
+        "render_ready": false,
+        "limitations": [
+          "Lexical tripwires do not prove semantic truth or visual feasibility",
+          "No arbitrary scene renderer is connected; this is a production proposal"
+        ]
+      },
+      "review": {
+        "approved": false,
+        "score_out_of_10": 5,
+        "factual_support": false,
+        "execution_realistic": false,
+        "strongest_moment": "Shot 3 pocket framing",
+        "problems": [
+          "On-screen text is unreadable due to excessive duration",
+          "No product photo exists to verify physical dimensions",
+          "Execution relies on unverified product claims",
+          "2D vectors cannot simulate realistic paper texture or ink"
+        ],
+        "recommended_repairs": [
+          "Reduce narration time to 1.5s per shot for legibility",
+          "Replace unverified product claims with abstract concept visuals",
+          "Use only verified facts: paper texture and writing action",
+          "Replace 2D ink with procedural audio cues to imply tactile feel"
+        ]
+      }
+    }
+  ],
+  "trace": [
+    {
+      "stage": "runtime_contract_probe",
+      "cached": false,
+      "model": "ad-director-qwen35-4b-0c82e2",
+      "request_sha256": "62ecfd0dcfa69dbf5c2d61bed939eecdaeab4fee390c877640c6fb05dcc7d651",
+      "finish_reason": "stop",
+      "usage": {
+        "completion_tokens": 15,
+        "prompt_tokens": 179,
+        "total_tokens": 194,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "elapsed_seconds": 9.34
+    },
+    {
+      "stage": "concept",
+      "cached": false,
+      "model": "ad-director-qwen35-4b-0c82e2",
+      "request_sha256": "7cefe3a90b507e1acc35e3bd2d1a59f3ff0e6deaccaeb126000ebdcde1785387",
+      "finish_reason": "stop",
+      "usage": {
+        "completion_tokens": 183,
+        "prompt_tokens": 725,
+        "total_tokens": 908,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "elapsed_seconds": 47.75
+    },
+    {
+      "stage": "art_direction",
+      "cached": false,
+      "model": "ad-director-qwen35-4b-0c82e2",
+      "request_sha256": "5b0a47a9862a5a74f24ee637009fa25e0ed1c5ebe4afefb8d9f7f067dd2bcafb",
+      "finish_reason": "stop",
+      "usage": {
+        "completion_tokens": 284,
+        "prompt_tokens": 996,
+        "total_tokens": 1280,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "elapsed_seconds": 69.3
+    },
+    {
+      "stage": "shots",
+      "cached": false,
+      "model": "ad-director-qwen35-4b-0c82e2",
+      "request_sha256": "791720e20b1fdc6572a568ec8db11c41fbba9a225f9a775113f1a34f22deaa6f",
+      "finish_reason": "stop",
+      "usage": {
+        "completion_tokens": 1487,
+        "prompt_tokens": 1271,
+        "total_tokens": 2758,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "elapsed_seconds": 203.65
+    },
+    {
+      "stage": "critic_0",
+      "cached": false,
+      "model": "ad-director-qwen35-4b-0c82e2",
+      "request_sha256": "ef8cb4ddceb5e67ca0150d12723cfcc6794cfb61ce7d32572ab0bdc379a39033",
+      "finish_reason": "stop",
+      "usage": {
+        "completion_tokens": 324,
+        "prompt_tokens": 2701,
+        "total_tokens": 3025,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "elapsed_seconds": 148.73
+    },
+    {
+      "stage": "repair_1",
+      "cached": false,
+      "model": "ad-director-qwen35-4b-0c82e2",
+      "request_sha256": "2dcbafdba1b63cf1808966cd7ab362acc1685127b8c81c4f973bdf4b758e3568",
+      "finish_reason": "stop",
+      "usage": {
+        "completion_tokens": 2101,
+        "prompt_tokens": 2836,
+        "total_tokens": 4937,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "elapsed_seconds": 351.49
+    },
+    {
+      "stage": "critic_1",
+      "cached": false,
+      "model": "ad-director-qwen35-4b-0c82e2",
+      "request_sha256": "e7491b85180b9c9f3a5c609d7b4d4b70e7d4606f3e7128fd53d20cd62a6b2e10",
+      "finish_reason": "stop",
+      "usage": {
+        "completion_tokens": 136,
+        "prompt_tokens": 3092,
+        "total_tokens": 3228,
+        "prompt_tokens_details": {
+          "cached_tokens": 477
+        }
+      },
+      "elapsed_seconds": 127.21
+    }
+  ],
+  "render_ready": false,
+  "human_quality_approved": false,
+  "notice": "Local planning experiment. Production V3 and M3/F2 samples unchanged."
+}

@@ -48,6 +48,14 @@ class GroundedTests(unittest.TestCase):
         bundle['scenes']['clips'][0]['technique'] = '2.5d liquid simulation'
         self.assertFalse(self.check(bundle)['passed'])
 
+    def test_caption_contract_rejects_staging_paragraph(self):
+        bundle = proposal()
+        bundle['scenes']['clips'][0]['on_screen'] = (
+            'Close-up of a textured paper surface with a thin shaky line representing an idea.')
+        self.assertTrue(schema_errors(bundle, BUNDLE))
+        bundle['scenes']['clips'][0]['on_screen'] = 'KEEP THE NEXT IDEA'
+        self.assertFalse(schema_errors(bundle, BUNDLE))
+
     def test_unavailable_effect_inside_motion_is_blocked(self):
         bundle = proposal()
         bundle['scenes']['clips'][0]['motion'] = 'Use fluid simulation to animate water'
@@ -68,6 +76,18 @@ class GroundedTests(unittest.TestCase):
         bundle['design']['sound_design'] = 'One click on alignment'
         self.assertTrue(self.check(bundle)['passed'])
         bundle['scenes']['clips'][0]['narration'] = 'Organize ideas in one click.'
+        self.assertIn('unsupported promise', str(self.check(bundle)))
+
+    def test_animation_scale_is_not_a_performance_promise(self):
+        bundle = proposal()
+        bundle['scenes']['clips'][0]['composition'] = 'A note at 80% scale; opacity: 100%'
+        self.assertTrue(self.check(bundle)['passed'])
+        bundle['scenes']['clips'][0]['on_screen'] = '100% BETTER'
+        self.assertIn('unsupported promise', str(self.check(bundle)))
+
+    def test_visible_badge_promise_is_still_blocked(self):
+        bundle = proposal()
+        bundle['scenes']['clips'][0]['composition'] = 'A scaled note with a badge reading 100% better'
         self.assertIn('unsupported promise', str(self.check(bundle)))
 
     def test_invented_evidence_is_blocked(self):

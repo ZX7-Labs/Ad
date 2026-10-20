@@ -41,6 +41,12 @@ CLIP = obj({
                      "minItems": 1},
     "factual_basis": TEXT,
 })
+# Captions are literal short copy, not a second composition-description field.
+# Constrain generation before spending further critic/repair calls on this error.
+CLIP["properties"]["on_screen"] = {
+    "type": "string", "minLength": 1, "maxLength": 70,
+    "pattern": r"^[^ \t\n\r]+( [^ \t\n\r]+){0,5}$",
+    "description": "Exact on-screen caption, at most six words. No artwork or staging instructions."}
 SCENES = obj({"clips": {"type": "array", "items": CLIP, "minItems": 3, "maxItems": 10}})
 BUNDLE = obj({"creative": CONCEPT, "design": DESIGN, "scenes": SCENES})
 REVIEW = obj({
@@ -141,11 +147,14 @@ def audit_bundle(bundle, brief, ledger):
                 errors.append(f"{section}: {label}: {match.group(0)}")
     # A single click in an audio cue is not a one-click product claim. Inspect
     # audience-facing copy/imagery rather than treating all production notes as facts.
-    claim_surfaces = [json_text(bundle["creative"])] + [
-        json_text({key: clip[key] for key in ("narration", "on_screen", "composition", "asset")})
-        for clip in clips]
-    for surface in claim_surfaces:
+    claim_surfaces = [(json_text(bundle["creative"]), True)]
+    for clip in clips:
+        claim_surfaces.extend([(json_text({key: clip[key] for key in ("narration", "on_screen")}), False),
+                               (json_text({key: clip[key] for key in ("composition", "asset")}), True)])
+    for surface, visual_note in claim_surfaces:
         for match in PROMISE.finditer(surface):
+            if visual_note and production_percentage(surface, match):
+                continue
             if match.group(0).casefold() not in supplied:
                 errors.append("unsupported promise: " + match.group(0))
     return {"passed": not errors, "hard_errors": list(dict.fromkeys(errors)),
@@ -158,6 +167,21 @@ def audit_bundle(bundle, brief, ledger):
 def json_text(value):
     import json
     return json.dumps(value, ensure_ascii=False)
+
+
+def production_percentage(text, match):
+    """A transform percentage is an editor instruction, not an ad assertion.
+
+    Only skip an explicit adjacent scale/opacity/etc parameter in visual notes.
+    Spoken/caption percentages are checked unconditionally by the caller.
+    """
+    if not match.group(0).endswith("%"):
+        return False
+    parameters = r"(?:scale|opacity|zoom|width|height|spacing|rotation|size)"
+    before = text[max(0, match.start()-40):match.start()]
+    after = text[match.end():match.end()+24]
+    return bool(re.search(r"\b" + parameters + r"\s*(?:(?:to|at|by|of)\s+|[:=]\s*)?$", before, re.I)
+                or re.match(r"\s+" + parameters + r"\b", after, re.I))
 
 
 def review_passes(review):

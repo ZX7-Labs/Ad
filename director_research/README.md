@@ -2,6 +2,10 @@
 
 ## Grounded Director iteration
 
+**Measured result:** both full genre evaluations remained blocked. The actual
+plans, timings, critic mistakes and subsequent caption/checker fixes are retained
+in the [20 October evaluation review](evaluations/2026-10-20-grounded/README.md).
+
 `python -m director_research.grounded` adds a separate capability-aware experiment.
 It preserves full art/sound/shot detail, chooses **3–10 shots** rather than a fixed
 five-shot sequence, checks immutable owner-reported evidence, constrains model

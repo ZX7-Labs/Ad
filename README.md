@@ -7,6 +7,8 @@ The intended product and current acceptance boundaries are recorded in
 [grounded Director experiment](director_research/README.md#grounded-director-iteration)
 adds adaptive shots, factual/capability checks and bounded revision. It is still
 preproduction research; it is not silently connected to V3 or the phone Issue flow.
+The [measured two-genre review](director_research/evaluations/2026-10-20-grounded/README.md)
+contains the rejected treatments, real timings, reviewer errors and follow-up fixes.
 
 ## New experimental Creative Director (planning only)
 

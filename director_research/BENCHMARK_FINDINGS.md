@@ -1,5 +1,9 @@
 # Qwen3.5-4B Cinema Director — Real CPU Benchmark Findings
 
+Follow-up: the [grounded two-genre evaluation](evaluations/2026-10-20-grounded/README.md)
+preserves subsequent measured results, schema/caption repairs, checker false
+positives and the continuing rejection of this setup as a final creative director.
+
 **Date:** 2026-10-20
 **Status:** REJECTED as production director; valuable research prototype, not a user-approved video system.
 **Scope:** `director_research/` only. Original V3 video renderer, previous Director Lab, and the user-approved Supertonic M3/F2 samples are untouched.

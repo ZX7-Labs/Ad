@@ -17,5 +17,20 @@
   "regression_evidence": "https://github.com/oyzitjfzj/Ad/actions/runs/39426670768",
   "regression_tests": 39,
   "no_video_rendered": true,
-  "voice_changed": false
+  "voice_changed": false,
+  "followup_regression_tests": 42,
+  "followup_source_sha256": {
+    "director_research/contracts.py": "c48ecd1ff05677522d7fc5ca246e4266680add9b11dc2d7801b4d7b7221523a5",
+    "director_research/grounded.py": "5645d906629df8fc4c2be55023470ee12ee659bcfa30eba18ee2f0fb26e46553"
+  },
+  "full_evaluations": {
+    "software": {
+      "accepted": false,
+      "inference_seconds": 1220.0
+    },
+    "physical": {
+      "accepted": false,
+      "inference_seconds": 957.47
+    }
+  }
 }
