@@ -51,12 +51,13 @@ Return valid JSON ONLY, exactly:
 ]}
 Do not add any field outside clips. No analysis, no markdown."""
 
-CRITIC = """You are a skeptical independent advertising film director judging another director's work.
-Review facts from the owner's brief, arc, creative uniqueness, production feasibility, continuity, narration pacing, misleading product representation, camera movement and musical restraint.
-Identify concrete flaws. Never automatically approve. The STRUCTURAL QA output cannot be overridden.
-Return one JSON only:
-{"approved":true,"score_out_of_10":8,"strongest_moment":"specific creative moment","problems":["concrete issues"],"recommended_repairs":["specific repairs"]}
-This is a quality REVIEW only; do not rewrite shots. Answer concisely."""
+CRITIC = """You are an independent, skeptical film director reviewing a proposed advert.
+Evaluate story originality, viewer appeal, natural narration, truthful product facts, coherent visual motif, justified movement and execution realism.
+Do NOT flatter, rewrite scripts or rubber-stamp. A hard gate cannot be overridden.
+Return ONLY this SHORT JSON with at most 2 brief issues and 2 repairs, each <=18 words:
+{"approved":false,"score_out_of_10":6,"strongest_moment":"one specific shot","problems":["one precise issue"],"recommended_repairs":["one specific fix"]}
+If creatively strong and truthful, approved can be true. Do not repeat or summarize the plan.
+No analysis. No Markdown. Keep the ENTIRE answer under 150 words."""
 
 BAD_CLAIMS = re.compile(r"(?i)\b(?:100%|guaranteed|clinically proven|fastest|number one|#1|zero risk|free forever|\d+[xX] faster|\d+%|cures?|best in the world)\b")
 ALLOWED_ROLES = ["hook","problem","reveal","demonstration","payoff"]
@@ -233,9 +234,31 @@ def main():
         scenes=call_model(a.api,SCENES,{"brief":brief,"direction":concept},"shots",1900,trace)
         bp=construct_filmdsl(brief,concept,scenes)
         qa=audit(bp,brief)
+        # Save a useful, detailed creative treatment BEFORE any independent
+        # review call: never throw away a complete film blueprint on reviewer failure.
+        (a.out/"film_plan_draft.json").write_text(json.dumps(
+            {"blueprint":bp,"objective_quality_gate":qa,"inference_trace":trace,
+             "state":"UNREVIEWED_DRAFT"},ensure_ascii=False,indent=2))
         print("PASS 3 - skeptical reviewer",flush=True)
-        critique=call_model(a.api,CRITIC,{"brief":brief,"plan":bp,"objective_check":qa},
-                            "critic",500,trace)
+        # Reviewer receives a readable synopsis rather than repeated asset JSON.
+        # Full draft stays unchanged for the actual artifact and hard QA.
+        review_material={
+            "brief":brief,
+            "concept":bp["memory"].get("creative_concept"),
+            "motif":bp["memory"].get("visual_motif"),
+            "voice":bp["meta"]["voice"],
+            "palette":bp["meta"]["visual_identity"].get("palette"),
+            "shots":[{
+                "role":clip["action"].get("role"),
+                "narration":clip["action"].get("narration"),
+                "visual":clip["staging"].get("composition"),
+                "camera":clip["staging"].get("camera"),
+                "movement":clip["render"].get("motion"),
+                "seconds":clip["duration_seconds"]
+            } for clip in bp["clips"]],
+            "objective_check":qa
+        }
+        critique=call_model(a.api,CRITIC,review_material,"critic",850,trace)
         if not isinstance(critique.get("approved"),bool):
             critique["approved"]=False
             critique.setdefault("problems",[]).append("Non-boolean approval response")
