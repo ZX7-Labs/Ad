@@ -5,6 +5,7 @@ from pathlib import Path
 from creative_director.prompts import INTAKE,STRATEGY,REVIEW,REVISE
 from creative_director.gates import audit
 from creative_director.compiler import compile_treatment
+from creative_director.compact_prompts import CONCEPT,SHOTS,REVIEW_SHORT
 
 def compact(s,cap=2500):
     return re.sub(r"\s+"," ",str(s or "")).strip()[:cap]
@@ -33,6 +34,8 @@ class LocalBrain:
             response_format={"type":"json_object"})
         text=answer["choices"][0]["message"]["content"]
         if not text:raise ValueError("Model returned no content (possible token cap)")
+        if answer["choices"][0].get("finish_reason")=="length":
+            raise ValueError(f"LLM answer truncated at {len(text)} characters; refusing incomplete JSON")
         return parse(text)
 
 def from_brief(path):
@@ -73,24 +76,31 @@ def interview(brain,messages):
     return {"state":"ready","brief":brief}
 
 def make_plan(brain,brief):
-    draft=compile_treatment(brain.ask(STRATEGY,{"brief":brief},3100),brief)
-    initial=audit(draft,brief)
-    critic=brain.ask(REVIEW,{"brief":brief,"treatment":draft,"hard_checks":initial},900)
-    updated=draft
-    if initial["errors"] or not critic.get("approved",False):
-        try:
-            updated=compile_treatment(brain.ask(REVISE,{"brief":brief,"treatment":draft,
-                "reviewer":critic,"hard_errors":initial["errors"]},3100),brief)
-        except (ValueError,TypeError):
-            updated=draft # leave unapproved rather than silently claiming a repair
-    check=audit(updated,brief)
-    final=brain.ask(REVIEW,{"brief":brief,"treatment":updated,"hard_checks":check},900)
-    pass_all=not check["errors"] and final.get("approved",False)
+    """Three compact model decisions instead of one oversized incomplete JSON."""
+    print("DIRECTOR STAGE 1/3: Visual concept and art direction",flush=True)
+    concept=brain.ask(CONCEPT,{"brief":brief},1000)
+    if not isinstance(concept,dict):raise ValueError("Concept must be an object")
+    print("DIRECTOR STAGE 2/3: Timed shot list",flush=True)
+    shot_plan=brain.ask(SHOTS,{"brief":brief,"concept_and_art_direction":concept},2300)
+    if not isinstance(shot_plan.get("beats"),list):
+        raise ValueError("Local model did not deliver a shot list")
+    # Only the shot list is generated in pass 2; merge with directed concept.
+    draft=compile_treatment({**concept,"beats":shot_plan["beats"],
+        "production_warnings":shot_plan.get("production_warnings",[])},brief)
+    check=audit(draft,brief)
+    print("DIRECTOR STAGE 3/3: Independent creative review",flush=True)
+    critic=brain.ask(REVIEW_SHORT,{"brief":brief,"treatment":draft,
+        "hard_checks":check},550)
+    if not isinstance(critic.get("approved"),bool):
+        critic["approved"]=False
+        critic.setdefault("issues",[]).append("Reviewer failed to produce a boolean approval")
+    # Fail closed: keep the original treatment for targeted human review rather
+    # than asking a tiny CPU model to rewrite another 3000-token JSON.
+    pass_all=not check["errors"] and critic["approved"]
     return {"state":"review_ready" if pass_all else "blocked_for_review",
-        "brief":brief,"treatment":updated,
-        "qa":{"approved":pass_all,"hard_checks":check,"independent_critic":final,
-               "first_checks":initial,"first_critic":critic},
-        "disclaimer":"This is a preproduction treatment, NOT a finished film, audio or real asset."}
+        "brief":brief,"treatment":draft,
+        "qa":{"approved":pass_all,"hard_checks":check,"independent_critic":critic},
+        "disclaimer":"Preproduction only; no MP4, images, audio or verified visual assets."}
 
 def document(result):
     if result["state"]=="needs_input":
@@ -140,7 +150,17 @@ def main():
     brain=LocalBrain(args.model)
     source={"state":"ready","brief":from_brief(args.brief)} if args.brief else \
            interview(brain,from_conversation(args.conversation,args.owner))
-    result=source if source["state"]=="needs_input" else make_plan(brain,source["brief"])
+    try:
+        result=source if source["state"]=="needs_input" else make_plan(brain,source["brief"])
+    except Exception as exc:
+        # A crash must not appear as a green workflow or be lost with empty artifacts.
+        diagnostic={"state":"error","error_type":type(exc).__name__,
+                    "message":compact(exc,600),"model":str(args.model),
+                    "note":"Not approved; no video and no creative treatment."}
+        (args.out/"director_result.json").write_text(json.dumps(diagnostic,indent=2),encoding="utf-8")
+        (args.out/"treatment.md").write_text("# Director model error\\n\\n"+diagnostic["message"]+"\\n",encoding="utf-8")
+        print("DIRECTOR FAILURE",json.dumps(diagnostic),flush=True)
+        raise
     (args.out/"director_result.json").write_text(json.dumps(result,ensure_ascii=False,indent=2),encoding="utf-8")
     (args.out/"treatment.md").write_text(document(result),encoding="utf-8")
     print(json.dumps({"state":result["state"],"approved":result.get("qa",{}).get("approved",False),
