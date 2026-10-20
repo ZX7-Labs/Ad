@@ -63,7 +63,7 @@ class BlenderContractTests(unittest.TestCase):
         s["objects"][0]["type"]="cube"
         s["objects"][0].pop("vertices")
         s["objects"][0].pop("faces")
-        s["lights"].append({"id":"rim","type":"SPOT","location":[0,2,3],
+        s["lights"].append({"id":"accent","type":"SPOT","location":[0,2,3],
             "rotation_degrees":[0,0,0],"energy":300,"color":[1,.5,.3]})
         self.assertIs(validate_blender_shot(s),s)
 
