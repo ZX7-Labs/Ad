@@ -46,14 +46,14 @@ jobs:
         uses: actions/cache@v4
         with:
           path: models/director
-          key: qwen3-director-1p7b-q4-ggml-daeb8e2-v1
-      - name: Download Apache-2.0 1.7B local creative brain (no paid API)
+          key: qwen3-director-4b-instruct-q4-bartowski-ae44-v1
+      - name: Download Apache-2.0 4B-Instruct local creative brain (no paid API)
         run: |
           python - <<'PY'
           from huggingface_hub import hf_hub_download
-          p=hf_hub_download(repo_id="ggml-org/Qwen3-1.7B-GGUF",
-              filename="Qwen3-1.7B-Q4_K_M.gguf",
-              revision="daeb8e2d528a760970442092f6bf1e55c3b659eb",
+          p=hf_hub_download(repo_id="bartowski/Qwen_Qwen3-4B-Instruct-2507-GGUF",
+              filename="Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+              revision="ae44f08e1392f39c0e474af10c3ff8355c8b6688",
               local_dir="models/director")
           import os
           assert os.path.getsize(p)>1_000_000_000,p
@@ -78,9 +78,9 @@ jobs:
           OMP_NUM_THREADS: "4"
         run: |
           if [ -n "$ISSUE_NUMBER" ]; then
-            python -u -m creative_director --conversation output/director/issue_conversation.json --owner "$OWNER" --model models/director/Qwen3-1.7B-Q4_K_M.gguf --out output/director
+            python -u -m creative_director --conversation output/director/issue_conversation.json --owner "$OWNER" --model models/director/Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf --out output/director
           else
-            python -u -m creative_director --brief examples/sample-brief.json --model models/director/Qwen3-1.7B-Q4_K_M.gguf --out output/director
+            python -u -m creative_director --brief examples/sample-brief.json --model models/director/Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf --out output/director
           fi
       - name: Artifact with treatment and independent audit
         if: always()
