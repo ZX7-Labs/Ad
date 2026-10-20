@@ -19,17 +19,18 @@ When a plan is available, it leaves a comment linking the GitHub Actions **direc
 
 - `prompts.py` — natural intake, creative strategist, independent critic and repair roles.
 - `gates.py` — deterministic checks. Unsupported marketing facts, impossible narration pacing, incorrect total duration, unlicensed real footage assumptions, and unknown narrator are blocked.
-- `__main__.py` — single local CPU Qwen3 1.7B Q4_K_M GGUF model, acting in sequential roles; never pretends that critics were approved if audit fails.
-- `test_director.py` — 10 fast no-network regression tests.
+- `__main__.py` — single local CPU Qwen3 4B Instruct Q4_K_M GGUF model, acting in sequential roles; never pretends that critics were approved if audit fails.
+- `test_director.py` — fast no-network regression tests.
+- `compiler.py` — safely unwrap nested JSON and normalize shot timings to spoken words before rechecking claims.
 - `.github/workflows/director-lab.yml` — model setup, tests, offline inference and issue comments.
 
-Model: [ggml-org/Qwen3-1.7B-GGUF](https://huggingface.co/ggml-org/Qwen3-1.7B-GGUF), Apache 2.0, quantized 1.28 GB. Inference: [llama-cpp-python](https://github.com/abetlen/llama-cpp-python), MIT. No cloud API key and no subscription required, but free GitHub Actions minutes and caching have real platform limits.
+Model: [bartowski/Qwen_Qwen3-4B-Instruct-2507-GGUF](https://huggingface.co/bartowski/Qwen_Qwen3-4B-Instruct-2507-GGUF), based on Apache-2.0 Qwen3-4B-Instruct-2507, quantized approximately 2.5 GB. Initial 1.7B prototype gave incomplete shot timing and malformed review output, and was rejected. Inference: [llama-cpp-python](https://github.com/abetlen/llama-cpp-python), MIT. No cloud API key and no subscription required, but free GitHub Actions minutes and caching have real platform limits.
 
 For local work (Linux/PC), Python 3.11, C++ compiler and OpenBLAS:
 
 ```bash
 python -m unittest discover -s creative_director -p 'test_*.py'
-python -m creative_director --brief examples/sample-brief.json --model models/director/Qwen3-1.7B-Q4_K_M.gguf --out output/director
+python -m creative_director --brief examples/sample-brief.json --model models/director/Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf --out output/director
 ```
 
 ## Why this is not yet a professional final editor
