@@ -1,0 +1,48 @@
+name: Generate premium-style Short
+on:
+  workflow_dispatch:
+    inputs:
+      topic:
+        description: "Video topic or headline (Hindi/English)"
+        type: string
+        required: true
+        default: "Future of creative work"
+      points:
+        description: "Optional: three short phrases separated by |"
+        type: string
+        required: false
+        default: ""
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/create-short.yml"
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install FFmpeg and fonts
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-lato fonts-noto-core
+      - name: Install Python dependencies
+        run: python -m pip install "Pillow>=10,<13" "edge-tts>=6,<9"
+      - name: Generate video
+        env:
+          TOPIC: ${{ inputs.topic || 'Future of creative work' }}
+          POINTS: ${{ inputs.points || '' }}
+        run: python src/render.py --topic "$TOPIC" --points "$POINTS"
+      - name: Package video for phone download
+        uses: actions/upload-artifact@v4
+        with:
+          name: your-faceless-short
+          path: |
+            output/short.mp4
+            output/narration.txt
+          retention-days: 7
