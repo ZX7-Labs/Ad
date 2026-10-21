@@ -16,8 +16,9 @@ def actual_rgb_png():
         return (struct.pack(">I",len(payload))+kind+payload+
                 struct.pack(">I",zlib.crc32(kind+payload)&0xffffffff))
     width,height=8,8
-    pixels=b"".join(bytes([0])+bytes((x*31%256,y*29%256,(x+y)*12%256)
-                        for x in range(width)) for y in range(height))
+    pixels=b"".join(bytes([0])+b"".join(
+        bytes((x*31%256,y*29%256,(x+y)*12%256))
+        for x in range(width)) for y in range(height))
     return (bytes([137,80,78,71,13,10,26,10])+
             chunk(b"IHDR",struct.pack(">IIBBBBB",width,height,8,2,0,0,0))+
             chunk(b"IDAT",zlib.compress(pixels))+chunk(b"IEND",b""))
