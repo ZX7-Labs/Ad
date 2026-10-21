@@ -27,6 +27,53 @@ class MediaCustodyError(ValueError):
     pass
 
 
+def verify_media_container(path,mime):
+    """Physical decoder/magic check; provenance text alone cannot create a film."""
+    path=Path(path)
+    if mime.startswith("video/"):
+        from .delivery_audit import _probe_details
+        return _probe_details(path)
+    if mime=="image/png":
+        with path.open("rb") as f:
+            first=f.read(24)
+        if len(first)<24 or first[:8]!=b"\\x89PNG\\r\\n\\x1a\\n" or (
+             int.from_bytes(first[16:20],"big")<=0 or
+             int.from_bytes(first[20:24],"big")<=0):
+            raise MediaCustodyError("Original PNG pixels not actually present")
+    elif mime=="audio/wav":
+        import wave
+        try:
+            with wave.open(str(path),"rb") as audio:
+                if audio.getnframes()<1 or audio.getframerate()<1:
+                    raise MediaCustodyError("Decoded sound file has no actual samples")
+        except wave.Error as exc:
+            raise MediaCustodyError("WAV identity is not backed by actual PCM") from exc
+    elif mime=="image/svg+xml":
+        from .creative_asset_ops import validate_original_svg_art
+        validate_original_svg_art(path)
+    elif mime=="model/gltf-binary":
+        with path.open("rb") as f:
+            first=f.read(12)
+        if len(first)!=12 or first[:4]!=b"glTF":
+            raise MediaCustodyError("Claimed 3D GLB is not a real binary scene")
+    elif mime in ("audio/mpeg","audio/flac"):
+        import subprocess
+        data=json.loads(subprocess.check_output(["ffprobe","-v","error",
+              "-show_entries","stream=codec_type","-of","json",str(path)],timeout=60))
+        if not any(x.get("codec_type")=="audio" for x in data.get("streams",[])):
+            raise MediaCustodyError("No original decoded source sound")
+    elif mime.startswith("image/"):
+        try:
+            from PIL import Image
+            with Image.open(path) as image:
+                image.verify()
+        except (ImportError,OSError,ValueError) as exc:
+            raise MediaCustodyError("No decoded original graphic available") from exc
+    # font/ttf, font/otf and binary originals require trusted import provenance
+    # and specialized renderers inspect them before use; never call them video.
+    return {"actual_file_bytes_checked":True}
+
+
 def sha256_file(path):
     with Path(path).open("rb") as handle:
         return hashlib.file_digest(handle,"sha256").hexdigest()
@@ -83,6 +130,7 @@ class MediaVault:
         if not path.is_file() or path.stat().st_size==0:
             raise MediaCustodyError("Asset has no actual file bytes")
         size=path.stat().st_size
+        verify_media_container(path,mime)
         digest=sha256_file(path)
         dest=self._loc(digest)
         dest.parent.mkdir(parents=True,exist_ok=True)
