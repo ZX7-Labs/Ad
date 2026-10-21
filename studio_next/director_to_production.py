@@ -15,6 +15,7 @@ import math
 from pathlib import Path
 
 from .open_creative import FreeformFilmBrain, preserve_original_direction
+from .creative_tool_registry import creative_tool_inventory
 from .production_handoff import author_production, author_delivery
 from .providers import LocalCreativeModel, LocalModelSettings
 
@@ -125,19 +126,28 @@ def handoff_single_brain(brief, brain, translation_model, production_model,
         raise ValueError("Single cohesive film brain model required")
     out=Path(output_dir)
     out.mkdir(parents=True,exist_ok=True)
-    preserve_original_direction(brief,brain,out/"original-vision")
+    tools=creative_tool_inventory()
+    (out/"actual-creative-tools.json").write_text(
+        json.dumps(tools,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
+    # The ONE director gets the real tools but retains full artistic autonomy.
+    # A missing installer never makes an ambitious scene turn into a card.
+    creative_context=dict(brief,local_creative_tools=tools)
+    preserve_original_direction(creative_context,brain,out/"original-vision")
     original=(out/"original-vision"/"director-original.txt").read_text(encoding="utf-8")
     source_digest=hashlib.sha256(original.encode("utf-8")).hexdigest()
     try:
         proposed=translation_model.decide(
             {"owner":brief,"original_cinematic_direction":original,
-             "instruction":"Preserve original artistic meaning; return production editorial structure only."})
+             "locally_verified_creative_tools":tools,
+             "instruction":"Preserve original artistic meaning; return production editorial structure only. "
+             "Use the model's independent art direction, not the tool list as a creative limit."})
         (out/"director-translation-raw.json").write_text(json.dumps(proposed,
             ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
         verified=validate_translation(proposed,brief["facts"])
         (out/"director-translation.json").write_text(
             json.dumps(proposed,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
-        designs=author_production(proposed,brief["facts"],production_model,out/"designs")
+        designs=author_production(proposed,brief["facts"],production_model,out/"designs",
+                                  tool_inventory=tools)
         result={"model_id":ids[0],"original_vision_sha256":source_digest,
                 "original_vision_preserved":True,"translation_validated":verified,
                 "production":designs,"film_rendered":False,
