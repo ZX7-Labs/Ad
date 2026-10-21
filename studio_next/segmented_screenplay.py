@@ -232,6 +232,51 @@ def normalize_spine_layout(spine):
     return output
 
 
+SHOT_REPAIR = """You are a film's story editor and cinematographer revising ONE
+previously authored shot which failed an exact story contract. This is a
+targeted revision, NOT a new film and NOT a cheap visual simplification.
+Preserve the story's beat identity, exact purpose, duration, continuity
+and evidence facts. The director's original duration is authoritative;
+make the action and audio genuinely support that timing, do not change
+only a number. An advertising film must not pretend an invented device
+failure, substrate spec, commercial attribute or factual cause was proved.
+Fictional staging/subjective metaphor is valid if presented honestly
+rather than as an observed product/competitor fact.
+Use only the owner ledger as factual evidence. Be specific and cinematic;
+do not retreat into generic gradients, cards or slogan slides. Preserve
+all actual production media/rights needs transparently.
+Return a JSON object with exactly these fields and no Markdown:
+{"id":"same supplied ID","purpose":"exact same purpose",
+"duration_seconds":6.0,"narration":"actual intentional spoken words or empty",
+"visual":"observable, rights-aware cinematic shot",
+"motion":"precise motivated spatial action for the full original beat",
+"edit":"creative motivated transition","audio":"sound and score art",
+"fact_refs":["ONLY existing fact keys genuinely supported by the scene"],
+"assets_needed":["specific required licensed media or original assets"]}.
+Duration above is an EXAMPLE of JSON typing, not a fixed number.
+"""
+
+
+def repair_authored_shot(shot, beat, brief, spine, prev_scene, next_beat,
+                         fault, call_stage, scene_index):
+    """One audited repair attempt, using the unchanged director beat contract.
+
+    A failed prior generation remains saved under its own fingerprint. The
+    revision is separately checkpointed and independently schema-validated.
+    If it still changes the beat or invents cited facts, it remains blocked.
+    """
+    _good_text(str(fault), "concrete shot failure")
+    context={"original_film":spine,"owner":brief,
+             "director_approved_beat":beat,"invalid_shot":shot,
+             "contract_error":str(fault),
+             "previous_scene":prev_scene,"next_beat":next_beat,
+             "instruction":"Write a fully repaired original shot; preserve the exact "
+                "scene id/purpose/duration and never assert unprovided product facts."}
+    result=call_stage(f"scene-repair-{scene_index:03d}",SHOT_REPAIR,
+                      context,1900,.38)
+    return validate_authored_shot(result,beat,frozenset(brief["facts"]))
+
+
 def _good_text(s, what):
     if not isinstance(s,str) or not s.strip():
         raise ValueError("Missing director-authored "+what)
@@ -321,7 +366,16 @@ def create_screenplay(brief, pitches, selection, call_stage):
                  "next_beat":beats[i+1] if i+1<len(beats) else None,
                  "explicit_constraints":"Only the shot detailed here; return one JSON object."}
         shot=call_stage(f"scene-{i+1:03d}",SHOT,context,1900,.55)
-        scenes.append(validate_authored_shot(shot,beat,fact_ids))
+        try:
+            shot=validate_authored_shot(shot,beat,fact_ids)
+        except ValueError as invalid:
+            # Repair only THIS scene. Never edit the authored narrative
+            # spine or approve a malformed response to save CPU time.
+            shot=repair_authored_shot(shot,beat,brief,spine,
+                scenes[-1] if scenes else None,
+                beats[i+1] if i+1<len(beats) else None,
+                invalid,call_stage,i+1)
+        scenes.append(shot)
     voice=spine["voice"]["choice"]
     if voice=="no_voice" and any(s["narration"].strip() for s in scenes):
         raise ValueError("Model chose no_voice but wrote actual spoken dialogue")
