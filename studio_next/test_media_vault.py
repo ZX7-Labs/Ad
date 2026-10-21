@@ -1,4 +1,5 @@
 import tempfile
+import subprocess
 import unittest
 from pathlib import Path
 from studio_next.media_vault import MediaVault,MediaCustodyError
@@ -40,12 +41,11 @@ class MediaVaultProductionTests(unittest.TestCase):
             p=Path(root)/"invented-video.mp4"
             p.write_bytes(b"this is a fabricated video title"*100)
             vault=MediaVault(Path(root)/"vault")
-            with self.assertRaises((ValueError,RuntimeError,OSError,Exception)):
+            with self.assertRaises((ValueError,RuntimeError,subprocess.CalledProcessError)):
                 vault.ingest(p,mime="video/mp4",rights="generated_original",
                     source_type="trusted_renderer",source_id="fake-video",
                     evidence="No real decoding",owner_or_generator="sample")
-            self.assertFalse(list((Path(root)/"vault"/"objects").rglob(
-                "[0-9a-f]"*64)))
+            self.assertEqual(list(vault.objects.rglob("*")),[])
 
     def test_unverified_libraries_and_invented_rights_fail_closed(self):
         with tempfile.TemporaryDirectory() as root:
