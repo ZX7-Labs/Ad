@@ -14,6 +14,8 @@ on:
       - "studio_next/body_asset_links.py"
       - "studio_next/body_verified_delivery.py"
       - "studio_next/body_stage_lease.py"
+      - "studio_next/body_host_resources.py"
+      - "studio_next/test_body_host_resources.py"
       - "studio_next/test_body_stage_lease.py"
       - "studio_next/durable_graph.py"
       - "studio_next/test_body_verified_delivery.py"
