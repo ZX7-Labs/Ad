@@ -6,6 +6,8 @@ on:
     paths:
       - "motion_studio/voice.py"
       - "studio_next/test_voice_slots.py"
+      - "studio_next/open_creative.py"
+      - "studio_next/test_open_creative.py"
       - "studio_next/model_audition.py"
       - "studio_next/test_model_audition.py"
       - "studio_next/segmented_screenplay.py"
