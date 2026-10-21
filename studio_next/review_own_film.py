@@ -101,8 +101,8 @@ def examine_own_movie(root,vision_brain,revision_brain,owner_brief):
         for identity,frame in zip(batch,frames):
             frame["scene_id"]=identity["scene_id"]
         all_frames.extend(frames)
-        prompt=idea+"\nVisual evidence comes from actual film shot IDs: "+
-               ", ".join(x["scene_id"] for x in batch)+"\n"
+        prompt=(idea+"\nVisual evidence comes from actual film shot IDs: "+
+                ", ".join(x["scene_id"] for x in batch)+"\n")
         response=vision_brain.evaluate(prompt,frames)
         (current/"observed-critique.txt").write_text(response,encoding="utf-8")
         (current/"observed-frame-ledger.json").write_text(json.dumps(
