@@ -101,10 +101,14 @@ class MotionBridgeTests(unittest.TestCase):
         with self.assertRaisesRegex(UnsupportedMotionPlan,"in range"):
             compile_motion_project(x)
 
-    def test_fonts_do_not_silently_break_non_latin_script(self):
-        x=case();x["assets"][0]["artwork"]["items"][0]["text"]="नमस्ते"
-        with self.assertRaisesRegex(UnsupportedMotionPlan,"non-Latin"):
-            compile_motion_project(x)
+    def test_original_unicode_art_compiles_without_english_only_templates(self):
+        x=case()
+        x["assets"][0]["artwork"]["items"][0]["text"]="नमस्ते"
+        # Artistic plans may use Hindi. The actual native renderer separately
+        # verifies installed Unicode font cmap and RAQM shaping, not tofu.
+        project=compile_motion_project(x)
+        artwork=next(iter(project["assets"].values()))
+        self.assertEqual(artwork["items"][0]["text"],"नमस्ते")
 
 
 if __name__=="__main__":
