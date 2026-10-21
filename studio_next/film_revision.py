@@ -49,6 +49,25 @@ No JSON, no shot count/duration maximum, no fixed animation style, no fake
 render or quality approval. Your revised vision is not proof of a completed film."""
 
 
+REFERENCE_RETHINK = """You are one autonomous original film artist. The
+provided visual critique is from an UNRELATED archived technical 2D+3D demo,
+NOT from a render of your current artistic story. You have NOT seen your
+film performed or animated. Do not call observed discrepancies between the
+old demo and your new film 'retakes' or claim your vision failed on screen.
+
+Preserve the owner's facts and rights. Use this reference demonstration ONLY
+to learn which actual visual techniques the studio can render today and
+where the envisioned film requires different legitimately obtainable footage
+or creative capabilities. Independently rethink your story if that makes it
+more compelling; do not force creative scenes into a renderer's narrow limits.
+Imagine a full coherent original film like an excellent independent director.
+Write clear natural creative prose: proposed story, purposeful images, 2D/3D
+or live-action needs, composition, sound, continuity, editorial decisions and
+unmet capabilities. No fixed style, length, scenes, genre, template or false
+claim of a newly rendered movie. This is an ARTISTIC PROPOSAL, not verified
+completed footage or an actual review of your own film."""
+
+
 class FilmRevisionBrain:
     def __init__(self, settings:LocalModelSettings):
         self.settings=settings
@@ -64,7 +83,10 @@ class FilmRevisionBrain:
             raise ValueError("Owner factual evidence must be retained")
         if not isinstance(observed_evidence,dict) or not observed_evidence.get("frames"):
             raise ValueError("No actual decoded visual frames")
+        reference=bool(observed_evidence.get("reference_prototype",False))
         review_scope={
+            "reference_is_unrelated_technical_prototype":reference,
+            "not_actual_render_of_original_story":reference,
             "observed_frame_timestamps_seconds":
                 [x["timestamp_seconds"] for x in observed_evidence["frames"]],
             "total_video_duration_seconds":
@@ -78,7 +100,7 @@ class FilmRevisionBrain:
               "observation_scope":review_scope,
               "owner_brief":factual_brief}
         payload={"model":self.settings.model_id,"stream":False,
-          "messages":[{"role":"system","content":RETHINK},
+          "messages":[{"role":"system","content":REFERENCE_RETHINK if reference else RETHINK},
                       {"role":"user","content":json.dumps(data,ensure_ascii=False)}],
           "temperature":.68,"top_p":.92,"max_tokens":3500}
         req=Request(self.settings.base_url.rstrip("/")+"/v1/chat/completions",
@@ -130,6 +152,8 @@ def preserve_artistic_revision(original_vision,review_text,review_evidence,
         "model_id":getattr(getattr(artist,"settings",None),"model_id","injected"),
         "same_actual_model_as_visual_reviewer_verified":bool(reviewer_id and revision_id and reviewer_id==revision_id),
         "real_frame_count":len(review_evidence["frames"]),
+        "reference_was_unrelated_technical_clip":bool(review_evidence.get("reference_prototype",False)),
+        "revised_new_movie_was_actually_criticized":False,
         "same_original_film_preserved":True,
         "revised_vision_written":True,
         "revised_video_rendered":False,
