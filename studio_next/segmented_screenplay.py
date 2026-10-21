@@ -115,6 +115,8 @@ Return exactly JSON:
 "factual_intent":["exact source keys or empty for purely fictional action"],
 "fact_quotes":{"exact owner fact key":"copy verbatim owner's fact text"},
 "reason":"explain how revisions prevent unsupported claims and keep this film's story"}.
+You MAY also include continuity_in, continuity_out, and sound_goal if the
+story correction artistically motivates changing those existing fields.
 Every fact_quotes value MUST be an exact copy of the owner ledger entry.
 Do not use abbreviated IDs such as k2 unless the ledger itself has key k2.
 Do not invent substitute evidence or assert a real product photo exists.
@@ -152,9 +154,11 @@ def reground_invalid_beats(spine, brief, call_stage):
              "scene_map":[{"id":x.get("id"),"purpose":x.get("purpose"),
                   "dramatic_action":x.get("dramatic_action")}
                   for x in scene_map if isinstance(x,dict)]},850,.35)
-        if not isinstance(response,dict) or set(response)!={
-            "id","dramatic_action","visual_goal","factual_intent",
-            "fact_quotes","reason"}:
+        needed={"id","dramatic_action","visual_goal","factual_intent",
+                "fact_quotes","reason"}
+        permitted=needed|{"continuity_in","continuity_out","sound_goal"}
+        if (not isinstance(response,dict) or not needed.issubset(response)
+                or not set(response).issubset(permitted)):
             raise ValueError("Grounding revision must be complete and auditable")
         if response["id"]!=beat.get("id"):
             raise ValueError("Grounding silently replaced authored shot ID")
@@ -172,6 +176,9 @@ def reground_invalid_beats(spine, brief, call_stage):
         new["dramatic_action"]=response["dramatic_action"]
         new["visual_goal"]=response["visual_goal"]
         new["factual_intent"]=list(accepted)
+        for field in ("continuity_in","continuity_out","sound_goal"):
+            if field in response:
+                new[field]=_good_text(response[field],field)
         corrected.append(new)
         revised=True
     return dict(spine,scene_map=corrected) if revised else spine
