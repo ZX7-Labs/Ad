@@ -35,6 +35,7 @@ from .body_archive import create_body_archive
 from .durable_sqlite import connect_durable_database
 from .body_mobile import ASSETS as MOBILE_ASSETS, CSP as MOBILE_CSP
 from .body_download_tickets import DownloadTickets
+from .body_verified_delivery import verified_artifact_snapshot
 
 _ID=re.compile(r"^[A-Za-z0-9_-]{1,80}$")
 _MAX_JOB_BODY=4*1024*1024
@@ -491,17 +492,27 @@ def make_body_http_handler(coordinator,token):
                 media["sha256"]!=expected["sha256"] or
                 media["bytes"]!=expected["bytes"]):
                 return self._reply(409,{"error":"Original media changed after ticket authorization"})
-            self.send_response(200)
-            self.send_header("Content-Type",media["mime"])
-            self.send_header("Content-Length",str(media["bytes"]))
-            self.send_header("X-ZX7-SHA256",media["sha256"])
-            self.send_header("Referrer-Policy","no-referrer")
-            self.send_header("Content-Disposition",
-                             'attachment; filename="'+media["path"].name+'"')
-            self.send_header("Cache-Control","no-store")
-            self.end_headers()
-            with media["path"].open("rb") as source:
-                shutil.copyfileobj(source,self.wfile,1024*1024)
+            # Snapshot the exact ORIGINAL bytes first. The old implementation
+            # checked one open of the pathname then reopened it after HTTP
+            # headers: a replaced file could be delivered under a false hash.
+            try:
+                with verified_artifact_snapshot(media) as source:
+                    self.send_response(200)
+                    self.send_header("Content-Type",media["mime"])
+                    self.send_header("Content-Length",str(media["bytes"]))
+                    self.send_header("X-ZX7-SHA256",media["sha256"])
+                    self.send_header("Referrer-Policy","no-referrer")
+                    self.send_header("Content-Disposition",
+                                     'attachment; filename="'+Path(media["path"]).name+'"')
+                    self.send_header("Cache-Control","no-store")
+                    self.send_header("X-Content-Type-Options","nosniff")
+                    self.end_headers()
+                    shutil.copyfileobj(source,self.wfile,1024*1024)
+            except (ValueError,RuntimeError) as exc:
+                # A capacity failure (503) or a stale media SHA (409) cannot
+                # masquerade as a successful original film transfer.
+                code=503 if isinstance(exc,RuntimeError) else 409
+                return self._reply(code,{"error":str(exc)})
         def do_GET(self):
             path=urlsplit(self.path).path
             if path in MOBILE_ASSETS:
