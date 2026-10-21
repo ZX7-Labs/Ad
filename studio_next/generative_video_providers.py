@@ -97,20 +97,37 @@ def _read_manifest(folder,model_id):
         return None
     # Asset bytes can be huge: digest is checked in weight-install stage,
     # and a signed generated manifest stored after actual verification.
-    # A JSON boolean is not proof of real downloaded weights. Hash actual local
-    # bytes before declaring an expensive diffusion engine even trial-ready.
-    weight=data.get("weight_file")
-    if not isinstance(weight,str) or not weight or Path(weight).is_absolute() or (
-            ".." in Path(weight).parts):
+    # A video model requires more than its diffusion checkpoint: a genuine
+    # VAE and text encoder are also needed, and other tools may add resources.
+    # Every file is independently hashed; the installer cannot assert
+    # an arbitrary "installed": true flag and bypass model provenance.
+    components=data.get("weight_files")
+    if not isinstance(components,list) or not components:
         return None
-    checkpoint=(path.parent/weight).resolve()
-    if not checkpoint.is_relative_to(path.parent.resolve()) or not checkpoint.is_file():
-        return None
-    if checkpoint.stat().st_size<128:
-        return None
-    with checkpoint.open("rb") as handle:
-        digest=hashlib.file_digest(handle,"sha256").hexdigest()
-    if digest!=data["weight_sha256"]:
+    required={"diffusion","vae","text_encoder"}
+    observed=set()
+    for component in components:
+        if not isinstance(component,dict) or set(component)!={"role","path","sha256"}:
+            return None
+        role,name,checksum=(component[k] for k in ("role","path","sha256"))
+        if not isinstance(role,str) or not role or role in observed:
+            return None
+        observed.add(role)
+        if not isinstance(name,str) or not name or Path(name).is_absolute() or (
+                ".." in Path(name).parts):
+            return None
+        if not isinstance(checksum,str) or not re.fullmatch(r"[0-9a-f]{64}",checksum):
+            return None
+        checkpoint=(path.parent/name).resolve()
+        if not checkpoint.is_relative_to(path.parent.resolve()) or not checkpoint.is_file():
+            return None
+        if checkpoint.stat().st_size<128:
+            return None
+        with checkpoint.open("rb") as handle:
+            digest=hashlib.file_digest(handle,"sha256").hexdigest()
+        if digest!=checksum:
+            return None
+    if not required.issubset(observed):
         return None
     return data
 
