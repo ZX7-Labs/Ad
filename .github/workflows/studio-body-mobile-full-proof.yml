@@ -9,6 +9,9 @@ on:
       - ".github/workflows/studio-body-mobile-full-proof.yml"
       - "studio_next/body_mobile.py"
       - "studio_next/precision_retime.py"
+      - "studio_next/body_archive.py"
+      - "studio_next/body_portability.py"
+      - "studio_next/test_body_portability.py"
       - "studio_next/creative_tool_registry.py"
       - "studio_next/test_creative_tool_registry.py"
       - "studio_next/test_precision_retime.py"
@@ -80,6 +83,7 @@ jobs:
           "$RUNNER_TEMP/zx7-body-installed/bin/python" -u -m studio_next.body_native_proof --out "$GITHUB_WORKSPACE/output/body-release-proof/native"
           "$RUNNER_TEMP/zx7-body-installed/bin/zx7-client" --help
           "$RUNNER_TEMP/zx7-body-installed/bin/zx7-desktop" --help
+          "$RUNNER_TEMP/zx7-body-installed/bin/zx7-archive" --help
       - name: Save exact release evidence without certifying artistic quality
         run: |
           python - <<'PY'
