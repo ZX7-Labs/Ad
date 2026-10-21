@@ -220,6 +220,10 @@ def verified_render_fact_ledger(treatment_file, owner_brief_file=None):
     existing=src.get("brief",{}).get("facts",{})
     if not isinstance(existing,dict):
         raise ValueError("Embedded owner evidence malformed")
+    if owner_brief_file is None:
+        original_source=treatment_file.parent/"owner-factual-brief.json"
+        if original_source.is_file():
+            owner_brief_file=original_source
     if owner_brief_file is not None:
         raw=json.loads(Path(owner_brief_file).read_text(encoding="utf-8"))
         if not isinstance(raw,dict) or not isinstance(raw.get("facts"),dict):
