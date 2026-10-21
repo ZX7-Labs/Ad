@@ -164,36 +164,60 @@ def main():
     p.add_argument("--model",default="qwen35-4b")
     p.add_argument("--api",default="http://127.0.0.1:8085")
     p.add_argument("--resume",action="store_true",help="Reuse verified prompt/input/model-matched creative checkpoints")
+    p.add_argument("--segmented",action="store_true",help="Director authors full original story as checkpointed per-shot film, not truncated JSON")
     a=p.parse_args();a.out.mkdir(parents=True,exist_ok=True)
     brief=json.loads(a.brief.read_text(encoding="utf-8"))
     if not isinstance(brief.get("request"),str) or not isinstance(brief.get("facts"),dict):
         raise ValueError("Creative experiment requires request and owner fact ledger")
     notes=[];generated={};ledger=CheckpointLedger(a.out)
-    stages=[("pitches",PITCH,lambda:{"owner":brief},1700,.72),
-            ("selection",SELECT,lambda:{"owner":brief,"pitches":generated["pitches"]},1000,.24),
-            ("treatment",SCRIPT,lambda:{"owner":brief,"selection":generated["selection"],
-                                         "pitches":generated["pitches"]},3200,.63),
-            ("review",CRITIC,lambda:{"owner":brief,"treatment":generated["treatment"]},1100,.18)]
-    try:
-        for stage,system,make_input,tokens,temp in stages:
-            print("START "+stage,flush=True)
-            sampling={"temperature":temp,"top_p":.92,"max_tokens":tokens}
-            data=make_input()
+    def run_stage(stage,system,data,tokens,temp):
+        # Keep the earlier 4B pitch and selection fingerprints EXACTLY unchanged
+        # so proven prior artifacts can be resumed without expensive reruns.
+        from studio_next.segmented_screenplay import retryable_output
+        for attempt,budget in enumerate((tokens,tokens+1100)):
+            print("START "+stage+" token_budget="+str(budget),flush=True)
+            sampling={"temperature":temp,"top_p":.92,"max_tokens":budget}
             identity=ledger.fingerprint(name=stage,model_id=a.model,system=system,
                                         input_data=data,sampling=sampling)
             tick=time.monotonic()
-            res=ledger.load(stage,identity) if a.resume else None
-            source="verified_checkpoint" if res is not None else "fresh_model"
-            if res is None:
-                engine=LocalCreativeModel(LocalModelSettings(base_url=a.api,model_id=a.model,
-                    timeout_seconds=900,sampling=sampling),system)
-                res=engine.decide(data)
-                if not isinstance(res,dict):raise ValueError("Model returned non-object at "+stage)
-                ledger.write(stage,identity,res)
-            generated[stage]=res
-            notes.append({"stage":stage,"source":source,
-                          "elapsed_seconds":round(time.monotonic()-tick,2)})
-            print("END "+stage+": "+str(notes[-1]),flush=True)
+            cached=ledger.load(stage,identity) if a.resume else None
+            source="verified_checkpoint" if cached is not None else "fresh_model"
+            try:
+                result=cached
+                if result is None:
+                    engine=LocalCreativeModel(LocalModelSettings(base_url=a.api,model_id=a.model,
+                        timeout_seconds=1200,sampling=sampling),system)
+                    result=engine.decide(data)
+                    if not isinstance(result,dict):
+                        raise ValueError("Model returned non-object at "+stage)
+                    ledger.write(stage,identity,result)
+                notes.append({"stage":stage,"source":source,"token_budget":budget,
+                              "elapsed_seconds":round(time.monotonic()-tick,2)})
+                print("END "+stage+": "+str(notes[-1]),flush=True)
+                return result
+            except ValueError as error:
+                if attempt==0 and retryable_output(error):
+                    notes.append({"stage":stage,"source":"truncated_retry",
+                                  "token_budget":budget,
+                                  "elapsed_seconds":round(time.monotonic()-tick,2)})
+                    print("RETRY stage with expanded output capacity; not fewer film beats",flush=True)
+                    continue
+                raise
+        raise RuntimeError("No result")
+    try:
+        generated["pitches"]=run_stage("pitches",PITCH,{"owner":brief},1700,.72)
+        generated["selection"]=run_stage("selection",SELECT,
+                               {"owner":brief,"pitches":generated["pitches"]},1000,.24)
+        if a.segmented:
+            from studio_next.segmented_screenplay import create_screenplay
+            generated["treatment"]=create_screenplay(brief,generated["pitches"],
+                                                     generated["selection"],run_stage)
+        else:
+            generated["treatment"]=run_stage("treatment",SCRIPT,
+                           {"owner":brief,"selection":generated["selection"],
+                            "pitches":generated["pitches"]},3200,.63)
+        generated["review"]=run_stage("review",CRITIC,
+                                  {"owner":brief,"treatment":generated["treatment"]},2300,.18)
         qa=audit(brief,generated["pitches"],generated["selection"],generated["treatment"],generated["review"])
         result={"model":a.model,"brief":brief,**generated,"audit":qa,"trace":notes}
         (a.out/"result.json").write_text(json.dumps(result,ensure_ascii=False,indent=2)+"\n")
