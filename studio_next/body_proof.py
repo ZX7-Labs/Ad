@@ -70,11 +70,8 @@ def assemble_body_evidence(archived,folder):
             "out":"finished-actual-film.otio"},["inspect-2d","inspect-3d"]),
         ("thumbnail","body.film_thumbnail",{"source_film":"finished-actual-film.mp4",
             "out":"thumbnail.png","time_seconds":min(1.0,total/2)},["edit"]),
-        ("custody","body.asset_vault",{"source":"finished-actual-film.mp4",
-            "mime":"video/mp4","rights":"generated_original",
-            "source_type":"trusted_renderer","source_id":"ZX7_real_body_tools_fixture",
-            "evidence":"Two real original 2D/3D video sources traced to run 39513980044",
-            "issuer":"ZX7_body_render_edit"},["edit"]),
+        ("custody","body.asset_vault",
+            {"source_witness":{"$node_output":"edit"}},["edit"]),
     ]
     ir={"project":{"creative_intent":"Evidence of actual independent creative body tool interoperation, not an original AI cinema work"},
         "owner_facts":{},"assets":[],
