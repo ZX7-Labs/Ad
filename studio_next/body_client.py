@@ -9,6 +9,7 @@ Arguments are real paths/tool IDs, never executable model-supplied commands.
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
 import http.client
 import json
@@ -127,7 +128,12 @@ class ZX7BodyClient:
             receipt=self.request_json("POST",path,body=stream,
                 content_type=mime,headers={
                 "Content-Length":str(data_size),
-                "X-Source-Id":source_id,"X-Rights-Evidence":rights_evidence})
+                # HTTP headers are ASCII; source evidence can be authored in
+                # Hindi or any UTF-8 language, without text corruption.
+                "X-Source-Id-B64":base64.b64encode(
+                    source_id.encode("utf-8")).decode("ascii"),
+                "X-Rights-Evidence-B64":base64.b64encode(
+                    rights_evidence.encode("utf-8")).decode("ascii")})
         if sha256_file(original)!=initial_sha or receipt.get("asset_id")!=initial_sha:
             raise RuntimeError("Uploaded original film differs from byte-verified source")
         return receipt
