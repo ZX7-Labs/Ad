@@ -102,6 +102,7 @@ def _trusted_body_revision(tool_id):
     base=Path(__file__).resolve().parent
     dependencies={
         "body.inspect":["delivery_audit.py"],
+        "body.resolve_asset":["media_vault.py"],
         "body.render_edit":["edit_timeline.py"],
         "body.retime":["precision_retime.py","media_vault.py","delivery_audit.py"],
         "body.otio":["editorial_interchange.py"],
@@ -118,6 +119,7 @@ def _trusted_body_revision(tool_id):
     }
     commands={
         "body.inspect":["ffprobe"],
+        "body.resolve_asset":[],
         "body.render_edit":["ffmpeg","ffprobe"],
         "body.retime":["ffmpeg","ffprobe"],
         "body.otio":[],
@@ -214,6 +216,23 @@ def body_catalog(workspace,*,vault_root=None):
     def inspect(inputs):
         path=_path_within(root,inputs["source"],exists=True)
         return _witness(path)
+
+    def resolve_owner_media(inputs):
+        """One compact read tool resolves a verified CAS asset by real identity.
+
+        The model neither picks arbitrary paths nor supplies license labels.
+        Existing MediaVault rights witnesses are checked on each invocation.
+        """
+        inspected=vault.inspect(inputs["asset_id"],
+                                attestation_id=inputs["attestation_id"])
+        permitted=inspected["rights_attestations"][0]
+        return {"path":inspected["path"],
+                "sha256":inspected["asset_id"],
+                "bytes":inspected["size_bytes"],
+                "asset_id":inspected["asset_id"],
+                "attestation_id":permitted["attestation_id"],
+                "rights":permitted["rights"],
+                "mime":inspected["mime"]}
 
     def edit(inputs):
         original=_path_within(root,inputs["edit"],exists=True)
@@ -373,6 +392,9 @@ def body_catalog(workspace,*,vault_root=None):
         ["scene_json","out"],render3d)
     add("body.motion2d","original 2D/2.5D animation","Independent vector character and motion compositor",
         "write",bool(video_io and motion_libraries),["original_film_ir","out","width","fps"],render2d)
+    add("body.resolve_asset","verify and locate original licensed media by content identity",
+        "Reads actual SHA256 CAS blob and its exact stored owner license attestation",
+        "read",True,["asset_id","attestation_id"],resolve_owner_media)
     add("body.inspect","measure physical media","FFprobe validates actual source video",
         "read",bool(shutil.which("ffprobe")),["source"],inspect)
     add("body.render_edit","editorial timeline","Headless FFmpeg actual movie assembler",
