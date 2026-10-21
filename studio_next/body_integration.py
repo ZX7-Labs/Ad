@@ -26,6 +26,7 @@ from .delivery_audit import audit_delivered_movie,_probe_details
 from .durable_graph import DurableFilmGraph,execute_durable_film_graph
 from .media_vault import MediaVault,sha256_file
 from .composite_mix import render_composition
+from .film_finishing import finish_authorized_movie
 from .body_plugins import discover_enabled_body_plugins
 from .body_materials import fingerprint_physical_inputs
 
@@ -96,6 +97,7 @@ def _trusted_body_revision(tool_id):
         "body.film_thumbnail":["creative_asset_ops.py","delivery_audit.py"],
         "body.asset_vault":["media_vault.py"],
         "body.composite_mix":["composite_mix.py","media_vault.py"],
+        "body.film_finish":["film_finishing.py","media_vault.py"],
         "body.blender3d":["native_body_engines.py","blender_scene.py"],
         "body.motion2d":["native_body_engines.py","motion_bridge.py","font_registry.py"],
     }
@@ -107,6 +109,7 @@ def _trusted_body_revision(tool_id):
         "body.film_thumbnail":["ffmpeg","ffprobe"],
         "body.asset_vault":[],
         "body.composite_mix":["ffmpeg","ffprobe"],
+        "body.film_finish":["ffmpeg","ffprobe"],
         "body.blender3d":["blender","ffmpeg"],
         "body.motion2d":["ffmpeg","ffprobe"],
     }
@@ -188,6 +191,16 @@ def body_catalog(workspace,*,vault_root=None):
             out.unlink(missing_ok=True)
             raise
 
+    def finish_movie(inputs):
+        source=_path_within(root,inputs["plan"],exists=True)
+        dest=_body_output(root,inputs["out"],allowed=(".mp4",))
+        try:
+            finish_authorized_movie(source,root,vault.root,dest)
+            return _witness(dest)
+        except BaseException:
+            dest.unlink(missing_ok=True)
+            raise
+
     def render3d(inputs):
         source=_path_within(root,inputs["scene_json"],exists=True)
         dest=_body_output(root,inputs["out"],allowed=(".mp4",))
@@ -235,6 +248,10 @@ def body_catalog(workspace,*,vault_root=None):
                 "asset_id":ref["asset_id"],"attestation_id":ref["attestation_id"],
                 "rights":ref["rights"]}
 
+    add("body.film_finish","measured film color grade and sound finishing",
+        "Local FFmpeg real picture operations and original audio loudness mastering",
+        "write",bool(shutil.which("ffmpeg") and shutil.which("ffprobe")),
+        ["plan","out"],finish_movie)
     add("body.composite_mix","original timeline multilayer edit, licensed voices and audio mix",
         "Actual physical rights-verified layered FFmpeg compositor from model-owned canvas",
         "write",bool(shutil.which("ffmpeg") and shutil.which("ffprobe")),
@@ -301,7 +318,8 @@ def _require_authentic_generated_media_lineage(film_ir):
         raise ValueError("Real body graph required for custody validation")
     node_by_id={n["id"]:n for n in graph if isinstance(n,dict) and isinstance(n.get("id"),str)}
     trusted_producers={"body.blender3d","body.motion2d","body.render_edit",
-                       "body.composite_mix","body.vector_png","body.film_thumbnail"}
+                       "body.composite_mix","body.film_finish","body.vector_png",
+                       "body.film_thumbnail"}
     for node in graph:
         if not isinstance(node,dict) or node.get("tool_id")!="body.asset_vault":
             continue
