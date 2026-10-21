@@ -20,7 +20,7 @@ class RetimeContractTests(unittest.TestCase):
     def test_exact_rational_and_no_default_edit_style(self):
         self.assertEqual(_speed({"numerator":300,"denominator":1000}),Fraction(3,10))
         self.assertEqual(_tempo_chain(Fraction(8,1)),"atempo=2,atempo=2,atempo=2")
-        self.assertEqual(_tempo_chain(Fraction(1,8)),"atempo=0.5,atempo=0.5,atempo=0.5,atempo=1")
+        self.assertEqual(_tempo_chain(Fraction(1,8)),"atempo=0.5,atempo=0.5,atempo=0.5")
         for q in ({"numerator":True,"denominator":1},
                   {"numerator":0,"denominator":2},
                   {"numerator":1,"denominator":0},
