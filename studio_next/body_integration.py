@@ -1,0 +1,193 @@
+"""Real executable ZX7 body tools for rights-cleared editable media projects.
+
+The artist/model authors original film IR and chooses tools from discovery.
+This trusted installed *body* provides reusable FFmpeg, ASWF OpenTimelineIO,
+Inkscape design, actual media verification, archive and thumbnails as ops.
+
+No preset scene count, style, transition, aspect ratio, duration, or genre.
+No model-supplied Python, arbitrary shell command, network or spend permission.
+"""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import shutil
+from pathlib import Path
+
+from .contracts import ToolSpec
+from .registry import ToolCatalog
+from .edit_timeline import render_edit,_path_within
+from .editorial_interchange import export_editable_timeline
+from .creative_asset_ops import rasterize_original_svg,extract_director_selected_frame
+from .delivery_audit import audit_delivered_movie,_probe_details
+from .durable_graph import DurableFilmGraph,execute_durable_film_graph
+from .media_vault import MediaVault,sha256_file
+
+
+def _body_output(workspace,name,*,allowed=(".mp4",".otio",".png")):
+    p=_path_within(workspace,name,exists=False)
+    if p.suffix.lower() not in allowed:
+        raise ValueError("Destination not a supported actual media artifact")
+    if p.exists():
+        raise FileExistsError("Do not overwrite existing accepted creative result")
+    p.parent.mkdir(parents=True,exist_ok=True)
+    return p
+
+
+def _witness(file):
+    f=Path(file)
+    if not f.is_file() or f.stat().st_size<100:
+        raise ValueError("No genuine digital media file produced")
+    digest=sha256_file(f)
+    out={"path":str(f.resolve()),"sha256":digest,"bytes":f.stat().st_size}
+    if f.suffix.lower() in (".mp4",".mov",".mkv",".webm"):
+        meta=_probe_details(f)
+        out.update({"duration_seconds":meta["duration_seconds"],
+                    "width":meta["width"],"height":meta["height"],
+                    "audio_present":meta["audio_stream_present"]})
+    elif f.suffix.lower()==".png":
+        with f.open("rb") as blob:
+            if blob.read(8)!=b"\x89PNG\r\n\x1a\n":
+                raise ValueError("False image bytes cannot become thumbnail")
+    return out
+
+
+def _verify_witness(result):
+    if not isinstance(result,dict) or "path" not in result or "sha256" not in result:
+        return False
+    p=Path(result["path"])
+    if not p.is_file() or sha256_file(p)!=result["sha256"]:
+        return False
+    if p.suffix.lower() in (".mp4",".mov",".mkv",".webm"):
+        observed=_probe_details(p)
+        return (abs(observed["duration_seconds"]-result["duration_seconds"])<.08
+                and observed["audio_stream_present"]==result["audio_present"])
+    if p.suffix.lower()==".png":
+        with p.open("rb") as stream:
+            return stream.read(8)==b"\x89PNG\r\n\x1a\n"
+    if p.suffix.lower()==".otio":
+        try:
+            import opentimelineio as otio
+            movie=otio.adapters.read_from_file(str(p))
+            return len(movie.video_tracks())>0
+        except (ImportError,ValueError,RuntimeError,AttributeError):
+            return False
+    return False
+
+
+def body_catalog(workspace,*,vault_root=None):
+    root=Path(workspace).resolve()
+    vault=MediaVault(vault_root or (root/"vault"))
+    catalog=ToolCatalog()
+
+    def add(id,capability,description,access,ready,required,fn):
+        catalog.register(ToolSpec(id,capability,description,access,
+            status="installed" if ready else "needs_setup",
+            license="various installed FOSS or verified asset provenance",
+            resource="local machine",
+            operation_schema={"required":required}),fn if ready else None)
+
+    def inspect(inputs):
+        path=_path_within(root,inputs["source"],exists=True)
+        return _witness(path)
+
+    def edit(inputs):
+        original=_path_within(root,inputs["edit"],exists=True)
+        output=_body_output(root,inputs["out"],allowed=(".mp4",))
+        try:
+            render_edit(original,root,output)
+            return _witness(output)
+        except BaseException:
+            output.unlink(missing_ok=True)
+            raise
+
+    def export_edit(inputs):
+        original=_path_within(root,inputs["edit"],exists=True)
+        output=_body_output(root,inputs["out"],allowed=(".otio",))
+        export_editable_timeline(original,root,output)
+        return _witness(output)
+
+    def vector_art(inputs):
+        original=_path_within(root,inputs["source_svg"],exists=True)
+        output=_body_output(root,inputs["out"],allowed=(".png",))
+        rasterize_original_svg(original,output,width=inputs["width"],
+                              height=inputs["height"])
+        return _witness(output)
+
+    def thumbnail(inputs):
+        original=_path_within(root,inputs["source_film"],exists=True)
+        target=_body_output(root,inputs["out"],allowed=(".png",))
+        extract_director_selected_frame(original,target,at_seconds=inputs["time_seconds"])
+        return _witness(target)
+
+    def vault_asset(inputs):
+        source=_path_within(root,inputs["source"],exists=True)
+        ref=vault.ingest(source,mime=inputs["mime"],rights=inputs["rights"],
+                 source_type=inputs["source_type"],
+                 source_id=inputs["source_id"],evidence=inputs["evidence"],
+                 owner_or_generator=inputs["issuer"])
+        # Transport as a verified reference, NOT by inventing an MP4 path.
+        record=vault.inspect(ref["asset_id"],attestation_id=ref["attestation_id"])
+        witness=_witness(record["path"]) if Path(record["path"]).suffix.lower() in (
+            ".mp4",".mov",".mkv",".webm",".otio",".png") else {
+                "path":record["path"],"sha256":ref["asset_id"]}
+        witness.update({"asset_id":ref["asset_id"],"attestation_id":ref["attestation_id"],
+                       "rights":ref["rights"]})
+        return witness
+
+    add("body.inspect","measure physical media","FFprobe validates actual source video",
+        "read",bool(shutil.which("ffprobe")),["source"],inspect)
+    add("body.render_edit","editorial timeline","Headless FFmpeg actual movie assembler",
+        "write",bool(shutil.which("ffmpeg")),["edit","out"],edit)
+    try:import opentimelineio
+    except ImportError:otio_ready=False
+    else:otio_ready=True
+    add("body.otio","editable edit interchange","Real Academy Software Foundation OpenTimelineIO",
+        "write",otio_ready,["edit","out"],export_edit)
+    add("body.vector_png","original vector art and thumbnail","Inkscape headless real vector to PNG",
+        "write",bool(shutil.which("inkscape")),["source_svg","out","width","height"],vector_art)
+    add("body.film_thumbnail","original movie frame artwork","FFmpeg decode actual selected frame",
+        "write",bool(shutil.which("ffmpeg")),["source_film","out","time_seconds"],thumbnail)
+    add("body.asset_vault","audited media provenance","Hash and preserve rights-cleared actual file",
+        "write",True,["source","mime","rights","source_type","source_id","evidence","issuer"],
+        vault_asset)
+    return catalog
+
+
+def validate_witness(_tool_id,result):
+    """Physically revisit file and hashes on every resumed dependency."""
+    if not _verify_witness(result):return False
+    if "asset_id" in result and (
+        result["asset_id"]!=result["sha256"] or
+        not isinstance(result.get("attestation_id"),str)):
+        return False
+    return True
+
+
+def run_body_project(film_ir,workspace,*,db_name="production.sqlite3"):
+    root=Path(workspace)
+    catalog=body_catalog(root)
+    store=DurableFilmGraph(root/db_name)
+    actual_versions={item["id"]:"zx7-body-schema-1:"+item["status"]
+                 for item in catalog.discover() if item["status"]=="installed"}
+    return execute_durable_film_graph(
+       film_ir,catalog,fact_ids=set(film_ir.get("owner_facts",{})),
+       store=store,output_verifier=validate_witness,
+       trusted_idempotent_tools={"body.inspect","body.render_edit","body.otio",
+                                 "body.vector_png","body.film_thumbnail","body.asset_vault"},
+       tool_revisions=actual_versions,allowed_access={"read","write"})
+
+
+def main():
+    p=argparse.ArgumentParser(description=__doc__)
+    p.add_argument("--project",type=Path,required=True)
+    p.add_argument("--workspace",type=Path,required=True)
+    a=p.parse_args()
+    state=run_body_project(json.loads(a.project.read_text()),a.workspace)
+    print(json.dumps(state,ensure_ascii=False,indent=2))
+    if state["status"]!="all_tool_results_verified":
+        raise SystemExit("Production body graph blocked or failed: "+str(state["errors"]))
+
+
+if __name__=="__main__":main()
