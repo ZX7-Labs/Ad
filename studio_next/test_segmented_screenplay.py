@@ -1,7 +1,8 @@
 import unittest
 from studio_next.segmented_screenplay import (
     create_screenplay,validate_spine,validate_authored_shot,retryable_output,
-    complete_missing_ending, normalize_spine_layout, reground_invalid_beats)
+    complete_missing_ending, normalize_spine_layout, reground_invalid_beats,
+    repair_authored_shot)
 
 def story(n=2):
     return {"title":"A drawn line has consequence",
@@ -246,6 +247,59 @@ class ScriptBreakdownTests(unittest.TestCase):
                 "reason":"Looks plausible"}
         with self.assertRaisesRegex(ValueError,"prove every owner fact"):
             reground_invalid_beats(x,{"facts":{"identity":"Real notebook"}},result)
+
+    def test_corrupted_duration_requires_new_scene_direction_not_silent_cast(self):
+        x=story(3)
+        approved_duration=x["scene_map"][0]["duration_seconds"]
+        approved_purpose=x["scene_map"][0]["purpose"]
+        calls=[]
+        def run(stage, system, context, tokens, temp):
+            calls.append(stage)
+            if stage=="spine":
+                return x
+            index=int(stage.rsplit("-",1)[-1])-1
+            shot=actual_scene(x["scene_map"][index])
+            if stage=="scene-001":
+                shot["duration_seconds"]=4.5
+                shot["visual"]="An unsupported physical tablet-failure claim"
+                return shot
+            if stage=="scene-repair-001":
+                self.assertEqual(context["contract_error"],
+                                 "Director-approved duration silently changed")
+                self.assertEqual(context["director_approved_beat"]["duration_seconds"],
+                                 approved_duration)
+                shot["visual"]="A fictional subjective feeling expressed with authentic camera action"
+                shot["motion"]="The scripted action unfolds over the actual director-approved duration"
+                return shot
+            return shot
+        filmed=create_screenplay({"facts":{"identity":"Real notebook"}},{},{},run)
+        self.assertEqual(len(filmed["scenes"]),3)
+        self.assertEqual(filmed["scenes"][0]["duration_seconds"],approved_duration)
+        self.assertEqual(filmed["scenes"][0]["purpose"],approved_purpose)
+        self.assertIn("scene-repair-001",calls)
+        self.assertNotIn("scene-repair-002",calls)
+
+    def test_bad_revision_remains_blocked_not_hidden_as_completed(self):
+        x=story(1)
+        bad=actual_scene(x["scene_map"][0])
+        bad["duration_seconds"]=3
+        def model(stage, system, context, tokens, temp):
+            return x if stage=="spine" else dict(bad)
+        with self.assertRaisesRegex(ValueError,"duration silently changed"):
+            create_screenplay({"facts":{"identity":"Real notebook"}},{},{},model)
+
+    def test_revision_cannot_change_story_or_invent_new_owner_claims(self):
+        beat=story(1)["scene_map"][0]
+        invalid=actual_scene(beat)
+        invalid["duration_seconds"]=1.3
+        def model(stage, system, context, tokens, temp):
+            correction=actual_scene(beat)
+            correction["fact_refs"]=["unverified_product_magic"]
+            return correction
+        with self.assertRaisesRegex(ValueError,"Unverified factual"):
+            repair_authored_shot(invalid,beat,
+                {"facts":{"identity":"Real notebook"}},story(1),None,None,
+                ValueError("mismatched duration"),model,1)
 
     def test_only_truncation_triggers_expansion(self):
         self.assertTrue(retryable_output(ValueError("Answer was truncated")))
