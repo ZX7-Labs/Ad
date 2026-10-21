@@ -94,7 +94,7 @@ class VerifiedProfessionalRelinkTests(unittest.TestCase):
         self.assertIsInstance(recent.audio_tracks()[0][-1],otio.schema.Gap)
         expected_video=self.new/"projects"/"editorial"/self.original_video.name
         self.assertEqual(sha256_file(expected_video),self.proof["asset_id"])
-        for a,b in zip(old.each_clip(),recent.each_clip()):
+        for a,b in zip(old.find_clips(),recent.find_clips()):
             self.assertEqual(a.metadata,b.metadata)
             self.assertEqual(a.source_range,b.source_range)
             self.assertEqual(b.media_reference.target_url,expected_video.as_uri())
@@ -113,7 +113,7 @@ class VerifiedProfessionalRelinkTests(unittest.TestCase):
 
     def test_fake_rights_class_or_missing_vault_rejected(self):
         film=otio.adapters.read_from_file(str(self.source))
-        for clip in film.each_clip():
+        for clip in film.find_clips():
             clip.metadata["zx7"]={
                 "source_artifact_sha256":self.proof["asset_id"],
                 "source_path":self.original_video.name,
@@ -126,7 +126,7 @@ class VerifiedProfessionalRelinkTests(unittest.TestCase):
 
     def test_outside_old_source_url_and_wrong_old_host_blocked(self):
         film=otio.adapters.read_from_file(str(self.source))
-        for clip in film.each_clip():
+        for clip in film.find_clips():
             clip.media_reference.target_url="file:///other-user/secrets-original.mp4"
         attack=self.new/"projects"/"editorial"/"unowned.otio"
         otio.adapters.write_to_file(film,str(attack))
