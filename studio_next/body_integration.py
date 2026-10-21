@@ -24,7 +24,7 @@ from .creative_asset_ops import rasterize_original_svg,extract_director_selected
 from .native_body_engines import render_original_blender,render_original_motion
 from .delivery_audit import audit_delivered_movie,_probe_details
 from .durable_graph import DurableFilmGraph,execute_durable_film_graph
-from .media_vault import MediaVault,sha256_file
+from .media_vault import MediaVault,sha256_file,verify_media_container,MediaCustodyError
 from .composite_mix import render_composition
 from .film_finishing import finish_authorized_movie
 from .production_qc import full_decode_inspection
@@ -54,9 +54,7 @@ def _witness(file):
                     "width":meta["width"],"height":meta["height"],
                     "audio_present":meta["audio_stream_present"]})
     elif f.suffix.lower()==".png":
-        with f.open("rb") as blob:
-            if blob.read(8)!=b"\x89PNG\r\n\x1a\n":
-                raise ValueError("False image bytes cannot become thumbnail")
+        verify_media_container(f,"image/png")
     return out
 
 
@@ -71,8 +69,11 @@ def _verify_witness(result):
         return (abs(observed["duration_seconds"]-result["duration_seconds"])<.08
                 and observed["audio_stream_present"]==result["audio_present"])
     if p.suffix.lower()==".png":
-        with p.open("rb") as stream:
-            return stream.read(8)==b"\x89PNG\r\n\x1a\n"
+        try:
+            verify_media_container(p,"image/png")
+            return True
+        except (OSError,ValueError,RuntimeError):
+            return False
     if p.suffix.lower()==".otio":
         try:
             import opentimelineio as otio
