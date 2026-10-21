@@ -1,4 +1,5 @@
 import io
+import hashlib
 import json
 import tempfile
 import threading
@@ -154,6 +155,23 @@ class IndependentLocalCreativeServiceTests(unittest.TestCase):
                     if status["status"]=="completed":break
                     time.sleep(.01)
                 self.assertEqual(status["status"],"completed")
+                original=b"source-camera-raw-bytes"*64
+                payload=Request(origin+"/v1/workspaces/real-studio/assets/camera-original.bin",
+                    data=original,method="POST",
+                    headers={"Authorization":"Bearer "+token,
+                             "Content-Type":"application/octet-stream",
+                             "X-Source-Id":"actual-owner-shot-source",
+                             "X-Rights-Evidence":"Owner generated original camera data"})
+                with urlopen(payload,timeout=5) as response:
+                    attached=json.loads(response.read())
+                self.assertEqual(attached["asset_id"],hashlib.sha256(original).hexdigest())
+                with urlopen(request("/v1/jobs/"+id+"/artifacts"),timeout=5) as response:
+                    listed=json.loads(response.read())["assets"]
+                self.assertIn("camera-original.bin",[a["path"] for a in listed])
+                with urlopen(request("/v1/jobs/"+id+"/artifacts/camera-original.bin"),
+                             timeout=5) as response:
+                    self.assertEqual(response.read(),original)
+
             finally:
                 server.shutdown();server.server_close();thread.join(timeout=5)
                 c.close()
