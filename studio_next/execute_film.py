@@ -7,6 +7,7 @@ A declared missing capability STOPS output instead of silently lowering quality.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import re
@@ -16,6 +17,7 @@ from pathlib import Path
 from .production_handoff import validate_visual_design, _scenes
 from .motion_bridge import compile_motion_project
 from .edit_timeline import render_edit, probe_media
+from .stage_checkpoint import DurableStageStore, fingerprint
 
 _SAFE_NAME = re.compile(r"^[A-Za-z0-9_.-]+$")
 
@@ -87,6 +89,63 @@ def _tts_for_single(shot,voice,shot_dir,assets):
     return shot_dir/"speech"/"voice-01.wav"
 
 
+
+def _visual_renderer_revision():
+    """Any changed physical renderer invalidates saved visual clips, not the art."""
+    root=Path(__file__).resolve().parent
+    sources=(root/"execute_film.py",root/"blender_scene.py",
+             root/"edit_timeline.py",root.parent/"motion_studio"/"render.py",
+             root.parent/"motion_studio"/"voice.py")
+    hashed=hashlib.sha256()
+    for path in sources:
+        hashed.update(path.name.encode("utf-8"))
+        hashed.update(path.read_bytes())
+    return hashed.hexdigest()
+
+
+def _scene_clip_signature(shot,design,delivery,owner_facts,backend_revision):
+    return {"director_selected_shot":shot,"specific_real_tool_job":design,
+            "delivery":delivery,"owner_facts":owner_facts,
+            "installed_renderer_code_revision":backend_revision}
+
+
+def _resume_verified_visual(checkpoints, stage_id, signature, scene_dir, *, probe=probe_media):
+    """Only reuse the exact filmed and decoder-validated existing scene."""
+    saved=checkpoints.find(stage_id,signature)
+    if saved is None:
+        return None
+    if not isinstance(saved,dict) or not isinstance(saved.get("clip"),str):
+        raise ValueError("Saved scene checkpoint missing real clip locator")
+    rel=Path(saved["clip"])
+    if rel.is_absolute() or not rel.parts or any(x in (".","..") for x in rel.parts):
+        raise ValueError("Untrusted media checkpoint path")
+    file=(scene_dir/rel).resolve()
+    if not file.is_relative_to(scene_dir.resolve()) or not file.is_file():
+        return None
+    with file.open("rb") as f:
+        sha=hashlib.file_digest(f,"sha256").hexdigest()
+    if sha!=saved.get("clip_sha256"):
+        raise ValueError("Previously generated movie bytes changed; do not silently reuse")
+    measured=probe(file)
+    if abs(measured["seconds"]-saved.get("seconds",0))>.05 or (
+            bool(measured.get("audio"))!=bool(saved.get("audio"))):
+        raise ValueError("Cached movie does not match physical encoder evidence")
+    return {"clip":file,"voice_status":saved["voice_status"],
+            "seconds":measured["seconds"],"audio":measured["audio"]}
+
+
+def _persist_verified_visual(checkpoints,stage_id,signature,scene_dir,clip,media,voice_status):
+    clip=Path(clip)
+    if not clip.resolve().is_relative_to(scene_dir.resolve()):
+        raise ValueError("Cannot checkpoint visual outside its original scene directory")
+    with clip.open("rb") as f:
+        digest=hashlib.file_digest(f,"sha256").hexdigest()
+    return checkpoints.save(stage_id,signature,{
+        "clip":str(clip.relative_to(scene_dir)),
+        "clip_sha256":digest,"seconds":media["seconds"],
+        "audio":bool(media["audio"]),"voice_status":voice_status})
+
+
 def render_approved_designs(treatment, fact_ledger, designs_dir, delivery,
                             output_dir, *, voice_assets=None):
     """Produce a genuine editable multi-engine output or a precise failure.
@@ -102,6 +161,8 @@ def render_approved_designs(treatment, fact_ledger, designs_dir, delivery,
     assets=Path(voice_assets).resolve() if voice_assets else None
     edits=[]
     results=[]
+    checkpoints=DurableStageStore(output_dir/"verified-rendered-scenes")
+    renderer_revision=_visual_renderer_revision()
     for n,shot in enumerate(shots,1):
         sid=shot["id"]
         if not _SAFE_NAME.fullmatch(sid) or sid in (".",".."):
@@ -118,66 +179,77 @@ def render_approved_designs(treatment, fact_ledger, designs_dir, delivery,
         narration=shot.get("narration","")
         if narration and delivery["voice"]=="no_voice":
             raise ValueError("Cannot silently discard spoken narration")
-        if verification["engine"]=="motion2d":
-            project=verification["project"]
-            if project["voice"]!=delivery["voice"]:
-                raise ValueError("Shot cannot override approved voice identity")
-            path=shot_dir/"scene-project.json"
-            path.write_text(json.dumps(project,ensure_ascii=False,indent=2))
-            if delivery["voice"]=="no_voice":
-                _run(["python","-m","studio_next.silent_audio",
-                      "--project",path,"--out",shot_dir])
-            else:
-                if assets is None or not assets.is_dir():
-                    raise ValueError("M3/F2 voice assets required")
-                _run(["python","-m","motion_studio.voice","--project",path,
-                      "--out",shot_dir,"--model-dir",assets],timeout=1200)
-            _run(["python","-m","motion_studio.render","--project",path,
-                  "--out",shot_dir,"--width",str(delivery["format"]["width"]),
-                  "--fps",str(delivery["format"]["fps"])],timeout=3600)
-            clip=shot_dir/"sample.mp4"
-            voice_status="embedded_or_declared_silence"
-        elif verification["engine"]=="blender3d":
-            job=design["scene_job"]
-            scene_file=shot_dir/"scene.json"
-            scene_file.write_text(json.dumps(job,ensure_ascii=False,indent=2))
-            frames=shot_dir/"frames"
-            frames.mkdir(exist_ok=True)
-            _run(["blender","--background","--factory-startup","--python-exit-code",
-                  "1","--python","studio_next/blender_scene.py","--",
-                  "--scene",scene_file,"--out",frames],timeout=3600)
-            output_frames=list(frames.glob("frame_*.png"))
-            if len(output_frames)!=job["frames"]:
-                raise RuntimeError("3D renderer did not produce every intended frame")
-            visual=shot_dir/"scene-visual.mp4"
-            _run(["ffmpeg","-hide_banner","-loglevel","error","-y",
-                  "-framerate",str(job["fps"]),"-start_number","1",
-                  "-i",frames/"frame_%04d.png",
-                  "-c:v","libx264","-crf","18","-pix_fmt","yuv420p",
-                  "-movflags","+faststart",visual],timeout=1200)
-            clip=visual
-            voice_status="intentional_silence"
-            if narration:
-                audio=_tts_for_single(shot,delivery["voice"],shot_dir,assets)
-                duration=probe_media(visual)["seconds"]
-                sound=json.loads(subprocess.check_output(["ffprobe","-v","error",
-                    "-show_entries","format=duration","-of","json",str(audio)]))
-                vocal_seconds=float(sound["format"]["duration"])
-                if vocal_seconds>duration-0.05:
-                    raise RuntimeError("Director's spoken text exceeds shot time; "
-                                       "must revise timings rather than cut speech")
-                clip=shot_dir/"scene-with-voice.mp4"
-                _run(["ffmpeg","-hide_banner","-loglevel","error","-y",
-                      "-i",visual,"-i",audio,
-                      "-map","0:v:0","-map","1:a:0",
-                      "-c:v","copy","-af",f"apad,atrim=duration={duration:.6f}",
-                      "-c:a","aac","-movflags","+faststart","-t",str(duration),clip])
-                voice_status="M3_F2_recorded"
+        signature=_scene_clip_signature(shot,design,delivery,fact_ledger,
+                                         renderer_revision)
+        cached=_resume_verified_visual(checkpoints,f"scene_{n:03d}",
+                                        signature,shot_dir)
+        if cached is not None:
+            clip=cached["clip"]
+            voice_status=cached["voice_status"]
         else:
-            raise ValueError("Unsupported registered production engine")
+            if verification["engine"]=="motion2d":
+                project=verification["project"]
+                if project["voice"]!=delivery["voice"]:
+                    raise ValueError("Shot cannot override approved voice identity")
+                path=shot_dir/"scene-project.json"
+                path.write_text(json.dumps(project,ensure_ascii=False,indent=2))
+                if delivery["voice"]=="no_voice":
+                    _run(["python","-m","studio_next.silent_audio",
+                          "--project",path,"--out",shot_dir])
+                else:
+                    if assets is None or not assets.is_dir():
+                        raise ValueError("M3/F2 voice assets required")
+                    _run(["python","-m","motion_studio.voice","--project",path,
+                          "--out",shot_dir,"--model-dir",assets],timeout=1200)
+                _run(["python","-m","motion_studio.render","--project",path,
+                      "--out",shot_dir,"--width",str(delivery["format"]["width"]),
+                      "--fps",str(delivery["format"]["fps"])],timeout=3600)
+                clip=shot_dir/"sample.mp4"
+                voice_status="embedded_or_declared_silence"
+            elif verification["engine"]=="blender3d":
+                job=design["scene_job"]
+                scene_file=shot_dir/"scene.json"
+                scene_file.write_text(json.dumps(job,ensure_ascii=False,indent=2))
+                frames=shot_dir/"frames"
+                frames.mkdir(exist_ok=True)
+                _run(["blender","--background","--factory-startup","--python-exit-code",
+                      "1","--python","studio_next/blender_scene.py","--",
+                      "--scene",scene_file,"--out",frames],timeout=3600)
+                output_frames=list(frames.glob("frame_*.png"))
+                if len(output_frames)!=job["frames"]:
+                    raise RuntimeError("3D renderer did not produce every intended frame")
+                visual=shot_dir/"scene-visual.mp4"
+                _run(["ffmpeg","-hide_banner","-loglevel","error","-y",
+                      "-framerate",str(job["fps"]),"-start_number","1",
+                      "-i",frames/"frame_%04d.png",
+                      "-c:v","libx264","-crf","18","-pix_fmt","yuv420p",
+                      "-movflags","+faststart",visual],timeout=1200)
+                clip=visual
+                voice_status="intentional_silence"
+                if narration:
+                    audio=_tts_for_single(shot,delivery["voice"],shot_dir,assets)
+                    duration=probe_media(visual)["seconds"]
+                    sound=json.loads(subprocess.check_output(["ffprobe","-v","error",
+                        "-show_entries","format=duration","-of","json",str(audio)]))
+                    vocal_seconds=float(sound["format"]["duration"])
+                    if vocal_seconds>duration-0.05:
+                        raise RuntimeError("Director's spoken text exceeds shot time; "
+                                           "must revise timings rather than cut speech")
+                    clip=shot_dir/"scene-with-voice.mp4"
+                    _run(["ffmpeg","-hide_banner","-loglevel","error","-y",
+                          "-i",visual,"-i",audio,
+                          "-map","0:v:0","-map","1:a:0",
+                          "-c:v","copy","-af",f"apad,atrim=duration={duration:.6f}",
+                          "-c:a","aac","-movflags","+faststart","-t",str(duration),clip])
+                    voice_status="M3_F2_recorded"
+            else:
+                raise ValueError("Unsupported registered production engine")
         media=probe_media(clip)
         timing_proof=verify_rendered_shot_duration(shot,media["seconds"],
                                                  delivery["format"]["fps"])
+        if cached is None:
+            _persist_verified_visual(checkpoints,f"scene_{n:03d}",signature,
+                                     shot_dir,clip,media,voice_status)
         if verification["engine"]=="motion2d" or narration:
             if not media["audio"]:
                 raise RuntimeError("Narrated/sound-designed scene has no audio stream")
