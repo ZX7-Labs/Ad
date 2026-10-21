@@ -163,6 +163,71 @@ class IndependentLocalCreativeServiceTests(unittest.TestCase):
                 self.assertEqual(state["observed_tool_states"][0]["state"],"running")
             finally:service.close()
 
+    def test_whole_independent_studio_service_survives_original_machine_loss(self):
+        import shutil
+        from studio_next.body_archive import restore_body_archive
+        with tempfile.TemporaryDirectory() as outer:
+            base=Path(outer)
+            home=base/"permanent-creative-studio"
+            service=LocalBodyCoordinator(home,execute=lambda ir,path:{
+                "status":"all_tool_results_verified","completed":["actual-shot"],
+                "video_proven":False})
+            try:
+                media=b"real-owner-original-raw-cinema"*1024
+                asset=service.upload_owner_media(
+                    "the-owner-film","original-raw.bin",
+                    io.BytesIO(media),len(media),
+                    mime="application/octet-stream",
+                    source_id="operator-original-asset",
+                    rights_evidence="Original creator supplied raw files")
+                service.submit(plan(),workspace_id="the-owner-film",job_id="unique-cinema")
+                for _ in range(150):
+                    if service.inspect("unique-cinema")["status"]=="completed":break
+                    time.sleep(.01)
+                self.assertEqual(service.inspect("unique-cinema")["status"],"completed")
+                for _ in range(150):
+                    if not service._queued:break
+                    time.sleep(.01)
+                snapshot=service.create_recovery_snapshot(base/"entire-studio.tar.gz")
+                self.assertGreaterEqual(snapshot["files"],4)
+            finally:service.close()
+            shutil.rmtree(home)
+            verified=restore_body_archive(base/"entire-studio.tar.gz",home,
+                                         expected_sha256=snapshot["sha256"])
+            self.assertTrue(verified["all_physical_bytes_verified"])
+            recovered=LocalBodyCoordinator(home)
+            try:
+                self.assertEqual(recovered.inspect("unique-cinema")["status"],"completed")
+                self.assertEqual(recovered.pending_restart(),0)
+                actual=home/"projects"/"the-owner-film"/"original-raw.bin"
+                self.assertEqual(actual.read_bytes(),media)
+                from studio_next.media_vault import MediaVault
+                vault=MediaVault(home/"projects"/"the-owner-film"/"vault")
+                record=vault.inspect(asset["asset_id"],
+                                   attestation_id=asset["attestation_id"])
+                self.assertEqual(record["rights_attestations"][0]["rights"],
+                                 "owner_supplied")
+            finally:recovered.close()
+
+    def test_running_creative_renderer_cannot_be_inconsistently_archived(self):
+        with tempfile.TemporaryDirectory() as outer:
+            start=threading.Event()
+            release=threading.Event()
+            def active(ir,workspace):
+                start.set()
+                release.wait(timeout=5)
+                return {"status":"all_tool_results_verified"}
+            service=LocalBodyCoordinator(Path(outer)/"studio",execute=active)
+            try:
+                service.submit(plan(),workspace_id="film",job_id="film-1")
+                self.assertTrue(start.wait(timeout=2))
+                with self.assertRaisesRegex(RuntimeError,"active render"):
+                    service.create_recovery_snapshot(Path(outer)/"unsafe.tar.gz")
+                self.assertFalse((Path(outer)/"unsafe.tar.gz").exists())
+            finally:
+                release.set()
+                service.close()
+
     def test_owner_can_import_actual_bytes_with_immutable_rights_custody(self):
         with tempfile.TemporaryDirectory() as root:
             backend=LocalBodyCoordinator(root,execute=lambda ir,workspace:{
