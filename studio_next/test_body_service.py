@@ -1,3 +1,4 @@
+import io
 import json
 import tempfile
 import threading
@@ -67,6 +68,43 @@ class IndependentLocalCreativeServiceTests(unittest.TestCase):
                 self.assertEqual(result["status"],"blocked")
                 self.assertFalse(result["result"]["video_proven"])
             finally:c.close()
+
+    def test_owner_can_import_actual_bytes_with_immutable_rights_custody(self):
+        with tempfile.TemporaryDirectory() as root:
+            backend=LocalBodyCoordinator(root,execute=lambda ir,workspace:{
+                "status":"all_tool_results_verified"})
+            data=b"original signed local artist source bytes"*32
+            try:
+                record=backend.upload_owner_media(
+                    "original-project","artist-data.bin",io.BytesIO(data),len(data),
+                    mime="application/octet-stream",source_id="owner-camera-raw-001",
+                    rights_evidence="Owner explicitly supplied this original file")
+                self.assertEqual(record["bytes"],len(data))
+                media=Path(root)/"projects"/"original-project"/"artist-data.bin"
+                self.assertEqual(media.read_bytes(),data)
+                with self.assertRaises(FileExistsError):
+                    backend.upload_owner_media(
+                        "original-project","artist-data.bin",io.BytesIO(data),len(data),
+                        mime="application/octet-stream",source_id="owner",
+                        rights_evidence="owner supplied")
+                with self.assertRaisesRegex(ValueError,"Invalid media"):
+                    backend.upload_owner_media(
+                        "original-project","../private.bin",io.BytesIO(data),len(data),
+                        mime="application/octet-stream",source_id="owner",
+                        rights_evidence="owner supplied")
+                with self.assertRaisesRegex(ValueError,"match"):
+                    backend.upload_owner_media(
+                        "original-project","false-video.mp4",io.BytesIO(data),len(data),
+                        mime="application/octet-stream",source_id="owner",
+                        rights_evidence="owner supplied")
+                with self.assertRaises((ValueError,RuntimeError)):
+                    backend.upload_owner_media(
+                        "original-project","fake-footage.mp4",io.BytesIO(data),len(data),
+                        mime="video/mp4",source_id="owner",
+                        rights_evidence="owner supplied")
+                self.assertFalse((media.parent/"fake-footage.mp4").exists())
+                self.assertFalse(list(media.parent.glob(".zx7-import-*")))
+            finally:backend.close()
 
     def test_authentication_and_no_public_source_or_mutable_shell_commands(self):
         with tempfile.TemporaryDirectory() as root:
