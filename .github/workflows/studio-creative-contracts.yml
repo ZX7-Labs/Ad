@@ -4,6 +4,8 @@ on:
   push:
     branches: [zx7-specialist-free-stack-20261020]
     paths:
+      - "motion_studio/voice.py"
+      - "studio_next/test_voice_slots.py"
       - "studio_next/segmented_screenplay.py"
       - "studio_next/test_segmented_screenplay.py"
       - "studio_next/creative_challenge.py"
