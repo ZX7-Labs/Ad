@@ -247,12 +247,12 @@ def render_approved_designs(treatment, fact_ledger, designs_dir, delivery,
         media=probe_media(clip)
         timing_proof=verify_rendered_shot_duration(shot,media["seconds"],
                                                  delivery["format"]["fps"])
-        if cached is None:
-            _persist_verified_visual(checkpoints,f"scene_{n:03d}",signature,
-                                     shot_dir,clip,media,voice_status)
         if verification["engine"]=="motion2d" or narration:
             if not media["audio"]:
                 raise RuntimeError("Narrated/sound-designed scene has no audio stream")
+        if cached is None:
+            _persist_verified_visual(checkpoints,f"scene_{n:03d}",signature,
+                                     shot_dir,clip,media,voice_status)
         edits.append({"id":sid,"source":str(clip.relative_to(output_dir)),
                       "rights":"generated_original",
                       "audio":"preserve_source" if media["audio"] else "intentional_silence"})
