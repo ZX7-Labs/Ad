@@ -34,6 +34,7 @@ jobs:
           python -m unittest studio_next.test_editorial_interchange -v
           python -m unittest studio_next.test_composite_mix -v
           python -m unittest studio_next.test_body_materials studio_next.test_body_integration studio_next.test_body_plugins -v
+          python -m unittest studio_next.test_durable_graph -v
           python -m studio_next.creative_tool_registry --out output/real-installed-tool-inventory.json
       - name: Restore original actual 2D and Blender 3D footage from separately proven render
         uses: actions/download-artifact@v4
