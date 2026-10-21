@@ -41,7 +41,31 @@ def verify_media_container(path,mime):
         if len(first)<24 or first[:8]!=bytes([137,80,78,71,13,10,26,10]) or (
              int.from_bytes(first[16:20],"big")<=0 or
              int.from_bytes(first[20:24],"big")<=0):
-            raise MediaCustodyError("Original PNG pixels not actually present")
+            raise MediaCustodyError("Original PNG image signature and dimensions are invalid")
+        try:
+            from PIL import Image
+        except ImportError:
+            # Do not mistake a leading PNG signature for real image pixels.
+            # Production hosts with image tools have either Pillow or FFmpeg.
+            if shutil.which("ffmpeg") is None:
+                raise MediaCustodyError("A real PNG decoder is not installed")
+            import subprocess
+            decoded=subprocess.run(["ffmpeg","-hide_banner","-loglevel","error",
+                      "-xerror","-nostdin","-i",str(path),
+                      "-frames:v","1","-f","null","-"],
+                      capture_output=True,timeout=90,check=False)
+            if decoded.returncode!=0:
+                raise MediaCustodyError("Claimed original PNG is not pixel-decodable")
+        else:
+            try:
+                with Image.open(path) as image:
+                    image.verify()
+                with Image.open(path) as image:
+                    image.load()
+                    if image.width<=0 or image.height<=0:
+                        raise MediaCustodyError("Empty original PNG image")
+            except (OSError,ValueError,SyntaxError) as exc:
+                raise MediaCustodyError("Claimed original PNG is not pixel-decodable") from exc
     elif mime=="audio/wav":
         import wave
         try:
