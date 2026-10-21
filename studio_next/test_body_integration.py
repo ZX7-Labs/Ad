@@ -7,7 +7,7 @@ import shutil
 import importlib.util
 from pathlib import Path
 from unittest.mock import patch
-from studio_next.body_integration import body_catalog,validate_witness,_require_authentic_generated_media_lineage
+from studio_next.body_integration import body_catalog,validate_witness,_require_authentic_generated_media_lineage,_commit_actual_body_output
 
 
 def actual_rgb_png():
@@ -49,6 +49,33 @@ class TrustedCreativeBodyToolTests(unittest.TestCase):
             self.assertTrue(validate_witness("body.vector_png",result))
             p.write_bytes(b"not same artwork"*100)
             self.assertFalse(validate_witness("body.vector_png",result))
+
+    def test_render_failure_never_leaves_a_fake_committed_movie(self):
+        with tempfile.TemporaryDirectory() as root:
+            target=Path(root)/"actual-movie.mp4"
+            def broken(destination):
+                destination.write_bytes(b"partial encoder bytes"*30)
+                raise RuntimeError("actual GPU/Blender job crashed")
+            with self.assertRaisesRegex(RuntimeError,"crashed"):
+                _commit_actual_body_output(target,broken)
+            self.assertFalse(target.exists())
+            self.assertFalse(list(Path(root).glob(".zx7-uncommitted-*")))
+
+    def test_only_completed_stage_is_atomically_published_not_overwritten(self):
+        with tempfile.TemporaryDirectory() as root:
+            target=Path(root)/"actual-movie.mp4"
+            def successful(destination):
+                destination.write_bytes(b"physically rendered bytes"*50)
+            def measured(path):
+                return {"path":str(path),"sha256":"real-stage-digest"}
+            with patch("studio_next.body_integration._witness",side_effect=measured):
+                with patch("studio_next.body_integration._verify_witness",return_value=True):
+                    result=_commit_actual_body_output(target,successful)
+                    self.assertEqual(result["path"],str(target))
+                    self.assertTrue(target.exists())
+                    with self.assertRaises(FileExistsError):
+                        _commit_actual_body_output(target,successful)
+            self.assertEqual(target.read_bytes(),b"physically rendered bytes"*50)
 
     def test_png_header_without_actual_pixels_is_never_a_real_artifact(self):
         with tempfile.TemporaryDirectory() as root:
