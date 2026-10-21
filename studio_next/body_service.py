@@ -11,6 +11,8 @@ infinite hidden background jobs. Real media is created only by registered tools.
 from __future__ import annotations
 
 import argparse
+import base64
+import binascii
 import concurrent.futures
 import fcntl
 import hmac
@@ -324,6 +326,17 @@ class LocalBodyCoordinator:
 def make_body_http_handler(coordinator,token):
     if not isinstance(token,str) or len(token)<32:
         raise ValueError("Local creative body API needs secret >=32 characters")
+    def _utf8_media_header(headers,raw_name,encoded_name):
+        encoded=headers.get(encoded_name)
+        if encoded:
+            if len(encoded)>12000:
+                raise ValueError("Original rights/source evidence exceeds local header budget")
+            try:
+                return base64.b64decode(encoded,validate=True).decode("utf-8")
+            except (binascii.Error,UnicodeError) as exc:
+                raise ValueError("Original media source/rights header has invalid UTF-8") from exc
+        return headers.get(raw_name,"")
+
     class Handler(BaseHTTPRequestHandler):
         server_version="ZX7Body/1"
         def log_message(self,format,*args):
@@ -394,8 +407,10 @@ def make_body_http_handler(coordinator,token):
                     receipt=coordinator.upload_owner_media(
                         pieces[3],pieces[5],self.rfile,length,
                         mime=self.headers.get("Content-Type",""),
-                        source_id=self.headers.get("X-Source-Id",""),
-                        rights_evidence=self.headers.get("X-Rights-Evidence",""))
+                        source_id=_utf8_media_header(self.headers,
+                            "X-Source-Id","X-Source-Id-B64"),
+                        rights_evidence=_utf8_media_header(self.headers,
+                            "X-Rights-Evidence","X-Rights-Evidence-B64"))
                     return self._reply(201,receipt)
                 except (ValueError,TypeError,FileExistsError,OSError) as exc:
                     return self._reply(400,{"error":str(exc)})
