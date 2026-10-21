@@ -1,0 +1,90 @@
+name: "ZX7 BODY — Real Creative Tools & Recovery Integration Proof"
+on:
+  workflow_dispatch:
+  push:
+    branches: [zx7-specialist-free-stack-20261020]
+    paths: [".github/workflows/studio-body-real-integration.yml"]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  verify-media-body-not-artist-model:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 32
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Verify all technical core contracts before using costly creative tools
+        run: |
+          python -m compileall -q studio_next
+          python -m unittest discover -s studio_next -p 'test_*.py' -v
+      - name: Install genuine rights-cleared free local creative applications
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg inkscape fonts-dejavu-core
+          python -m pip install --no-cache-dir "opentimelineio>=0.17,<1"
+          ffmpeg -version | head -n 1
+          inkscape --version
+          python - <<'PY'
+          import opentimelineio as otio
+          print("ASWF OPENTIMELINEIO REAL INTERCHANGE AVAILABLE",otio.__file__)
+          PY
+      - name: Restore original actual 2D and Blender 3D footage from separately proven render
+        uses: actions/download-artifact@v4
+        with:
+          name: ZX7-real-multi-engine-2D-3D-film-and-scenes
+          run-id: 39513980044
+          github-token: ${{ github.token }}
+          path: genuine-artifacts
+      - name: Execute real non-template creative BODY tool graph with SHA custody and full restart proof
+        run: |
+          python -u -m studio_next.body_proof \
+            --archived genuine-artifacts \
+            --out output/verified-body-tools
+      - name: Verify playable media and genuine separate editable and graphic artifacts
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json,subprocess,hashlib
+          root=Path("output/verified-body-tools")
+          ledger=json.loads((root/"verified-body-result.json").read_text())
+          assert ledger["body_tools_real_video_verified"]
+          assert ledger["body_persistent_all_stage_resume_verified"]
+          assert ledger["otio_real_editable_project_created"]
+          assert ledger["decoded_original_thumbnail"]
+          assert ledger["vector_artist_graphic_rasterized"]
+          assert ledger["media_vault_sqlite"]
+          assert not ledger["independent_creative_film_produced"]
+          movie=root/"finished-actual-film.mp4"
+          meta=json.loads(subprocess.check_output([
+              "ffprobe","-v","error","-show_streams","-show_format","-of","json",str(movie)]))
+          assert any(s.get("codec_type")=="video" for s in meta["streams"])
+          assert any(s.get("codec_type")=="audio" for s in meta["streams"])
+          assert movie.stat().st_size>10000
+          print("VERIFIED ACTUAL INTEROPERABLE MEDIA BODY:")
+          for f in (movie,root/"finished-actual-film.otio",
+                    root/"designed-original.png",root/"thumbnail.png"):
+              print("ORIGINAL ARTIFACT",f,"bytes",f.stat().st_size,
+                    "sha256",hashlib.sha256(f.read_bytes()).hexdigest())
+          print("ONE-BRAIN PREMIUM FILM QUALITY NOT CLAIMED")
+          PY
+      - name: Archive genuine body interoperability and previously retained playable movie
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zx7-real-media-body-interoperability-and-restart-evidence
+          path: |
+            output/verified-body-tools/finished-actual-film.mp4
+            output/verified-body-tools/finished-actual-film.otio
+            output/verified-body-tools/designed-original.png
+            output/verified-body-tools/thumbnail.png
+            output/verified-body-tools/verified-body-result.json
+            output/verified-body-tools/film-body-ir.json
+            output/verified-body-tools/actual-delivery-audit.json
+            output/verified-body-tools/delivery-evidence/
+            output/verified-body-tools/production.sqlite3
+            output/verified-body-tools/vault/
+          if-no-files-found: warn
+          retention-days: 7
