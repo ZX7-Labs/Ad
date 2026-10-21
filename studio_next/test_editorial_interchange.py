@@ -28,11 +28,36 @@ class IndustryEditableTimelineTests(unittest.TestCase):
             project=otio.adapters.read_from_file(str(base/"cut.otio"))
             self.assertEqual(project.metadata["zx7"]["director_delivery"]["width"],2048)
             self.assertEqual(len(project.video_tracks()[0]),18)
+            self.assertEqual(len(project.audio_tracks()),1)
+            self.assertEqual(len(project.audio_tracks()[0]),18)
+            self.assertTrue(all(isinstance(item,otio.schema.Gap)
+                for item in project.audio_tracks()[0]))
             self.assertTrue(all("source_artifact_sha256" in x.metadata["zx7"]
                                for x in project.video_tracks()[0]))
             with self.assertRaises(FileExistsError):
                 export_editable_timeline(base/"edit.json",base,base/"cut.otio",
                                          probe=lambda _:{"seconds":2.33,"audio":False})
+
+    def test_genuine_production_audio_remains_editable_not_discarded(self):
+        try:import opentimelineio as otio
+        except ImportError:self.skipTest("Optional actual OpenTimelineIO not yet installed")
+        with tempfile.TemporaryDirectory() as root:
+            base=Path(root)
+            source=base/"camera-performance.mp4"
+            source.write_bytes(b"actual-video-asset-fixture"*40)
+            original={"format":{"width":1080,"height":1920,"fps":30,
+                  "framing":"fit","background":"#0a0b0c"},
+                  "clips":[{"id":"human-performance","source":source.name,
+                        "rights":"appropriately_licensed","audio":"preserve_source"}]}
+            (base/"source.json").write_text(json.dumps(original))
+            export_editable_timeline(base/"source.json",base,base/"picture-and-sound.otio",
+                           probe=lambda _:{"seconds":3.0,"audio":True})
+            project=otio.adapters.read_from_file(str(base/"picture-and-sound.otio"))
+            recorded=project.audio_tracks()[0][0]
+            self.assertIsInstance(recorded,otio.schema.Clip)
+            self.assertEqual(recorded.metadata["zx7"]["audio_director_choice"],
+                             "preserve_source")
+            self.assertEqual(recorded.media_reference.target_url,source.as_uri())
 
     def test_refuse_fake_nonindustry_extension_and_unverified_license(self):
         with tempfile.TemporaryDirectory() as root:
