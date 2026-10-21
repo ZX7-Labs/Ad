@@ -59,6 +59,25 @@ def _exact_media(layer,vault,root,*,need):
     return file
 
 
+def _motion_expression(layer,axis):
+    """Author-specified real 2D keyframe interpolation, no camera-style preset."""
+    marks=layer.get("motion",[])
+    if not marks:
+        return str(layer[axis])
+    start=float(layer["start"])
+    expr=str(marks[-1][axis])
+    for a,b in reversed(list(zip(marks,marks[1:]))):
+        start_at=start+float(a["at_seconds"])
+        end_at=start+float(b["at_seconds"])
+        step=float(b["at_seconds"])-float(a["at_seconds"])
+        change=b[axis]-a[axis]
+        expr=(f"if(lt(t,{end_at:.8f}),"
+              f"{a[axis]}+({change})*(t-{start_at:.8f})/{step:.8f},"
+              f"{expr})")
+    before=start+float(marks[0]["at_seconds"])
+    return f"if(lt(t,{before:.8f}),{marks[0][axis]},{expr})"
+
+
 def validate_composition(plan,workspace,vault):
     if not isinstance(plan,dict) or set(plan)!={"canvas","video_layers","audio_tracks"}:
         raise ValueError("An actual editor-authored canvas and tracks required")
@@ -79,12 +98,16 @@ def validate_composition(plan,workspace,vault):
     inputs=[]
     for kind,items in (("video",video),("audio",audio)):
         for layer in items:
-            if not isinstance(layer,dict) or set(layer)!=(
-                    {"id","source","asset_id","attestation_id",
-                     "start","source_in","duration","x","y","width","height","opacity"}
-                    if kind=="video" else
-                    {"id","source","asset_id","attestation_id","start","source_in","duration","gain_db"}):
-                raise ValueError("Director-specified "+kind+" layer is incomplete")
+            if not isinstance(layer,dict):
+                raise ValueError("Director-specified "+kind+" layer must be an object")
+            required=({"id","source","asset_id","attestation_id",
+                       "start","source_in","duration","x","y","width","height","opacity"}
+                      if kind=="video" else
+                      {"id","source","asset_id","attestation_id","start","source_in","duration","gain_db"})
+            supported=required|({"motion","fade_in_seconds","fade_out_seconds"}
+                                if kind=="video" else set())
+            if not required.issubset(layer) or not set(layer).issubset(supported):
+                raise ValueError("Director-specified "+kind+" layer is incomplete or uses untrusted effects")
             identifier=layer["id"]
             if not isinstance(identifier,str) or not _ID.fullmatch(identifier) or identifier in seen:
                 raise ValueError("Unsafe/duplicate audiovisual layer identifier")
@@ -103,6 +126,23 @@ def validate_composition(plan,workspace,vault):
                         raise ValueError("Creative layer position must be exact integer pixels")
                 a=_positive(layer["opacity"],"opacity",allow_zero=True)
                 if a>1:raise ValueError("Alpha beyond physical range")
+                motion=layer.get("motion",[])
+                if not isinstance(motion,list):
+                    raise ValueError("Actual editor motion keyframes must be an array")
+                last=-1.0
+                for frame in motion:
+                    if not isinstance(frame,dict) or set(frame)!={"at_seconds","x","y"}:
+                        raise ValueError("Motion keyframe requires original time and 2D position")
+                    at=_positive(frame["at_seconds"],"motion timestamp",allow_zero=True)
+                    if at<=last or at>duration:
+                        raise ValueError("Artist motion keyframes must be in distinct increasing time order")
+                    last=at
+                    if any(type(frame[axis]) is not int for axis in ("x","y")):
+                        raise ValueError("Motion position must use exact original pixel coordinates")
+                incoming=_positive(layer.get("fade_in_seconds",0),"artist fade-in",allow_zero=True)
+                outgoing=_positive(layer.get("fade_out_seconds",0),"artist fade-out",allow_zero=True)
+                if incoming+outgoing>duration:
+                    raise ValueError("Original alpha transitions exceed authored layer duration")
             else:
                 gain=layer["gain_db"]
                 if isinstance(gain,bool) or not isinstance(gain,(int,float)) or (
@@ -126,14 +166,22 @@ def actual_composite_command(plan,workspace,vault,out):
         layer=row["layer"]
         start=row["start"];source_in=row["source_in"];duration=row["duration"]
         if row["kind"]=="video":
-            filters.append(
-                f"[{index}:v:0]trim=start={source_in}:duration={duration},"
+            visual=(f"[{index}:v:0]trim=start={source_in}:duration={duration},"
                 f"setpts=PTS-STARTPTS,scale={layer['width']}:{layer['height']}:flags=lanczos,"
-                f"fps={fps},format=rgba,colorchannelmixer=aa={layer['opacity']},"
-                f"setpts=PTS+{start}/TB[v{index}]")
+                f"fps={fps},format=rgba,colorchannelmixer=aa={layer['opacity']}")
+            if layer.get("fade_in_seconds",0)>0:
+                visual+=(f",fade=t=in:st=0:"
+                         f"d={layer['fade_in_seconds']}:alpha=1")
+            if layer.get("fade_out_seconds",0)>0:
+                outgoing_start=duration-float(layer["fade_out_seconds"])
+                visual+=(f",fade=t=out:st={outgoing_start}:"
+                         f"d={layer['fade_out_seconds']}:alpha=1")
+            filters.append(visual+f",setpts=PTS+{start}/TB[v{index}]")
             output=f"stack{index}"
+            posx=_motion_expression(layer,"x")
+            posy=_motion_expression(layer,"y")
             filters.append(
-                f"[{base}][v{index}]overlay=x={layer['x']}:y={layer['y']}:"
+                f"[{base}][v{index}]overlay=x='{posx}':y='{posy}':"
                 f"eof_action=pass:shortest=0:"
                 f"enable='between(t,{start},{start+duration})':format=auto[{output}]")
             base=output
