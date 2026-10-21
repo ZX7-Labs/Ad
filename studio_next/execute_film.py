@@ -18,6 +18,7 @@ from .production_handoff import validate_visual_design, _scenes
 from .motion_bridge import compile_motion_project
 from .edit_timeline import render_edit, probe_media
 from .stage_checkpoint import DurableStageStore, fingerprint
+from .visual_engine_hub import resolve_visual_engine
 
 _SAFE_NAME = re.compile(r"^[A-Za-z0-9_.-]+$")
 
@@ -94,7 +95,9 @@ def _visual_renderer_revision():
     """Any changed physical renderer invalidates saved visual clips, not the art."""
     root=Path(__file__).resolve().parent
     sources=(root/"execute_film.py",root/"blender_scene.py",
-             root/"edit_timeline.py",root.parent/"motion_studio"/"render.py",
+             root/"edit_timeline.py",root/"visual_engine_hub.py",
+             root/"comfy_video_runtime.py",root/"generative_video_providers.py",
+             root.parent/"motion_studio"/"render.py",
              root.parent/"motion_studio"/"voice.py")
     hashed=hashlib.sha256()
     for path in sources:
@@ -243,7 +246,30 @@ def render_approved_designs(treatment, fact_ledger, designs_dir, delivery,
                           "-c:a","aac","-movflags","+faststart","-t",str(duration),clip])
                     voice_status="M3_F2_recorded"
             else:
-                raise ValueError("Unsupported registered production engine")
+                plug=resolve_visual_engine(verification["engine"])
+                if plug is None:
+                    raise ValueError("No installed execution adapter for chosen film engine")
+                clip,voice_status=plug.render(shot,design,shot_dir,delivery)
+                if narration:
+                    # Attach the SAME approved narrator to genuine generated
+                    # live-action footage; model cannot silently choose new speech.
+                    audio=_tts_for_single(shot,delivery["voice"],shot_dir,assets)
+                    duration=probe_media(clip)["seconds"]
+                    vocal=json.loads(subprocess.check_output(
+                        ["ffprobe","-v","error","-show_entries",
+                         "format=duration","-of","json",str(audio)]))
+                    speaking=float(vocal["format"]["duration"])
+                    if speaking>duration-0.05:
+                        raise RuntimeError("Spoken text exceeds actual AI film scene duration")
+                    with_voice=shot_dir/"scene-with-voice.mp4"
+                    _run(["ffmpeg","-hide_banner","-loglevel","error","-y",
+                          "-i",clip,"-i",audio,"-map","0:v:0","-map","1:a:0",
+                          "-c:v","libx264","-crf","18","-pix_fmt","yuv420p",
+                          "-af",f"apad,atrim=duration={duration:.6f}",
+                          "-c:a","aac","-movflags","+faststart",
+                          "-t",str(duration),with_voice])
+                    clip=with_voice
+                    voice_status="M3_F2_recorded"
         media=probe_media(clip)
         timing_proof=verify_rendered_shot_duration(shot,media["seconds"],
                                                  delivery["format"]["fps"])
