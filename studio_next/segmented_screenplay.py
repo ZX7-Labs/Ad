@@ -167,9 +167,15 @@ def reground_invalid_beats(spine, brief, call_stage):
         if (not isinstance(accepted,list) or
             any(not isinstance(key,str) or key not in facts for key in accepted) or
             len(accepted)!=len(set(accepted)) or not isinstance(quotes,dict) or
-            set(quotes)!=set(accepted) or
-            any(quotes[key]!=facts[key] for key in accepted)):
+            any(not isinstance(key,str) or key not in facts or
+                quotes[key]!=facts[key] for key in quotes) or
+            not set(accepted).issubset(quotes)):
             raise ValueError("Grounding did not prove every owner fact reference")
+        # Some 4B outputs provide a *verbatim, valid* quote and owner key in
+        # fact_quotes but accidentally omit the parallel factual_intent entry.
+        # Recover this redundant existing evidence; never guess key IDs or
+        # accept paraphrases. Approval of story truth remains with the critic.
+        accepted=list(dict.fromkeys([*accepted,*quotes.keys()]))
         new=dict(beat)
         new["dramatic_action"]=response["dramatic_action"]
         new["visual_goal"]=response["visual_goal"]
