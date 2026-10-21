@@ -123,7 +123,7 @@ def relink_verified_otio(source,workspace,old_workspace,output):
     timeline=otio.adapters.read_from_file(str(original))
     if not isinstance(timeline,otio.schema.Timeline):
         raise ValueError("Source is not an editable OTIO timeline")
-    clips=list(timeline.each_clip())
+    clips=list(timeline.find_clips())
     if not clips:
         raise ValueError("Empty timeline has no proven source footage")
     relinked=[]
@@ -170,7 +170,7 @@ def relink_verified_otio(source,workspace,old_workspace,output):
     try:
         otio.adapters.write_to_file(timeline,str(temporary))
         checked=otio.adapters.read_from_file(str(temporary))
-        verified_clips=list(checked.each_clip())
+        verified_clips=list(checked.find_clips())
         if len(verified_clips)!=len(clips) or any(
                 checked_clip.media_reference.target_url !=
                     original_clip.media_reference.target_url
