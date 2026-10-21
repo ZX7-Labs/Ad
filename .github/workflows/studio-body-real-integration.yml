@@ -91,9 +91,8 @@ jobs:
           root=Path("output/body-autonomous-service-proof").resolve()
           project=root/"projects"/"real-art-original"
           project.mkdir(parents=True,exist_ok=True)
-          source=project/"real-master.mp4"
-          shutil.copyfile("output/verified-body-tools/finished-actual-film.mp4",source)
-          measured=_probe_details(source)
+          original_source=Path("output/verified-body-tools/finished-actual-film.mp4")
+          measured=_probe_details(original_source)
           film={
             "project":{"creative_intent":"A real owner film submitted through independent authenticated tool API"},
             "assets":[],
@@ -130,6 +129,19 @@ jobs:
                    headers={"Authorization":"Bearer "+token}),timeout=30) as res:
                   return json.loads(res.read())
           try:
+              raw=original_source.read_bytes()
+              asset_request=Request(
+                 origin+"/v1/workspaces/real-art-original/assets/real-master.mp4",
+                 data=raw,method="POST",
+                 headers={"Authorization":"Bearer "+token,
+                   "Content-Type":"video/mp4",
+                   "X-Source-Id":"ZX7-original-first-party-technical-film",
+                   "X-Rights-Evidence":"Owner/operator of separately verified original studio-generated test footage"})
+              with urlopen(asset_request,timeout=30) as response:
+                  attached=json.loads(response.read())
+              assert attached["verified_real_media_bytes"]
+              assert attached["bytes"]==len(raw)
+              assert (project/"real-master.mp4").read_bytes()==raw
               request=Request(origin+"/v1/jobs",
                   data=json.dumps({"workspace_id":"real-art-original","film_ir":film}).encode(),
                   headers={"Authorization":"Bearer "+token,
@@ -149,6 +161,8 @@ jobs:
                   "real_model_independent_job_completed":True,
                   "actual_ffmpeg_movie_read":True,
                   "actual_decoded_frame_created":True,
+                  "authenticated_original_media_imported":True,
+                  "original_asset_digest":attached["asset_id"],
                   "all_physical_operations_verified":True,
                   "original_artistic_quality_certified":False,
                   "job_id":receipt["job_id"],
