@@ -20,6 +20,7 @@ on:
       - "studio_next/test_generative_video_providers.py"
       - "studio_next/stage_checkpoint.py"
       - "studio_next/test_stage_checkpoint.py"
+      - "studio_next/body_native_proof.py"
       - "studio_next/native_body_engines.py"
       - "studio_next/test_native_body_engines.py"
       - "studio_next/editorial_interchange.py"
