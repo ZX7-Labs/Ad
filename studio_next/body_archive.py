@@ -206,6 +206,41 @@ def restore_body_archive(archive,destination,*,expected_sha256,relocate=False):
 
 
 
+
+def save_body_archive_offline(workspace,archive):
+    """Quiescent operator CLI backup, refusing a live render service or job.
+
+    The in-process coordinator has its own maintenance lease; standalone
+    operators acquire the same cross-process host lock before reading files.
+    """
+    import fcntl
+    root=Path(workspace).resolve()
+    if not root.is_dir():
+        raise ValueError("Original workspace must exist for offline snapshot")
+    gate=root/"body-service.lock"
+    if gate.is_symlink():
+        raise ValueError("Untrusted production service lock link")
+    with gate.open("a+") as handle:
+        try:
+            fcntl.flock(handle.fileno(),fcntl.LOCK_EX|fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise RuntimeError("Production service running; use its maintenance snapshot API") from exc
+        try:
+            database=root/"body-jobs.sqlite3"
+            if database.exists():
+                with sqlite3.connect(f"file:{database}?mode=ro",uri=True) as conn:
+                    active=conn.execute(
+                        "SELECT COUNT(*) FROM jobs WHERE status IN ('queued','running')"
+                    ).fetchone()[0]
+                if active:
+                    raise RuntimeError("Cannot snapshot unresolved active original media jobs")
+            if next(root.rglob(".zx7-import-*.tmp"),None) is not None:
+                raise RuntimeError("Original owner media transfer is incomplete")
+            return create_body_archive(root,archive)
+        finally:
+            fcntl.flock(handle.fileno(),fcntl.LOCK_UN)
+
+
 def main(argv=None):
     """Host-operator-only archive tool. No executable model instructions."""
     import argparse
@@ -222,7 +257,7 @@ def main(argv=None):
         help="Import to a DIFFERENT host path, quarantine old executable jobs and require safe relinking")
     args=p.parse_args(argv)
     if args.command=="save":
-        result=create_body_archive(args.workspace,args.archive)
+        result=save_body_archive_offline(args.workspace,args.archive)
     else:
         result=restore_body_archive(args.archive,args.destination,
              expected_sha256=args.sha256,relocate=args.relocate)
