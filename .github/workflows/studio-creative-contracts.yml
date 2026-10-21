@@ -13,6 +13,7 @@ on:
       - "studio_next/film_eye.py"
       - "studio_next/test_film_eye.py"
       - "studio_next/production_handoff.py"
+      - "studio_next/test_film_fact_continuity.py"
       - "studio_next/creative_tool_registry.py"
       - "studio_next/test_creative_tool_registry.py"
       - "studio_next/director_to_production.py"
