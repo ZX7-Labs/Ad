@@ -55,7 +55,7 @@ Choose ONE result for the CURRENT shot:
   engines, natural language fonts, sound, or geometry cannot be produced.
   Do not silently substitute.
 Return one JSON object, never Markdown:
-{"shot_id":"same scene ID","engine":"blender3d|motion2d|unresolved",
+{"shot_id":"same scene ID","engine":"installed_approved_engine_id or unresolved",
  "creative_rationale":"WHY this method communicates THIS shot",
  "continuity":"specific connecting visual/sound action","scene_job":{},
  "desired_capabilities":[],"production_gap":""}
@@ -168,6 +168,12 @@ def author_production(treatment, facts, model, output_dir, *, tool_inventory=Non
     No paid tools are invoked; the model interface is localhost-only.
     """
     scenes=_scenes(treatment)
+    # Registered video diffusion is a physical tool, not a fictional asset.
+    # Discover once per directing pass, and do not advertise GPU-less tools.
+    from .generative_video_providers import discover_local_generators
+    runtime=discover_local_generators()
+    enabled_video=[x["id"] for x in runtime["video_generation_options"]
+                   if x["ready_for_independent_execution_trial"]]
     if not isinstance(facts,dict) or not all(isinstance(k,str) for k in facts):
         raise TypeError("Owner-controlled facts required")
     output_dir=Path(output_dir)
@@ -187,6 +193,8 @@ def author_production(treatment, facts, model, output_dir, *, tool_inventory=Non
                 "blender3d":"actual Blender 3D camera, original meshes, materials, lighting; CPU",
                 "motion2d":"actual procedural 2D/2.5D compositor for explicit rights-cleared vector artwork",
                 "unresolved":"preserve intent when tools/assets are unavailable",
+                **({"comfy_video":"Genuine licensed local video diffusion: "+", ".join(enabled_video)}
+                    if enabled_video else {}),
             },
             "available_creative_tool_inventory":tool_inventory if tool_inventory is not None else
                 creative_tool_inventory(),
