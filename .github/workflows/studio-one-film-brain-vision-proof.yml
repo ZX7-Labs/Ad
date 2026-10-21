@@ -1,9 +1,7 @@
 name: "ZX7 One Film Brain — Real Footage Vision Review"
 on:
+  # Significant CPU inference: run deliberately, not for every source-code edit.
   workflow_dispatch:
-  push:
-    branches: [zx7-specialist-free-stack-20261020]
-    paths: [".github/workflows/studio-one-film-brain-vision-proof.yml"]
 permissions:
   contents: read
   actions: read
@@ -99,7 +97,7 @@ jobs:
           python -u -m studio_next.film_eye \
             --video "$ACTUAL_VIDEO" \
             --goal "$(cat "$OUTPUT/original-film/director-original.txt")" \
-            --time 0.7 --time 3.5 --model "$MODEL_ALIAS" \
+            --reference-prototype --time 0.7 --time 3.5 --model "$MODEL_ALIAS" \
             --api http://127.0.0.1:8085 --out "$OUTPUT"
           python -u -m studio_next.film_revision \
             --original "$OUTPUT/original-film/director-original.txt" \
