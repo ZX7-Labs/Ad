@@ -87,7 +87,7 @@ class ArchivedFilmRecoveryTests(unittest.TestCase):
                 def decide(self,ctx):
                     response=super().decide(ctx)
                     response.update(engine="blender3d",
-                        scene_job={"__python__":"create actor by magic"},
+                        scene_job={"shot_id":ctx["immutable_original_shot"]["id"],"__python__":"create actor by magic"},
                         desired_capabilities=[],production_gap="")
                     return response
             res=recover_saved_original(d,brief,FalseFilm(),Path(tmp)/"trial")
