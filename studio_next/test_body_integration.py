@@ -1,9 +1,26 @@
 import json
 import tempfile
 import unittest
+import struct
+import zlib
+import shutil
+import importlib.util
 from pathlib import Path
 from unittest.mock import patch
 from studio_next.body_integration import body_catalog,validate_witness,_require_authentic_generated_media_lineage
+
+
+def actual_rgb_png():
+    # Genuine pixel data, IHDR/IDAT/IEND chunk CRC and deflate stream.
+    def chunk(kind,payload):
+        return (struct.pack(">I",len(payload))+kind+payload+
+                struct.pack(">I",zlib.crc32(kind+payload)&0xffffffff))
+    width,height=8,8
+    pixels=b"".join(bytes([0])+bytes((x*31%256,y*29%256,(x+y)*12%256)
+                        for x in range(width)) for y in range(height))
+    return (bytes([137,80,78,71,13,10,26,10])+
+            chunk(b"IHDR",struct.pack(">IIBBBBB",width,height,8,2,0,0,0))+
+            chunk(b"IDAT",zlib.compress(pixels))+chunk(b"IEND",b""))
 
 
 class TrustedCreativeBodyToolTests(unittest.TestCase):
@@ -22,13 +39,25 @@ class TrustedCreativeBodyToolTests(unittest.TestCase):
     def test_physical_media_witness_required_even_after_graph_recovery(self):
         with tempfile.TemporaryDirectory() as root:
             p=Path(root)/"artwork.png"
-            p.write_bytes(b"\x89PNG\r\n\x1a\n"+b"x"*300)
+            p.write_bytes(actual_rgb_png())
+            if importlib.util.find_spec("PIL") is None and not shutil.which("ffmpeg"):
+                self.skipTest("Actual image decoder unavailable in contract-only runner")
             import hashlib
             result={"path":str(p),"sha256":hashlib.sha256(p.read_bytes()).hexdigest(),
                     "bytes":p.stat().st_size}
             self.assertTrue(validate_witness("body.vector_png",result))
             p.write_bytes(b"not same artwork"*100)
             self.assertFalse(validate_witness("body.vector_png",result))
+
+    def test_png_header_without_actual_pixels_is_never_a_real_artifact(self):
+        with tempfile.TemporaryDirectory() as root:
+            p=Path(root)/"fake-thumbnail.png"
+            p.write_bytes(bytes([137,80,78,71,13,10,26,10])+b"x"*300)
+            import hashlib
+            fake={"path":str(p),
+                  "sha256":hashlib.sha256(p.read_bytes()).hexdigest(),
+                  "bytes":p.stat().st_size}
+            self.assertFalse(validate_witness("body.vector_png",fake))
 
     def test_model_cannot_issue_rights_certificate_for_arbitrary_file(self):
         original={"id":"old","tool_id":"body.asset_vault","depends_on":[],
