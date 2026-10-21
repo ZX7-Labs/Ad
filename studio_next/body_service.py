@@ -76,12 +76,45 @@ class LocalBodyCoordinator:
                 original_ir TEXT NOT NULL,status TEXT NOT NULL,
                 attempts INTEGER NOT NULL, result TEXT,
                 modified REAL NOT NULL)""")
+        # We already own the exclusive OS workspace lock, and no new worker
+        # has been scheduled. A machine/process crash leaves a previously
+        # running graph lease in the future; expire only those orphaned leases
+        # so deterministic host-approved tools can actually resume NOW.
+        # Non-idempotent operations still require manual reconciliation.
+        self._reconcile_orphaned_work_on_exclusive_startup()
 
     def _connect(self):
         db=sqlite3.connect(self.database,timeout=30,isolation_level=None)
         db.execute("PRAGMA busy_timeout=30000")
         db.execute("PRAGMA journal_mode=WAL")
         return db
+
+    def _reconcile_orphaned_work_on_exclusive_startup(self):
+        """Release abandoned scene leases ONLY after exclusive service startup.
+
+        SQLite's original node state and input fingerprint remain unchanged.
+        The durable graph still refuses to rerun non-idempotent operations,
+        even after the old lease is marked expired.
+        """
+        with self._connect() as db:
+            unfinished=db.execute(
+                "SELECT DISTINCT workspace_id FROM jobs WHERE status IN ('queued','running')"
+            ).fetchall()
+        for (workspace_id,) in unfinished:
+            workspace=self._workspace(workspace_id)
+            database=workspace/"production.sqlite3"
+            if not database.is_file():
+                continue
+            with sqlite3.connect(database,timeout=30) as stages:
+                existing=stages.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='node_results'"
+                ).fetchone()
+                if not existing:
+                    continue
+                stages.execute(
+                    "UPDATE node_results SET lease_until=0 "
+                    "WHERE node_state='running' AND (lease_until IS NULL OR lease_until>0)"
+                )
 
     def _workspace(self,identity):
         if not isinstance(identity,str) or not _ID.fullmatch(identity):
