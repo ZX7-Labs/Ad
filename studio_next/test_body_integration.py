@@ -50,6 +50,19 @@ class TrustedCreativeBodyToolTests(unittest.TestCase):
             p.write_bytes(b"not same artwork"*100)
             self.assertFalse(validate_witness("body.vector_png",result))
 
+    def test_single_animated_body_discloses_unavailable_photoreal_gpu_renderer(self):
+        with tempfile.TemporaryDirectory() as root:
+            fake={"video_generation_options":[{
+                "id":"wan21-t2v-13b","ready_for_independent_execution_trial":False}]}
+            with patch("studio_next.body_integration.discover_local_generators",
+                       return_value=fake):
+                body=body_catalog(root)
+            specs={x["id"]:x for x in body.discover()}
+            self.assertIn("body.generate_video",specs)
+            self.assertEqual(specs["body.generate_video"]["status"],"needs_setup")
+            self.assertFalse("body.generate_video" in body.executable_ids({"write"}))
+            self.assertNotIn("body.generate_video",body.trusted_idempotent_ids())
+
     def test_render_failure_never_leaves_a_fake_committed_movie(self):
         with tempfile.TemporaryDirectory() as root:
             target=Path(root)/"actual-movie.mp4"
