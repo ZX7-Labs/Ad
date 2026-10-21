@@ -1,6 +1,7 @@
 import unittest
 from studio_next.segmented_screenplay import (
-    create_screenplay,validate_spine,validate_authored_shot,retryable_output,\n    complete_missing_ending)
+    create_screenplay,validate_spine,validate_authored_shot,retryable_output,
+    complete_missing_ending)
 
 def story(n=2):
     return {"title":"A drawn line has consequence",
