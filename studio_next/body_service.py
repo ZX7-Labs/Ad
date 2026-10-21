@@ -29,6 +29,7 @@ from urllib.parse import urlsplit,unquote
 from .body_capabilities import operational_tool_summary,explain_operational_tool
 from .body_integration import run_body_project
 from .media_vault import MediaVault,sha256_file,verify_media_container
+from .body_archive import create_body_archive
 
 _ID=re.compile(r"^[A-Za-z0-9_-]{1,80}$")
 _MAX_JOB_BODY=4*1024*1024
@@ -64,6 +65,7 @@ class LocalBodyCoordinator:
             max_workers=workers,thread_name_prefix="zx7-original-body")
         self._queued=set()
         self._lock=threading.RLock()
+        self._maintenance_lock=threading.RLock()
         self._workspace_locks={}
         self.execute=execute or run_body_project
         with self._connect() as db:
@@ -103,40 +105,41 @@ class LocalBodyCoordinator:
         if not isinstance(source_id,str) or not source_id.strip() or (
                 not isinstance(rights_evidence,str) or not rights_evidence.strip()):
             raise ValueError("Owner must explicitly attest the original media source")
-        folder=self._workspace(workspace_id)
-        folder.mkdir(parents=True,exist_ok=True)
-        final=folder/filename
-        if final.exists():
-            raise FileExistsError("Original imported media is immutable; never overwrite")
-        stage=folder/(".zx7-import-"+uuid.uuid4().hex+".tmp")
-        published=False
-        try:
-            with stage.open("xb") as dest:
-                remaining=bytes_expected
-                while remaining:
-                    chunk=stream.read(min(1024*1024,remaining))
-                    if not isinstance(chunk,(bytes,bytearray)) or not chunk:
-                        raise ValueError("Owner upload ended before declared physical bytes")
-                    dest.write(chunk)
-                    remaining-=len(chunk)
-                dest.flush()
-                os.fsync(dest.fileno())
-            vault=MediaVault(folder/"vault")
-            attested=vault.ingest(stage,mime=mime,rights="owner_supplied",
-                source_type="owner_upload",source_id=source_id,
-                evidence=rights_evidence,owner_or_generator="authenticated_local_owner")
-            os.link(stage,final)
-            published=True
-            return {"source":filename,"asset_id":attested["asset_id"],
-                    "attestation_id":attested["attestation_id"],
-                    "mime":mime,"bytes":bytes_expected,
-                    "verified_real_media_bytes":True,
-                    "rights_claim":"Owner-attested; no independent legal ownership certification"}
-        except BaseException:
-            if published:final.unlink(missing_ok=True)
-            raise
-        finally:
-            stage.unlink(missing_ok=True)
+        with self._maintenance_lock:
+            folder=self._workspace(workspace_id)
+            folder.mkdir(parents=True,exist_ok=True)
+            final=folder/filename
+            if final.exists():
+                raise FileExistsError("Original imported media is immutable; never overwrite")
+            stage=folder/(".zx7-import-"+uuid.uuid4().hex+".tmp")
+            published=False
+            try:
+                with stage.open("xb") as dest:
+                    remaining=bytes_expected
+                    while remaining:
+                        chunk=stream.read(min(1024*1024,remaining))
+                        if not isinstance(chunk,(bytes,bytearray)) or not chunk:
+                            raise ValueError("Owner upload ended before declared physical bytes")
+                        dest.write(chunk)
+                        remaining-=len(chunk)
+                    dest.flush()
+                    os.fsync(dest.fileno())
+                vault=MediaVault(folder/"vault")
+                attested=vault.ingest(stage,mime=mime,rights="owner_supplied",
+                    source_type="owner_upload",source_id=source_id,
+                    evidence=rights_evidence,owner_or_generator="authenticated_local_owner")
+                os.link(stage,final)
+                published=True
+                return {"source":filename,"asset_id":attested["asset_id"],
+                        "attestation_id":attested["attestation_id"],
+                        "mime":mime,"bytes":bytes_expected,
+                        "verified_real_media_bytes":True,
+                        "rights_claim":"Owner-attested; no independent legal ownership certification"}
+            except BaseException:
+                if published:final.unlink(missing_ok=True)
+                raise
+            finally:
+                stage.unlink(missing_ok=True)
 
     def submit(self,film_ir,*,workspace_id,job_id=None):
         if not isinstance(film_ir,dict) or not isinstance(film_ir.get("tool_graph"),list):
@@ -147,30 +150,57 @@ class LocalBodyCoordinator:
         if not _ID.fullmatch(identifier):
             raise ValueError("Invalid production job identity")
         encoded=json.dumps(film_ir,allow_nan=False,ensure_ascii=False)
-        with self._connect() as db:
-            try:
-                db.execute("""INSERT INTO jobs VALUES(?,?,?,?,?,?,?)""",
-                    (identifier,workspace_id,encoded,"queued",0,None,time.time()))
-            except sqlite3.IntegrityError as exc:
-                raise ValueError("Original creative job ID already exists; never overwrite") from exc
-        self.queue(identifier)
+        with self._maintenance_lock:
+            with self._connect() as db:
+                try:
+                    db.execute("""INSERT INTO jobs VALUES(?,?,?,?,?,?,?)""",
+                        (identifier,workspace_id,encoded,"queued",0,None,time.time()))
+                except sqlite3.IntegrityError as exc:
+                    raise ValueError("Original creative job ID already exists; never overwrite") from exc
+            self.queue(identifier)
         return {"job_id":identifier,"workspace_id":workspace_id,"status":"queued",
                 "original_artistic_plan_preserved":True}
 
     def queue(self,identity):
         if not isinstance(identity,str) or not _ID.fullmatch(identity):
             raise ValueError("Invalid job identity")
-        with self._lock:
-            if identity in self._queued:
-                return False
-            with self._connect() as db:
-                found=db.execute("SELECT status FROM jobs WHERE id=?",(identity,)).fetchone()
-            if found is None:raise ValueError("Unknown submitted project")
-            if found[0]=="completed":
-                return False
-            self._queued.add(identity)
-            self.executor.submit(self._work,identity)
-            return True
+        with self._maintenance_lock:
+            with self._lock:
+                if identity in self._queued:
+                    return False
+                with self._connect() as db:
+                    found=db.execute("SELECT status FROM jobs WHERE id=?",(identity,)).fetchone()
+                if found is None:
+                    raise ValueError("Unknown submitted project")
+                if found[0]=="completed":
+                    return False
+                self._queued.add(identity)
+                try:
+                    self.executor.submit(self._work,identity)
+                except BaseException:
+                    self._queued.discard(identity)
+                    raise
+                return True
+
+    def create_recovery_snapshot(self, archive_path):
+        """Quiescent, WAL-consistent snapshot of jobs + every film workspace.
+
+        Backup is allowed ONLY with no executing jobs or owner uploads.
+        A trusted external operator must retain the digest for restore.
+        """
+        with self._maintenance_lock:
+            with self._lock:
+                if self._queued:
+                    raise RuntimeError("Cannot snapshot studio with active render jobs")
+                with self._connect() as db:
+                    active=db.execute(
+                        "SELECT COUNT(*) FROM jobs WHERE status IN ('queued','running')"
+                    ).fetchone()[0]
+                if active:
+                    raise RuntimeError("Cannot snapshot incomplete running original cinema")
+                if next(self.projects.rglob(".zx7-import-*.tmp"),None) is not None:
+                    raise RuntimeError("Cannot snapshot partially uploaded owner artwork")
+                return create_body_archive(self.root,archive_path)
 
     def _work(self,identity):
         try:
