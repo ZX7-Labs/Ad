@@ -8,6 +8,8 @@ on:
       - "studio_next/test_voice_slots.py"
       - "studio_next/film_eye.py"
       - "studio_next/test_film_eye.py"
+      - "studio_next/director_to_production.py"
+      - "studio_next/test_director_to_production.py"
       - "studio_next/open_creative.py"
       - "studio_next/test_open_creative.py"
       - "studio_next/model_audition.py"
