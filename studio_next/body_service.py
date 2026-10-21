@@ -297,6 +297,49 @@ class LocalBodyCoordinator:
         except (sqlite3.Error,ValueError,OSError):
             return {"observed_tool_states":[],"tool_progress_is_actual_sqlite":False}
 
+    def list_jobs(self,*,limit=100):
+        """Bounded honest job statuses for a standalone creative desktop client."""
+        if type(limit) is not int or not (1<=limit<=100):
+            raise ValueError("Body job listing must be explicitly bounded")
+        with self._connect() as db:
+            rows=db.execute("""SELECT id,workspace_id,status,attempts,modified
+                FROM jobs ORDER BY modified DESC,id DESC LIMIT ?""",(limit,)).fetchall()
+        return {"jobs":[{"job_id":a,"workspace_id":b,"status":c,
+                         "attempts":d,"updated_at":e} for a,b,c,d,e in rows],
+                "status_is_physical_execution_evidence":True,
+                "successful_jobs_do_not_automatically_prove_a_movie_exists":True}
+
+    def retry_job(self,identity):
+        """Operator-authorized reuse of the same original immutable Film IR.
+
+        Refuse active/completed jobs; re-rendering is never a hidden side effect
+        of inspecting status. Durable graph verifies each unchanged asset.
+        """
+        if not isinstance(identity,str) or not _ID.fullmatch(identity):
+            raise ValueError("Invalid original job identity")
+        with self._maintenance_lock:
+            with self._lock:
+                if identity in self._queued:
+                    raise ValueError("Original film is already scheduled")
+                with self._connect() as db:
+                    db.execute("BEGIN IMMEDIATE")
+                    row=db.execute("SELECT status FROM jobs WHERE id=?",
+                                   (identity,)).fetchone()
+                    if row is None:
+                        db.execute("ROLLBACK")
+                        raise ValueError("Unknown original body job")
+                    if row[0] not in ("blocked","failed"):
+                        db.execute("ROLLBACK")
+                        raise ValueError("Only stopped or blocked original work can be retried")
+                    db.execute("""UPDATE jobs SET status='queued',result=NULL,
+                               modified=? WHERE id=?""",(time.time(),identity))
+                    db.execute("COMMIT")
+                scheduled=self.queue(identity)
+                if not scheduled:
+                    raise RuntimeError("Original job could not be safely rescheduled")
+        return {"job_id":identity,"status":"queued",
+                "original_film_ir_unchanged":True,"operator_explicit_retry":True}
+
     def inspect(self,identity):
         if not isinstance(identity,str) or not _ID.fullmatch(identity):
             raise ValueError("Invalid original job identity")
@@ -374,6 +417,8 @@ def make_body_http_handler(coordinator,token):
                 if path=="/v1/health":
                     return self._reply(200,{"service":"zx7-local-body",
                         "host_only":"127.0.0.1","online":True})
+                if path=="/v1/jobs":
+                    return self._reply(200,coordinator.list_jobs())
                 if path=="/v1/tools":
                     return self._reply(200,{"tools":operational_tool_summary(
                         coordinator.projects)})
@@ -413,6 +458,16 @@ def make_body_http_handler(coordinator,token):
                             "X-Rights-Evidence","X-Rights-Evidence-B64"))
                     return self._reply(201,receipt)
                 except (ValueError,TypeError,FileExistsError,OSError) as exc:
+                    return self._reply(400,{"error":str(exc)})
+            if path.startswith("/v1/jobs/") and path.endswith("/retry"):
+                pieces=path.split("/")
+                if len(pieces)!=5 or pieces[1:3]!=["v1","jobs"] or pieces[4]!="retry":
+                    return self._reply(404,{"error":"Unknown original retry operation"})
+                try:
+                    if self.headers.get("Content-Length","0") not in ("0",""):
+                        raise ValueError("Retry accepts no substituted creative plan")
+                    return self._reply(202,coordinator.retry_job(pieces[3]))
+                except (ValueError,RuntimeError) as exc:
                     return self._reply(400,{"error":str(exc)})
             if path!="/v1/jobs":
                 return self._reply(404,{"error":"Only original film jobs and owned media can be submitted"})
