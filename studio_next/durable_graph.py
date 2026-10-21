@@ -157,6 +157,7 @@ class DurableFilmGraph:
 def execute_durable_film_graph(ir,catalog,*,fact_ids,store,
                                 trusted_idempotent_tools=frozenset(),
                                 output_verifier=None,tool_revisions=None,
+                                input_material_fingerprint=None,
                                 allowed_access=frozenset({"read","write"}),
                                 lease_seconds=3600,step_budget=10000):
     """Resume any genre/media/scene-count by actual graph, with per-step custody.
@@ -168,6 +169,8 @@ def execute_durable_film_graph(ir,catalog,*,fact_ids,store,
         raise TypeError("Trusted installed ToolCatalog and durable SQLite runtime required")
     if not callable(output_verifier):
         raise ValueError("Production runtime needs physical output provenance verifier")
+    if input_material_fingerprint is not None and not callable(input_material_fingerprint):
+        raise ValueError("Source media fingerprint must come from trusted body code")
     if not isinstance(lease_seconds,(int,float)) or lease_seconds<=0:
         raise ValueError("Positive safe worker lease required")
     if not isinstance(step_budget,int) or step_budget<1:
@@ -191,8 +194,12 @@ def execute_durable_film_graph(ir,catalog,*,fact_ids,store,
     # Check all references before any writes.
     for node in nodes.values():
         _walk(_json_like(node["inputs"]),set(node.get("depends_on",[])))
-    project_key=fingerprint({"complete_owner_film":ir,"fact_ids":sorted(rights),
-        "tool_revisions":tool_revisions,"permission":sorted(permission)})
+    # Stable project identity permits *unchanged* shots to be resumed after
+    # the artist revises an unrelated shot. Every node still authenticates
+    # its own art, inputs, media assets, installed tool and upstream lineage.
+    project_key=fingerprint({"creative_project":ir["project"],
+        "fact_ids":sorted(rights),"owner_facts":ir.get("owner_facts",{}),
+        "permission":sorted(permission),"durable_schema":2})
     outputs={}
     complete=[];reused=[];errors=[];trace=[]
     for node_id in validation.order:
@@ -205,9 +212,23 @@ def execute_durable_film_graph(ir,catalog,*,fact_ids,store,
         if not isinstance(tool_version,str) or not tool_version.strip():
             errors.append("Missing installed tool revision for "+tid)
             break
-        input_key=fingerprint({"tool_id":tid,"version":tool_version,
-            "args":inputs,"dependencies":{
-                dep:fingerprint(outputs[dep]) for dep in node.get("depends_on",[])}})
+        related=set(node.get("shot_refs",[]))
+        # Unspecified shot dependencies default conservatively to the whole
+        # movie; no invented assumed independence between shots.
+        relevant_shots=[shot for shot in ir["shots"]
+                        if not related or shot["id"] in related]
+        try:
+            materials=(input_material_fingerprint(tid,inputs)
+                       if input_material_fingerprint is not None else None)
+            input_key=fingerprint({"tool_id":tid,"version":tool_version,
+                "artistic_tool_node":node,"original_shots":relevant_shots,
+                "verified_assets":ir.get("assets",[]),
+                "actual_material_sha":materials,
+                "args":inputs,"dependencies":{
+                    dep:fingerprint(outputs[dep]) for dep in node.get("depends_on",[])}})
+        except (ValueError,TypeError,OSError,OverflowError) as exc:
+            errors.append("Cannot fingerprint actual film source: "+str(exc))
+            break
         try:
             action,cached,owner=store.start_or_reuse(project_key,node_id,input_key,
                  trusted_idempotent=can_retry,
