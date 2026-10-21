@@ -126,6 +126,10 @@ def handoff_single_brain(brief, brain, translation_model, production_model,
         raise ValueError("Single cohesive film brain model required")
     out=Path(output_dir)
     out.mkdir(parents=True,exist_ok=True)
+    # Preserve the exact authority that creative direction and final rendering share.
+    # This is factual provenance, NEVER an authored art or shot template.
+    (out/"owner-factual-brief.json").write_text(
+        json.dumps(brief,ensure_ascii=False,indent=2,allow_nan=False)+"\n",encoding="utf-8")
     tools=creative_tool_inventory()
     (out/"actual-creative-tools.json").write_text(
         json.dumps(tools,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
