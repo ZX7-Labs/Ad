@@ -98,11 +98,14 @@ class LayeredProductionCompositingTests(unittest.TestCase):
             film,source,vault=self.fixture(root)
             film["canvas"].update(width=640,height=360,fps=24,duration=2)
             graphic=film["video_layers"][1]
+            # Isolate one moving artist-controlled layer so actual pixels
+            # prove the object moved rather than merely encoding a filter.
+            film["video_layers"]=[graphic]
             graphic["motion"]=[
                 {"at_seconds":0,"x":12,"y":14},
                 {"at_seconds":0.4,"x":90,"y":30},
                 {"at_seconds":0.8,"x":180,"y":65}]
-            graphic["fade_in_seconds"]=0.2
+            graphic["fade_in_seconds"]=0.05
             graphic["fade_out_seconds"]=0.15
             command=actual_composite_command(film,root,vault,Path(root)/"keyframe-movie.mp4")
             graph=command[command.index("-filter_complex")+1]
@@ -116,6 +119,18 @@ class LayeredProductionCompositingTests(unittest.TestCase):
             self.assertTrue(result["verified_physically"])
             self.assertEqual((meta["width"],meta["height"]),(640,360))
             self.assertTrue(meta["audio_stream_present"])
+            def frame_pixel(t):
+                pixels=subprocess.check_output([
+                    "ffmpeg","-hide_banner","-loglevel","error",
+                    "-ss",str(t),"-i",str(real),
+                    "-frames:v","1","-f","rawvideo","-pix_fmt","rgb24","-"],
+                    timeout=40)
+                point=(40*640+40)*3
+                return tuple(pixels[point:point+3])
+            entering=frame_pixel(0.2)
+            moved=frame_pixel(0.92)
+            self.assertGreater(sum(abs(a-b) for a,b in zip(entering,moved)),20,
+                "Keyframed scene did not visibly move in physically decoded movie frames")
 
     def test_invalid_keyframes_and_fake_model_effects_cannot_execute(self):
         with tempfile.TemporaryDirectory() as root:
