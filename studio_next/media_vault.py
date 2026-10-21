@@ -36,7 +36,7 @@ def verify_media_container(path,mime):
     if mime=="image/png":
         with path.open("rb") as f:
             first=f.read(24)
-        if len(first)<24 or first[:8]!=b"\\x89PNG\\r\\n\\x1a\\n" or (
+        if len(first)<24 or first[:8]!=bytes([137,80,78,71,13,10,26,10]) or (
              int.from_bytes(first[16:20],"big")<=0 or
              int.from_bytes(first[20:24],"big")<=0):
             raise MediaCustodyError("Original PNG pixels not actually present")
