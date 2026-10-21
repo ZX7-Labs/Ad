@@ -27,6 +27,7 @@ from .durable_graph import DurableFilmGraph,execute_durable_film_graph
 from .media_vault import MediaVault,sha256_file
 from .composite_mix import render_composition
 from .body_plugins import discover_enabled_body_plugins
+from .body_materials import fingerprint_physical_inputs
 
 
 def _body_output(workspace,name,*,allowed=(".mp4",".otio",".png")):
@@ -140,7 +141,9 @@ def body_catalog(workspace,*,vault_root=None):
             resource="local machine",
             operation_schema={"required":required}),fn if ready else None,
             idempotent=True,
-            implementation_revision=_trusted_body_revision(id) if ready else None)
+            implementation_revision=_trusted_body_revision(id) if ready else None,
+            material_fingerprint=(lambda inputs,name=id:
+                fingerprint_physical_inputs(name,inputs,root)) if ready else None)
 
     def inspect(inputs):
         path=_path_within(root,inputs["source"],exists=True)
@@ -242,12 +245,13 @@ def body_catalog(workspace,*,vault_root=None):
     add("body.asset_vault","audited media provenance","Hash and preserve rights-cleared actual file",
         "write",True,["source","mime","rights","source_type","source_id","evidence","issuer"],
         vault_asset)
-    for spec,runner,idempotent,version,operational in discover_enabled_body_plugins():
+    for spec,runner,idempotent,version,operational,materials in discover_enabled_body_plugins():
         if not operational:
             from dataclasses import replace
             spec=replace(spec,status="needs_setup")
         catalog.register(spec,runner,idempotent=idempotent,
-                         implementation_revision=version if operational else None)
+                         implementation_revision=version if operational else None,
+                         material_fingerprint=materials if operational else None)
     return catalog
 
 
@@ -285,7 +289,9 @@ def run_body_project(film_ir,workspace,*,db_name="production.sqlite3"):
        film_ir,catalog,fact_ids=set(film_ir.get("owner_facts",{})),
        store=store,output_verifier=validate_witness,
        trusted_idempotent_tools=idempotent,
-       tool_revisions=actual_versions,allowed_access={"read","write"})
+       tool_revisions=actual_versions,
+       input_material_fingerprint=catalog.trusted_material_fingerprint,
+       allowed_access={"read","write"})
 
 
 def main():
