@@ -19,6 +19,7 @@ from .blender_scene import LIGHTS, SHAPES, validate_blender_shot
 from .creative_tool_registry import creative_tool_inventory
 from .production_handoff import validate_visual_design
 from .providers import LocalCreativeModel, LocalModelSettings
+from .stage_checkpoint import DurableStageStore, content_signature, fingerprint
 
 
 TECHNICAL_FEEDBACK = """You are the SAME independent artistic film director and
@@ -91,6 +92,15 @@ def recover_saved_original(saved_director, original_brief, model, output):
         shutil.copyfile(saved_delivery,output/"delivery.json")
     tool_catalog=creative_tool_inventory()
     tool_contract=audited_renderer_contract()
+    technical_state=DurableStageStore(output/"verified-technical-checkpoints")
+    pinned_model_id=getattr(getattr(model,"settings",None),"model_id",None)
+    source_status=saved/"original-vision"/"director-status.json"
+    if source_status.is_file():
+        stated=json.loads(source_status.read_text(encoding="utf-8")).get("model")
+        if stated and stated!=pinned_model_id:
+            raise ValueError("Refusing to resume an archived film with a different artistic model")
+    contract_signature=fingerprint(tool_contract)
+    source_bytes=original.read_bytes()
     res=[]
     for index,scene in enumerate(shots,1):
         sid=scene.get("id")
@@ -118,8 +128,21 @@ def recover_saved_original(saved_director, original_brief, model, output):
             proposed=initial
             recovery="reuse previously verified original design"
         else:
-            proposed=model.decide(context)
-            recovery="same artist directed technical rework"
+            stage=f"scene_{index:03d}"
+            signature=content_signature(
+                film_bytes=source_bytes,brief=brief,model_id=pinned_model_id,
+                scene=scene,previous_design=archived,
+                validation_contract_hash=contract_signature)
+            proposed=technical_state.find(stage,signature)
+            if proposed is None:
+                proposed=model.decide(context)
+                # Atomically save raw output BEFORE validation, allowing restart
+                # after a future technical error without re-running this expensive
+                # *artistic* model decision.
+                technical_state.save(stage,signature,proposed)
+                recovery="same artist directed technical rework; stage saved"
+            else:
+                recovery="exact original model response resumed from signed checkpoint"
         result={"scene_id":sid,"source_archive":source.name,
                 "original_visual":scene["visual"],
                 "original_duration_seconds":scene["duration_seconds"],
