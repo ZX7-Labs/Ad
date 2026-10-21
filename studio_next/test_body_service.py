@@ -173,6 +173,78 @@ class IndependentLocalCreativeServiceTests(unittest.TestCase):
                 self.assertEqual(second.inspect("interrupted")["status"],"completed")
             finally:second.close()
 
+    def test_immediate_crash_restart_recovers_idempotent_scene_before_old_lease_expires(self):
+        from studio_next.durable_graph import DurableFilmGraph
+        with tempfile.TemporaryDirectory() as root:
+            original=LocalBodyCoordinator(root)
+            try:
+                workspace=original._workspace("film")
+                workspace.mkdir(parents=True)
+                store=DurableFilmGraph(workspace/"production.sqlite3")
+                act,_,worker=store.start_or_reuse("original-film","scene_001",
+                    "fixed-director-and-art-hash",trusted_idempotent=True,
+                    existing_result_verifier=lambda _:True,lease_seconds=86400)
+                self.assertEqual(act,"execute")
+                with original._connect() as db:
+                    db.execute("INSERT INTO jobs VALUES(?,?,?,?,?,?,?)",
+                        ("interrupted-real-art","film",json.dumps(plan()),
+                         "running",1,None,time.time()))
+                with sqlite3.connect(workspace/"production.sqlite3") as db:
+                    old_lease=db.execute("SELECT lease_until FROM node_results").fetchone()[0]
+                self.assertGreater(old_lease,time.time()+3600)
+            finally:
+                original.close()
+            performed=[]
+            def artist_resumes_same_scene(ir,workspace):
+                resumed=DurableFilmGraph(workspace/"production.sqlite3")
+                action,cached,token=resumed.start_or_reuse(
+                    "original-film","scene_001","fixed-director-and-art-hash",
+                    trusted_idempotent=True,existing_result_verifier=lambda _:True,
+                    lease_seconds=3600)
+                performed.append(action)
+                resumed.complete("original-film","scene_001",
+                                 "fixed-director-and-art-hash",token,{"original":"same"})
+                return {"status":"all_tool_results_verified",
+                        "completed":["scene_001"],"video_proven":False}
+            restarted=LocalBodyCoordinator(root,execute=artist_resumes_same_scene)
+            try:
+                self.assertEqual(restarted.pending_restart(),1)
+                for _ in range(100):
+                    if restarted.inspect("interrupted-real-art")["status"]=="completed":
+                        break
+                    time.sleep(.01)
+                self.assertEqual(restarted.inspect("interrupted-real-art")["status"],
+                                 "completed")
+                self.assertEqual(performed,["execute"])
+                self.assertEqual(restarted.inspect("interrupted-real-art")["attempts"],2)
+            finally:
+                restarted.close()
+
+    def test_crash_restart_never_replays_uncertain_nonidempotent_video_generation(self):
+        from studio_next.durable_graph import DurableFilmGraph,RecoveryBlocked
+        with tempfile.TemporaryDirectory() as root:
+            initial=LocalBodyCoordinator(root)
+            try:
+                place=initial._workspace("film");place.mkdir()
+                ledger=DurableFilmGraph(place/"production.sqlite3")
+                ledger.start_or_reuse("film","video_diffusion","prompt-hash",
+                    trusted_idempotent=False,
+                    existing_result_verifier=lambda _:True,lease_seconds=999999)
+                with initial._connect() as db:
+                    db.execute("INSERT INTO jobs VALUES(?,?,?,?,?,?,?)",
+                        ("do-not-regenerate","film",json.dumps(plan()),
+                         "running",1,None,time.time()))
+            finally:initial.close()
+            restart=LocalBodyCoordinator(root,execute=lambda ir,w:{
+                "status":"all_tool_results_verified"})
+            try:
+                ledger=DurableFilmGraph(restart._workspace("film")/"production.sqlite3")
+                with self.assertRaisesRegex(RecoveryBlocked,"reconciliation"):
+                    ledger.start_or_reuse("film","video_diffusion","prompt-hash",
+                        trusted_idempotent=False,
+                        existing_result_verifier=lambda _:True,lease_seconds=3600)
+            finally:restart.close()
+
     def test_api_exposes_actual_stored_tool_progress_not_invented_percent(self):
         with tempfile.TemporaryDirectory() as root:
             from studio_next.durable_graph import DurableFilmGraph
