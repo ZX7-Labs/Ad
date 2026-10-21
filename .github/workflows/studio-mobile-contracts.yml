@@ -11,6 +11,8 @@ on:
       - "studio_next/body_asset_links.py"
       - "studio_next/body_verified_delivery.py"
       - "studio_next/body_stage_lease.py"
+      - "studio_next/body_host_resources.py"
+      - "studio_next/test_body_host_resources.py"
       - "studio_next/test_body_stage_lease.py"
       - "studio_next/durable_graph.py"
       - "studio_next/test_body_verified_delivery.py"
@@ -48,7 +50,7 @@ jobs:
       - name: Compile server and serve static shell with protected APIs
         run: |
           python -m compileall -q studio_next
-          python -m unittest studio_next.test_body_mobile studio_next.test_body_download_tickets studio_next.test_precision_retime studio_next.test_creative_tool_registry studio_next.test_body_portability studio_next.test_body_asset_links studio_next.test_body_asset_identity studio_next.test_body_asset_uri studio_next.test_body_verified_delivery studio_next.test_body_stage_lease -v
+          python -m unittest studio_next.test_body_mobile studio_next.test_body_download_tickets studio_next.test_precision_retime studio_next.test_creative_tool_registry studio_next.test_body_portability studio_next.test_body_asset_links studio_next.test_body_asset_identity studio_next.test_body_asset_uri studio_next.test_body_verified_delivery studio_next.test_body_stage_lease studio_next.test_body_host_resources -v
       - name: Parse actual client JavaScript in Node
         run: |
           python - <<'PY'
