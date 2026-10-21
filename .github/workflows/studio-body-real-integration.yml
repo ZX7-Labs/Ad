@@ -33,10 +33,11 @@ jobs:
           PY
           python -m unittest studio_next.test_editorial_interchange -v
           python -m unittest studio_next.test_composite_mix -v
+          echo "REAL ARTIST-KEYFRAMED VISUAL COMPOSITING & SOUND MIX TESTED WITH LOCAL FFmpeg"
           python -m unittest studio_next.test_film_finishing -v
           python -m unittest studio_next.test_body_materials studio_next.test_body_integration studio_next.test_body_plugins -v
           python -m unittest studio_next.test_durable_graph -v
-          python -m unittest studio_next.test_body_service studio_next.test_body_tool_contracts -v
+          python -m unittest studio_next.test_body_service studio_next.test_body_tool_contracts studio_next.test_body_client studio_next.test_body_deploy -v
           python -m unittest studio_next.test_body_archive studio_next.test_production_qc -v
           python -m studio_next.creative_tool_registry --out output/real-installed-tool-inventory.json
           python - <<'PY'
