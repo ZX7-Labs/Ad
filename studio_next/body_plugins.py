@@ -49,6 +49,8 @@ def discover_enabled_body_plugins(*,approved=None,entry_source=None):
         if not callable(getattr(adapter,"run",None)) or not callable(
                 getattr(adapter,"probe",None)):
             raise ValueError("Enabled creative application has no tested execution boundary")
+        if not callable(getattr(adapter,"material_fingerprint",None)):
+            raise ValueError("Enabled plugin cannot prove original source material bytes")
         operational=adapter.probe()
         if type(operational) is not bool:
             raise ValueError("Creative plugin operational check must return bool")
@@ -63,7 +65,7 @@ def discover_enabled_body_plugins(*,approved=None,entry_source=None):
         if type(safe_retry) is not bool:
             raise ValueError("Installed plugin retry safety must be explicit")
         found[plugin.name]=(spec,adapter.run if operational else None,
-                            safe_retry,version,operational)
+                            safe_retry,version,operational,adapter.material_fingerprint)
     missing=allow-set(found)
     if missing:
         raise ValueError("Admin enabled missing/uninstalled body plugins: "+", ".join(sorted(missing)))
