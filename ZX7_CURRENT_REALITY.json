@@ -46,5 +46,36 @@
     "https://github.com/oyzitjfzj/Ad/actions/runs/39541436321",
     "https://github.com/oyzitjfzj/Ad/actions/runs/39550779036",
     "https://github.com/oyzitjfzj/Ad/actions/runs/39558630600"
-  ]
+  ],
+  "body_current_verified": {
+    "as_of": "2026-10-21",
+    "branch": "zx7-specialist-free-stack-20261020",
+    "not_production_complete": true,
+    "source_branch_only": "main untouched",
+    "full_body_real_artifact_run": 39583400124,
+    "full_body_real_artifact_name": "zx7-real-media-body-interoperability-and-restart-evidence",
+    "full_body_real_media_verified": true,
+    "full_2d_3d_mp4_assembly_with_audio": true,
+    "actually_decode_entire_movie_picture_and_sound": true,
+    "true_editable_opentimelineio_video_and_audio": true,
+    "authorized_composite_and_ffmpeg_color_sound_finishing": true,
+    "original_image_png_pixel_decode_and_rights_hash_verification": true,
+    "atomic_finish_file_and_explicit_resume_cache": true,
+    "complete_workspace_loss_then_archive_sha256_restore": true,
+    "previous_completed_media_steps_reused_without_rerender": true,
+    "local_standalone_token_authenticated_loopback_body_job_http_service": true,
+    "owner_authenticated_original_media_upload": true,
+    "sqlite_persisted_job_queue_and_process_exclusive_lock": true,
+    "dynamic_administrator_enabled_python_body_tool_plugins": true,
+    "no_giant_markdown_prompt_sent_to_creative_model": true,
+    "last_passed_cpu_tests_run": 39583565952,
+    "open_limitations": [
+      "Professional user-facing graphical app not yet implemented",
+      "Open creative GPU/video generator end-to-end proof unavailable on actual GPU",
+      "External GIMP/Krita/Natron/Kdenlive apps not all installed and integrated",
+      "Distributed worker resilience and pause/retry under arbitrary power/process loss not fully certified",
+      "Claims about world-best visual art or independent human-level director not established",
+      "Platform-independent restored file paths and workspace migrations still restricted"
+    ]
+  }
 }
