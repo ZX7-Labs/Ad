@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import os
+import uuid
 import json
 import shutil
 from pathlib import Path
@@ -136,6 +137,35 @@ def _trusted_body_revision(tool_id):
     return "sha256:"+h.hexdigest()
 
 
+def _commit_actual_body_output(final_path,render):
+    """Only expose fully encoded, *decoder verified* original media.
+
+    Incomplete FFmpeg/Blender/graphics files never occupy the final accepted
+    filename. An atomic same-filesystem hardlink refuses concurrent
+    overwrites instead of clobbering an earlier director-approved result.
+    """
+    final_path=Path(final_path)
+    if final_path.exists():
+        raise FileExistsError("Cannot overwrite original media output")
+    stage=final_path.with_name(
+        ".zx7-uncommitted-"+uuid.uuid4().hex+final_path.suffix)
+    published=False
+    try:
+        render(stage)
+        preliminary=_witness(stage)
+        if not _verify_witness(preliminary):
+            raise RuntimeError("Staged creative media failed real decoder validation")
+        os.link(stage,final_path)
+        published=True
+        return _witness(final_path)
+    except BaseException:
+        if published:
+            final_path.unlink(missing_ok=True)
+        raise
+    finally:
+        stage.unlink(missing_ok=True)
+
+
 def body_catalog(workspace,*,vault_root=None):
     root=Path(workspace).resolve()
     vault=MediaVault(vault_root or (root/"vault"))
@@ -159,51 +189,41 @@ def body_catalog(workspace,*,vault_root=None):
     def edit(inputs):
         original=_path_within(root,inputs["edit"],exists=True)
         output=_body_output(root,inputs["out"],allowed=(".mp4",))
-        try:
-            render_edit(original,root,output)
-            return _witness(output)
-        except BaseException:
-            output.unlink(missing_ok=True)
-            raise
+        return _commit_actual_body_output(
+            output,lambda staged:render_edit(original,root,staged))
 
     def export_edit(inputs):
         original=_path_within(root,inputs["edit"],exists=True)
         output=_body_output(root,inputs["out"],allowed=(".otio",))
-        export_editable_timeline(original,root,output)
-        return _witness(output)
+        return _commit_actual_body_output(
+            output,lambda staged:export_editable_timeline(original,root,staged))
 
     def vector_art(inputs):
         original=_path_within(root,inputs["source_svg"],exists=True)
         output=_body_output(root,inputs["out"],allowed=(".png",))
-        rasterize_original_svg(original,output,width=inputs["width"],
-                              height=inputs["height"])
-        return _witness(output)
+        return _commit_actual_body_output(
+            output,lambda staged:rasterize_original_svg(original,staged,
+                width=inputs["width"],height=inputs["height"]))
 
     def thumbnail(inputs):
         original=_path_within(root,inputs["source_film"],exists=True)
         target=_body_output(root,inputs["out"],allowed=(".png",))
-        extract_director_selected_frame(original,target,at_seconds=inputs["time_seconds"])
-        return _witness(target)
+        return _commit_actual_body_output(
+            target,lambda staged:extract_director_selected_frame(original,
+                staged,at_seconds=inputs["time_seconds"]))
 
     def composite(inputs):
         source=_path_within(root,inputs["plan"],exists=True)
         out=_body_output(root,inputs["out"],allowed=(".mp4",))
-        try:
-            render_composition(source,root,vault.root,out)
-            return _witness(out)
-        except BaseException:
-            out.unlink(missing_ok=True)
-            raise
+        return _commit_actual_body_output(
+            out,lambda staged:render_composition(source,root,vault.root,staged))
 
     def finish_movie(inputs):
         source=_path_within(root,inputs["plan"],exists=True)
         dest=_body_output(root,inputs["out"],allowed=(".mp4",))
-        try:
-            finish_authorized_movie(source,root,vault.root,dest)
-            return _witness(dest)
-        except BaseException:
-            dest.unlink(missing_ok=True)
-            raise
+        return _commit_actual_body_output(
+            dest,lambda staged:finish_authorized_movie(
+                source,root,vault.root,staged))
 
     def deep_media_qc(inputs):
         """Decode every actual video/audio stream, not just inspect metadata."""
@@ -220,17 +240,19 @@ def body_catalog(workspace,*,vault_root=None):
         dest=_body_output(root,inputs["out"],allowed=(".mp4",))
         trusted_asset_root=_path_within(root,inputs["assets_root"],exists=False) if (
             isinstance(inputs.get("assets_root"),str) and inputs["assets_root"]) else None
-        render_original_blender(source,dest,trusted_asset_root=trusted_asset_root)
-        return _witness(dest)
+        return _commit_actual_body_output(
+            dest,lambda staged:render_original_blender(
+                source,staged,trusted_asset_root=trusted_asset_root))
 
     def render2d(inputs):
         source=_path_within(root,inputs["original_film_ir"],exists=True)
         dest=_body_output(root,inputs["out"],allowed=(".mp4",))
         voice_root=_path_within(root,inputs["voice_assets"],exists=False) if (
             isinstance(inputs.get("voice_assets"),str) and inputs["voice_assets"]) else None
-        render_original_motion(source,dest,width=inputs["width"],fps=inputs["fps"],
-                               trusted_voice_assets=voice_root)
-        return _witness(dest)
+        return _commit_actual_body_output(
+            dest,lambda staged:render_original_motion(source,staged,
+                width=inputs["width"],fps=inputs["fps"],
+                trusted_voice_assets=voice_root))
 
     def vault_asset(inputs):
         """Only a validated output from an actually installed production node.
