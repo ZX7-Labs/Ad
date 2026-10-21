@@ -203,6 +203,42 @@ def render_approved_designs(treatment, fact_ledger, designs_dir, delivery,
     return record
 
 
+def verified_render_fact_ledger(treatment_file, owner_brief_file=None):
+    """Carry the same owner's evidence through planning and media execution.
+
+    Bare model-authored treatments intentionally contain no owner secrets or
+    duplicate facts, so a separate authoritative source is required whenever
+    the original film cites owner facts. The model cannot rewrite that source.
+    """
+    treatment_file=Path(treatment_file)
+    src=json.loads(treatment_file.read_text(encoding="utf-8"))
+    if not isinstance(src,dict):
+        raise ValueError("Film treatment must be an object")
+    treatment=src.get("treatment",src)
+    if not isinstance(treatment,dict):
+        raise ValueError("Film treatment is missing")
+    existing=src.get("brief",{}).get("facts",{})
+    if not isinstance(existing,dict):
+        raise ValueError("Embedded owner evidence malformed")
+    if owner_brief_file is not None:
+        raw=json.loads(Path(owner_brief_file).read_text(encoding="utf-8"))
+        if not isinstance(raw,dict) or not isinstance(raw.get("facts"),dict):
+            raise ValueError("Original owner evidence file missing facts ledger")
+        facts=raw["facts"]
+        if existing and facts!=existing:
+            raise ValueError("Model's embedded facts disagree with actual owner source")
+    else:
+        facts=existing
+    for key,value in facts.items():
+        if not isinstance(key,str) or not isinstance(value,str):
+            raise ValueError("Authoritative factual evidence must have string entries")
+    for shot in _scenes(treatment):
+        refs=shot.get("fact_refs",shot.get("factual_basis",[]))
+        if not isinstance(refs,list) or any(not isinstance(x,str) or x not in facts for x in refs):
+            raise ValueError("Shot has no verifiable owner source for its factual citations")
+    return treatment,facts
+
+
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument("--treatment",type=Path,required=True)
@@ -210,10 +246,10 @@ def main():
     p.add_argument("--delivery",type=Path,required=True)
     p.add_argument("--out",type=Path,required=True)
     p.add_argument("--voice-assets",type=Path)
+    p.add_argument("--owner-brief",type=Path,
+                   help="Unmodified original owner brief used by the same film director")
     a=p.parse_args()
-    src=json.loads(a.treatment.read_text())
-    treatment=src.get("treatment",src)
-    facts=src.get("brief",{}).get("facts",{})
+    treatment,facts=verified_render_fact_ledger(a.treatment,a.owner_brief)
     delivery=json.loads(a.delivery.read_text())
     print(json.dumps(render_approved_designs(treatment,facts,a.designs,delivery,
            a.out,voice_assets=a.voice_assets),indent=2))
