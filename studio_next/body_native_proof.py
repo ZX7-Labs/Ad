@@ -50,6 +50,11 @@ def native_original_body_proof(output):
            "inputs":{"source_film":"actual-full-mixed-film.mp4",
                      "out":"actual-director-frame.png","time_seconds":1.2},
            "depends_on":["finish"]},
+          {"id":"complete-film-decode","tool_id":"body.full_decode",
+           "purpose":"Decode the ENTIRE real original edit and soundtrack, not two sampled frames",
+           "inputs":{"source":"actual-full-mixed-film.mp4",
+                     "expected":{"require_audio":True}},
+           "depends_on":["finish"]},
           {"id":"archive","tool_id":"body.asset_vault",
            "purpose":"Store final actual encoded film with rights attestation",
            "inputs":{"source_witness":{"$node_output":"finish"}},
@@ -60,7 +65,7 @@ def native_original_body_proof(output):
         raise RuntimeError("Genuinely rendered multi-engine tool graph failed: "+
                            json.dumps(first["errors"]))
     second=run_body_project(ir,root)
-    if second["status"]!="all_tool_results_verified" or len(second["reused"])!=6:
+    if second["status"]!="all_tool_results_verified" or len(second["reused"])!=len(ir["tool_graph"]):
         raise RuntimeError("Real 3D and 2D media did not resume unchanged")
     original=json.loads((root/"edit.json").read_text())
     meta=audit_delivered_movie(root/"actual-full-mixed-film.mp4",output=root/"measured",
