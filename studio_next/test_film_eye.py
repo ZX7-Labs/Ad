@@ -35,7 +35,7 @@ class FilmVisualReviewTests(unittest.TestCase):
 
     def test_unrelated_archived_technical_footage_not_described_as_new_own_film(self):
         import hashlib
-        tiny_jpeg=b"\\xff\\xd8\\xff"+bytes(range(110))+b"\\xff\\xd9"
+        tiny_jpeg=bytes([255,216,255])+bytes(range(110))+bytes([255,217])
         with tempfile.TemporaryDirectory() as directory:
             p=Path(directory)/"real.jpg"
             p.write_bytes(tiny_jpeg)
