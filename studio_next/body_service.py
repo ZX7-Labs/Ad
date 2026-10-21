@@ -17,17 +17,18 @@ import hmac
 import json
 import os
 import re
+import shutil
 import sqlite3
 import threading
 import time
 import uuid
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit,unquote
 
 from .body_capabilities import operational_tool_summary,explain_operational_tool
 from .body_integration import run_body_project
-from .media_vault import MediaVault
+from .media_vault import MediaVault,sha256_file,verify_media_container
 
 _ID=re.compile(r"^[A-Za-z0-9_-]{1,80}$")
 _MAX_JOB_BODY=4*1024*1024
@@ -200,6 +201,43 @@ class LocalBodyCoordinator:
             with self._lock:
                 self._queued.discard(identity)
 
+    def inspect_media(self,identity,relative):
+        """Authorized real output file from one job's original workspace."""
+        summary=self.inspect(identity)
+        if not isinstance(relative,str) or not relative or Path(relative).is_absolute():
+            raise ValueError("Media path must be a project-relative artifact")
+        asset=Path(relative)
+        if any(p in ("","..",".") for p in asset.parts) or "\\" in relative:
+            raise ValueError("Unsafe film output media path")
+        root=self._workspace(summary["workspace_id"])
+        path=(root/asset).resolve()
+        if not path.is_relative_to(root) or not path.is_file():
+            raise ValueError("No physical film output at requested path")
+        mime=_MEDIA_MIME.get(path.suffix.lower())
+        if mime is None:
+            raise ValueError("Unregistered media cannot be exposed via original film API")
+        # This verifier decodes actual image/audio formats and inspects movie
+        # streams; arbitrary JSON, private databases and credentials are never
+        # streamed as a movie.
+        verify_media_container(path,mime)
+        return {"path":path,"mime":mime,"sha256":sha256_file(path),
+                "bytes":path.stat().st_size}
+
+    def list_media(self,identity):
+        summary=self.inspect(identity)
+        root=self._workspace(summary["workspace_id"])
+        items=[]
+        for path in sorted(root.rglob("*")):
+            if path.is_symlink():
+                raise ValueError("Untrusted linked project artifact")
+            if not path.is_file() or path.suffix.lower() not in _MEDIA_MIME:
+                continue
+            items.append({"path":str(path.relative_to(root)),
+                          "bytes":path.stat().st_size,
+                          "sha256":sha256_file(path),
+                          "physically_encoded_quality_certified":False})
+        return {"job_id":identity,"assets":items}
+
     def inspect(self,identity):
         if not isinstance(identity,str) or not _ID.fullmatch(identity):
             raise ValueError("Invalid original job identity")
@@ -246,6 +284,18 @@ def make_body_http_handler(coordinator,token):
                 self._reply(401,{"error":"Local production service requires host authorization"})
                 return False
             return True
+        def _stream_artifact(self,identity,relative):
+            media=coordinator.inspect_media(identity,relative)
+            self.send_response(200)
+            self.send_header("Content-Type",media["mime"])
+            self.send_header("Content-Length",str(media["bytes"]))
+            self.send_header("X-ZX7-SHA256",media["sha256"])
+            self.send_header("Content-Disposition",
+                             'attachment; filename="'+media["path"].name+'"')
+            self.send_header("Cache-Control","no-store")
+            self.end_headers()
+            with media["path"].open("rb") as source:
+                shutil.copyfileobj(source,self.wfile,1024*1024)
         def do_GET(self):
             if not self._authorized():return
             path=urlsplit(self.path).path
@@ -261,8 +311,15 @@ def make_body_http_handler(coordinator,token):
                     return self._reply(200,explain_operational_tool(
                         coordinator.projects,name))
                 if path.startswith("/v1/jobs/"):
-                    identity=path.removeprefix("/v1/jobs/")
-                    return self._reply(200,coordinator.inspect(identity))
+                    rest=path.removeprefix("/v1/jobs/")
+                    if "/artifacts/" in rest:
+                        identity,relative=rest.split("/artifacts/",1)
+                        self._stream_artifact(identity,unquote(relative))
+                        return
+                    if rest.endswith("/artifacts"):
+                        identity=rest.removesuffix("/artifacts")
+                        return self._reply(200,coordinator.list_media(identity))
+                    return self._reply(200,coordinator.inspect(rest))
                 return self._reply(404,{"error":"Unknown local body endpoint"})
             except (ValueError,TypeError) as exc:
                 return self._reply(400,{"error":str(exc)})
