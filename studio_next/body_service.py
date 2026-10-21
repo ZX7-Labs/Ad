@@ -1,0 +1,243 @@
+"""Independent local authenticated production-body service.
+
+Run real locally installed creative tools WITHOUT ChatGPT supervision.
+POST a model/artist-authored original Film IR, obtain an ID, poll status,
+and restart interrupted jobs from the same SQLite + MediaVault stages.
+
+This is a loopback-only trusted host API, never a public internet deployment.
+No paid calls, software installs, shell commands, image/style templates or
+infinite hidden background jobs. Real media is created only by registered tools.
+"""
+from __future__ import annotations
+
+import argparse
+import concurrent.futures
+import hmac
+import json
+import os
+import re
+import sqlite3
+import threading
+import time
+import uuid
+from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
+from pathlib import Path
+from urllib.parse import urlsplit
+
+from .body_capabilities import operational_tool_summary,explain_operational_tool
+from .body_integration import run_body_project
+
+_ID=re.compile(r"^[A-Za-z0-9_-]{1,80}$")
+_MAX_JOB_BODY=4*1024*1024
+
+
+class LocalBodyCoordinator:
+    def __init__(self,root,*,execute=None,workers=1):
+        if type(workers) is not int or not (1<=workers<=16):
+            raise ValueError("Operator must choose finite host workload capacity")
+        self.root=Path(root).resolve()
+        self.root.mkdir(parents=True,exist_ok=True)
+        self.projects=self.root/"projects"
+        self.projects.mkdir(exist_ok=True)
+        self.database=self.root/"body-jobs.sqlite3"
+        self.executor=concurrent.futures.ThreadPoolExecutor(
+            max_workers=workers,thread_name_prefix="zx7-original-body")
+        self._queued=set()
+        self._lock=threading.RLock()
+        self.execute=execute or run_body_project
+        with self._connect() as db:
+            db.execute("""CREATE TABLE IF NOT EXISTS jobs(
+                id TEXT PRIMARY KEY,workspace_id TEXT NOT NULL,
+                original_ir TEXT NOT NULL,status TEXT NOT NULL,
+                attempts INTEGER NOT NULL, result TEXT,
+                modified REAL NOT NULL)""")
+
+    def _connect(self):
+        db=sqlite3.connect(self.database,timeout=30,isolation_level=None)
+        db.execute("PRAGMA busy_timeout=30000")
+        db.execute("PRAGMA journal_mode=WAL")
+        return db
+
+    def _workspace(self,identity):
+        if not isinstance(identity,str) or not _ID.fullmatch(identity):
+            raise ValueError("Unsafe original project/workspace identity")
+        place=(self.projects/identity).resolve()
+        if not place.is_relative_to(self.projects):
+            raise ValueError("Original project cannot escape studio folder")
+        return place
+
+    def submit(self,film_ir,*,workspace_id,job_id=None):
+        if not isinstance(film_ir,dict) or not isinstance(film_ir.get("tool_graph"),list):
+            raise ValueError("Original creative Film IR and actual tool graph required")
+        root=self._workspace(workspace_id)
+        root.mkdir(parents=True,exist_ok=True)
+        identifier=job_id or uuid.uuid4().hex
+        if not _ID.fullmatch(identifier):
+            raise ValueError("Invalid production job identity")
+        encoded=json.dumps(film_ir,allow_nan=False,ensure_ascii=False)
+        with self._connect() as db:
+            try:
+                db.execute("""INSERT INTO jobs VALUES(?,?,?,?,?,?,?)""",
+                    (identifier,workspace_id,encoded,"queued",0,None,time.time()))
+            except sqlite3.IntegrityError as exc:
+                raise ValueError("Original creative job ID already exists; never overwrite") from exc
+        self.queue(identifier)
+        return {"job_id":identifier,"workspace_id":workspace_id,"status":"queued",
+                "original_artistic_plan_preserved":True}
+
+    def queue(self,identity):
+        if not isinstance(identity,str) or not _ID.fullmatch(identity):
+            raise ValueError("Invalid job identity")
+        with self._lock:
+            if identity in self._queued:
+                return False
+            with self._connect() as db:
+                found=db.execute("SELECT status FROM jobs WHERE id=?",(identity,)).fetchone()
+            if found is None:raise ValueError("Unknown submitted project")
+            if found[0]=="completed":
+                return False
+            self._queued.add(identity)
+            self.executor.submit(self._work,identity)
+            return True
+
+    def _work(self,identity):
+        try:
+            with self._connect() as db:
+                # Jobs already have a bounded single executor owner locally.
+                db.execute("""UPDATE jobs SET status='running',attempts=attempts+1,
+                           modified=? WHERE id=?""",(time.time(),identity))
+                row=db.execute("SELECT workspace_id,original_ir FROM jobs WHERE id=?",
+                               (identity,)).fetchone()
+            if row is None:raise ValueError("Submitted original film vanished")
+            location=self._workspace(row[0])
+            original=json.loads(row[1])
+            # Execution itself uses the crash-safe graph/physical witness vault.
+            result=self.execute(original,location)
+            if not isinstance(result,dict):
+                raise RuntimeError("Original film tool graph produced no audit result")
+            ok=result.get("status")=="all_tool_results_verified"
+            status="completed" if ok else "blocked"
+            report=result
+        except BaseException as exc:
+            status="failed"
+            report={"status":"failed","message":type(exc).__name__+": "+str(exc),
+                    "movie_delivered":False}
+        finally:
+            with self._connect() as db:
+                db.execute("""UPDATE jobs SET status=?,result=?,modified=? WHERE id=?""",
+                    (status,json.dumps(report,allow_nan=False,ensure_ascii=False),
+                     time.time(),identity))
+            with self._lock:
+                self._queued.discard(identity)
+
+    def inspect(self,identity):
+        if not isinstance(identity,str) or not _ID.fullmatch(identity):
+            raise ValueError("Invalid original job identity")
+        with self._connect() as db:
+            row=db.execute("""SELECT workspace_id,status,attempts,result,modified
+                FROM jobs WHERE id=?""",(identity,)).fetchone()
+        if row is None:raise ValueError("Unknown job")
+        return {"job_id":identity,"workspace_id":row[0],"status":row[1],
+                "attempts":row[2],"result":json.loads(row[3]) if row[3] else None,
+                "updated_at":row[4]}
+
+    def pending_restart(self):
+        with self._connect() as db:
+            ids=[x[0] for x in db.execute(
+                "SELECT id FROM jobs WHERE status IN ('queued','running')")]
+        for identity in ids:
+            self.queue(identity)
+        return len(ids)
+
+    def close(self):
+        self.executor.shutdown(wait=True)
+
+
+def make_body_http_handler(coordinator,token):
+    if not isinstance(token,str) or len(token)<32:
+        raise ValueError("Local creative body API needs secret >=32 characters")
+    class Handler(BaseHTTPRequestHandler):
+        server_version="ZX7Body/1"
+        def log_message(self,format,*args):
+            pass
+        def _reply(self,code,payload):
+            binary=json.dumps(payload,ensure_ascii=False,allow_nan=False).encode("utf-8")
+            self.send_response(code)
+            self.send_header("Content-Type","application/json; charset=utf-8")
+            self.send_header("Content-Length",str(len(binary)))
+            self.send_header("Cache-Control","no-store")
+            self.end_headers()
+            self.wfile.write(binary)
+        def _authorized(self):
+            actual=self.headers.get("Authorization","")
+            if not hmac.compare_digest(actual,"Bearer "+token):
+                self._reply(401,{"error":"Local production service requires host authorization"})
+                return False
+            return True
+        def do_GET(self):
+            if not self._authorized():return
+            path=urlsplit(self.path).path
+            try:
+                if path=="/v1/health":
+                    return self._reply(200,{"service":"zx7-local-body",
+                        "host_only":"127.0.0.1","online":True})
+                if path=="/v1/tools":
+                    return self._reply(200,{"tools":operational_tool_summary(
+                        coordinator.projects)})
+                if path.startswith("/v1/tools/"):
+                    name=path.removeprefix("/v1/tools/")
+                    return self._reply(200,explain_operational_tool(
+                        coordinator.projects,name))
+                if path.startswith("/v1/jobs/"):
+                    identity=path.removeprefix("/v1/jobs/")
+                    return self._reply(200,coordinator.inspect(identity))
+                return self._reply(404,{"error":"Unknown local body endpoint"})
+            except (ValueError,TypeError) as exc:
+                return self._reply(400,{"error":str(exc)})
+        def do_POST(self):
+            if not self._authorized():return
+            path=urlsplit(self.path).path
+            if path!="/v1/jobs":
+                return self._reply(404,{"error":"Only original film jobs may be submitted"})
+            try:
+                length=int(self.headers.get("Content-Length","0"))
+                if not (0<length<=_MAX_JOB_BODY):
+                    raise ValueError("Bounded Film IR upload required; upload assets separately")
+                body=json.loads(self.rfile.read(length))
+                if not isinstance(body,dict) or set(body)!={"workspace_id","film_ir"}:
+                    raise ValueError("Job request requires original Film IR and workspace")
+                return self._reply(202,coordinator.submit(
+                    body["film_ir"],workspace_id=body["workspace_id"]))
+            except (ValueError,TypeError,json.JSONDecodeError) as exc:
+                return self._reply(400,{"error":str(exc)})
+    return Handler
+
+
+def start_local_body_service(root,*,secret,port=8765,workers=1):
+    if type(port) is not int or not (0<port<65536):
+        raise ValueError("Local port must be explicit and valid")
+    coordinator=LocalBodyCoordinator(root,workers=workers)
+    coordinator.pending_restart()
+    server=ThreadingHTTPServer(("127.0.0.1",port),
+        make_body_http_handler(coordinator,secret))
+    try:
+        server.serve_forever()
+    finally:
+        server.server_close()
+        coordinator.close()
+
+
+def main():
+    p=argparse.ArgumentParser(description=__doc__)
+    p.add_argument("--workspace-root",type=Path,required=True)
+    p.add_argument("--port",type=int,default=8765)
+    p.add_argument("--workers",type=int,default=1)
+    a=p.parse_args()
+    secret=os.getenv("ZX7_BODY_API_TOKEN")
+    if not secret or len(secret)<32:
+        raise SystemExit("Set a unique 32+ character ZX7_BODY_API_TOKEN in host environment")
+    start_local_body_service(a.workspace_root,secret=secret,
+                             port=a.port,workers=a.workers)
+
+
+if __name__=="__main__":main()
