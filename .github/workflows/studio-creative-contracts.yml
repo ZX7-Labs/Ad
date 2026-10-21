@@ -7,6 +7,8 @@ on:
       - "motion_studio/render.py"
       - "studio_next/font_registry.py"
       - "studio_next/test_font_registry.py"
+      - "studio_next/motion_bridge.py"
+      - "studio_next/test_motion_bridge.py"
       - "studio_next/body_capabilities.py"
       - "studio_next/test_body_capabilities.py"
       - "motion_studio/voice.py"
