@@ -86,11 +86,27 @@ def inspectable_frames(video, times, destination):
     return metadata,files
 
 
+REFERENCE_REVIEW = """You are an expert film director examining a SEPARATE
+technical video demonstrating the studio's available visual production.
+This 4.75-second archived motion-and-3D clip is NOT the film you imagined.
+It was produced earlier by a human-coded demo, not by your new original script.
+
+Observe what the provided frames actually show, and decide which demonstrated
+rendering techniques, if any, might serve your independently imagined film.
+Distinguish facts visible in the reference clip from your desired film scenes.
+Never say this old clip is the result of your original screenplay, that its
+cuts have been checked against your new film, or that a new film was rendered.
+Do not infer recorded voice, background music, character performance or
+shot dynamics from individual images. Critique real visual composition and
+what future creative capabilities need new footage, materials or tools.
+Respond with natural artistic prose, no fabricated evidence or style presets."""
+
+
 class VisualFilmDirector:
     def __init__(self,settings:LocalModelSettings):
         self.settings=settings
 
-    def evaluate(self, artistic_goal, frame_images):
+    def evaluate(self, artistic_goal, frame_images, *, reference_prototype=False):
         if not isinstance(artistic_goal,str) or not artistic_goal.strip():
             raise ValueError("Need owner/director artistic intention")
         if not isinstance(frame_images,list) or not frame_images:
@@ -110,7 +126,7 @@ class VisualFilmDirector:
             content.append({"type":"image_url","image_url":{
                 "url":"data:image/jpeg;base64,"+base64.b64encode(raw).decode("ascii")}})
         payload={"model":self.settings.model_id,"stream":False,
-                 "messages":[{"role":"system","content":VISION_REVIEW},
+                 "messages":[{"role":"system","content":REFERENCE_REVIEW if reference_prototype else VISION_REVIEW},
                              {"role":"user","content":content}],
                  "temperature":.4,"top_p":.9,"max_tokens":1900}
         request=Request(self.settings.base_url.rstrip("/")+"/v1/chat/completions",
@@ -129,16 +145,18 @@ class VisualFilmDirector:
         return text
 
 
-def critique_actual_film(video, goal, stamps, output, director):
+def critique_actual_film(video, goal, stamps, output, director, *, reference_prototype=False):
     output=Path(output)
     output.mkdir(parents=True,exist_ok=True)
     facts,frames=inspectable_frames(video,stamps,output/"decoded-frames")
-    response=director.evaluate(goal,frames)
+    response=director.evaluate(goal,frames,reference_prototype=reference_prototype)
     (output/"director-observed-critique.txt").write_text(response,encoding="utf-8")
     evidence={"film":str(video),"frames":frames,"ffprobe":facts,
         "reviewer_model_id":getattr(getattr(director,"settings",None),
                                    "model_id",None),
         "reviewer_used_actual_encoded_images":True,
+        "reference_prototype":bool(reference_prototype),
+        "reviewed_original_new_film":False,
         "film_was_model_authored":False,
         "text_review_obtained":True,"human_approval":False,
         "video_fully_reviewed":False,"audio_reviewed":False,
@@ -155,10 +173,13 @@ def main():
     p.add_argument("--out",type=Path,required=True)
     p.add_argument("--api",default="http://127.0.0.1:8085")
     p.add_argument("--model",required=True)
+    p.add_argument("--reference-prototype",action="store_true",
+                   help="Older unrelated technical clip, NOT a render of the newly imagined film")
     args=p.parse_args()
     model=VisualFilmDirector(LocalModelSettings(base_url=args.api,model_id=args.model,
         timeout_seconds=1800,max_response_bytes=5000000))
-    print(json.dumps(critique_actual_film(args.video,args.goal,args.time,args.out,model),indent=2))
+    print(json.dumps(critique_actual_film(args.video,args.goal,args.time,args.out,model,
+                                        reference_prototype=args.reference_prototype),indent=2))
 
 
 if __name__=="__main__":
