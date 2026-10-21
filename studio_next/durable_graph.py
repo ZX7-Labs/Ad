@@ -94,6 +94,8 @@ class DurableFilmGraph:
                 # idempotent tool may automatically try recreating it.
                 if not trusted_idempotent:
                     raise RecoveryBlocked("Required original art disappeared; unsafe non-idempotent replay")
+            if row and row[0]==input_sha and row[1]=="failed" and not trusted_idempotent:
+                raise RecoveryBlocked("Non-idempotent failed operation may have created irreversible side effects")
             if row and row[0]==input_sha and row[1]=="running":
                 if row[3] is None or row[3]>now:
                     raise RecoveryBlocked("Another worker holds the active scene lease")
