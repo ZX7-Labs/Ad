@@ -308,7 +308,7 @@ def _require_authentic_generated_media_lineage(film_ir):
         inputs=node.get("inputs")
         refs=node.get("depends_on",[])
         if not isinstance(inputs,dict) or set(inputs)!={"source_witness"} or (
-                len(refs)!=1 or refs[0] not in node_by_id or
+                not isinstance(refs,list) or len(refs)!=1 or refs[0] not in node_by_id or
                 node_by_id[refs[0]].get("tool_id") not in trusted_producers or
                 inputs["source_witness"]!={"$node_output":refs[0]}):
             raise ValueError("LLM cannot invent license/source claims; vault requires exact trusted renderer dependency")
