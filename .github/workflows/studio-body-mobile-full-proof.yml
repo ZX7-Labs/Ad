@@ -8,6 +8,8 @@ on:
       - "pyproject.toml"
       - ".github/workflows/studio-body-mobile-full-proof.yml"
       - "studio_next/body_mobile.py"
+      - "studio_next/body_download_tickets.py"
+      - "studio_next/test_body_download_tickets.py"
       - "studio_next/body_service.py"
       - "studio_next/test_body_mobile.py"
       - "studio_next/body_publication.py"
