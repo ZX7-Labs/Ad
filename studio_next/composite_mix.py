@@ -41,21 +41,31 @@ def _int(value,label):
 def _exact_media(layer,vault,root,*,need):
     if not isinstance(layer,dict) or not isinstance(layer.get("source"),str):
         raise ValueError("Real "+need+" media must be specified")
-    path=Path(layer["source"])
-    if path.is_absolute() or not path.parts or ".." in path.parts:
-        raise ValueError("Creative tool cannot escape the verified production workspace")
-    file=(root/path).resolve()
-    if not file.is_relative_to(root.resolve()) or not file.is_file():
-        raise ValueError("Physically missing original media")
     asset=layer.get("asset_id")
     attestation=layer.get("attestation_id")
     if not isinstance(asset,str) or not isinstance(attestation,str):
         raise ValueError("Original footage/audio requires an exact rights attestation")
     record=vault.inspect(asset,attestation_id=attestation)
-    if sha256_file(file)!=asset:
-        raise ValueError("Source bytes differ from original verified licensed asset")
     if not record["rights_attestations"]:
         raise ValueError("Rights proof missing")
+    # Machine-neutral source identity. Rendering still uses ONLY a physically
+    # verified immutable blob, not an external URL or hallucinated file path.
+    # Legacy director-chosen workspace paths remain supported unchanged.
+    if layer["source"].startswith("zx7:sha256:"):
+        if layer["source"] != "zx7:sha256:"+asset:
+            raise ValueError("Original media identity URI differs from verified asset")
+        file=Path(record["path"]).resolve()
+        if not file.is_relative_to(root.resolve()):
+            raise ValueError("Verified media is outside the protected production workspace")
+    else:
+        path=Path(layer["source"])
+        if path.is_absolute() or not path.parts or ".." in path.parts:
+            raise ValueError("Creative tool cannot escape the verified production workspace")
+        file=(root/path).resolve()
+        if not file.is_relative_to(root.resolve()) or not file.is_file():
+            raise ValueError("Physically missing original media")
+    if sha256_file(file)!=asset:
+        raise ValueError("Source bytes differ from original verified licensed asset")
     return file
 
 
