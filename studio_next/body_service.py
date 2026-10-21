@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures
+import fcntl
 import hmac
 import json
 import os
@@ -45,6 +46,16 @@ class LocalBodyCoordinator:
             raise ValueError("Operator must choose finite host workload capacity")
         self.root=Path(root).resolve()
         self.root.mkdir(parents=True,exist_ok=True)
+        # An OS process lock is released on crash, unlike a stale Python flag.
+        # Two independent services must NEVER drive the same renderer DB,
+        # originals and partially produced frames concurrently.
+        self._instance_lock=(self.root/"body-service.lock").open("a+")
+        try:
+            fcntl.flock(self._instance_lock.fileno(),
+                        fcntl.LOCK_EX|fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            self._instance_lock.close()
+            raise RuntimeError("Original production workspace is already owned by another running body service") from exc
         self.projects=self.root/"projects"
         self.projects.mkdir(exist_ok=True)
         self.database=self.root/"body-jobs.sqlite3"
@@ -210,6 +221,8 @@ class LocalBodyCoordinator:
 
     def close(self):
         self.executor.shutdown(wait=True)
+        fcntl.flock(self._instance_lock.fileno(),fcntl.LOCK_UN)
+        self._instance_lock.close()
 
 
 def make_body_http_handler(coordinator,token):
