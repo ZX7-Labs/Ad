@@ -26,7 +26,7 @@ VIDEO_MODEL_CANDIDATES=(
      "license_metadata":"apache-2.0","needs_vram_mb":8190,
      "capabilities":["text_to_video","human_action","camera_motion","natural_scene"]},
     {"id":"wan21-vace-13b","repo":"Wan-AI/Wan2.1-VACE-1.3B",
-     "license_metadata":"apache-2.0","needs_vram_mb":8190,
+     "license_metadata":"apache-2.0","needs_vram_mb":None,
      "capabilities":["video_edit","video_to_video","reference_to_video","image_to_video"]},
     {"id":"wan22-ti2v-5b","repo":"Wan-AI/Wan2.2-TI2V-5B",
      "license_metadata":"apache-2.0","needs_vram_mb":24000,
@@ -128,7 +128,14 @@ def discover_local_generators(*,gpu_mb=None,comfy_endpoint=None,
         deployment=_read_manifest(deployed_root,spec["id"])
         workflow_nodes=deployment.get("required_comfyui_nodes",[]) if deployment else []
         nodes=runtime["available_node_classes"]
-        proven=bool(deployment and gpu_mb>=spec["needs_vram_mb"] and
+        needed=spec["needs_vram_mb"]
+        # Unknown independently documented GPU floor is never guessed from
+        # another different diffusion model of similar parameter count.
+        if needed is None and deployment:
+            minimum=deployment.get("minimum_locally_verified_vram_mb")
+            if isinstance(minimum,int) and not isinstance(minimum,bool) and minimum>0:
+                needed=minimum
+        proven=bool(deployment and isinstance(needed,int) and gpu_mb>=needed and
             runtime["service_reachable"] and
             isinstance(workflow_nodes,list) and workflow_nodes and
             all(isinstance(n,str) and n in nodes for n in workflow_nodes))
@@ -137,6 +144,7 @@ def discover_local_generators(*,gpu_mb=None,comfy_endpoint=None,
             "license_metadata":spec["license_metadata"],
             "tasks":spec["capabilities"],
             "minimum_documented_gpu_mb":spec["needs_vram_mb"],
+            "minimum_deployment_verified_gpu_mb":needed,
             "measured_local_cuda_vram_mb":gpu_mb,
             "weights_verified_locally":bool(deployment),
             "local_workflow_nodes_verified":proven,
