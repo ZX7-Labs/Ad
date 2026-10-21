@@ -10,11 +10,11 @@ class BodyPluginsBoundaryTests(unittest.TestCase):
     def test_trusted_adapter_registers_only_after_admin_consent_and_probe(self):
         spec=ToolSpec("artist.procedural","real geometry","Independent full 3D engine","write")
         class Plugin:
-            spec=spec
             revision="actual-software-and-source-sha"
             idempotent=True
             def probe(self):return True
             def run(self,inputs):return {"real":inputs}
+        Plugin.spec=spec
         entry=SimpleNamespace(name="artist.procedural",load=lambda:Plugin)
         results=discover_enabled_body_plugins(
             approved=["artist.procedural"],entry_source=[entry])
