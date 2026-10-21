@@ -10,7 +10,7 @@ import unittest
 import wave
 from pathlib import Path
 
-from studio_next.body_archive import create_body_archive, restore_body_archive
+from studio_next.body_archive import create_body_archive, restore_body_archive, save_body_archive_offline
 from studio_next.durable_graph import DurableFilmGraph
 from studio_next.media_vault import MediaVault,sha256_file
 from studio_next.body_portability import prepare_relocated_workspace
@@ -126,6 +126,45 @@ class PortableWorkspaceTests(unittest.TestCase):
             self.assertFalse(result["relocated"])
             self.assertTrue(result["old_jobs_auto_resumable"])
             self.assertTrue((original/"body-jobs.sqlite3").exists())
+
+    def test_operator_offline_backup_blocks_running_jobs_and_host_lock(self):
+        import fcntl
+        with tempfile.TemporaryDirectory() as path:
+            base=Path(path)
+            original=base/"host";original.mkdir()
+            (original/"real_source.txt").write_text("The owner's untouched notes")
+            with sqlite3.connect(original/"body-jobs.sqlite3") as conn:
+                conn.execute("CREATE TABLE jobs(id TEXT,status TEXT)")
+                conn.execute("INSERT INTO jobs VALUES('live','running')")
+            dest=base/"out.tar.gz"
+            with self.assertRaisesRegex(RuntimeError,"unresolved active"):
+                save_body_archive_offline(original,dest)
+            self.assertFalse(dest.exists())
+            with sqlite3.connect(original/"body-jobs.sqlite3") as conn:
+                conn.execute("UPDATE jobs SET status='completed'")
+            gate=(original/"body-service.lock").open("a+")
+            try:
+                fcntl.flock(gate.fileno(),fcntl.LOCK_EX|fcntl.LOCK_NB)
+                with self.assertRaisesRegex(RuntimeError,"service running"):
+                    save_body_archive_offline(original,dest)
+            finally:
+                fcntl.flock(gate.fileno(),fcntl.LOCK_UN)
+                gate.close()
+            result=save_body_archive_offline(original,dest)
+            self.assertTrue(dest.is_file())
+            self.assertEqual(result["sha256"],sha256_file(dest))
+
+    def test_operator_backup_blocks_half_uploaded_owner_media(self):
+        with tempfile.TemporaryDirectory() as path:
+            base=Path(path)
+            original=base/"host";original.mkdir()
+            (original/"owner.mp4").write_bytes(b"original original bytes")
+            (original/".zx7-import-xyz.tmp").write_bytes(b"partial media")
+            with self.assertRaisesRegex(RuntimeError,"transfer is incomplete"):
+                save_body_archive_offline(original,base/"backup.tar.gz")
+            (original/".zx7-import-xyz.tmp").unlink()
+            result=save_body_archive_offline(original,base/"backup.tar.gz")
+            self.assertTrue(result["sha256"])
 
     def test_reject_archived_forged_rel_location_and_history_names(self):
         with tempfile.TemporaryDirectory() as path:
