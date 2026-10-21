@@ -177,12 +177,41 @@ jobs:
           finally:
               server.shutdown();server.server_close();thread.join(timeout=5)
               backend.close()
+          from studio_next.body_archive import restore_body_archive
+          backup=Path("output/complete-local-body-service-recovery.tar.gz").resolve()
           again=LocalBodyCoordinator(root)
           try:
               assert again.pending_restart()==0
               assert again.inspect(receipt["job_id"])["attempts"]==1
+              archive=again.create_recovery_snapshot(backup)
+              assert archive["files"]>=5
           finally:again.close()
-          print("STANDALONE LOCAL BODY EXECUTED ORIGINAL MEDIA; CHAT NOT REQUIRED",flush=True)
+          expected_frame=(project/"artist-frame.png").read_bytes()
+          shutil.rmtree(root)
+          verified=restore_body_archive(backup,root,
+                  expected_sha256=archive["sha256"])
+          restored=LocalBodyCoordinator(root)
+          try:
+              recovered=restored.inspect(receipt["job_id"])
+              assert recovered["status"]=="completed",recovered
+              assert restored.pending_restart()==0
+              assert (project/"artist-frame.png").read_bytes()==expected_frame
+              assert (project/"real-master.mp4").read_bytes()==raw
+              from studio_next.media_vault import MediaVault
+              source_vault=MediaVault(project/"vault")
+              assert source_vault.inspect(attached["asset_id"],
+                     attestation_id=attached["attestation_id"])["rights_attestations"]
+              assert verified["all_physical_bytes_verified"]
+              (root/"restored-autonomous-service-proof.json").write_text(
+                  json.dumps({"same_original_job_restored":True,
+                   "owned_original_movie_restored":True,
+                   "rights_custody_sqlite_restored":True,
+                   "actual_accepted_graph_output_restored":True,
+                   "re_rendered_shots_or_model_calls":0,
+                   "operator_anchored_snapshot_sha256":archive["sha256"]},
+                   indent=2)+"\\n")
+          finally:restored.close()
+          print("STANDALONE BODY SERVICE RESTORED FROM TOTAL LOSS WITH REAL MEDIA AND ZERO RE-RENDERS",flush=True)
           PY
       - name: Verify playable media and genuine separate editable and graphic artifacts
         run: |
@@ -239,6 +268,8 @@ jobs:
             output/verified-body-restore-proof.json
             output/body-autonomous-service-proof/auth-body-evidence.json
             output/body-autonomous-service-proof/body-jobs.sqlite3
+            output/body-autonomous-service-proof/restored-autonomous-service-proof.json
+            output/complete-local-body-service-recovery.tar.gz
             output/body-autonomous-service-proof/projects/real-art-original/artist-frame.png
             output/verified-body-tools/vault/
           if-no-files-found: warn
