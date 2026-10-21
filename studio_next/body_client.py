@@ -87,6 +87,15 @@ class ZX7BodyClient:
         return self.request_json("POST","/v1/jobs",
                   {"workspace_id":workspace_id,"film_ir":plan})
 
+    def jobs(self):
+        return self.request_json("GET","/v1/jobs")
+
+    def retry(self,job_id):
+        if not isinstance(job_id,str) or not _ID.fullmatch(job_id):
+            raise ValueError("Invalid original body job")
+        return self.request_json("POST","/v1/jobs/"+job_id+"/retry",
+                                 body=b"",headers={"Content-Length":"0"})
+
     def status(self,job_id):
         if not _ID.fullmatch(job_id):
             raise ValueError("Invalid physical studio job identity")
@@ -199,6 +208,8 @@ def main(argv=None):
     modes.add_parser("tools")
     p=modes.add_parser("describe");p.add_argument("tool_id")
     p=modes.add_parser("submit");p.add_argument("original_film_ir");p.add_argument("--workspace",required=True)
+    modes.add_parser("jobs")
+    p=modes.add_parser("retry");p.add_argument("job_id")
     p=modes.add_parser("status");p.add_argument("job_id")
     p=modes.add_parser("wait");p.add_argument("job_id");p.add_argument("--seconds",type=float,default=3600)
     p=modes.add_parser("artifacts");p.add_argument("job_id")
@@ -211,6 +222,8 @@ def main(argv=None):
     if args.command=="tools":result=client.tools()
     elif args.command=="describe":result=client.tool(args.tool_id)
     elif args.command=="submit":result=client.submit(args.original_film_ir,args.workspace)
+    elif args.command=="jobs":result=client.jobs()
+    elif args.command=="retry":result=client.retry(args.job_id)
     elif args.command=="status":result=client.status(args.job_id)
     elif args.command=="wait":result=client.wait(args.job_id,max_seconds=args.seconds)
     elif args.command=="artifacts":result=client.artifacts(args.job_id)
