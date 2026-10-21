@@ -87,6 +87,9 @@ class FilmHandoffTests(unittest.TestCase):
             self.assertEqual(json.loads((out/"director-translation.json").read_text())["scenes"][0]["id"],"shot_1")
             self.assertEqual(len(list((out/"designs").glob("design-*.json"))),4)
             self.assertEqual(delivery.prompts[0]["treatment"]["title"],"An impossible question")
+            delivery_file=out/"designs"/"delivery.json"
+            self.assertEqual(json.loads(delivery_file.read_text())["voice"],"no_voice")
+            self.assertTrue(json.loads((out/"designs"/"production-manifest.json").read_text())["all_designs_executable"] is False)
 
     def test_cannot_silently_change_model_brain(self):
         with tempfile.TemporaryDirectory() as t:
