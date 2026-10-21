@@ -203,3 +203,32 @@ def restore_body_archive(archive,destination,*,expected_sha256,relocate=False):
                 "relocated":moved is not None,
                 "old_execution_state_quarantined":moved is not None,
                 "old_jobs_auto_resumable":moved is None}
+
+
+
+def main(argv=None):
+    """Host-operator-only archive tool. No executable model instructions."""
+    import argparse
+    p=argparse.ArgumentParser(description="Verified original ZX7 BODY archival and safe cross-host recovery")
+    actions=p.add_subparsers(dest="command",required=True)
+    save=actions.add_parser("save",help="Create SHA-256-verified original work archive")
+    save.add_argument("--workspace",type=Path,required=True)
+    save.add_argument("--archive",type=Path,required=True)
+    restore=actions.add_parser("restore",help="Restore trusted archive to an empty workspace")
+    restore.add_argument("--archive",type=Path,required=True)
+    restore.add_argument("--destination",type=Path,required=True)
+    restore.add_argument("--sha256",required=True,help="Original 64-digit SHA256 from trusted offline channel")
+    restore.add_argument("--relocate",action="store_true",
+        help="Import to a DIFFERENT host path, quarantine old executable jobs and require safe relinking")
+    args=p.parse_args(argv)
+    if args.command=="save":
+        result=create_body_archive(args.workspace,args.archive)
+    else:
+        result=restore_body_archive(args.archive,args.destination,
+             expected_sha256=args.sha256,relocate=args.relocate)
+    print(json.dumps(result,ensure_ascii=False,sort_keys=True,indent=2))
+    return result
+
+
+if __name__=="__main__":
+    main()
