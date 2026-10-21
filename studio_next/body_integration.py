@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import os
 import json
 import shutil
 from pathlib import Path
@@ -25,6 +26,7 @@ from .delivery_audit import audit_delivered_movie,_probe_details
 from .durable_graph import DurableFilmGraph,execute_durable_film_graph
 from .media_vault import MediaVault,sha256_file
 from .composite_mix import render_composition
+from .body_plugins import discover_enabled_body_plugins
 
 
 def _body_output(workspace,name,*,allowed=(".mp4",".otio",".png")):
@@ -78,6 +80,54 @@ def _verify_witness(result):
     return False
 
 
+def _trusted_body_revision(tool_id):
+    """Per-tool code and installed executable revision, not a fixed schema label.
+
+    Renderer implementation changes invalidate cached creative media only for
+    that operation and downstream consumers of its physical output.
+    """
+    base=Path(__file__).resolve().parent
+    dependencies={
+        "body.inspect":["delivery_audit.py"],
+        "body.render_edit":["edit_timeline.py"],
+        "body.otio":["editorial_interchange.py"],
+        "body.vector_png":["creative_asset_ops.py"],
+        "body.film_thumbnail":["creative_asset_ops.py","delivery_audit.py"],
+        "body.asset_vault":["media_vault.py"],
+        "body.composite_mix":["composite_mix.py","media_vault.py"],
+        "body.blender3d":["native_body_engines.py","blender_scene.py"],
+        "body.motion2d":["native_body_engines.py","motion_bridge.py","font_registry.py"],
+    }
+    commands={
+        "body.inspect":["ffprobe"],
+        "body.render_edit":["ffmpeg","ffprobe"],
+        "body.otio":[],
+        "body.vector_png":["inkscape"],
+        "body.film_thumbnail":["ffmpeg","ffprobe"],
+        "body.asset_vault":[],
+        "body.composite_mix":["ffmpeg","ffprobe"],
+        "body.blender3d":["blender","ffmpeg"],
+        "body.motion2d":["ffmpeg","ffprobe"],
+    }
+    known=dependencies.get(tool_id)
+    if known is None:
+        raise ValueError("No verified implementation dependencies for "+tool_id)
+    h=hashlib.sha256()
+    for item in ("body_integration.py",)+tuple(known):
+        p=base/item
+        h.update(item.encode())
+        h.update(p.read_bytes())
+    for cmd in commands[tool_id]:
+        executable=shutil.which(cmd)
+        if executable is None:
+            raise ValueError("Cannot fingerprint missing actual creative renderer")
+        file=Path(executable).resolve()
+        stat=file.stat()
+        h.update(json.dumps({"command":cmd,"binary_path":str(file),
+              "size":stat.st_size,"mtime_ns":stat.st_mtime_ns},sort_keys=True).encode())
+    return "sha256:"+h.hexdigest()
+
+
 def body_catalog(workspace,*,vault_root=None):
     root=Path(workspace).resolve()
     vault=MediaVault(vault_root or (root/"vault"))
@@ -88,7 +138,9 @@ def body_catalog(workspace,*,vault_root=None):
             status="installed" if ready else "needs_setup",
             license="various installed FOSS or verified asset provenance",
             resource="local machine",
-            operation_schema={"required":required}),fn if ready else None)
+            operation_schema={"required":required}),fn if ready else None,
+            idempotent=True,
+            implementation_revision=_trusted_body_revision(id) if ready else None)
 
     def inspect(inputs):
         path=_path_within(root,inputs["source"],exists=True)
@@ -190,6 +242,12 @@ def body_catalog(workspace,*,vault_root=None):
     add("body.asset_vault","audited media provenance","Hash and preserve rights-cleared actual file",
         "write",True,["source","mime","rights","source_type","source_id","evidence","issuer"],
         vault_asset)
+    for spec,runner,idempotent,version,operational in discover_enabled_body_plugins():
+        if not operational:
+            from dataclasses import replace
+            spec=replace(spec,status="needs_setup")
+        catalog.register(spec,runner,idempotent=idempotent,
+                         implementation_revision=version if operational else None)
     return catalog
 
 
@@ -221,14 +279,12 @@ def run_body_project(film_ir,workspace,*,db_name="production.sqlite3"):
     root=Path(workspace)
     catalog=body_catalog(root)
     store=DurableFilmGraph(root/db_name)
-    actual_versions={item["id"]:"zx7-body-schema-1:"+item["status"]
-                 for item in catalog.discover() if item["status"]=="installed"}
+    actual_versions=catalog.committed_tool_revisions()
+    idempotent=catalog.trusted_idempotent_ids()
     return execute_durable_film_graph(
        film_ir,catalog,fact_ids=set(film_ir.get("owner_facts",{})),
        store=store,output_verifier=validate_witness,
-       trusted_idempotent_tools={"body.inspect","body.render_edit","body.otio",
-                                 "body.vector_png","body.film_thumbnail","body.asset_vault",
-                                 "body.composite_mix","body.blender3d","body.motion2d"},
+       trusted_idempotent_tools=idempotent,
        tool_revisions=actual_versions,allowed_access={"read","write"})
 
 
