@@ -223,6 +223,30 @@ class ScriptBreakdownTests(unittest.TestCase):
         self.assertEqual(repaired["scene_map"][0]["factual_intent"],[])
         self.assertEqual(x["scene_map"][0]["factual_intent"],["k2"])
 
+    def test_exact_quoted_owner_fact_can_restore_omitted_parallel_id(self):
+        x=story(1)
+        x["scene_map"][0]["factual_intent"]=["k2"]
+        def result(stage,prompt,data,tokens,temp):
+            return {"id":"scene_0",
+                "dramatic_action":"Genuinely staged notebook writing",
+                "visual_goal":"Purposeful conceptual close shot",
+                "factual_intent":[],"fact_quotes":{"identity":"Real notebook"},
+                "reason":"The only known fact is that this is a notebook"}
+        fixed=reground_invalid_beats(x,{"facts":{"identity":"Real notebook"}},result)
+        self.assertEqual(fixed["scene_map"][0]["factual_intent"],["identity"])
+        self.assertEqual(x["scene_map"][0]["factual_intent"],["k2"])
+
+    def test_quote_without_source_key_cannot_be_invented(self):
+        x=story(1);x["scene_map"][0]["factual_intent"]=["k2"]
+        def result(stage,prompt,data,tokens,temp):
+            return {"id":"scene_0",
+                "dramatic_action":"A stage movement","visual_goal":"A camera shot",
+                "factual_intent":[],
+                "fact_quotes":{"k2":"Real notebook"},
+                "reason":"Looks plausible"}
+        with self.assertRaisesRegex(ValueError,"prove every owner fact"):
+            reground_invalid_beats(x,{"facts":{"identity":"Real notebook"}},result)
+
     def test_only_truncation_triggers_expansion(self):
         self.assertTrue(retryable_output(ValueError("Answer was truncated")))
         self.assertFalse(retryable_output(ValueError("Made up a client fact")))
