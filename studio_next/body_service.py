@@ -26,9 +26,17 @@ from urllib.parse import urlsplit
 
 from .body_capabilities import operational_tool_summary,explain_operational_tool
 from .body_integration import run_body_project
+from .media_vault import MediaVault
 
 _ID=re.compile(r"^[A-Za-z0-9_-]{1,80}$")
 _MAX_JOB_BODY=4*1024*1024
+_MAX_OWNER_FILE=1024*1024*1024
+_MEDIA_NAME=re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,179}$")
+_MEDIA_MIME={".mp4":"video/mp4",".mov":"video/quicktime",
+             ".webm":"video/webm",".png":"image/png",".jpeg":"image/jpeg",
+             ".jpg":"image/jpeg",".webp":"image/webp",".svg":"image/svg+xml",
+             ".wav":"audio/wav",".mp3":"audio/mpeg",".flac":"audio/flac",
+             ".glb":"model/gltf-binary",".bin":"application/octet-stream"}
 
 
 class LocalBodyCoordinator:
@@ -65,6 +73,57 @@ class LocalBodyCoordinator:
         if not place.is_relative_to(self.projects):
             raise ValueError("Original project cannot escape studio folder")
         return place
+
+    def upload_owner_media(self,workspace_id,filename,stream,bytes_expected,*,
+                           mime,source_id,rights_evidence):
+        """Owner-authenticated real bytes, never a model-created rights label.
+
+        The file becomes visible only after full byte transfer and real
+        decoder/provenance verification. No overwrite and no URL fetching.
+        """
+        if not isinstance(filename,str) or not _MEDIA_NAME.fullmatch(filename):
+            raise ValueError("Invalid media asset file identity")
+        if _MEDIA_MIME.get(Path(filename).suffix.lower())!=mime:
+            raise ValueError("Media extension does not match declared source type")
+        if type(bytes_expected) is not int or not (0<bytes_expected<=_MAX_OWNER_FILE):
+            raise ValueError("Upload size exceeds operator-approved local resource budget")
+        if not isinstance(source_id,str) or not source_id.strip() or (
+                not isinstance(rights_evidence,str) or not rights_evidence.strip()):
+            raise ValueError("Owner must explicitly attest the original media source")
+        folder=self._workspace(workspace_id)
+        folder.mkdir(parents=True,exist_ok=True)
+        final=folder/filename
+        if final.exists():
+            raise FileExistsError("Original imported media is immutable; never overwrite")
+        stage=folder/(".zx7-import-"+uuid.uuid4().hex+".tmp")
+        published=False
+        try:
+            with stage.open("xb") as dest:
+                remaining=bytes_expected
+                while remaining:
+                    chunk=stream.read(min(1024*1024,remaining))
+                    if not isinstance(chunk,(bytes,bytearray)) or not chunk:
+                        raise ValueError("Owner upload ended before declared physical bytes")
+                    dest.write(chunk)
+                    remaining-=len(chunk)
+                dest.flush()
+                os.fsync(dest.fileno())
+            vault=MediaVault(folder/"vault")
+            attested=vault.ingest(stage,mime=mime,rights="owner_supplied",
+                source_type="owner_upload",source_id=source_id,
+                evidence=rights_evidence,owner_or_generator="authenticated_local_owner")
+            os.link(stage,final)
+            published=True
+            return {"source":filename,"asset_id":attested["asset_id"],
+                    "attestation_id":attested["attestation_id"],
+                    "mime":mime,"bytes":bytes_expected,
+                    "verified_real_media_bytes":True,
+                    "rights_claim":"Owner-attested; no independent legal ownership certification"}
+        except BaseException:
+            if published:final.unlink(missing_ok=True)
+            raise
+        finally:
+            stage.unlink(missing_ok=True)
 
     def submit(self,film_ir,*,workspace_id,job_id=None):
         if not isinstance(film_ir,dict) or not isinstance(film_ir.get("tool_graph"),list):
@@ -197,8 +256,23 @@ def make_body_http_handler(coordinator,token):
         def do_POST(self):
             if not self._authorized():return
             path=urlsplit(self.path).path
+            if path.startswith("/v1/workspaces/") and "/assets/" in path:
+                pieces=path.split("/")
+                if len(pieces)!=6 or pieces[1:3]!=["v1","workspaces"] or (
+                        pieces[4]!="assets"):
+                    return self._reply(404,{"error":"Invalid original media route"})
+                try:
+                    length=int(self.headers.get("Content-Length","0"))
+                    receipt=coordinator.upload_owner_media(
+                        pieces[3],pieces[5],self.rfile,length,
+                        mime=self.headers.get("Content-Type",""),
+                        source_id=self.headers.get("X-Source-Id",""),
+                        rights_evidence=self.headers.get("X-Rights-Evidence",""))
+                    return self._reply(201,receipt)
+                except (ValueError,TypeError,FileExistsError,OSError) as exc:
+                    return self._reply(400,{"error":str(exc)})
             if path!="/v1/jobs":
-                return self._reply(404,{"error":"Only original film jobs may be submitted"})
+                return self._reply(404,{"error":"Only original film jobs and owned media can be submitted"})
             try:
                 length=int(self.headers.get("Content-Length","0"))
                 if not (0<length<=_MAX_JOB_BODY):
