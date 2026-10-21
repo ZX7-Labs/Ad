@@ -156,13 +156,27 @@ def body_catalog(workspace,*,vault_root=None):
 
 
 def validate_witness(_tool_id,result):
-    """Physically revisit file and hashes on every resumed dependency."""
-    if not _verify_witness(result):return False
-    if "asset_id" in result and (
-        result["asset_id"]!=result["sha256"] or
-        not isinstance(result.get("attestation_id"),str)):
+    """Physically revisit file and stored rights evidence on every resume."""
+    if not isinstance(result,dict):
         return False
-    return True
+    if "asset_id" in result:
+        digest=result.get("asset_id")
+        att=result.get("attestation_id")
+        if not isinstance(att,str) or digest!=result.get("sha256"):
+            return False
+        p=Path(result.get("path",""))
+        if p.name!=digest or len(p.parents)<3:
+            return False
+        try:
+            # CAS file has no extension because its name is a content digest.
+            # Instead of trusting a model's mime, verify SQLite rights custody.
+            vault=MediaVault(p.parents[2])
+            stored=vault.inspect(digest,attestation_id=att)
+            return (Path(stored["path"]).resolve()==p.resolve()
+                    and stored["rights_attestations"][0]["rights"]==result.get("rights"))
+        except (ValueError,IndexError,OSError):
+            return False
+    return _verify_witness(result)
 
 
 def run_body_project(film_ir,workspace,*,db_name="production.sqlite3"):
