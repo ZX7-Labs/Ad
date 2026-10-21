@@ -20,6 +20,7 @@ _SOURCE_FIELDS={
     "body.asset_vault":("source",),
     "body.composite_mix":("plan",),
     "body.film_finish":("plan",),
+    "body.full_decode":("source",),
     "body.blender3d":("scene_json","assets_root"),
     "body.motion2d":("original_film_ir","voice_assets"),
 }
