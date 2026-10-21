@@ -16,7 +16,7 @@ from .film_ir import validate_film_ir
 
 TOOL_ID = "motion_studio.composite"
 _COLOR = re.compile(r"^#[0-9a-fA-F]{6}(?:[0-9a-fA-F]{2})?$")
-_FONT_NAME = re.compile(r"^[\\w .,:=-]{1,140}$",re.UNICODE)
+_FONT_NAME = re.compile(r"^[\w .,:=-]{1,140}$",re.UNICODE)
 _DRAWABLES = frozenset({"rect", "ellipse", "line", "polygon", "text"})
 _MOTION = frozenset({"x", "y", "scale", "scale_x", "scale_y", "angle", "opacity", "reveal", "blur"})
 _EASE = frozenset({"linear", "smooth", "in", "out", "spring"})
