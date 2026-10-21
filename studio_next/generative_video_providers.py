@@ -12,6 +12,7 @@ weights + a locally active API + matching, approved model workflow exist.
 from __future__ import annotations
 
 import json
+import hashlib
 import re
 import shutil
 import subprocess
@@ -96,7 +97,20 @@ def _read_manifest(folder,model_id):
         return None
     # Asset bytes can be huge: digest is checked in weight-install stage,
     # and a signed generated manifest stored after actual verification.
-    if not data.get("weight_file_is_hash_verified"):
+    # A JSON boolean is not proof of real downloaded weights. Hash actual local
+    # bytes before declaring an expensive diffusion engine even trial-ready.
+    weight=data.get("weight_file")
+    if not isinstance(weight,str) or not weight or Path(weight).is_absolute() or (
+            ".." in Path(weight).parts):
+        return None
+    checkpoint=(path.parent/weight).resolve()
+    if not checkpoint.is_relative_to(path.parent.resolve()) or not checkpoint.is_file():
+        return None
+    if checkpoint.stat().st_size<128:
+        return None
+    with checkpoint.open("rb") as handle:
+        digest=hashlib.file_digest(handle,"sha256").hexdigest()
+    if digest!=data["weight_sha256"]:
         return None
     return data
 
