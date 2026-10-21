@@ -1,3 +1,5 @@
+> **LATEST OWNER PRIORITY (21 October 2026): Production BODY first.** Continue actual tools, media handoffs, output verification, safe pause/resume and recovery. Keep Brain/script/model research parked. Current tested source, evidence and remaining limits are in `ZX7_CURRENT_REALITY.json`; inspect its final run before making any completion claim. The separate multitrack branch / draft PR #2 also exists and has been preserved. This handoff is not an LLM prompt.
+
 > **CURRENT VERIFIED STATE:** Read [`ZX7_CURRENT_REALITY.json`](ZX7_CURRENT_REALITY.json) for exact original-film failure, legally checked video generators, whether real GPU is available, and per-shot resume status. This human/project handoff file is NOT an LLM prompt. Never feed the full repository MD documentation into the filmmaking model; pass only owner facts, relevant scene and live tool capabilities.
 
 # ZX7 STUDIO — READ THIS FIRST IN ANY NEW CHAT

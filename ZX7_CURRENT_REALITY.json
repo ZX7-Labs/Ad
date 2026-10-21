@@ -41,7 +41,7 @@
     "world_class_film_brain_proven": false,
     "audiovisual_quality_independently_judged": false
   },
-  "next": "Connect proven free local CUDA GPU or other lawful high-fidelity real media generation capacity, install model weights/workflow, generate actual original MP4 and assess full acting/audio/video rather than tests alone",
+  "next": "Continue the remaining BODY acceptance gaps in body_current_verified.open_limitations; preserve original The Fold and approved M3/F2. Current native CPU body, installed package, GUI and recovery have physical technical evidence; a universal finished studio is not yet established.",
   "reference_links": [
     "https://github.com/oyzitjfzj/Ad/actions/runs/39541436321",
     "https://github.com/oyzitjfzj/Ad/actions/runs/39550779036",
@@ -52,8 +52,8 @@
     "branch": "zx7-specialist-free-stack-20261020",
     "not_production_complete": true,
     "source_branch_only": "main untouched",
-    "full_body_real_artifact_run": 39583400124,
-    "full_body_real_artifact_name": "zx7-real-media-body-interoperability-and-restart-evidence",
+    "full_body_real_artifact_run": 39596676559,
+    "full_body_real_artifact_name": "zx7-installed-body-native-media-gui-crash-recovery-proof",
     "full_body_real_media_verified": true,
     "full_2d_3d_mp4_assembly_with_audio": true,
     "actually_decode_entire_movie_picture_and_sound": true,
@@ -68,14 +68,78 @@
     "sqlite_persisted_job_queue_and_process_exclusive_lock": true,
     "dynamic_administrator_enabled_python_body_tool_plugins": true,
     "no_giant_markdown_prompt_sent_to_creative_model": true,
-    "last_passed_cpu_tests_run": 39583565952,
+    "last_passed_cpu_tests_run": 39596676550,
     "open_limitations": [
-      "Professional user-facing graphical app not yet implemented",
-      "Open creative GPU/video generator end-to-end proof unavailable on actual GPU",
-      "External GIMP/Krita/Natron/Kdenlive apps not all installed and integrated",
-      "Distributed worker resilience and pause/retry under arbitrary power/process loss not fully certified",
-      "Claims about world-best visual art or independent human-level director not established",
-      "Platform-independent restored file paths and workspace migrations still restricted"
+      "Phone/Android conversational studio interface is not implemented; current graphical client is a local desktop/operator tool.",
+      "Real CUDA/GPU generative video and original high-fidelity actor/product film generation remain unverified on physical hardware.",
+      "External GIMP/Krita/Natron/Kdenlive applications are not all installed and bound to validated adapters.",
+      "Single-host process recovery is verified; distributed render farms, per-frame long-render recovery and large-scale operation remain unverified.",
+      "Physical restore currently requires the original absolute workspace path; arbitrary host/path migration needs explicit reference rebinding.",
+      "Original The Fold MP4, independent artistic judgement and human acceptance of premium multi-genre films remain unestablished."
+    ],
+    "source_commit": "7fff67cd2ca773e4adf680f7171bbd41b4e9f84a",
+    "installed_package_version": "0.1.0 (experimental BODY; not a premium-film quality certification)",
+    "final_release_verification": {
+      "run_id": 39596676559,
+      "status": "success",
+      "passed_tests": 323,
+      "source_commit": "7fff67cd2ca773e4adf680f7171bbd41b4e9f84a",
+      "url": "https://github.com/oyzitjfzj/Ad/actions/runs/39596676559",
+      "evidence_file": "docs/BODY_VERIFIED_RELEASE_2026-10-21.json",
+      "artifact_id": 12343279040,
+      "artifact_sha256": "sha256:49bb536198665085c7655ef9d1ccd8498988081e01ddf5cbf055ffe91d06ef4c"
+    },
+    "prior_installed_package_verified_run": 39595833068,
+    "actual_process_death_recovery_across_media_publication_and_sqlite_settlement": true,
+    "operator_pause_cancel_and_resume_at_verified_tool_boundary": true,
+    "paused_jobs_survive_restart_and_require_explicit_resume": true,
+    "exact_media_bytes_recovered_without_reinvoking_renderer": true,
+    "mutated_source_or_media_blocks_stale_publication_reuse": true,
+    "native_desktop_authenticated_asset_job_tool_and_download_roundtrip": true,
+    "renderer_source_library_versions_and_installed_font_bytes_bound_to_cache": true,
+    "new_film_background_has_no_unrequested_grid_or_grain": true,
+    "legacy_sample_background_pixels_unchanged": true,
+    "approved_voice_source_and_historical_project_files_byte_identical": true,
+    "sqlite_full_sync_and_safe_journal_policy": true,
+    "bare_package_does_not_require_a_cloud_account_or_paid_provider": true,
+    "durability_research_sources": [
+      "https://www.sqlite.org/wal.html#the_wal_reset_bug",
+      "https://www.sqlite.org/backup.html"
+    ],
+    "minimal_install_reports_missing_python_libraries_as_needs_setup": true,
+    "release_sqlite_runtime": "3.45.1",
+    "rollback_journal_used_for_release_sqlite_before_official_wal_fix": true
+  },
+  "current_owner_priority": "Production BODY first: complete real tools, handoffs, review, recovery and usable app. Do not restart Brain, script or model auditions.",
+  "context_recovery": {
+    "date": "2026-10-21",
+    "coverage": "Retrieved available project-chat context, read current canonical repository and all four saved research ZIP JSON archives; no complete original transcript was available.",
+    "complete_original_turn_by_turn_chats_accessed": false,
+    "preserved_brain_boundary": "One cohesive creative field intelligence; current work is BODY only, with no new model audition or replacement screenplay.",
+    "canonical_body_branch": "zx7-specialist-free-stack-20261020",
+    "additional_unmerged_work_observed": {
+      "branch": "zx7-body/real-multitrack-renderer",
+      "commit": "53074e40420ef807ae0d34dbe4bb84a8dfe7003c",
+      "pull_request": "https://github.com/oyzitjfzj/Ad/pull/2",
+      "scope": "Separate experimental FFmpeg timeline/recovery implementation; preserved without replacing canonical tools."
+    },
+    "recovered_archives": [
+      {
+        "name": "creative-9b-reference-product.zip",
+        "sha256": "238d526e8685e40b5b976595ff1c8f5ed00a2b206b72ac9db385d236daffa869"
+      },
+      {
+        "name": "creative-v2-knowledge.zip",
+        "sha256": "2f409ba390dd1de6445711fb5a839e438078a3fbb6e0da0e92aeb9e255d4fa03"
+      },
+      {
+        "name": "creative-v2-product.zip",
+        "sha256": "7e23267c6276f66b71ccf6e170453f618382d2e1c3712b033157139f4556d39c"
+      },
+      {
+        "name": "director35-last-audit.zip",
+        "sha256": "e9c4294effe162719355d00aa1a969a6f6b3d2ccf73fafb0e280ad6c2e036cb5"
+      }
     ]
   }
 }
