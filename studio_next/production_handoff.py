@@ -19,6 +19,7 @@ from .blender_scene import validate_blender_shot
 from .motion_bridge import compile_motion_project
 from .providers import LocalCreativeModel, LocalModelSettings
 from .creative_tool_registry import creative_tool_inventory
+from .visual_engine_hub import resolve_visual_engine
 
 PRODUCTION_SYSTEM = """You are the production designer and technical cinematographer of a real original film.
 You are executing an ALREADY AUTHORED creative treatment, not pitching new concepts.
@@ -39,6 +40,16 @@ Choose ONE result for the CURRENT shot:
   shots,tool_graph. Assets must be original inline vector artwork. Each shot needs
   original exact narration, purpose, duration_seconds, asset_refs, fact_refs,
   layers. Keep scene graph consistent; do not impose a standard aesthetic.
+- Any VERIFIED registered local video production provider may be chosen.
+  The actual tool inventory describes video diffusion and other resources.
+  Do NOT use a provider merely because it has a famous name or weights exist.
+  Engine 'comfy_video' is valid ONLY if a local compatible GPU, licensed model
+  bytes, and an approved local workflow are actually configured. Its scene_job
+  has model_id, prompt (specific original acting/film visual), negative_prompt
+  (empty allowed), width, height, frames, fps, seed. Each is independently
+  chosen to implement the director's approved timing and creative purpose.
+  Additional installed engine plugins are discovered at runtime, not a fixed
+  creative list. Generated images/footage must be physically proven later.
 - engine 'unresolved': return desired_capabilities, production_gap and precise
   reason if actual imagery, real actor footage, photoreal assets, specialist
   engines, natural language fonts, sound, or geometry cannot be produced.
@@ -95,7 +106,8 @@ def validate_visual_design(scene, design, facts):
     if design["shot_id"]!=sid:
         raise ValueError("Design must be for current unchanged shot")
     engine=design["engine"]
-    if engine not in _ALLOWED_ENGINES:
+    external=resolve_visual_engine(engine) if engine not in _ALLOWED_ENGINES else None
+    if engine not in _ALLOWED_ENGINES and external is None:
         raise ValueError("Engine must be routed by an installed adapter")
     _string(design["creative_rationale"],"why this technique fits story")
     _string(design["continuity"],"shot continuity")
@@ -111,6 +123,12 @@ def validate_visual_design(scene, design, facts):
         return {"executable":False, "engine":engine, "reason":design["production_gap"]}
     if design["production_gap"]:
         raise ValueError("Design cannot simultaneously be executable and blocked")
+    if external is not None:
+        # Technical provider handles its own true installation/capability check.
+        proof=external.validate(scene,design,facts)
+        if not isinstance(proof,dict) or proof.get("engine")!=engine or proof.get("executable") is not True:
+            raise ValueError("External video engine did not prove usable capability")
+        return proof
     if engine=="blender3d":
         job=design["scene_job"]
         if job.get("shot_id")!=sid:
