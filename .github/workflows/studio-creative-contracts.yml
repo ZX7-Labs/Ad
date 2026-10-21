@@ -36,6 +36,8 @@ on:
       - "studio_next/test_delivery_audit.py"
       - "studio_next/creative_asset_ops.py"
       - "studio_next/test_creative_asset_ops.py"
+      - "studio_next/film_finishing.py"
+      - "studio_next/test_film_finishing.py"
       - "studio_next/composite_mix.py"
       - "studio_next/test_composite_mix.py"
       - "studio_next/body_materials.py"
