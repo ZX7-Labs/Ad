@@ -64,7 +64,24 @@ async function jobs(){
    for(const action of ['status','artifacts','pause','resume','retry','cancel']){
      const b=node('button',action);div.append(b);
      b.onclick=async()=>{try{
-       if(action==='status'||action==='artifacts')info.textContent=JSON.stringify(await api('/v1/jobs/'+id+(action==='artifacts'?'/artifacts':'')),null,2);
+       if(action==='status')info.textContent=JSON.stringify(await api('/v1/jobs/'+id),null,2);
+       else if(action==='artifacts'){
+         const listing=await api('/v1/jobs/'+id+'/artifacts');
+         info.replaceChildren();
+         for(const media of listing.assets||[]){
+           const line=document.createElement('div');line.className='entry';info.append(line);
+           line.append(node('span',media.path+' — '+media.bytes+' bytes '));
+           const download=node('button','Authorize download');line.append(download);
+           download.onclick=async()=>{try{
+             const encoded=media.path.split('/').map(encodeURIComponent).join('/');
+             const receipt=await api('/v1/jobs/'+id+'/artifacts/'+encoded+'/download-ticket',
+               {method:'POST',body:new Uint8Array(0)});
+             const link=node('a','Download now (single use, expires in '+receipt.expires_in_seconds+'s)');
+             link.href=receipt.url;link.download=media.path.split('/').pop();
+             link.rel='noreferrer';line.append(document.createElement('br'),link);
+           }catch(err){print('status',err.message)}};
+         }
+       }
        else{
          if(['cancel','retry'].includes(action)&&!confirm(action+' original project?'))return;
          await api('/v1/jobs/'+id+'/'+action,{method:'POST',body:new Uint8Array(0)});await jobs();
