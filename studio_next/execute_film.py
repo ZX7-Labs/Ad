@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import re
 import subprocess
 from pathlib import Path
@@ -22,6 +23,28 @@ _SAFE_NAME = re.compile(r"^[A-Za-z0-9_.-]+$")
 def _run(args, timeout=3600):
     # All command names and flags below are developer-authored, never model strings.
     subprocess.run([str(x) for x in args],check=True,timeout=timeout)
+
+
+def verify_rendered_shot_duration(shot, actual_seconds, fps):
+    """Prevent silent rhythm changes when the produced clip exceeds its plan.
+
+    This compares the measured decoder result with the *director's own* timing.
+    The tolerance is for encoder/frame rounding only. It is not a universal
+    restriction on creative shot length or style.
+    """
+    expected=shot.get("duration_seconds",shot.get("seconds"))
+    if any(isinstance(x,bool) or not isinstance(x,(int,float)) or not math.isfinite(x)
+           or x<=0 for x in (expected,actual_seconds,fps)):
+        raise ValueError("Shot timing must be measured, finite and positive")
+    allowance=max(.08,2/float(fps))
+    if abs(float(actual_seconds)-float(expected))>allowance:
+        raise RuntimeError(
+            f"Scene {shot.get('id')} decoded to {actual_seconds:.3f}s vs "
+            f"{expected:.3f}s approved; preserve original pacing and "
+            "repair this specific production shot rather than silently retiming film")
+    return {"intended_seconds":float(expected),
+            "actual_seconds":float(actual_seconds),
+            "within_encoded_frame_tolerance":True}
 
 
 def validate_delivery(data, treatment):
@@ -153,6 +176,8 @@ def render_approved_designs(treatment, fact_ledger, designs_dir, delivery,
         else:
             raise ValueError("Unsupported registered production engine")
         media=probe_media(clip)
+        timing_proof=verify_rendered_shot_duration(shot,media["seconds"],
+                                                 delivery["format"]["fps"])
         if verification["engine"]=="motion2d" or narration:
             if not media["audio"]:
                 raise RuntimeError("Narrated/sound-designed scene has no audio stream")
@@ -161,6 +186,7 @@ def render_approved_designs(treatment, fact_ledger, designs_dir, delivery,
                       "audio":"preserve_source" if media["audio"] else "intentional_silence"})
         results.append({"id":sid,"engine":verification["engine"],
                         "actual_media_seconds":media["seconds"],
+                        "timing_evidence":timing_proof,
                         "narration_status":voice_status})
         (output_dir/"partial-progress.json").write_text(
             json.dumps(results,indent=2),encoding="utf-8")
