@@ -68,6 +68,35 @@ This 4.5 second duration is an example, never a limitation or target.
 No added claims, no code, no markdown."""
 
 
+ENDING_REPAIR = """You are the supervising director finishing an ALREADY authored film.
+The model already chose the plot, sequence, shot lengths, images and audience
+impact. Preserve every prior decision unchanged. The only missing field is the
+specific FINAL IMAGE: the literal visible last frame that provides a moving
+payoff to the previously chosen story. Make this concrete and filmable while
+never claiming unverified physical attributes or fabricated product features.
+Do not re-author the story or add a new scene. Do not create a generic CTA.
+Reply with ONLY JSON: {"last_image":"one specific dramatic visible last frame"}.
+"""
+
+
+def complete_missing_ending(spine, brief, call_stage):
+    """Repair an explicitly missing final image without changing the scene map.
+
+    The original generation is content-addressed and remains on disk; this
+    surgical creative repair is separately cached and independently verified.
+    """
+    if not isinstance(spine,dict):
+        raise TypeError("Director blueprint missing")
+    if isinstance(spine.get("last_image"),str) and spine["last_image"].strip():
+        return spine
+    response=call_stage("spine-last-image",ENDING_REPAIR,
+        {"owner":brief,"existing_film":spine},450,.48)
+    if not isinstance(response,dict) or set(response)!={"last_image"}:
+        raise ValueError("Ending repair must return only a literal last_image")
+    ending=_good_text(response.get("last_image"),"closing image")
+    return dict(spine,last_image=ending)
+
+
 def _good_text(s, what):
     if not isinstance(s,str) or not s.strip():
         raise ValueError("Missing director-authored "+what)
@@ -145,6 +174,7 @@ def create_screenplay(brief, pitches, selection, call_stage):
     fact_ids=frozenset(brief["facts"])
     spine=call_stage("spine",SPINE,{"owner":brief,"pitches":pitches,
                       "selected_concept":selection},2200,.63)
+    spine=complete_missing_ending(spine,brief,call_stage)
     beats=validate_spine(spine,fact_ids)
     scenes=[]
     for i,beat in enumerate(beats):
