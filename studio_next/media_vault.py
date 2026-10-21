@@ -34,7 +34,13 @@ def verify_media_container(path,mime):
         if shutil.which("ffprobe") is None:
             raise MediaCustodyError("Real video decoder not installed; refuse unverifiable source")
         from .delivery_audit import _probe_details
-        return _probe_details(path)
+        import subprocess
+        try:
+            return _probe_details(path)
+        except (OSError,ValueError,RuntimeError,subprocess.SubprocessError) as exc:
+            # Source footage failures are an ordinary untrusted upload error,
+            # not an uncaught internal server exception or valid asset.
+            raise MediaCustodyError("Claimed video has no real decodable media stream") from exc
     if mime=="image/png":
         with path.open("rb") as f:
             first=f.read(24)
@@ -84,8 +90,11 @@ def verify_media_container(path,mime):
             raise MediaCustodyError("Claimed 3D GLB is not a real binary scene")
     elif mime in ("audio/mpeg","audio/flac"):
         import subprocess
-        data=json.loads(subprocess.check_output(["ffprobe","-v","error",
-              "-show_entries","stream=codec_type","-of","json",str(path)],timeout=60))
+        try:
+            data=json.loads(subprocess.check_output(["ffprobe","-v","error",
+                  "-show_entries","stream=codec_type","-of","json",str(path)],timeout=60))
+        except (OSError,ValueError,subprocess.SubprocessError) as exc:
+            raise MediaCustodyError("Claimed audio does not contain a decodable stream") from exc
         if not any(x.get("codec_type")=="audio" for x in data.get("streams",[])):
             raise MediaCustodyError("No original decoded source sound")
     elif mime.startswith("image/"):
