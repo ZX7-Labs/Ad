@@ -50,6 +50,18 @@ class IndependentLocalCreativeServiceTests(unittest.TestCase):
                 self.assertEqual(recovered.inspect("shot-1")["attempts"],1)
             finally:recovered.close()
 
+    def test_one_process_owns_same_original_workspace_at_a_time(self):
+        with tempfile.TemporaryDirectory() as root:
+            first=LocalBodyCoordinator(root,execute=lambda ir,path:{
+                "status":"all_tool_results_verified"})
+            try:
+                with self.assertRaisesRegex(RuntimeError,"already owned"):
+                    LocalBodyCoordinator(root,execute=lambda ir,path:{})
+            finally:first.close()
+            second=LocalBodyCoordinator(root,execute=lambda ir,path:{
+                "status":"all_tool_results_verified"})
+            second.close()
+
     def test_blocked_original_art_keeps_reasons_never_fakes_movie(self):
         with tempfile.TemporaryDirectory() as root:
             c=LocalBodyCoordinator(root,execute=lambda ir,workspace:{
