@@ -9,12 +9,14 @@ class _Entry:
     runner: Callable | None
     idempotent: bool = False
     implementation_revision: str | None = None
+    material_fingerprint: Callable | None = None
 
 class ToolCatalog:
     def __init__(self):
         self._tools: dict[str,_Entry]={}
     def register(self,spec:ToolSpec,runner:Callable|None=None,*,
-                 idempotent=False,implementation_revision=None):
+                 idempotent=False,implementation_revision=None,
+                 material_fingerprint=None):
         if spec.tool_id in self._tools:
             raise ValueError(f"Duplicate tool {spec.tool_id}")
         if runner is not None and not callable(runner):
@@ -25,14 +27,21 @@ class ToolCatalog:
                 not isinstance(implementation_revision,str) or
                 not implementation_revision.strip()):
             raise ValueError("Invalid actual executable revision")
+        if material_fingerprint is not None and not callable(material_fingerprint):
+            raise TypeError("Body source material verifier must be host-authorized callable")
         self._tools[spec.tool_id]=_Entry(spec,runner,idempotent,
-                                         implementation_revision)
+                                         implementation_revision,material_fingerprint)
     def committed_tool_revisions(self):
         """Only registered runnable code can supply trusted cache versions."""
         return {name:item.implementation_revision
                 for name,item in self._tools.items()
                 if item.spec.status=="installed" and item.runner is not None
                 and item.implementation_revision}
+    def trusted_material_fingerprint(self,tool_id,inputs):
+        entry=self._tools.get(tool_id)
+        if entry is None or entry.runner is None or entry.material_fingerprint is None:
+            raise ValueError("Installed tool has no physically verified source material adapter")
+        return _json_like(entry.material_fingerprint(inputs))
     def trusted_idempotent_ids(self):
         """LLM tool arguments can never grant rerunnable side effects."""
         return {name for name,item in self._tools.items()
