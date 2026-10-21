@@ -20,6 +20,8 @@ import time
 from pathlib import Path
 from urllib.parse import quote,urlsplit
 
+from .media_vault import sha256_file
+
 _ID=re.compile(r"^[A-Za-z0-9_-]{1,80}$")
 
 
@@ -42,8 +44,8 @@ class ZX7BodyClient:
     def _open(self,method,path,*,body=None,content_type=None,headers=None):
         if not isinstance(path,str) or not path.startswith("/v1/"):
             raise ValueError("Local production client endpoint must use /v1/")
-        if body is not None and not isinstance(body,(bytes,bytearray)):
-            raise TypeError("Local HTTP body requires actual binary bytes")
+        if body is not None and not isinstance(body,(bytes,bytearray)) and not callable(getattr(body,"read",None)):
+            raise TypeError("Local HTTP body requires binary bytes or a streaming original media file")
         connection=http.client.HTTPConnection(self.hostname,self.port,timeout=90)
         meta={"Authorization":"Bearer "+self.token,"Accept":"application/json",
               "Cache-Control":"no-store"}
@@ -116,15 +118,19 @@ class ZX7BodyClient:
             raise ValueError("Original media must carry explicit owner provenance")
         if not isinstance(mime,str) or not mime:
             raise ValueError("Original media MIME required")
-        # The server does not stream a multipart upload: a raw body must have
-        # Content-Length. File input is bounded, so no internet upload occurs.
-        with original.open("rb") as stream:
-            raw=stream.read(1024*1024*1024+1)
-        if len(raw)!=data_size:
-            raise ValueError("Owner media changed while preparing authenticated upload")
+        # Stream bounded source bytes instead of loading a 1GB 4K film
+        # into RAM. HTTP Content-Length is explicit; no chunked uploads.
+        # SHA verifies the same original file was received by the service.
+        initial_sha=sha256_file(original)
         path=f"/v1/workspaces/{workspace_id}/assets/"+quote(original.name,safe="")
-        return self.request_json("POST",path,body=raw,content_type=mime,headers={
-            "X-Source-Id":source_id,"X-Rights-Evidence":rights_evidence})
+        with original.open("rb") as stream:
+            receipt=self.request_json("POST",path,body=stream,
+                content_type=mime,headers={
+                "Content-Length":str(data_size),
+                "X-Source-Id":source_id,"X-Rights-Evidence":rights_evidence})
+        if sha256_file(original)!=initial_sha or receipt.get("asset_id")!=initial_sha:
+            raise RuntimeError("Uploaded original film differs from byte-verified source")
+        return receipt
 
     def artifacts(self,job_id):
         if not _ID.fullmatch(job_id):
