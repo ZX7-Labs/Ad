@@ -16,7 +16,7 @@ class InteractiveBrainConnectedBodyTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             tool=explain_operational_tool(root,"body.asset_vault")
             self.assertEqual(tool["status"],"ready_for_execution_trial")
-            self.assertIn("source",tool["operation_schema"]["required"])
+            self.assertIn("source_witness",tool["operation_schema"]["required"])
             with self.assertRaises(ValueError):
                 explain_operational_tool(root,"model_fake_hollywood")
 
