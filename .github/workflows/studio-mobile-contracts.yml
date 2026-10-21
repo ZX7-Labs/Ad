@@ -5,6 +5,8 @@ on:
     branches: [zx7-body/mobile-operator-20261021]
     paths:
       - "studio_next/body_mobile.py"
+      - "studio_next/body_download_tickets.py"
+      - "studio_next/test_body_download_tickets.py"
       - "studio_next/body_service.py"
       - "studio_next/test_body_mobile.py"
       - ".github/workflows/studio-mobile-contracts.yml"
@@ -22,7 +24,7 @@ jobs:
       - name: Compile server and serve static shell with protected APIs
         run: |
           python -m compileall -q studio_next
-          python -m unittest studio_next.test_body_mobile -v
+          python -m unittest studio_next.test_body_mobile studio_next.test_body_download_tickets -v
       - name: Parse actual client JavaScript in Node
         run: |
           python - <<'PY'
