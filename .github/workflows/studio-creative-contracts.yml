@@ -12,6 +12,8 @@ on:
       - "studio_next/test_film_revision.py"
       - "studio_next/film_eye.py"
       - "studio_next/test_film_eye.py"
+      - "studio_next/recover_production.py"
+      - "studio_next/test_recover_production.py"
       - "studio_next/production_handoff.py"
       - "studio_next/test_film_fact_continuity.py"
       - "studio_next/creative_tool_registry.py"
