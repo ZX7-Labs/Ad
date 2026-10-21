@@ -24,6 +24,7 @@ from .native_body_engines import render_original_blender,render_original_motion
 from .delivery_audit import audit_delivered_movie,_probe_details
 from .durable_graph import DurableFilmGraph,execute_durable_film_graph
 from .media_vault import MediaVault,sha256_file
+from .composite_mix import render_composition
 
 
 def _body_output(workspace,name,*,allowed=(".mp4",".otio",".png")):
@@ -122,6 +123,16 @@ def body_catalog(workspace,*,vault_root=None):
         extract_director_selected_frame(original,target,at_seconds=inputs["time_seconds"])
         return _witness(target)
 
+    def composite(inputs):
+        source=_path_within(root,inputs["plan"],exists=True)
+        out=_body_output(root,inputs["out"],allowed=(".mp4",))
+        try:
+            render_composition(source,root,vault.root,out)
+            return _witness(out)
+        except BaseException:
+            out.unlink(missing_ok=True)
+            raise
+
     def render3d(inputs):
         source=_path_within(root,inputs["scene_json"],exists=True)
         dest=_body_output(root,inputs["out"],allowed=(".mp4",))
@@ -154,6 +165,10 @@ def body_catalog(workspace,*,vault_root=None):
                        "rights":ref["rights"]})
         return witness
 
+    add("body.composite_mix","original timeline multilayer edit, licensed voices and audio mix",
+        "Actual physical rights-verified layered FFmpeg compositor from model-owned canvas",
+        "write",bool(shutil.which("ffmpeg") and shutil.which("ffprobe")),
+        ["plan","out"],composite)
     add("body.blender3d","physical 3D filmmaking","Blender real rendered geometries, materials and moving camera",
         "write",bool(shutil.which("blender") and shutil.which("ffmpeg")),
         ["scene_json","out"],render3d)
@@ -213,7 +228,7 @@ def run_body_project(film_ir,workspace,*,db_name="production.sqlite3"):
        store=store,output_verifier=validate_witness,
        trusted_idempotent_tools={"body.inspect","body.render_edit","body.otio",
                                  "body.vector_png","body.film_thumbnail","body.asset_vault",
-                                 "body.blender3d","body.motion2d"},
+                                 "body.composite_mix","body.blender3d","body.motion2d"},
        tool_revisions=actual_versions,allowed_access={"read","write"})
 
 
