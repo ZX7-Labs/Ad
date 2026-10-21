@@ -1,0 +1,190 @@
+"""Portable physical creative-body snapshot and crash-safe workspace restore.
+
+Persists the actual bytes of edited shots, media custody, original assets,
+SQLite WAL-safe production checkpoints and chosen editor inputs. This is NOT
+a creative template or "save chat" feature. The exact project root must be
+restored before reusing old graph outputs with absolute output witnesses.
+
+Operator-owned archive SHA256 is required for authenticity on restore; an
+internal digest manifest alone is only corruption detection and is not a
+cryptographic signature. No remote provider or subscription.
+"""
+from __future__ import annotations
+
+import hashlib
+import io
+import json
+import os
+import shutil
+import sqlite3
+import tarfile
+import tempfile
+from pathlib import Path
+
+from .media_vault import sha256_file
+
+_MANIFEST="__zx7_body_snapshot_manifest__.json"
+_MAGIC="ZX7-BODY-REAL-MEDIA-V1"
+
+
+def _name(path):
+    if not isinstance(path,str) or not path or path.startswith("/") or (
+            "\\" in path or any(p in ("","..",".") for p in path.split("/"))):
+        raise ValueError("Untrusted archive path cannot leave film workspace")
+    if path==_MANIFEST:
+        raise ValueError("Original media cannot shadow production manifest")
+    return path
+
+
+def _consistent_sqlite(original,target):
+    """Back up live SQLite with its WAL, rather than copying stale DB bytes."""
+    try:
+        with sqlite3.connect(f"file:{original}?mode=ro",uri=True,timeout=20) as reader:
+            with sqlite3.connect(target,timeout=20) as writer:
+                reader.backup(writer,pages=256,sleep=.05)
+                check=writer.execute("PRAGMA quick_check").fetchone()
+                if check!=("ok",):
+                    raise ValueError("Physical creative checkpoint database corrupted")
+    except sqlite3.DatabaseError as exc:
+        raise ValueError("Failed to create consistent original SQLite checkpoint") from exc
+
+
+def create_body_archive(workspace,archive):
+    """Make a self-contained snapshot without changing accepted film artifacts."""
+    root=Path(workspace).resolve()
+    out=Path(archive).resolve()
+    if not root.is_dir() or out.is_relative_to(root):
+        raise ValueError("Place snapshot outside an existing project directory")
+    if out.exists() or out.parent==root:
+        raise ValueError("No overwrite of actual prior project archive")
+    out.parent.mkdir(parents=True,exist_ok=True)
+    tmp=out.with_name("."+out.name+".uncommitted")
+    if tmp.exists():
+        raise FileExistsError("Incomplete previous physical archive requires inspection")
+    with tempfile.TemporaryDirectory(prefix="zx7-sqlite-",dir=out.parent) as store:
+        copies={}
+        sources=[]
+        for path in sorted(root.rglob("*")):
+            if path.is_symlink():
+                raise ValueError("Untrusted symlink in creative media workspace")
+            if path.is_dir():
+                continue
+            if not path.is_file():
+                raise ValueError("Nonregular creative source cannot be archived")
+            relative=_name(path.relative_to(root).as_posix())
+            if path.suffix in (".sqlite3-wal",".sqlite3-shm") or relative.endswith((
+                    ".sqlite3-wal",".sqlite3-shm")):
+                continue
+            source=path
+            if path.name.endswith(".sqlite3"):
+                source=Path(store)/(str(len(copies))+".sqlite3")
+                _consistent_sqlite(path,source)
+                copies[relative]=str(source)
+            sources.append((relative,source,path))
+        rows=[]
+        try:
+            with tarfile.open(tmp,"w:gz",format=tarfile.PAX_FORMAT) as tar:
+                for relative,source,original in sources:
+                    before=sha256_file(source)
+                    length=source.stat().st_size
+                    item=tarfile.TarInfo(relative)
+                    item.mode=0o600
+                    item.size=length
+                    item.mtime=0
+                    with source.open("rb") as handle:
+                        tar.addfile(item,handle)
+                    if sha256_file(source)!=before or source.stat().st_size!=length:
+                        raise RuntimeError("Creative media changed during snapshot")
+                    if source==original and original.stat().st_size!=length:
+                        raise RuntimeError("Original output modified while snapshotting")
+                    rows.append({"path":relative,"sha256":before,"bytes":length})
+                manifest={"kind":_MAGIC,"schema":1,
+                          "source_workspace":str(root),"files":rows}
+                payload=json.dumps(manifest,sort_keys=True,ensure_ascii=False,
+                                   separators=(",",":")).encode("utf-8")
+                info=tarfile.TarInfo(_MANIFEST)
+                info.size=len(payload);info.mode=0o600;info.mtime=0
+                tar.addfile(info,io.BytesIO(payload))
+            digest=sha256_file(tmp)
+            os.replace(tmp,out)
+        finally:
+            tmp.unlink(missing_ok=True)
+    return {"archive":str(out),"sha256":digest,"files":len(rows),
+            "bytes":out.stat().st_size,"signed":False,
+            "source_workspace":str(root),
+            "claim":"Operator must retain archive digest in a trusted channel"}
+
+
+def restore_body_archive(archive,destination,*,expected_sha256):
+    """Validate *every* tar byte/path before publishing a restored workspace."""
+    source=Path(archive).resolve()
+    target=Path(destination).resolve()
+    if not isinstance(expected_sha256,str) or len(expected_sha256)!=64 or (
+            sha256_file(source)!=expected_sha256):
+        raise ValueError("Untrusted/corrupted physical production archive SHA256")
+    if target.exists():
+        raise FileExistsError("Restore only into an empty nonexisting workspace")
+    target.parent.mkdir(parents=True,exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".zx7-restore-",dir=target.parent) as staging:
+        temp=Path(staging)/"original"
+        temp.mkdir()
+        with tarfile.open(source,"r:gz") as tar:
+            members=tar.getmembers()
+            if not members or len(members)>200000:
+                raise ValueError("Unbounded or empty creative backup directory")
+            by_name={}
+            for item in members:
+                if not item.isfile() or item.issym() or item.islnk():
+                    raise ValueError("No symlink, directory traversal or special archive members")
+                if item.name in by_name:
+                    raise ValueError("Duplicate original film archive entry")
+                if item.name!=_MANIFEST:
+                    _name(item.name)
+                by_name[item.name]=item
+            if _MANIFEST not in by_name:
+                raise ValueError("Missing physical checkpoint digest index")
+            manifest=json.load(tar.extractfile(by_name[_MANIFEST]))
+            if not isinstance(manifest,dict) or manifest.get("kind")!=_MAGIC or (
+                    manifest.get("schema")!=1):
+                raise ValueError("Unknown film body archive schema")
+            indexed=manifest.get("files")
+            if not isinstance(indexed,list) or set(by_name)!={
+                    _MANIFEST,*[x["path"] for x in indexed if isinstance(x,dict) and
+                                 isinstance(x.get("path"),str)]}:
+                raise ValueError("Manifest does not match original media archive")
+            accounted=set()
+            for row in indexed:
+                if not isinstance(row,dict) or set(row)!={"path","sha256","bytes"}:
+                    raise ValueError("Malformed actual film media record")
+                rel=_name(row["path"])
+                if rel in accounted or not isinstance(row["bytes"],int) or row["bytes"]<0:
+                    raise ValueError("Duplicate or invalid media record")
+                accounted.add(rel)
+                if not isinstance(row["sha256"],str) or len(row["sha256"])!=64:
+                    raise ValueError("Corrupted media digest manifest")
+                member=by_name[rel]
+                if member.size!=row["bytes"]:
+                    raise ValueError("Physical media differs from stored size")
+                output=temp/rel
+                output.parent.mkdir(parents=True,exist_ok=True)
+                sha=hashlib.sha256()
+                with tar.extractfile(member) as readable, output.open("xb") as writable:
+                    while True:
+                        block=readable.read(1024*1024)
+                        if not block:break
+                        sha.update(block);writable.write(block)
+                    writable.flush();os.fsync(writable.fileno())
+                if sha.hexdigest()!=row["sha256"]:
+                    raise ValueError("Restored movie/media bytes differ from immutable snapshot")
+            for db in temp.rglob("*.sqlite3"):
+                with sqlite3.connect(f"file:{db}?mode=ro",uri=True) as conn:
+                    if conn.execute("PRAGMA quick_check").fetchone()!=("ok",):
+                        raise ValueError("Restored scene checkpoint SQLite is corrupted")
+            # Atomic publish into the same location used by original source
+            # references. Reuse across changed paths requires explicit rebind.
+            if manifest.get("source_workspace")!=str(target):
+                raise ValueError("Restore path differs from original media references")
+            os.replace(temp,target)
+        return {"restored":str(target),"files":len(accounted),
+                "archive_sha256":expected_sha256,"all_physical_bytes_verified":True,
+                "artistic_project_preserved":True}
