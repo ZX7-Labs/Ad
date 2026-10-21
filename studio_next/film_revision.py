@@ -105,6 +105,10 @@ def preserve_artistic_revision(original_vision,review_text,review_evidence,
     if review_evidence.get("human_approval"):
         # Human approval cannot be inferred from unverified imported metadata.
         raise ValueError("This tool never authorizes human approval status")
+    reviewer_id=review_evidence.get("reviewer_model_id")
+    revision_id=getattr(getattr(artist,"settings",None),"model_id",None)
+    if reviewer_id and revision_id and reviewer_id!=revision_id:
+        raise ValueError("Different film model attempted creative revision; one creative brain required")
     if not isinstance(original_vision,str) or not original_vision.strip():
         raise ValueError("Original director's vision missing")
     out=Path(out)
@@ -124,6 +128,7 @@ def preserve_artistic_revision(original_vision,review_text,review_evidence,
             original_vision.encode("utf-8")).hexdigest(),
         "revised_sha256":hashlib.sha256(revised.encode("utf-8")).hexdigest(),
         "model_id":getattr(getattr(artist,"settings",None),"model_id","injected"),
+        "same_actual_model_as_visual_reviewer_verified":bool(reviewer_id and revision_id and reviewer_id==revision_id),
         "real_frame_count":len(review_evidence["frames"]),
         "same_original_film_preserved":True,
         "revised_vision_written":True,
