@@ -30,6 +30,7 @@ from .composite_mix import render_composition
 from .film_finishing import finish_authorized_movie
 from .production_qc import full_decode_inspection
 from .body_plugins import discover_enabled_body_plugins
+from .body_tool_contracts import real_operation_schema
 from .body_materials import fingerprint_physical_inputs
 from .generative_video_providers import discover_local_generators
 from .comfy_video_runtime import render_actual_generated_scene,validate_video_job
@@ -126,7 +127,7 @@ def _trusted_body_revision(tool_id):
     if known is None:
         raise ValueError("No verified implementation dependencies for "+tool_id)
     h=hashlib.sha256()
-    for item in ("body_integration.py",)+tuple(known):
+    for item in ("body_integration.py","body_tool_contracts.py","registry.py")+tuple(known):
         p=base/item
         h.update(item.encode())
         h.update(p.read_bytes())
@@ -180,7 +181,7 @@ def body_catalog(workspace,*,vault_root=None):
             status="installed" if ready else "needs_setup",
             license="various installed FOSS or verified asset provenance",
             resource="local machine",
-            operation_schema={"required":required}),fn if ready else None,
+            operation_schema=real_operation_schema(id,required)),fn if ready else None,
             idempotent=idempotent,
             implementation_revision=_trusted_body_revision(id) if ready else None,
             material_fingerprint=(lambda inputs,name=id:
