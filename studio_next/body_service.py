@@ -34,6 +34,7 @@ from .media_vault import MediaVault,sha256_file,verify_media_container
 from .body_archive import create_body_archive
 from .durable_sqlite import connect_durable_database
 from .body_mobile import ASSETS as MOBILE_ASSETS, CSP as MOBILE_CSP
+from .body_download_tickets import DownloadTickets
 
 _ID=re.compile(r"^[A-Za-z0-9_-]{1,80}$")
 _MAX_JOB_BODY=4*1024*1024
@@ -452,6 +453,7 @@ class LocalBodyCoordinator:
 
 
 def make_body_http_handler(coordinator,token):
+    delivery_tickets=DownloadTickets()
     if not isinstance(token,str) or len(token)<32:
         raise ValueError("Local creative body API needs secret >=32 characters")
     def _utf8_media_header(headers,raw_name,encoded_name):
@@ -483,12 +485,17 @@ def make_body_http_handler(coordinator,token):
                 self._reply(401,{"error":"Local production service requires host authorization"})
                 return False
             return True
-        def _stream_artifact(self,identity,relative):
+        def _stream_artifact(self,identity,relative,expected=None):
             media=coordinator.inspect_media(identity,relative)
+            if expected is not None and (
+                media["sha256"]!=expected["sha256"] or
+                media["bytes"]!=expected["bytes"]):
+                return self._reply(409,{"error":"Original media changed after ticket authorization"})
             self.send_response(200)
             self.send_header("Content-Type",media["mime"])
             self.send_header("Content-Length",str(media["bytes"]))
             self.send_header("X-ZX7-SHA256",media["sha256"])
+            self.send_header("Referrer-Policy","no-referrer")
             self.send_header("Content-Disposition",
                              'attachment; filename="'+media["path"].name+'"')
             self.send_header("Cache-Control","no-store")
@@ -511,6 +518,14 @@ def make_body_http_handler(coordinator,token):
                 self.end_headers()
                 self.wfile.write(contents)
                 return
+            if path.startswith("/v1/download/"):
+                ticket=delivery_tickets.consume(path.removeprefix("/v1/download/"))
+                if ticket is None:
+                    return self._reply(404,{"error":"Download authorization expired or already used"})
+                try:
+                    return self._stream_artifact(ticket["job_id"],ticket["relative"],expected=ticket)
+                except (OSError,ValueError,TypeError):
+                    return self._reply(404,{"error":"Authorized original media no longer available"})
             if not self._authorized():return
             try:
                 if path=="/v1/health":
@@ -541,6 +556,21 @@ def make_body_http_handler(coordinator,token):
         def do_POST(self):
             if not self._authorized():return
             path=urlsplit(self.path).path
+            if path.startswith("/v1/jobs/") and path.endswith("/download-ticket"):
+                rest=path.removeprefix("/v1/jobs/").removesuffix("/download-ticket")
+                if "/artifacts/" not in rest:
+                    return self._reply(404,{"error":"Missing exact original artifact identity"})
+                identity,relative=rest.split("/artifacts/",1)
+                try:
+                    if self.headers.get("Content-Length","0") not in ("0",""):
+                        raise ValueError("Media download ticket accepts no model input")
+                    decoded=unquote(relative)
+                    media=coordinator.inspect_media(identity,decoded)
+                    ticket=delivery_tickets.issue(identity,decoded,
+                        sha256=media["sha256"],length=media["bytes"])
+                    return self._reply(201,ticket)
+                except (ValueError,TypeError,OSError,RuntimeError) as exc:
+                    return self._reply(400,{"error":str(exc)})
             if path.startswith("/v1/workspaces/") and "/assets/" in path:
                 pieces=path.split("/")
                 if len(pieces)!=6 or pieces[1:3]!=["v1","workspaces"] or (
