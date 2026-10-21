@@ -132,6 +132,39 @@ class ScriptBreakdownTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"nonexistent owner facts"):
             validate_spine(normalize_spine_layout(nested),{"identity"})
 
+    def test_actual_nested_voice_holding_entire_story_map(self):
+        x=story(5)
+        original=[dict(scene) for scene in x["scene_map"]]
+        out={k:v for k,v in x.items() if k not in
+             ("voice","scene_map","last_image","production_unknowns")}
+        out["visual_language"]=dict(x["visual_language"])
+        out["visual_language"]["voice"]=dict(x["voice"],
+              scene_map=x["scene_map"],last_image=x["last_image"],
+              production_unknowns=x["production_unknowns"])
+        repaired=normalize_spine_layout(out)
+        self.assertEqual(repaired["scene_map"],original)
+        self.assertEqual(repaired["voice"],x["voice"])
+        self.assertEqual(repaired["visual_language"],x["visual_language"])
+        self.assertEqual(repaired,x)
+        self.assertEqual(len(validate_spine(repaired,{"identity"})),5)
+
+    def test_nested_voice_cannot_launder_nonexistent_facts(self):
+        x=story(2)
+        x["scene_map"][0]["factual_intent"]=["k2"]
+        x["visual_language"]["voice"]=dict(x["voice"],
+            scene_map=x.pop("scene_map"),last_image=x.pop("last_image"),
+            production_unknowns=x.pop("production_unknowns"))
+        x.pop("voice")
+        corrected=normalize_spine_layout(x)
+        with self.assertRaisesRegex(ValueError,"nonexistent owner facts"):
+            validate_spine(corrected,{"identity"})
+
+    def test_deep_nested_conflicts_are_rejected(self):
+        x=story(1)
+        x["visual_language"]["voice"]=dict(x["voice"],scene_map=[{"id":"other"}])
+        with self.assertRaisesRegex(ValueError,"Conflicting director-authored scene_map"):
+            normalize_spine_layout(x)
+
     def test_only_truncation_triggers_expansion(self):
         self.assertTrue(retryable_output(ValueError("Answer was truncated")))
         self.assertFalse(retryable_output(ValueError("Made up a client fact")))
