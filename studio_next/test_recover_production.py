@@ -80,6 +80,30 @@ class ArchivedFilmRecoveryTests(unittest.TestCase):
                               "director-original.txt").read_bytes(),original_vision)
             self.assertEqual(len(list((Path(tmp)/"corrected").glob("reviewed-design-*.json"))),2)
 
+    def test_scene_recovery_restarts_from_saved_exact_model_decisions(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            d,brief=self.fixture(tmp)
+            out=Path(tmp)/"recovered"
+            artist=Specialist()
+            first=recover_saved_original(d,brief,artist,out)
+            self.assertEqual(len(artist.contexts),2)
+            self.assertFalse(first["movie_rendered"])
+            self.assertEqual(len(list((out/"verified-technical-checkpoints").glob("scene_*.json"))),2)
+            class NoMoreModelCalls(Specialist):
+                def decide(self,context):
+                    raise AssertionError("Expensive film-brain call repeated on same scene")
+            recovered=recover_saved_original(d,brief,NoMoreModelCalls(),out)
+            self.assertEqual(recovered["original_scene_count"],2)
+            self.assertTrue(all("checkpoint" in x["attempted"] for x in recovered["designs"]))
+            self.assertFalse(recovered["all_designs_executable"])
+            # Changing the source artistic screenplay invalidates old scene work.
+            target=d/"director-translation.json"
+            film=json.loads(target.read_text())
+            film["scenes"][0]["visual"]="A changed actual director shot"
+            target.write_text(json.dumps(film))
+            with self.assertRaisesRegex(AssertionError,"repeated"):
+                recover_saved_original(d,brief,NoMoreModelCalls(),out)
+
     def test_an_invented_renderer_schema_never_passes(self):
         with tempfile.TemporaryDirectory() as tmp:
             d,brief=self.fixture(tmp)
