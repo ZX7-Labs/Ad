@@ -171,7 +171,10 @@ def author_production(treatment, facts, model, output_dir, *, tool_inventory=Non
     # Registered video diffusion is a physical tool, not a fictional asset.
     # Discover once per directing pass, and do not advertise GPU-less tools.
     from .generative_video_providers import discover_local_generators
-    runtime=discover_local_generators()
+    import os
+    runtime=discover_local_generators(
+        comfy_endpoint=os.getenv("ZX7_COMFY_API"),
+        deployed_root=os.getenv("ZX7_VIDEO_DEPLOYMENTS","models/creative-video"))
     enabled_video=[x["id"] for x in runtime["video_generation_options"]
                    if x["ready_for_independent_execution_trial"]]
     if not isinstance(facts,dict) or not all(isinstance(k,str) for k in facts):
