@@ -30,8 +30,12 @@ def discover_enabled_body_plugins(*,approved=None,entry_source=None):
         if not _NAME.fullmatch(identity) or identity.startswith("."):
             raise ValueError("Unsafe administrative body plugin ID")
     records=entry_source if entry_source is not None else entry_points()
-    candidates=(records.select(group="zx7.body_operations")
-                if hasattr(records,"select") else records.get("zx7.body_operations",[]))
+    if hasattr(records,"select"):
+        candidates=records.select(group="zx7.body_operations")
+    elif isinstance(records,dict):
+        candidates=records.get("zx7.body_operations",[])
+    else:
+        candidates=records  # trusted explicit iterable in tests or deployment
     found={}
     for plugin in candidates:
         if plugin.name not in allow:
