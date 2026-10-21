@@ -52,11 +52,7 @@ def native_original_body_proof(output):
            "depends_on":["finish"]},
           {"id":"archive","tool_id":"body.asset_vault",
            "purpose":"Store final actual encoded film with rights attestation",
-           "inputs":{"source":"actual-full-mixed-film.mp4","mime":"video/mp4",
-                     "rights":"generated_original","source_type":"trusted_renderer",
-                     "source_id":"original-blender-motion-ffmpeg-provenance",
-                     "evidence":"Created in the same verified ZX7 Blender/motion tool pipeline",
-                     "issuer":"ZX7_installable_native_tools"},
+           "inputs":{"source_witness":{"$node_output":"finish"}},
            "depends_on":["finish"]}]}
     (root/"original-tool-graph.json").write_text(json.dumps(ir,indent=2)+"\n")
     first=run_body_project(ir,root)
