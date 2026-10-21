@@ -155,6 +155,12 @@ jobs:
               assert state["status"]=="completed",state
               assert len(state["result"]["completed"])==3,state
               assert validate_witness("body.film_thumbnail",_witness(project/"artist-frame.png"))
+              with urlopen(Request(origin+"/v1/jobs/"+receipt["job_id"]+
+                     "/artifacts/artist-frame.png",
+                     headers={"Authorization":"Bearer "+token}),timeout=30) as source:
+                  received=source.read()
+                  assert source.headers["Content-Type"]=="image/png"
+              assert received==(project/"artist-frame.png").read_bytes()
               assert len(get("/v1/tools")["tools"])>=5
               (root/"auth-body-evidence.json").write_text(json.dumps({
                   "standalone_http_authenticated":True,
