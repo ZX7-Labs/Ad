@@ -101,12 +101,12 @@ _FILM_FIELDS = ("voice", "scene_map", "last_image", "production_unknowns")
 
 
 def normalize_spine_layout(spine):
-    """Recover misplaced *unchanged* film fields from a valid JSON response.
+    """Recover *existing* misplaced fields; never invent facts or storyboard data.
 
-    Local 4B models sometimes accidentally nest these film-level fields inside
-    visual_language. Promote exact existing bytes/values ONLY: no invented
-    narrative, no fabricated fact references, no style/shot substitutions.
-    A conflict between nested and root fields is a hard rejection.
+    A weak local model has been observed to put the whole scene_map, ending,
+    and production_unknowns inside visual_language.voice. Fix only explicitly
+    named known fields and report inconsistent conflicting values.
+    This is syntactic recovery ONLY, not approval of model story or fake facts.
     """
     if not isinstance(spine,dict):
         raise ValueError("Film spine not object")
@@ -115,6 +115,20 @@ def normalize_spine_layout(spine):
     if not isinstance(visual,dict):
         return output
     visual=dict(visual)
+    voice=visual.get("voice")
+    if isinstance(voice,dict):
+        voice=dict(voice)
+        # The observed invalid structure has voice metadata AND film map nested
+        # in one object. Do not destroy the legitimate choice/why/delivery keys.
+        for name in ("scene_map","last_image","production_unknowns"):
+            if name not in voice:
+                continue
+            if name in output and output[name]!=voice[name]:
+                raise ValueError("Conflicting director-authored "+name)
+            if name not in output:
+                output[name]=voice[name]
+            del voice[name]
+        visual["voice"]=voice
     for name in _FILM_FIELDS:
         if name not in visual:
             continue
