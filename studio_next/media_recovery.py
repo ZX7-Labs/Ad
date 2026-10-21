@@ -39,7 +39,7 @@ def _fingerprint(plan: dict, asset_root: Path, ffmpeg: str) -> str:
         raise RenderError('Invalid BODY timeline')
     fingerprints = []
     for n, clip in enumerate(plan['clips']):
-        if not isinstance(clip, dict) or clip.get('kind') not in _ALLOWED:
+        if not isinstance(clip, dict) or not isinstance(clip.get('kind'), str) or clip['kind'] not in _ALLOWED:
             raise RenderError(f'Invalid clip {n}')
         path = _asset(asset_root, clip.get('path'), clip['kind'])
         fingerprints.append({'clip': n, 'source_sha256': _sha256(path)})
