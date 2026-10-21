@@ -70,6 +70,9 @@ def assemble_body_evidence(archived,folder):
             "out":"finished-actual-film.otio"},["inspect-2d","inspect-3d"]),
         ("thumbnail","body.film_thumbnail",{"source_film":"finished-actual-film.mp4",
             "out":"thumbnail.png","time_seconds":min(1.0,total/2)},["edit"]),
+        ("full-decode","body.full_decode",
+            {"source":"finished-actual-film.mp4",
+             "expected":{"width":320,"height":180,"require_audio":True}},["edit"]),
         ("custody","body.asset_vault",
             {"source_witness":{"$node_output":"edit"}},["edit"]),
     ]
