@@ -31,6 +31,8 @@ jobs:
           import opentimelineio as otio
           print("ASWF OPENTIMELINEIO REAL INTERCHANGE AVAILABLE",otio.__file__)
           PY
+          python -m unittest studio_next.test_editorial_interchange -v
+          python -m studio_next.creative_tool_registry --out output/real-installed-tool-inventory.json
       - name: Restore original actual 2D and Blender 3D footage from separately proven render
         uses: actions/download-artifact@v4
         with:
