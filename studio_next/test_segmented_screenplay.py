@@ -1,7 +1,7 @@
 import unittest
 from studio_next.segmented_screenplay import (
     create_screenplay,validate_spine,validate_authored_shot,retryable_output,
-    complete_missing_ending, normalize_spine_layout)
+    complete_missing_ending, normalize_spine_layout, reground_invalid_beats)
 
 def story(n=2):
     return {"title":"A drawn line has consequence",
@@ -164,6 +164,47 @@ class ScriptBreakdownTests(unittest.TestCase):
         x["visual_language"]["voice"]=dict(x["voice"],scene_map=[{"id":"other"}])
         with self.assertRaisesRegex(ValueError,"Conflicting director-authored scene_map"):
             normalize_spine_layout(x)
+
+    def test_invented_ids_only_repaired_by_model_grounded_in_exact_owner_quotes(self):
+        x=story(3)
+        x["scene_map"][0]["factual_intent"]=["k2"]
+        x["scene_map"][2]["factual_intent"]=["k2"]
+        before=[dict(b) for b in x["scene_map"]]
+        seen=[]
+        def invoke(stage,prompt,data,tokens,temp):
+            seen.append(stage)
+            self.assertEqual(data["invalid_ids"],["k2"])
+            beat=data["current_beat"]
+            return {"id":beat["id"],
+                    "dramatic_action":"Fictional travelling artist writes down an idea",
+                    "visual_goal":"Explicitly conceptual hand-lettering, no actual product photo",
+                    "factual_intent":["identity"],
+                    "fact_quotes":{"identity":"Real notebook"},
+                    "reason":"Only the notebook identity is established"}
+        revised=reground_invalid_beats(x,{"facts":{"identity":"Real notebook"}},invoke)
+        self.assertEqual(seen,["fact-repair-001","fact-repair-003"])
+        self.assertEqual(len(revised["scene_map"]),3)
+        self.assertEqual(revised["scene_map"][0]["factual_intent"],["identity"])
+        self.assertEqual(revised["scene_map"][1],before[1])
+        self.assertEqual(x["scene_map"],before)
+        self.assertEqual(len(validate_spine(revised,{"identity"})),3)
+
+    def test_grounding_cannot_relabel_invented_evidence_or_silent_delete_beat(self):
+        x=story(1)
+        x["scene_map"][0]["factual_intent"]=["k2"]
+        def attempt(stage, system, context, tokens, temp):
+            return {"id":"scene_0","dramatic_action":"Scene",
+                    "visual_goal":"Visible act","factual_intent":["identity"],
+                    "fact_quotes":{"identity":"Invented description"},
+                    "reason":"Claimed"}
+        with self.assertRaisesRegex(ValueError,"prove every owner fact"):
+            reground_invalid_beats(x,{"facts":{"identity":"Real notebook"}},attempt)
+        def wrong_scene(stage, system, context, tokens, temp):
+            v=attempt(stage,system,context,tokens,temp)
+            v["id"]="other"
+            return v
+        with self.assertRaisesRegex(ValueError,"replaced authored"):
+            reground_invalid_beats(x,{"facts":{"identity":"Real notebook"}},wrong_scene)
 
     def test_only_truncation_triggers_expansion(self):
         self.assertTrue(retryable_output(ValueError("Answer was truncated")))
