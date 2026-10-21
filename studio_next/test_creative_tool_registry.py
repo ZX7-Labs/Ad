@@ -17,7 +17,7 @@ class AutonomousArtToolDiscoveryTests(unittest.TestCase):
         self.assertIn("krita",available)
         self.assertTrue(available["blender"]["can_render_in_zx7_now"])
         self.assertFalse(available["krita"]["can_render_in_zx7_now"])
-        self.assertFalse(any(s["tool_id"]=="inkscape" for s in available))
+        self.assertNotIn("inkscape",available)
         self.assertTrue(inventory["creative_scope_not_restricted_to_catalog"])
 
     def test_binary_present_does_not_claim_artist_or_full_generation(self):
