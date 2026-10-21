@@ -40,6 +40,12 @@ class StandaloneNoAssistantLocalBodyClientTests(unittest.TestCase):
                     mime="application/octet-stream",source_id="studio-मूल-स्रोत",
                     rights_evidence="परीक्षण सामग्री का हिंदी विवरण")
                 self.assertEqual(receipt["asset_id"],hashlib.sha256(payload).hexdigest())
+                from studio_next.media_vault import MediaVault
+                v=MediaVault(folder/"runtime"/"projects"/"film-owner"/"vault")
+                evidence=v.inspect(receipt["asset_id"],
+                    attestation_id=receipt["attestation_id"])
+                self.assertEqual(evidence["rights_attestations"][0]["evidence"],
+                                 "परीक्षण सामग्री का हिंदी विवरण")
                 screenplay={
                     "project":{"creative_intent":"An original artistic film"},
                     "shots":[{"id":"original","purpose":"True acting","duration_seconds":4.5}],
