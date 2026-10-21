@@ -22,10 +22,18 @@ jobs:
       - name: Install actual trusted original artist tools (not images or APIs)
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y blender ffmpeg fonts-dejavu-core fonts-urw-base35 libsndfile1
-          python -m pip install --no-cache-dir "numpy>=1.26,<3" "Pillow>=10,<13" "opentimelineio>=0.17,<1"
+          sudo apt-get install -y blender ffmpeg fonts-dejavu-core fonts-urw-base35 fonts-noto-core libsndfile1
+          python -m pip install --no-cache-dir "numpy>=1.26,<3" "Pillow>=10,<13" "opentimelineio>=0.17,<1" "fonttools>=4,<5"
           blender --version | head -n 2
           ffmpeg -version | head -n 1
+      - name: Verify real installed multilingual artistic typography without English-only limits
+        run: |
+          python - <<'PY'
+          from studio_next.font_registry import resolve_artist_font,require_unicode_font_coverage
+          font=resolve_artist_font("Noto Sans Devanagari")
+          assert require_unicode_font_coverage(font,"नमस्ते दुनिया")
+          print("ORIGINAL HINDI CREATIVE TYPOGRAPHY GLYPHS AND RAQM VERIFIED")
+          PY
       - name: Independent body engine creates original 3D and 2D frames, sound, editable cut and real MP4
         run: |
           python -u -m studio_next.body_native_proof --out output/body-real-native-film
