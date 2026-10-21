@@ -30,6 +30,7 @@ from .durable_graph import DurableFilmGraph,execute_durable_film_graph
 from .media_vault import MediaVault,sha256_file,verify_media_container,MediaCustodyError
 from .composite_mix import render_composition
 from .film_finishing import finish_authorized_movie
+from .precision_retime import render_retime
 from .production_qc import full_decode_inspection
 from .body_plugins import discover_enabled_body_plugins
 from .body_tool_contracts import real_operation_schema
@@ -102,6 +103,7 @@ def _trusted_body_revision(tool_id):
     dependencies={
         "body.inspect":["delivery_audit.py"],
         "body.render_edit":["edit_timeline.py"],
+        "body.retime":["precision_retime.py","media_vault.py","delivery_audit.py"],
         "body.otio":["editorial_interchange.py"],
         "body.vector_png":["creative_asset_ops.py"],
         "body.film_thumbnail":["creative_asset_ops.py","delivery_audit.py"],
@@ -117,6 +119,7 @@ def _trusted_body_revision(tool_id):
     commands={
         "body.inspect":["ffprobe"],
         "body.render_edit":["ffmpeg","ffprobe"],
+        "body.retime":["ffmpeg","ffprobe"],
         "body.otio":[],
         "body.vector_png":["inkscape"],
         "body.film_thumbnail":["ffmpeg","ffprobe"],
@@ -217,6 +220,12 @@ def body_catalog(workspace,*,vault_root=None):
         output=_body_output(root,inputs["out"],allowed=(".mp4",))
         return _commit_actual_body_output(
             output,lambda staged:render_edit(original,root,staged))
+
+    def retime_footage(inputs):
+        plan=_path_within(root,inputs['plan'],exists=True)
+        target=_body_output(root,inputs['out'],allowed=('.mp4',))
+        return _commit_actual_body_output(target,
+            lambda staged:render_retime(plan,root,vault.root,staged))
 
     def export_edit(inputs):
         original=_path_within(root,inputs["edit"],exists=True)
@@ -368,6 +377,9 @@ def body_catalog(workspace,*,vault_root=None):
         "read",bool(shutil.which("ffprobe")),["source"],inspect)
     add("body.render_edit","editorial timeline","Headless FFmpeg actual movie assembler",
         "write",video_io,["edit","out"],edit)
+    add("body.retime","frame-accurate retime and soundtrack sync",
+        "Original frame-index speed changes; real rights-checked source and pitch-preserving sound",
+        "write",video_io,["plan","out"],retime_footage)
     try:import opentimelineio
     except ImportError:otio_ready=False
     else:otio_ready=True
