@@ -40,12 +40,16 @@ class ActualVideoGeneratorDiscoveryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             p=Path(root)/"wan21-t2v-13b"
             p.mkdir()
-            weights=p/"quantized-sample.safetensors"
-            weights.write_bytes(b"verified binary"*100)
+            weights=[]
+            for role in ("diffusion","vae","text_encoder"):
+                file=p/(role+".safetensors")
+                file.write_bytes(role.encode("utf-8")*256)
+                weights.append({"role":role,"path":file.name,
+                    "sha256":hashlib.sha256(file.read_bytes()).hexdigest()})
             (p/"deployment.json").write_text(json.dumps({
                 "model_id":"wan21-t2v-13b",
-                "weight_file":weights.name,
-                "weight_sha256":hashlib.sha256(weights.read_bytes()).hexdigest(),
+                "weight_sha256":weights[0]["sha256"],
+                "weight_files":weights,
                 "license_accepted_or_verified":True,
                 "required_comfyui_nodes":["WanVideoModelLoader","SaveVideo"]}))
             def fake(url):
