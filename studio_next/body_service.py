@@ -36,6 +36,7 @@ from .durable_sqlite import connect_durable_database
 from .body_mobile import ASSETS as MOBILE_ASSETS, CSP as MOBILE_CSP
 from .body_download_tickets import DownloadTickets
 from .body_verified_delivery import verified_artifact_snapshot
+from .body_host_resources import inspect_host_resources
 
 _ID=re.compile(r"^[A-Za-z0-9_-]{1,80}$")
 _MAX_JOB_BODY=4*1024*1024
@@ -349,6 +350,10 @@ class LocalBodyCoordinator:
         except (sqlite3.Error,ValueError,OSError):
             return {"observed_tool_states":[],"tool_progress_is_actual_sqlite":False}
 
+    def host_resource_status(self):
+        """Only live technical capacity, never unverified AI model execution."""
+        return inspect_host_resources(self.root)
+
     def list_jobs(self,*,limit=100):
         """Bounded honest job statuses for a standalone creative desktop client."""
         if type(limit) is not int or not (1<=limit<=100):
@@ -544,6 +549,8 @@ def make_body_http_handler(coordinator,token):
                         "host_only":"127.0.0.1","online":True})
                 if path=="/v1/jobs":
                     return self._reply(200,coordinator.list_jobs())
+                if path=="/v1/resources":
+                    return self._reply(200,coordinator.host_resource_status())
                 if path=="/v1/tools":
                     return self._reply(200,{"tools":operational_tool_summary(
                         coordinator.projects)})
