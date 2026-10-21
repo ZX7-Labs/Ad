@@ -230,6 +230,7 @@ def body_catalog(workspace,*,vault_root=None):
                 "sha256":inspected["asset_id"],
                 "bytes":inspected["size_bytes"],
                 "asset_id":inspected["asset_id"],
+                "portable_uri":"zx7:sha256:"+inspected["asset_id"],
                 "attestation_id":permitted["attestation_id"],
                 "rights":permitted["rights"],
                 "mime":inspected["mime"]}
