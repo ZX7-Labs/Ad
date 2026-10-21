@@ -69,6 +69,35 @@ class OriginalFilmRevisionTests(unittest.TestCase):
                 preserve_artistic_revision("original film","seen a weak composition",
                     visual,{"facts":{}},Artist(),folder)
 
+    def test_prototype_comparison_never_claims_actual_own_film_was_watched(self):
+        class Reply:
+            def __enter__(self):return self
+            def __exit__(self,*args):return False
+            def read(self,limit):
+                return json.dumps({"choices":[{"finish_reason":"stop",
+                    "message":{"content":"This old demo is not my new film."}}]}).encode()
+        def fake(request,timeout):
+            payload=json.loads(request.data)
+            system=payload["messages"][0]["content"]
+            self.assertIn("UNRELATED archived technical",system)
+            context=json.loads(payload["messages"][1]["content"])
+            self.assertTrue(context["observation_scope"]["not_actual_render_of_original_story"])
+            return Reply()
+        e=evidence()
+        e["reference_prototype"]=True
+        brain=FilmRevisionBrain(LocalModelSettings(model_id="one-film-director"))
+        with patch("studio_next.film_revision.urlopen",fake):
+            revised=brain.rethink("Brand-new film idea","Technical sample lacks a human",
+                {"request":"New film","facts":{}},e)
+            self.assertIn("not my new film",revised)
+        with tempfile.TemporaryDirectory() as d:
+            class Artist:
+                def rethink(self,*args):return "Original revised artistic idea"
+            result=preserve_artistic_revision("Original art idea","Reference visual",
+                e,{"request":"Film","facts":{}},Artist(),d)
+            self.assertTrue(result["reference_was_unrelated_technical_clip"])
+            self.assertFalse(result["revised_new_movie_was_actually_criticized"])
+
     def test_model_receives_visual_scope_and_only_local_no_json_mode(self):
         class Reply:
             def __enter__(self):return self
