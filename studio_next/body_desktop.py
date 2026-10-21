@@ -48,7 +48,7 @@ def compact_tool_status(raw):
     for item in result:
         if not isinstance(item,dict):
             raise ValueError("Malformed actual installed tool descriptor")
-        identity=item.get("id")
+        identity=item.get("tool_id")
         if not isinstance(identity,str):
             raise ValueError("Tool has no trustworthy identity")
         status=item.get("status","unknown")
