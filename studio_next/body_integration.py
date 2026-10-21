@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.metadata
 import os
 import uuid
 import json
@@ -109,7 +110,8 @@ def _trusted_body_revision(tool_id):
         "body.full_decode":["production_qc.py","delivery_audit.py"],
         "body.generate_video":["comfy_video_runtime.py","generative_video_providers.py"],
         "body.blender3d":["native_body_engines.py","blender_scene.py"],
-        "body.motion2d":["native_body_engines.py","motion_bridge.py","font_registry.py"],
+        "body.motion2d":["native_body_engines.py","motion_bridge.py","font_registry.py",
+                         "silent_audio.py","../motion_studio/render.py","../motion_studio/voice.py"],
     }
     commands={
         "body.inspect":["ffprobe"],
@@ -142,6 +144,12 @@ def _trusted_body_revision(tool_id):
         stat=file.stat()
         h.update(json.dumps({"command":cmd,"binary_path":str(file),
               "size":stat.st_size,"mtime_ns":stat.st_mtime_ns},sort_keys=True).encode())
+    runtime_libraries={"body.motion2d":("numpy","Pillow","fonttools","supertonic"),
+                       "body.otio":("opentimelineio",)}
+    for library in runtime_libraries.get(tool_id,()):
+        try:version=importlib.metadata.version(library)
+        except importlib.metadata.PackageNotFoundError:version="not_installed"
+        h.update(json.dumps({"library":library,"version":version},sort_keys=True).encode())
     return "sha256:"+h.hexdigest()
 
 

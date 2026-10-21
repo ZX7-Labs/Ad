@@ -210,9 +210,17 @@ def compile_motion_project(ir, *, fact_ids=frozenset()):
         _number(note.get("midi"),"note pitch",0,127)
         for f in ("gain","decay"):
             if f in note:_number(note[f],"note "+f,0,10)
+    grain=meta.get("background_noise")
+    if grain is not None:
+        _require(isinstance(grain,dict) and set(grain)=={"gain","seed"},
+                 "Original film grain needs explicit gain and stable seed")
+        _number(grain["gain"],"background_noise.gain",0,255)
+        _require(type(grain["seed"]) is int and grain["seed"]>=0,
+                 "Original film grain seed must be a nonnegative integer")
     return {"title":meta["title"],"direction_source":"Compiled from explicit, rights-checked Film IR; artistic approval NOT implied",
             "width":width,"height":height,"background":meta["background"],
-            "grid":32,"grid_color":meta["background"],"voice":voice,
+            "grid":0,"grid_color":meta["background"],"voice":voice,
+            "background_noise":grain,
             "assets":assets,"scenes":scenes,"score":score}
 
 

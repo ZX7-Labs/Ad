@@ -10,6 +10,7 @@ import json
 from pathlib import Path
 
 from .media_vault import sha256_file
+from .font_registry import resolve_artist_font
 
 _SOURCE_FIELDS={
     "body.inspect":("source",),
@@ -60,6 +61,16 @@ def _nested_sources(value,root,found):
             _nested_sources(item,root,found)
 
 
+def _authored_typefaces(value,selected):
+    if isinstance(value,dict):
+        if value.get("type")=="text":
+            selected.add(value.get("font","sans"))
+        for child in value.values():
+            if isinstance(child,(dict,list)):_authored_typefaces(child,selected)
+    elif isinstance(value,list):
+        for child in value:_authored_typefaces(child,selected)
+
+
 def fingerprint_physical_inputs(tool_id,inputs,workspace):
     """Only original source inputs are inspected, not the output path."""
     if not isinstance(inputs,dict):
@@ -71,6 +82,7 @@ def fingerprint_physical_inputs(tool_id,inputs,workspace):
         # not receive a claim of comprehensive physical verification.
         raise ValueError("Unregistered tool needs trusted source-fingerprint adapter")
     found=set()
+    selected_fonts=set()
     for key in keys:
         source=inputs.get(key)
         if source is None:
@@ -81,6 +93,8 @@ def fingerprint_physical_inputs(tool_id,inputs,workspace):
             if p.suffix.lower()==".json":
                 document=json.loads(p.read_text(encoding="utf-8"))
                 _nested_sources(document,root,found)
+                if tool_id=="body.motion2d":
+                    _authored_typefaces(document,selected_fonts)
         elif p.is_dir():
             for child in p.rglob("*"):
                 if child.is_symlink():
@@ -90,6 +104,11 @@ def fingerprint_physical_inputs(tool_id,inputs,workspace):
                     if not resolved.is_relative_to(root):
                         raise ValueError("Asset path escaped the original production")
                     found.add(resolved)
-    return [{"relative":str(path.relative_to(root)),
+    physical=[{"relative":str(path.relative_to(root)),
              "bytes":path.stat().st_size,"sha256":sha256_file(path)}
             for path in sorted(found)]
+    for name in sorted(selected_fonts):
+        font=Path(resolve_artist_font(name))
+        physical.append({"installed_typeface":name,"resolved_font":str(font.resolve()),
+                         "bytes":font.stat().st_size,"sha256":sha256_file(font)})
+    return physical

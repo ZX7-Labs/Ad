@@ -32,6 +32,27 @@ def case():
 
 
 class MotionBridgeTests(unittest.TestCase):
+    def test_new_original_film_has_no_unrequested_grain_or_grid_style(self):
+        compiled=compile_motion_project(case())
+        self.assertIsNone(compiled["background_noise"])
+        self.assertEqual(compiled["grid"],0)
+        try:
+            from motion_studio.render import Compositor
+        except ImportError:
+            self.skipTest("Real numpy/Pillow renderer unavailable in contract-only environment")
+        canvas=Compositor({"width":32,"height":32,"background":"#34495e",
+                           "assets":{},"grid":compiled["grid"],
+                           "background_noise":compiled["background_noise"]},32)
+        self.assertEqual(canvas.background.getextrema(),((52,52),(73,73),(94,94),(255,255)))
+
+    def test_director_can_choose_original_stable_film_grain(self):
+        film=case()
+        film["project"]["background_noise"]={"gain":4.3,"seed":108}
+        compiled=compile_motion_project(film)
+        self.assertEqual(compiled["background_noise"],{"gain":4.3,"seed":108})
+        film["project"]["background_noise"]={"gain":4.3}
+        with self.assertRaises(UnsupportedMotionPlan):compile_motion_project(film)
+
     def test_real_renderer_schema_compiled_without_fabrication(self):
         p=compile_motion_project(case())
         self.assertEqual([s["id"] for s in p["scenes"]],["open","turn"])

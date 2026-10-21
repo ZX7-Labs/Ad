@@ -91,15 +91,20 @@ class Compositor:
         d=ImageDraw.Draw(self.background)
         # Stable background texture, not flickering random noise per frame.
         spacing=round(project.get("grid",28)*self.factor)
-        for y in range(spacing//2,self.height,spacing):
-            for x in range(spacing//2,self.width,spacing):
-                d.ellipse((x,y,x+max(1,round(self.factor)),y+max(1,round(self.factor))),
-                          fill=project.get("grid_color","#E0E0DD"))
-        rng=np.random.default_rng(914)
-        noise=rng.normal(0,.65,(self.height,self.width,1))
-        a=np.asarray(self.background).copy()
-        a[:,:,:3]=np.clip(a[:,:,:3].astype(float)+noise,0,255).astype(np.uint8)
-        self.background=Image.fromarray(a)
+        if spacing>0:
+            for y in range(spacing//2,self.height,spacing):
+                for x in range(spacing//2,self.width,spacing):
+                    d.ellipse((x,y,x+max(1,round(self.factor)),y+max(1,round(self.factor))),
+                              fill=project.get("grid_color","#E0E0DD"))
+        # Historical authored samples retain their original rendering when
+        # this field is absent. New Film IR explicitly controls/no-ops grain.
+        grain=project.get("background_noise",{"gain":.65,"seed":914})
+        if grain is not None and grain["gain"]>0:
+            rng=np.random.default_rng(grain["seed"])
+            noise=rng.normal(0,grain["gain"],(self.height,self.width,1))
+            a=np.asarray(self.background).copy()
+            a[:,:,:3]=np.clip(a[:,:,:3].astype(float)+noise,0,255).astype(np.uint8)
+            self.background=Image.fromarray(a)
 
     def frame(self, scene, t):
         canvas=self.background.copy()
