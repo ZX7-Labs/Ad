@@ -14,14 +14,7 @@ from pathlib import Path
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
-
-FONTS = {
-    "sans": "/usr/share/fonts/opentype/urw-base35/NimbusSans-Regular.otf",
-    "bold": "/usr/share/fonts/opentype/urw-base35/NimbusSans-Bold.otf",
-    "serif": "/usr/share/fonts/opentype/urw-base35/P052-Italic.otf",
-    "mono": "/usr/share/fonts/opentype/urw-base35/NimbusMonoPS-Regular.otf",
-}
-
+from studio_next.font_registry import resolve_artist_font,require_unicode_font_coverage
 
 def color(value):
     from PIL import ImageColor
@@ -30,7 +23,7 @@ def color(value):
 
 @functools.lru_cache(maxsize=256)
 def font(style, size):
-    return ImageFont.truetype(FONTS[style], max(1, round(size)))
+    return ImageFont.truetype(resolve_artist_font(style), max(1, round(size)))
 
 
 def ease(value, kind="smooth"):
@@ -73,7 +66,9 @@ def artwork(spec, factor):
         elif kind=="polygon":
             d.polygon([box(p) for p in item["points"]],fill=fill)
         elif kind=="text":
-            f=font(item.get("font","sans"),round(item["size"]*factor))
+            typeface=item.get("font","sans")
+            require_unicode_font_coverage(resolve_artist_font(typeface),item["text"])
+            f=font(typeface,round(item["size"]*factor))
             x,y=box(item["at"])
             for index,line in enumerate(item["text"].split("\n")):
                 xx=x
