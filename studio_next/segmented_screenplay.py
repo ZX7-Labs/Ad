@@ -115,8 +115,6 @@ Return exactly JSON:
 "factual_intent":["exact source keys or empty for purely fictional action"],
 "fact_quotes":{"exact owner fact key":"copy verbatim owner's fact text"},
 "reason":"explain how revisions prevent unsupported claims and keep this film's story"}.
-You MAY also include continuity_in, continuity_out, and sound_goal if the
-story correction artistically motivates changing those existing fields.
 Every fact_quotes value MUST be an exact copy of the owner ledger entry.
 Do not use abbreviated IDs such as k2 unless the ledger itself has key k2.
 Do not invent substitute evidence or assert a real product photo exists.
