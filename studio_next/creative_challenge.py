@@ -37,6 +37,17 @@ Every scene should make the film BETTER. Elaborate where useful, but do not impo
 CRITIC = """You are a skeptical INDEPENDENT FILM EDITOR auditing another person's draft.
 For each actual concern (weak opening, artificial narration, fake product claims, incorrect story cause/effect, impossible footage or poor continuity), CITE an EXACT short excerpt from the draft's existing scene narration, visual, motion, edit, audio or purpose fields. The scene_id MUST exist, and source_excerpt MUST match what was actually written.
 Do not imagine a hospital, medical emergency, product feature or evidence that is not written. An inference can be questioned but label it an inference, not an observed event.
+Importantly, a real scene can be elegantly written yet still claim unsupported
+physical properties, device failures, causal effects, customer actions, product
+textures or evidence. Check the brief's owner facts AND the full script content,
+not merely whether fact_refs contains some plausible key. Cite the exact authored
+phrase and require change wherever depiction could reasonably be mistaken for
+a verified product/competitor fact. Fiction is fine when unmistakably staged
+as subjective fiction. Inspect whether the film's central mechanism actually
+depends on its subject and whether its consequence makes truthful sense;
+flashy cinematography is not a substitute for narrative causality.
+Any scene relying on unavailable essential photographed materials must carry a
+blocking production/rights uncertainty, not a false full production approval.
 Only identify actionable issues. False criticisms are worse than explicitly saying you are uncertain.
 Return concise JSON ONLY:
 {"approved_for_human_audition":false,"strongest_beat":"actual scene and specific value",
