@@ -64,6 +64,7 @@ class LocalBodyCoordinator:
             max_workers=workers,thread_name_prefix="zx7-original-body")
         self._queued=set()
         self._lock=threading.RLock()
+        self._workspace_locks={}
         self.execute=execute or run_body_project
         with self._connect() as db:
             db.execute("""CREATE TABLE IF NOT EXISTS jobs(
@@ -182,8 +183,14 @@ class LocalBodyCoordinator:
             if row is None:raise ValueError("Submitted original film vanished")
             location=self._workspace(row[0])
             original=json.loads(row[1])
-            # Execution itself uses the crash-safe graph/physical witness vault.
-            result=self.execute(original,location)
+            # Distinct original projects may render concurrently. Multiple
+            # jobs of ONE workspace may not mutate the same accepted files,
+            # SQLite stage leases or original sound resources simultaneously.
+            with self._lock:
+                project_lock=self._workspace_locks.setdefault(row[0],threading.Lock())
+            with project_lock:
+                # Execution itself uses the crash-safe graph/physical witness vault.
+                result=self.execute(original,location)
             if not isinstance(result,dict):
                 raise RuntimeError("Original film tool graph produced no audit result")
             ok=result.get("status")=="all_tool_results_verified"
@@ -238,6 +245,26 @@ class LocalBodyCoordinator:
                           "physically_encoded_quality_certified":False})
         return {"job_id":identity,"assets":items}
 
+    def _stage_progress(self,workspace_id):
+        """Real persisted tool states, never invented percent complete."""
+        location=self._workspace(workspace_id)
+        path=location/"production.sqlite3"
+        if not path.is_file():
+            return {"observed_tool_states":[],"tool_progress_is_actual_sqlite":False}
+        try:
+            from .durable_graph import DurableFilmGraph
+            with sqlite3.connect(f"file:{path}?mode=ro",uri=True,timeout=4) as db:
+                tables=db.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+                if ("node_results",) not in tables:
+                    return {"observed_tool_states":[],"tool_progress_is_actual_sqlite":False}
+                rows=db.execute("""SELECT node_id,node_state,attempts,updated_at
+                    FROM node_results ORDER BY updated_at DESC LIMIT 500""").fetchall()
+            return {"observed_tool_states":[{"node_id":a,"state":b,"attempts":c,
+                "updated_at":d} for a,b,c,d in rows],
+                "tool_progress_is_actual_sqlite":True}
+        except (sqlite3.Error,ValueError,OSError):
+            return {"observed_tool_states":[],"tool_progress_is_actual_sqlite":False}
+
     def inspect(self,identity):
         if not isinstance(identity,str) or not _ID.fullmatch(identity):
             raise ValueError("Invalid original job identity")
@@ -247,7 +274,8 @@ class LocalBodyCoordinator:
         if row is None:raise ValueError("Unknown job")
         return {"job_id":identity,"workspace_id":row[0],"status":row[1],
                 "attempts":row[2],"result":json.loads(row[3]) if row[3] else None,
-                "updated_at":row[4]}
+                "updated_at":row[4],
+                "actual_tool_progress":self._stage_progress(row[0])}
 
     def pending_restart(self):
         with self._connect() as db:
