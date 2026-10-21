@@ -37,6 +37,11 @@ jobs:
       - name: Independent body engine creates original 3D and 2D frames, sound, editable cut and real MP4
         run: |
           python -u -m studio_next.body_native_proof --out output/body-real-native-film
+      - name: Query actual connected creative tools lazily without giving an AI a giant MD prompt
+        run: |
+          python -m studio_next.body_capabilities \
+            --workspace output/body-real-native-film \
+            --out output/body-real-native-film/live-creative-body.json
       - name: Independently inspect real production bytes after crash-safe DAG second pass
         run: |
           python - <<'PY'
