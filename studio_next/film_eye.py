@@ -136,10 +136,13 @@ def critique_actual_film(video, goal, stamps, output, director):
     response=director.evaluate(goal,frames)
     (output/"director-observed-critique.txt").write_text(response,encoding="utf-8")
     evidence={"film":str(video),"frames":frames,"ffprobe":facts,
-        "same_single_model_used_as_artistic_director":True,
+        "reviewer_model_id":getattr(getattr(director,"settings",None),
+                                   "model_id",None),
+        "reviewer_used_actual_encoded_images":True,
+        "film_was_model_authored":False,
         "text_review_obtained":True,"human_approval":False,
         "video_fully_reviewed":False,"audio_reviewed":False,
-        "claim":"Original creative direction inspected via real decoded frames; audio/longitudinal motion unverified"}
+        "claim":"Real 2D+3D manually authored technical film visually reviewed by VLM; not AI-authored film, audio/longitudinal motion unverified"}
     (output/"visual-critique-evidence.json").write_text(json.dumps(evidence,indent=2)+"\n")
     return evidence
 
