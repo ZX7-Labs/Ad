@@ -13,6 +13,7 @@ class BodyPluginsBoundaryTests(unittest.TestCase):
             revision="actual-software-and-source-sha"
             idempotent=True
             def probe(self):return True
+            def material_fingerprint(self,inputs):return {"trusted_sample":inputs}
             def run(self,inputs):return {"real":inputs}
         Plugin.spec=spec
         entry=SimpleNamespace(name="artist.procedural",load=lambda:Plugin)
@@ -35,6 +36,7 @@ class BodyPluginsBoundaryTests(unittest.TestCase):
             revision="claimed-source"
             idempotent=True
             def probe(self):return True
+            def material_fingerprint(self,data):return {"trusted_sample":data}
             def run(self,data):return data
         e=SimpleNamespace(name="artist.wrong",load=lambda:Impostor)
         with self.assertRaisesRegex(ValueError,"false tool"):
