@@ -59,13 +59,19 @@ class ActualAuthorizedDeliveryTests(unittest.TestCase):
         self.path.write_bytes(b"provenance-bound original output bytes")
         self.token="only-in-test-actual-body-token-with-32-plus-characters"
         file=self.path
+        owner=self
+        self.mutate_after_inspect=False
         class OwnerMedia:
             def inspect_media(self,job,relative):
                 if job!="owner-job" or relative!="original.wav":
                     raise ValueError("Unregistered original owner media")
                 data=file.read_bytes()
-                return {"path":file,"mime":"audio/wav","bytes":len(data),
-                        "sha256":hashlib.sha256(data).hexdigest()}
+                evidence={"path":file,"mime":"audio/wav","bytes":len(data),
+                          "sha256":hashlib.sha256(data).hexdigest()}
+                if owner.mutate_after_inspect:
+                    owner.mutate_after_inspect=False
+                    file.write_bytes(b"Z"*len(data))
+                return evidence
         self.server=ThreadingHTTPServer(("127.0.0.1",0),
             make_body_http_handler(OwnerMedia(),self.token))
         self.thread=threading.Thread(target=self.server.serve_forever,daemon=True)
@@ -110,6 +116,19 @@ class ActualAuthorizedDeliveryTests(unittest.TestCase):
         self.assertIn("no-referrer",head["Referrer-Policy"])
         code,_,_=self.request("GET",ticket["url"])
         self.assertEqual(code,404)
+
+    def test_same_length_content_swap_between_inspection_and_send_is_409(self):
+        code,_,data=self.issue()
+        self.assertEqual(code,201)
+        ticket=json.loads(data)
+        self.mutate_after_inspect=True
+        code,head,actual=self.request("GET",ticket["url"])
+        self.assertEqual(code,409)
+        self.assertIn(b"SHA256",actual)
+        self.assertNotEqual(actual,self.path.read_bytes())
+        self.assertNotIn("X-ZX7-SHA256",head)
+        replay,_,_=self.request("GET",ticket["url"])
+        self.assertEqual(replay,404)
 
     def test_changed_media_fails_closed_after_ticket_issue(self):
         code,_,data=self.issue()
