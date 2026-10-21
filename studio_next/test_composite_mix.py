@@ -92,6 +92,44 @@ class LayeredProductionCompositingTests(unittest.TestCase):
             self.assertTrue(proof["audio_stream_present"])
             self.assertEqual(result["video_layers"],3)
 
+    def test_original_keyframed_motion_and_alpha_are_derived_from_artist_frames(self):
+        from studio_next.delivery_audit import _probe_details
+        with tempfile.TemporaryDirectory() as root:
+            film,source,vault=self.fixture(root)
+            film["canvas"].update(width=640,height=360,fps=24,duration=2)
+            graphic=film["video_layers"][1]
+            graphic["motion"]=[
+                {"at_seconds":0,"x":12,"y":14},
+                {"at_seconds":0.4,"x":90,"y":30},
+                {"at_seconds":0.8,"x":180,"y":65}]
+            graphic["fade_in_seconds"]=0.2
+            graphic["fade_out_seconds"]=0.15
+            command=actual_composite_command(film,root,vault,Path(root)/"keyframe-movie.mp4")
+            graph=command[command.index("-filter_complex")+1]
+            self.assertIn("if(lt(t,",graph)
+            self.assertIn("fade=t=in",graph)
+            self.assertIn("fade=t=out",graph)
+            source.write_text(json.dumps(film))
+            real=Path(root)/"keyframed-cinema.mp4"
+            result=render_composition(source,root,Path(root)/"vault",real)
+            meta=_probe_details(real)
+            self.assertTrue(result["verified_physically"])
+            self.assertEqual((meta["width"],meta["height"]),(640,360))
+            self.assertTrue(meta["audio_stream_present"])
+
+    def test_invalid_keyframes_and_fake_model_effects_cannot_execute(self):
+        with tempfile.TemporaryDirectory() as root:
+            original,_,vault=self.fixture(root)
+            layer=original["video_layers"][0]
+            layer["motion"]=[{"at_seconds":0.8,"x":0,"y":0},
+                             {"at_seconds":0.6,"x":100,"y":5}]
+            with self.assertRaisesRegex(ValueError,"increasing"):
+                actual_composite_command(original,root,vault,Path(root)/"invalid.mp4")
+            layer["motion"]=[{"at_seconds":0,"x":0,"y":0}]
+            layer["model_python"]="invent an actor with untrusted shell"
+            with self.assertRaisesRegex(ValueError,"untrusted"):
+                actual_composite_command(original,root,vault,Path(root)/"invalid.mp4")
+
     def test_real_mixer_output_must_match_movie_bytes(self):
         with tempfile.TemporaryDirectory() as root:
             plan,file,vault=self.fixture(root)
