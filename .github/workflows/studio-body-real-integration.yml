@@ -36,8 +36,22 @@ jobs:
           python -m unittest studio_next.test_film_finishing -v
           python -m unittest studio_next.test_body_materials studio_next.test_body_integration studio_next.test_body_plugins -v
           python -m unittest studio_next.test_durable_graph -v
+          python -m unittest studio_next.test_body_service studio_next.test_body_tool_contracts -v
           python -m unittest studio_next.test_body_archive studio_next.test_production_qc -v
           python -m studio_next.creative_tool_registry --out output/real-installed-tool-inventory.json
+          python - <<'PY'
+          from studio_next.body_capabilities import explain_operational_tool
+          from pathlib import Path
+          workspace=Path("output/actual-on-demand-tools")
+          for installed in ("body.render_edit","body.composite_mix",
+                            "body.film_finish","body.full_decode"):
+              tool=explain_operational_tool(workspace,installed)
+              assert tool["status"]=="ready_for_execution_trial",tool
+              abi=tool["operation_schema"]
+              assert abi["type"]=="object" and abi["additionalProperties"] is False
+              assert all(field in abi["properties"] for field in abi["required"])
+          print("ACTUAL INSTALLED ON-DEMAND TYPED FILMMAKING TOOLS VERIFIED")
+          PY
       - name: Restore original actual 2D and Blender 3D footage from separately proven render
         uses: actions/download-artifact@v4
         with:
