@@ -57,6 +57,41 @@ class ActualProductionCapacityContracts(unittest.TestCase):
             self.assertEqual(malformed["nvidia_gpu_driver"]["driver_query_status"],
                              "gpu_probe_failed_or_no_access")
 
+    def test_container_memory_and_cpu_quota_are_real_render_limits(self):
+        with tempfile.TemporaryDirectory() as root:
+            r=Path(root)
+            limits=r/"cgroup"
+            limits.mkdir()
+            (limits/"memory.max").write_text(str(2*1024*1024*1024))
+            (limits/"memory.current").write_text(str(3*1024*1024*1024//2))
+            (limits/"cpu.max").write_text("250000 100000")
+            evidence=inspect_host_resources(root,cpu_count=24,
+                disk_usage=lambda _:Disk(5000000000,1000000000,4000000000),
+                memory=lambda:{"available_bytes":6*1024*1024*1024,
+                               "total_bytes":12*1024*1024*1024,
+                               "measurement":"test-meminfo"},
+                nvidia_binary="",cgroup_root=limits)
+            self.assertEqual(evidence["cpu_logical_processors"],3)
+            self.assertEqual(evidence["memory"]["available_bytes"],512*1024*1024)
+            self.assertEqual(evidence["memory"]["total_bytes"],2*1024*1024*1024)
+            self.assertIn("cgroup_v2_limit",evidence["memory"]["measurement"])
+
+    def test_unlimited_or_missing_cgroup_does_not_invent_an_execution_budget(self):
+        with tempfile.TemporaryDirectory() as root:
+            r=Path(root)
+            limits=r/"cgroup"
+            limits.mkdir()
+            (limits/"memory.max").write_text("max")
+            (limits/"memory.current").write_text("200")
+            (limits/"cpu.max").write_text("max 100000")
+            evidence=inspect_host_resources(root,cpu_count=8,
+                disk_usage=lambda _:Disk(1000000000,200000000,800000000),
+                memory=lambda:{"available_bytes":900000000,
+                               "total_bytes":1000000000,"measurement":"simulated"},
+                nvidia_binary="",cgroup_root=limits)
+            self.assertEqual(evidence["cpu_logical_processors"],8)
+            self.assertEqual(evidence["memory"]["available_bytes"],900000000)
+
     def test_invalid_storage_measurement_blocks_fake_capacity(self):
         with tempfile.TemporaryDirectory() as root:
             with self.assertRaisesRegex(ValueError,"storage"):
