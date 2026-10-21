@@ -91,9 +91,21 @@ class ZX7BodyClient:
         return self.request_json("GET","/v1/jobs")
 
     def retry(self,job_id):
+        return self._job_control(job_id,"retry")
+
+    def pause(self,job_id):
+        return self._job_control(job_id,"pause")
+
+    def resume(self,job_id):
+        return self._job_control(job_id,"resume")
+
+    def cancel(self,job_id):
+        return self._job_control(job_id,"cancel")
+
+    def _job_control(self,job_id,action):
         if not isinstance(job_id,str) or not _ID.fullmatch(job_id):
             raise ValueError("Invalid original body job")
-        return self.request_json("POST","/v1/jobs/"+job_id+"/retry",
+        return self.request_json("POST","/v1/jobs/"+job_id+"/"+action,
                                  body=b"",headers={"Content-Length":"0"})
 
     def status(self,job_id):
@@ -109,7 +121,7 @@ class ZX7BodyClient:
         deadline=monotonic()+max_seconds
         while monotonic()<deadline:
             status=self.status(job_id)
-            if status["status"] in ("completed","blocked","failed"):
+            if status["status"] in ("completed","blocked","failed","paused","cancelled"):
                 return status
             pause(poll_seconds)
         raise TimeoutError("Original production job still in progress; saved work preserved")
@@ -209,7 +221,8 @@ def main(argv=None):
     p=modes.add_parser("describe");p.add_argument("tool_id")
     p=modes.add_parser("submit");p.add_argument("original_film_ir");p.add_argument("--workspace",required=True)
     modes.add_parser("jobs")
-    p=modes.add_parser("retry");p.add_argument("job_id")
+    for action in ("retry","pause","resume","cancel"):
+        p=modes.add_parser(action);p.add_argument("job_id")
     p=modes.add_parser("status");p.add_argument("job_id")
     p=modes.add_parser("wait");p.add_argument("job_id");p.add_argument("--seconds",type=float,default=3600)
     p=modes.add_parser("artifacts");p.add_argument("job_id")
@@ -223,7 +236,8 @@ def main(argv=None):
     elif args.command=="describe":result=client.tool(args.tool_id)
     elif args.command=="submit":result=client.submit(args.original_film_ir,args.workspace)
     elif args.command=="jobs":result=client.jobs()
-    elif args.command=="retry":result=client.retry(args.job_id)
+    elif args.command in ("retry","pause","resume","cancel"):
+        result=getattr(client,args.command)(args.job_id)
     elif args.command=="status":result=client.status(args.job_id)
     elif args.command=="wait":result=client.wait(args.job_id,max_seconds=args.seconds)
     elif args.command=="artifacts":result=client.artifacts(args.job_id)

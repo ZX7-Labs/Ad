@@ -16,6 +16,7 @@ import sqlite3
 import tempfile
 import time
 from pathlib import Path
+from .durable_sqlite import connect_durable_database
 
 _DIGEST=re.compile(r"^[0-9a-f]{64}$")
 _RIGHTS={"owner_supplied","generated_original","appropriately_licensed"}
@@ -135,10 +136,8 @@ class MediaVault:
             db.execute("CREATE INDEX IF NOT EXISTS attested_digest ON attestations(digest)")
 
     def _connect(self):
-        db=sqlite3.connect(self.db,timeout=30,isolation_level=None)
-        db.execute("PRAGMA busy_timeout=30000")
+        db=connect_durable_database(self.db)
         db.execute("PRAGMA foreign_keys=ON")
-        db.execute("PRAGMA journal_mode=WAL")
         return db
 
     def _loc(self,digest):

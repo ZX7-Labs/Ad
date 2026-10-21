@@ -25,6 +25,8 @@ from .execution import _walk
 from .film_ir import validate_film_ir
 from .registry import ToolCatalog
 from .stage_checkpoint import fingerprint
+from .body_publication import physical_tool_attempt
+from .durable_sqlite import connect_durable_database
 
 
 class RecoveryBlocked(RuntimeError):
@@ -56,10 +58,7 @@ class DurableFilmGraph:
                 PRIMARY KEY(project_key,node_id))""")
 
     def _connect(self):
-        db=sqlite3.connect(self.path,timeout=30,isolation_level=None)
-        db.execute("PRAGMA busy_timeout=30000")
-        db.execute("PRAGMA journal_mode=WAL")
-        return db
+        return connect_durable_database(self.path)
 
     def _transaction(self,callback):
         with self._connect() as db:
@@ -158,6 +157,7 @@ def execute_durable_film_graph(ir,catalog,*,fact_ids,store,
                                 trusted_idempotent_tools=frozenset(),
                                 output_verifier=None,tool_revisions=None,
                                 input_material_fingerprint=None,
+                                boundary_control=None,
                                 allowed_access=frozenset({"read","write"}),
                                 lease_seconds=3600,step_budget=10000):
     """Resume any genre/media/scene-count by actual graph, with per-step custody.
@@ -171,6 +171,8 @@ def execute_durable_film_graph(ir,catalog,*,fact_ids,store,
         raise ValueError("Production runtime needs physical output provenance verifier")
     if input_material_fingerprint is not None and not callable(input_material_fingerprint):
         raise ValueError("Source media fingerprint must come from trusted body code")
+    if boundary_control is not None and not callable(boundary_control):
+        raise ValueError("Only trusted operator control may stop production")
     if not isinstance(lease_seconds,(int,float)) or lease_seconds<=0:
         raise ValueError("Positive safe worker lease required")
     if not isinstance(step_budget,int) or step_budget<1:
@@ -203,6 +205,15 @@ def execute_durable_film_graph(ir,catalog,*,fact_ids,store,
     outputs={}
     complete=[];reused=[];errors=[];trace=[]
     for node_id in validation.order:
+        control=boundary_control() if boundary_control is not None else None
+        if control not in (None,"pause","cancel"):
+            raise ValueError("Invalid operator production control")
+        if control is not None:
+            return {"status":"paused" if control=="pause" else "cancelled",
+                    "project_key":project_key,"completed":complete,"reused":reused,
+                    "trace":trace,"errors":[],"video_proven":False,
+                    "stopped_at_verified_tool_boundary":True,
+                    "next_node":node_id}
         node=nodes[node_id]
         tid=node["tool_id"]
         can_retry=tid in trusted_idempotent_tools
@@ -239,7 +250,8 @@ def execute_durable_film_graph(ir,catalog,*,fact_ids,store,
                 reused.append(node_id)
             else:
                 try:
-                    out=catalog.invoke(tid,inputs,allowed_access=permission)
+                    with physical_tool_attempt(project_key,node_id,input_key,tid):
+                        out=catalog.invoke(tid,inputs,allowed_access=permission)
                     if not output_verifier(tid,out):
                         raise ValueError("Tool provided no physically verified asset")
                     store.complete(project_key,node_id,input_key,owner,out)

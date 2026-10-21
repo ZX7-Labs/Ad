@@ -32,6 +32,7 @@ from .body_capabilities import operational_tool_summary,explain_operational_tool
 from .body_integration import run_body_project
 from .media_vault import MediaVault,sha256_file,verify_media_container
 from .body_archive import create_body_archive
+from .durable_sqlite import connect_durable_database
 
 _ID=re.compile(r"^[A-Za-z0-9_-]{1,80}$")
 _MAX_JOB_BODY=4*1024*1024
@@ -70,12 +71,16 @@ class LocalBodyCoordinator:
         self._maintenance_lock=threading.RLock()
         self._workspace_locks={}
         self.execute=execute or run_body_project
+        self._uses_native_executor=execute is None
         with self._connect() as db:
             db.execute("""CREATE TABLE IF NOT EXISTS jobs(
                 id TEXT PRIMARY KEY,workspace_id TEXT NOT NULL,
                 original_ir TEXT NOT NULL,status TEXT NOT NULL,
                 attempts INTEGER NOT NULL, result TEXT,
                 modified REAL NOT NULL)""")
+            db.execute("""CREATE TABLE IF NOT EXISTS job_controls(
+                job_id TEXT PRIMARY KEY, requested_action TEXT NOT NULL,
+                requested_at REAL NOT NULL)""")
         # We already own the exclusive OS workspace lock, and no new worker
         # has been scheduled. A machine/process crash leaves a previously
         # running graph lease in the future; expire only those orphaned leases
@@ -84,10 +89,7 @@ class LocalBodyCoordinator:
         self._reconcile_orphaned_work_on_exclusive_startup()
 
     def _connect(self):
-        db=sqlite3.connect(self.database,timeout=30,isolation_level=None)
-        db.execute("PRAGMA busy_timeout=30000")
-        db.execute("PRAGMA journal_mode=WAL")
-        return db
+        return connect_durable_database(self.database)
 
     def _reconcile_orphaned_work_on_exclusive_startup(self):
         """Release abandoned scene leases ONLY after exclusive service startup.
@@ -105,7 +107,7 @@ class LocalBodyCoordinator:
             database=workspace/"production.sqlite3"
             if not database.is_file():
                 continue
-            with sqlite3.connect(database,timeout=30) as stages:
+            with connect_durable_database(database) as stages:
                 existing=stages.execute(
                     "SELECT 1 FROM sqlite_master WHERE type='table' AND name='node_results'"
                 ).fetchone()
@@ -207,7 +209,7 @@ class LocalBodyCoordinator:
                     found=db.execute("SELECT status FROM jobs WHERE id=?",(identity,)).fetchone()
                 if found is None:
                     raise ValueError("Unknown submitted project")
-                if found[0]=="completed":
+                if found[0] not in ("queued","running"):
                     return False
                 self._queued.add(identity)
                 try:
@@ -255,11 +257,21 @@ class LocalBodyCoordinator:
                 project_lock=self._workspace_locks.setdefault(row[0],threading.Lock())
             with project_lock:
                 # Execution itself uses the crash-safe graph/physical witness vault.
-                result=self.execute(original,location)
+                control=self._requested_control(identity)
+                if control is not None:
+                    result={"status":"paused" if control=="pause" else "cancelled",
+                            "completed":[],"reused":[],"errors":[],
+                            "stopped_at_verified_tool_boundary":True}
+                elif self._uses_native_executor:
+                    result=self.execute(original,location,
+                        boundary_control=lambda:self._requested_control(identity))
+                else:
+                    result=self.execute(original,location)
             if not isinstance(result,dict):
                 raise RuntimeError("Original film tool graph produced no audit result")
             ok=result.get("status")=="all_tool_results_verified"
-            status="completed" if ok else "blocked"
+            status=("completed" if ok else result["status"] if
+                    result.get("status") in ("paused","cancelled") else "blocked")
             report=result
         except BaseException as exc:
             status="failed"
@@ -270,6 +282,8 @@ class LocalBodyCoordinator:
                 db.execute("""UPDATE jobs SET status=?,result=?,modified=? WHERE id=?""",
                     (status,json.dumps(report,allow_nan=False,ensure_ascii=False),
                      time.time(),identity))
+                if status not in ("paused","cancelled"):
+                    db.execute("DELETE FROM job_controls WHERE job_id=?",(identity,))
             with self._lock:
                 self._queued.discard(identity)
 
@@ -279,7 +293,7 @@ class LocalBodyCoordinator:
         if not isinstance(relative,str) or not relative or Path(relative).is_absolute():
             raise ValueError("Media path must be a project-relative artifact")
         asset=Path(relative)
-        if any(p in ("","..",".") for p in asset.parts) or "\\" in relative:
+        if any(p.startswith(".") for p in asset.parts) or "\\" in relative:
             raise ValueError("Unsafe film output media path")
         root=self._workspace(summary["workspace_id"])
         path=(root/asset).resolve()
@@ -300,6 +314,8 @@ class LocalBodyCoordinator:
         root=self._workspace(summary["workspace_id"])
         items=[]
         for path in sorted(root.rglob("*")):
+            if any(part.startswith(".") for part in path.relative_to(root).parts):
+                continue
             if path.is_symlink():
                 raise ValueError("Untrusted linked project artifact")
             if not path.is_file() or path.suffix.lower() not in _MEDIA_MIME:
@@ -342,7 +358,39 @@ class LocalBodyCoordinator:
                 "status_is_physical_execution_evidence":True,
                 "successful_jobs_do_not_automatically_prove_a_movie_exists":True}
 
-    def retry_job(self,identity):
+    def _requested_control(self,identity):
+        with self._connect() as db:
+            row=db.execute("SELECT requested_action FROM job_controls WHERE job_id=?",
+                           (identity,)).fetchone()
+        return row[0] if row else None
+
+    def request_control(self,identity,action):
+        """Persist a safe boundary stop; never kill an encoder mid-file."""
+        if (not isinstance(identity,str) or not _ID.fullmatch(identity) or
+                action not in ("pause","cancel")):
+            raise ValueError("A known job and explicit pause/cancel are required")
+        with self._maintenance_lock:
+            with self._connect() as db:
+                db.execute("BEGIN IMMEDIATE")
+                row=db.execute("SELECT status FROM jobs WHERE id=?",(identity,)).fetchone()
+                if row is None or row[0] not in ("queued","running"):
+                    db.execute("ROLLBACK")
+                    raise ValueError("Only active or queued production can be stopped")
+                prior=db.execute("SELECT requested_action FROM job_controls WHERE job_id=?",
+                                 (identity,)).fetchone()
+                if prior and prior[0]=="cancel" and action=="pause":
+                    db.execute("ROLLBACK")
+                    raise ValueError("Cancellation cannot be silently downgraded")
+                db.execute("INSERT INTO job_controls VALUES(?,?,?) "
+                           "ON CONFLICT(job_id) DO UPDATE SET "
+                           "requested_action=excluded.requested_action,requested_at=excluded.requested_at",
+                           (identity,action,time.time()))
+                db.execute("COMMIT")
+        return {"job_id":identity,"requested_action":action,
+                "current_tool_finishes_before_stop":True,
+                "original_film_ir_unchanged":True}
+
+    def retry_job(self,identity,*,resume=False):
         """Operator-authorized reuse of the same original immutable Film IR.
 
         Refuse active/completed jobs; re-rendering is never a hidden side effect
@@ -361,11 +409,13 @@ class LocalBodyCoordinator:
                     if row is None:
                         db.execute("ROLLBACK")
                         raise ValueError("Unknown original body job")
-                    if row[0] not in ("blocked","failed"):
+                    accepted=("paused",) if resume else ("blocked","failed","cancelled")
+                    if row[0] not in accepted:
                         db.execute("ROLLBACK")
                         raise ValueError("Only stopped or blocked original work can be retried")
                     db.execute("""UPDATE jobs SET status='queued',result=NULL,
                                modified=? WHERE id=?""",(time.time(),identity))
+                    db.execute("DELETE FROM job_controls WHERE job_id=?",(identity,))
                     db.execute("COMMIT")
                 scheduled=self.queue(identity)
                 if not scheduled:
@@ -383,6 +433,7 @@ class LocalBodyCoordinator:
         return {"job_id":identity,"workspace_id":row[0],"status":row[1],
                 "attempts":row[2],"result":json.loads(row[3]) if row[3] else None,
                 "updated_at":row[4],
+                "requested_action":self._requested_control(identity),
                 "actual_tool_progress":self._stage_progress(row[0])}
 
     def pending_restart(self):
@@ -492,14 +543,19 @@ def make_body_http_handler(coordinator,token):
                     return self._reply(201,receipt)
                 except (ValueError,TypeError,FileExistsError,OSError) as exc:
                     return self._reply(400,{"error":str(exc)})
-            if path.startswith("/v1/jobs/") and path.endswith("/retry"):
+            if path.startswith("/v1/jobs/") and path.rsplit("/",1)[-1] in (
+                    "retry","pause","resume","cancel"):
                 pieces=path.split("/")
-                if len(pieces)!=5 or pieces[1:3]!=["v1","jobs"] or pieces[4]!="retry":
+                if len(pieces)!=5 or pieces[1:3]!=["v1","jobs"]:
                     return self._reply(404,{"error":"Unknown original retry operation"})
                 try:
                     if self.headers.get("Content-Length","0") not in ("0",""):
                         raise ValueError("Retry accepts no substituted creative plan")
-                    return self._reply(202,coordinator.retry_job(pieces[3]))
+                    if pieces[4] in ("pause","cancel"):
+                        result=coordinator.request_control(pieces[3],pieces[4])
+                    else:
+                        result=coordinator.retry_job(pieces[3],resume=pieces[4]=="resume")
+                    return self._reply(202,result)
                 except (ValueError,RuntimeError) as exc:
                     return self._reply(400,{"error":str(exc)})
             if path!="/v1/jobs":
@@ -521,14 +577,19 @@ def make_body_http_handler(coordinator,token):
 def start_local_body_service(root,*,secret,port=8765,workers=1):
     if type(port) is not int or not (0<port<65536):
         raise ValueError("Local port must be explicit and valid")
+    if not isinstance(secret,str) or len(secret)<32:
+        raise ValueError("Local creative body API needs secret >=32 characters")
     coordinator=LocalBodyCoordinator(root,workers=workers)
-    coordinator.pending_restart()
-    server=ThreadingHTTPServer(("127.0.0.1",port),
-        make_body_http_handler(coordinator,secret))
+    server=None
     try:
+        # Bind first: a port collision must not strand an exclusive workspace
+        # lock or start rendering jobs in a service that never came online.
+        server=ThreadingHTTPServer(("127.0.0.1",port),
+            make_body_http_handler(coordinator,secret))
+        coordinator.pending_restart()
         server.serve_forever()
     finally:
-        server.server_close()
+        if server is not None:server.server_close()
         coordinator.close()
 
 

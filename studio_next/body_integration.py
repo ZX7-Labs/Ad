@@ -34,13 +34,15 @@ from .body_tool_contracts import real_operation_schema
 from .body_materials import fingerprint_physical_inputs
 from .generative_video_providers import discover_local_generators
 from .comfy_video_runtime import render_actual_generated_scene,validate_video_job
+from .body_publication import (publication_record_exists, prepare_publication,
+                               recover_publication, sync_published_file)
 
 
 def _body_output(workspace,name,*,allowed=(".mp4",".otio",".png")):
     p=_path_within(workspace,name,exists=False)
     if p.suffix.lower() not in allowed:
         raise ValueError("Destination not a supported actual media artifact")
-    if p.exists():
+    if p.exists() and not publication_record_exists(p):
         raise FileExistsError("Do not overwrite existing accepted creative result")
     p.parent.mkdir(parents=True,exist_ok=True)
     return p
@@ -127,7 +129,8 @@ def _trusted_body_revision(tool_id):
     if known is None:
         raise ValueError("No verified implementation dependencies for "+tool_id)
     h=hashlib.sha256()
-    for item in ("body_integration.py","body_tool_contracts.py","registry.py")+tuple(known):
+    for item in ("body_integration.py","body_publication.py","durable_sqlite.py",
+                 "body_tool_contracts.py","registry.py")+tuple(known):
         p=base/item
         h.update(item.encode())
         h.update(p.read_bytes())
@@ -150,6 +153,9 @@ def _commit_actual_body_output(final_path,render):
     overwrites instead of clobbering an earlier director-approved result.
     """
     final_path=Path(final_path)
+    recovered=recover_publication(final_path,witness=_witness,verify=_verify_witness)
+    if recovered is not None:
+        return recovered
     if final_path.exists():
         raise FileExistsError("Cannot overwrite original media output")
     stage=final_path.with_name(
@@ -160,8 +166,10 @@ def _commit_actual_body_output(final_path,render):
         preliminary=_witness(stage)
         if not _verify_witness(preliminary):
             raise RuntimeError("Staged creative media failed real decoder validation")
+        prepare_publication(final_path,stage,preliminary)
         os.link(stage,final_path)
         published=True
+        sync_published_file(final_path)
         return _witness(final_path)
     except BaseException:
         if published:
@@ -414,7 +422,7 @@ def _require_authentic_generated_media_lineage(film_ir):
             raise ValueError("LLM cannot invent license/source claims; vault requires exact trusted renderer dependency")
 
 
-def run_body_project(film_ir,workspace,*,db_name="production.sqlite3"):
+def run_body_project(film_ir,workspace,*,db_name="production.sqlite3",boundary_control=None):
     _require_authentic_generated_media_lineage(film_ir)
     root=Path(workspace)
     catalog=body_catalog(root)
@@ -427,6 +435,7 @@ def run_body_project(film_ir,workspace,*,db_name="production.sqlite3"):
        trusted_idempotent_tools=idempotent,
        tool_revisions=actual_versions,
        input_material_fingerprint=catalog.trusted_material_fingerprint,
+       boundary_control=boundary_control,
        allowed_access={"read","write"})
 
 

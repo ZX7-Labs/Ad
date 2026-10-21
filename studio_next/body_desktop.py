@@ -80,14 +80,20 @@ class IndependentStudioDesktop:
         self.current_job=None
         self._jobs=[]
         self._artifacts=[]
+        self._artifact_job=None
+        self._closed=False
+        self.window.protocol("WM_DELETE_WINDOW",self.close)
         self.window.title("ZX7 Studio — Independent Creative Body")
-        self.window.geometry("1050x790")
+        self.window.geometry("1050x760")
+        self.window.minsize(840,680)
         root=ttk.Frame(window,padding=12)
         root.pack(fill="both",expand=True)
 
         ttk.Label(root,text="ZX7 Studio | Local Production Body",
                   font=("TkDefaultFont",15,"bold")).pack(anchor="w",pady=(0,8))
-        ttk.Label(root,text="Original films, trusted tools and real verified outputs. No cloud or subscription required.").pack(anchor="w")
+        ttk.Label(root,text="Original films, trusted tools and real verified outputs. No cloud or subscription required.",wraplength=800).pack(anchor="w")
+        self.status_text=tk.StringVar(value="Checking local body service…")
+        ttk.Label(root,textvariable=self.status_text,wraplength=800).pack(side="bottom",fill="x",pady=(6,0))
         tabs=ttk.Notebook(root)
         tabs.pack(fill="both",expand=True,pady=10)
         self.jobs_page=ttk.Frame(tabs,padding=12)
@@ -115,15 +121,19 @@ class IndependentStudioDesktop:
         ttk.Button(controls,text="Refresh Jobs",command=self.refresh_jobs).pack(side="left")
         ttk.Button(controls,text="Review Selected Job",command=self.inspect_job).pack(side="left",padx=6)
         ttk.Button(controls,text="Retry Unchanged Work",command=self.retry).pack(side="left",padx=6)
-        self.job_list=tk.Listbox(review,height=8,exportselection=False)
+        ttk.Button(controls,text="Pause",command=lambda:self.control("pause")).pack(side="left",padx=3)
+        ttk.Button(controls,text="Resume",command=lambda:self.control("resume")).pack(side="left",padx=3)
+        ttk.Button(controls,text="Cancel",command=lambda:self.control("cancel")).pack(side="left",padx=3)
+        self.job_list=tk.Listbox(review,height=4,exportselection=False)
         self.job_list.pack(fill="both",expand=True,pady=6)
         self.job_list.bind("<<ListboxSelect>>",lambda event:self._selected_job())
-        self.job_detail=tk.Text(review,height=10,wrap="word")
+        self.job_detail=tk.Text(review,height=5,wrap="word")
         self.job_detail.pack(fill="both",expand=True)
         ttk.Button(review,text="List Selected Job's Actual Media",command=self.load_artifacts).pack(anchor="w",pady=5)
-        self.artifact_list=tk.Listbox(review,height=5,exportselection=False)
+        self.artifact_list=tk.Listbox(review,height=3,exportselection=False)
         self.artifact_list.pack(fill="x")
-        ttk.Button(review,text="Download Selected Real File",command=self.download).pack(anchor="w",pady=6)
+        self.download_button=ttk.Button(review,text="Download Selected Real File",command=self.download)
+        self.download_button.pack(anchor="w",pady=6)
 
         tool_area=ttk.Frame(self.tools_page)
         tool_area.pack(fill="both",expand=True)
@@ -151,8 +161,6 @@ class IndependentStudioDesktop:
         ttk.Entry(evidence,textvariable=self.rights,width=70).grid(row=3,column=1)
         ttk.Button(evidence,text="Verify and Import",command=self.upload).grid(row=4,column=1,sticky="w",pady=8)
 
-        self.status_text=tk.StringVar(value="Checking local body service…")
-        ttk.Label(root,textvariable=self.status_text,wraplength=980).pack(fill="x")
         self.window.after(100,self._pump)
         self.refresh_jobs()
         self.refresh_tools()
@@ -169,6 +177,7 @@ class IndependentStudioDesktop:
         threading.Thread(target=worker,daemon=True).start()
 
     def _pump(self):
+        if self._closed:return
         from tkinter import messagebox
         while True:
             try:callback,result,error=self.queue.get_nowait()
@@ -182,7 +191,11 @@ class IndependentStudioDesktop:
                 except (TypeError,ValueError,KeyError) as exc:
                     self.status_text.set(str(exc))
                 else:self.status_text.set("Real local studio result received.")
-        self.window.after(100,self._pump)
+        if not self._closed:self.window.after(100,self._pump)
+
+    def close(self):
+        self._closed=True
+        self.window.destroy()
 
     def _display(self,widget,data):
         widget.delete("1.0","end")
@@ -217,13 +230,19 @@ class IndependentStudioDesktop:
     def _selected_job(self):
         choice=self.job_list.curselection()
         if choice and choice[0]<len(self._jobs):
-            self.current_job=self._jobs[choice[0]]["job_id"]
+            selected=self._jobs[choice[0]]["job_id"]
+            if selected!=self.current_job:
+                self._artifacts=[]
+                self._artifact_job=None
+                self.artifact_list.delete(0,"end")
+            self.current_job=selected
 
     def inspect_job(self):
         self._selected_job()
         if self.current_job:
+            job=self.current_job
             self._run("Reading factual persisted job status…",
-                      lambda:self.client.status(self.current_job),
+                      lambda:self.client.status(job),
                       lambda result:self._display(self.job_detail,result))
 
     def retry(self):
@@ -234,32 +253,46 @@ class IndependentStudioDesktop:
         if not messagebox.askyesno("Retry original film",
            "Resume this SAME film using verified previously completed tool stages? Nothing will be reauthored."):
             return
+        job=self.current_job
         self._run("Resuming previously saved original film…",
-            lambda:self.client.retry(self.current_job),
+            lambda:self.client.retry(job),
+            lambda result:(self._display(self.job_detail,result),self.refresh_jobs()))
+
+    def control(self,action):
+        self._selected_job()
+        if not self.current_job:
+            self.status_text.set("Select a saved production job.");return
+        job=self.current_job
+        self._run(action.capitalize()+" original production at a safe tool boundary…",
+            lambda:getattr(self.client,action)(job),
             lambda result:(self._display(self.job_detail,result),self.refresh_jobs()))
 
     def load_artifacts(self):
         self._selected_job()
         if not self.current_job:return
+        job=self.current_job
         def done(raw):
+            if job!=self.current_job:return
             self._artifacts=raw["assets"]
+            self._artifact_job=job
             self.artifact_list.delete(0,"end")
             for asset in self._artifacts:
                 self.artifact_list.insert("end",
                      f"{asset['path']} | {asset['bytes']} bytes")
         self._run("Listing actually stored media…",
-                  lambda:self.client.artifacts(self.current_job),done)
+                  lambda:self.client.artifacts(job),done)
 
     def download(self):
         from tkinter import filedialog
         self._selected_job()
         chosen=self.artifact_list.curselection()
-        if not self.current_job or not chosen:return
+        if not self.current_job or not chosen or self._artifact_job!=self.current_job:return
+        job=self.current_job
         relative=self._artifacts[chosen[0]]["path"]
         destination=filedialog.asksaveasfilename(initialfile=Path(relative).name)
         if destination:
             self._run("Downloading SHA-verified original media…",
-                lambda:self.client.download(self.current_job,relative,destination),
+                lambda:self.client.download(job,relative,destination),
                 lambda x:self._display(self.job_detail,x))
 
     def refresh_tools(self):
@@ -273,7 +306,7 @@ class IndependentStudioDesktop:
     def inspect_tool(self):
         chosen=self.tools_list.curselection()
         if not chosen or chosen[0]>=len(getattr(self,"_tools",[])):return
-        selected=self._tools[chosen[0]]["id"]
+        selected=self._tools[chosen[0]]["tool_id"]
         self._run("Checking "+selected+" actual execution contract…",
                   lambda:self.client.tool(selected),
                   lambda x:self._display(self.tool_detail,x))
@@ -293,14 +326,16 @@ class IndependentStudioDesktop:
         if not mime:
             self.status_text.set("Media type is unsupported by installed body.")
             return
+        workspace=self.asset_workspace.get().strip()
+        source_id=self.asset_source_id.get().strip()
+        evidence=self.rights.get().strip()
         def done(saved):
             self._display(self.job_detail,saved)
             self.asset_source_id.set("")
             self.rights.set("")
         self._run("Streaming and verifying original source media…",
-            lambda:self.client.upload(self.asset_workspace.get().strip(),source,
-                source_id=self.asset_source_id.get().strip(),
-                rights_evidence=self.rights.get().strip(),mime=mime),done)
+            lambda:self.client.upload(workspace,source,
+                source_id=source_id,rights_evidence=evidence,mime=mime),done)
 
 
 def main(argv=None):
