@@ -78,6 +78,92 @@ jobs:
           },indent=2)+"\n")
           print("FULL PHYSICAL WORKSPACE LOST AND RESTORED WITH ORIGINAL REAL TOOL OUTPUTS",flush=True)
           PY
+      - name: Accept and finish a real original-media project through standalone authenticated body API
+        run: |
+          python - <<'PY'
+          import json,shutil,secrets,threading,time
+          from pathlib import Path
+          from http.server import ThreadingHTTPServer
+          from urllib.request import urlopen,Request
+          from studio_next.body_service import LocalBodyCoordinator,make_body_http_handler
+          from studio_next.delivery_audit import _probe_details
+          from studio_next.body_integration import _witness,validate_witness
+          root=Path("output/body-autonomous-service-proof").resolve()
+          project=root/"projects"/"real-art-original"
+          project.mkdir(parents=True,exist_ok=True)
+          source=project/"real-master.mp4"
+          shutil.copyfile("output/verified-body-tools/finished-actual-film.mp4",source)
+          measured=_probe_details(source)
+          film={
+            "project":{"creative_intent":"A real owner film submitted through independent authenticated tool API"},
+            "assets":[],
+            "shots":[{"id":"approved-real-film",
+               "purpose":"Physically inspect film and produce author-selected original frame",
+               "duration_seconds":measured["duration_seconds"]}],
+            "tool_graph":[
+              {"id":"measure","tool_id":"body.inspect",
+               "purpose":"Check original source movie",
+               "inputs":{"source":"real-master.mp4"},"depends_on":[]},
+              {"id":"frame","tool_id":"body.film_thumbnail",
+               "purpose":"Independent creative selection of an actual film frame",
+               "depends_on":["measure"],
+               "inputs":{"source_film":"real-master.mp4",
+                         "out":"artist-frame.png",
+                         "time_seconds":min(0.5,measured["duration_seconds"]/3)}},
+              {"id":"verify","tool_id":"body.full_decode",
+               "purpose":"Full real picture and sound physical delivery audit",
+               "depends_on":["measure"],
+               "inputs":{"source":"real-master.mp4","expected":{
+                  "width":measured["width"],"height":measured["height"],
+                  "require_audio":True}}}
+            ]
+          }
+          token=secrets.token_hex(32)
+          backend=LocalBodyCoordinator(root)
+          server=ThreadingHTTPServer(("127.0.0.1",0),
+                                    make_body_http_handler(backend,token))
+          thread=threading.Thread(target=server.serve_forever,daemon=True)
+          thread.start()
+          origin=f"http://127.0.0.1:{server.server_port}"
+          def get(path):
+              with urlopen(Request(origin+path,
+                   headers={"Authorization":"Bearer "+token}),timeout=30) as res:
+                  return json.loads(res.read())
+          try:
+              request=Request(origin+"/v1/jobs",
+                  data=json.dumps({"workspace_id":"real-art-original","film_ir":film}).encode(),
+                  headers={"Authorization":"Bearer "+token,
+                           "Content-Type":"application/json"},method="POST")
+              with urlopen(request,timeout=30) as response:
+                  receipt=json.loads(response.read())
+              for i in range(120):
+                  state=get("/v1/jobs/"+receipt["job_id"])
+                  if state["status"] in ("completed","failed","blocked"):break
+                  time.sleep(.5)
+              assert state["status"]=="completed",state
+              assert len(state["result"]["completed"])==3,state
+              assert validate_witness("body.film_thumbnail",_witness(project/"artist-frame.png"))
+              assert len(get("/v1/tools")["tools"])>=5
+              (root/"auth-body-evidence.json").write_text(json.dumps({
+                  "standalone_http_authenticated":True,
+                  "real_model_independent_job_completed":True,
+                  "actual_ffmpeg_movie_read":True,
+                  "actual_decoded_frame_created":True,
+                  "all_physical_operations_verified":True,
+                  "original_artistic_quality_certified":False,
+                  "job_id":receipt["job_id"],
+                  "completed_tools":state["result"]["completed"]
+                },indent=2)+"\n")
+          finally:
+              server.shutdown();server.server_close();thread.join(timeout=5)
+              backend.close()
+          again=LocalBodyCoordinator(root)
+          try:
+              assert again.pending_restart()==0
+              assert again.inspect(receipt["job_id"])["attempts"]==1
+          finally:again.close()
+          print("STANDALONE LOCAL BODY EXECUTED ORIGINAL MEDIA; CHAT NOT REQUIRED",flush=True)
+          PY
       - name: Verify playable media and genuine separate editable and graphic artifacts
         run: |
           python - <<'PY'
@@ -131,6 +217,9 @@ jobs:
             output/verified-body-tools/production.sqlite3
             output/verified-body-tools-loss-recovery.tar.gz
             output/verified-body-restore-proof.json
+            output/body-autonomous-service-proof/auth-body-evidence.json
+            output/body-autonomous-service-proof/body-jobs.sqlite3
+            output/body-autonomous-service-proof/projects/real-art-original/artist-frame.png
             output/verified-body-tools/vault/
           if-no-files-found: warn
           retention-days: 7
