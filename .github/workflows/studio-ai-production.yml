@@ -1,12 +1,8 @@
-name: "ZX7 AI Director — Original Film Production Attempt"
+name: "ZX7 Legacy 4B Baseline — Failed Creative Acceptance"
 on:
+  # Preserve historical reproducibility but do not call the repeatedly failing
+  # 4B writer the default Studio Director or launch it for branch pushes.
   workflow_dispatch:
-  push:
-    branches: [zx7-specialist-free-stack-20261020]
-    # Heavy free-CPU film inference runs only on deliberate workflow changes.
-    # Code-only pushes get light contract tests in a separate workflow.
-    paths:
-      - ".github/workflows/studio-ai-production.yml"
 permissions:
   contents: read
   actions: read
