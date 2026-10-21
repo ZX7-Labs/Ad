@@ -13,6 +13,8 @@ PAGE = """<!doctype html><html lang="en"><head>
 <label for="token">Studio host token</label><input id="token" type="password" autocomplete="off" placeholder="Host token (32+ characters)">
 <button id="connect">Connect</button><output id="status" aria-live="polite"></output></section>
 <section><h2>Production capabilities</h2><button id="tools-button" disabled>Discover actual tools</button><div id="tools"></div></section>
+<section><h2>Actual host capacity</h2><p>Live measurements only. Detected GPU does not mean an installed cinematic model.</p>
+<button id="resources-button" disabled>Measure resources</button><pre id="resources"></pre></section>
 <section><h2>Original media import</h2><p>Rights evidence is mandatory.</p>
 <label for="asset-space">Workspace ID</label><input id="asset-space" placeholder="my_film">
 <label for="source">Original source ID</label><input id="source">
@@ -50,10 +52,19 @@ async function api(path,options={}){
  if(!r.ok){let s='HTTP '+r.status;try{s=(await r.json()).error||s}catch(_){}throw Error(s)}
  return r.json();
 }
-function enabled(v){for(const id of ['tools-button','jobs-button','upload','submit'])e(id).disabled=!v}
+function enabled(v){for(const id of ['tools-button','resources-button','jobs-button','upload','submit'])e(id).disabled=!v}
 async function tools(){
  const root=e('tools');root.replaceChildren();
  for(const t of (await api('/v1/tools')).tools||[]){const n=node('div',t.tool_id+' — '+t.capability+' ('+t.access+')');n.className='entry';root.append(n)}
+}
+async function resources(){
+ const report=await api('/v1/resources');
+ const disk=report.workspace_disk||{},gpu=report.nvidia_gpu_driver||{};
+ print('resources','CPU: '+report.cpu_logical_processors+' logical threads\n'
+  +'Free host disk: '+disk.free_bytes+' bytes\n'
+  +'Host RAM available: '+report.memory?.available_bytes+' bytes\n'
+  +'GPU driver: '+gpu.driver_query_status+' ('+(gpu.devices||[]).length+' reported devices)\n'
+  +'GPU hardware is NOT evidence of an installed original-film generation model');
 }
 async function jobs(){
  const root=e('jobs');root.replaceChildren();
@@ -93,10 +104,11 @@ async function jobs(){
 e('connect').onclick=async()=>{
  const key=e('token').value;if(key.length<32){print('status','Token must contain at least 32 characters');return}
  secret=key;e('token').value='';
- try{await api('/v1/health');enabled(true);print('status','Connected, token stays in tab memory');await Promise.all([tools(),jobs()])}
+ try{await api('/v1/health');enabled(true);print('status','Connected, token stays in tab memory');await Promise.all([tools(),jobs(),resources()])}
  catch(err){secret=null;enabled(false);print('status',err.message)}
 };
 e('tools-button').onclick=()=>tools().catch(err=>print('status',err.message));
+e('resources-button').onclick=()=>resources().catch(err=>print('status',err.message));
 e('jobs-button').onclick=()=>jobs().catch(err=>print('status',err.message));
 e('submit').onclick=async()=>{try{
  const space=e('workspace').value.trim(),file=e('film').files[0];
