@@ -1,6 +1,6 @@
 import unittest
 from studio_next.segmented_screenplay import (
-    create_screenplay,validate_spine,validate_authored_shot,retryable_output)
+    create_screenplay,validate_spine,validate_authored_shot,retryable_output,\n    complete_missing_ending)
 
 def story(n=2):
     return {"title":"A drawn line has consequence",
@@ -70,6 +70,39 @@ class ScriptBreakdownTests(unittest.TestCase):
             return x if name=="spine" else actual_scene(x["scene_map"][0])
         with self.assertRaisesRegex(ValueError,"no_voice"):
             create_screenplay({"facts":{"identity":"Notebook"}},{},{},run)
+
+
+    def test_missing_end_frame_repaired_without_rewriting_story(self):
+        x=story(5)
+        x["last_image"]=""
+        original_beats=x["scene_map"]
+        calls=[]
+        def run(name,system,context,tokens,temperature):
+            calls.append(name)
+            if name=="spine":
+                return x
+            if name=="spine-last-image":
+                return {"last_image":"The original ink line closes the shape across the notebook."}
+            return actual_scene(original_beats[int(name.split("-")[1])-1])
+        result=create_screenplay({"facts":{"identity":"Pocket notebook"}},{},{},run)
+        self.assertEqual(len(result["scenes"]),5)
+        self.assertEqual([a["id"] for a in result["scenes"]],
+                         [a["id"] for a in original_beats])
+        self.assertEqual(result["last_image"],
+                         "The original ink line closes the shape across the notebook.")
+        self.assertEqual(calls.count("spine"),1)
+        self.assertEqual(calls.count("spine-last-image"),1)
+        self.assertEqual(x["last_image"],"")
+
+    def test_unverified_empty_ending_repair_does_not_pass(self):
+        x=story(1)
+        x.pop("last_image")
+        def run(name,*args):
+            if name=="spine":return x
+            if name=="spine-last-image":return {"last_image":""}
+            return actual_scene(x["scene_map"][0])
+        with self.assertRaisesRegex(ValueError,"closing image"):
+            create_screenplay({"facts":{"identity":"Owner fact"}},{},{},run)
 
     def test_only_truncation_triggers_expansion(self):
         self.assertTrue(retryable_output(ValueError("Answer was truncated")))
