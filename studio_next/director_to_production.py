@@ -132,7 +132,10 @@ def handoff_single_brain(brief, brain, translation_model, production_model,
     (out/"owner-factual-brief.json").write_text(
         json.dumps(brief,ensure_ascii=False,indent=2,allow_nan=False)+"\n",encoding="utf-8")
     tools=creative_tool_inventory()
-    tools["generative_video_models"]=discover_local_generators()
+    import os
+    tools["generative_video_models"]=discover_local_generators(
+        comfy_endpoint=os.getenv("ZX7_COMFY_API"),
+        deployed_root=os.getenv("ZX7_VIDEO_DEPLOYMENTS","models/creative-video"))
     (out/"actual-creative-tools.json").write_text(
         json.dumps(tools,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
     # The ONE director gets the real tools but retains full artistic autonomy.
