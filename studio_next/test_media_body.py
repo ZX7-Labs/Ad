@@ -77,3 +77,30 @@ class MediaBodyTests(unittest.TestCase):
 
 
 if __name__ == '__main__': unittest.main()
+
+class AdditionalSafetyTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.root = Path(cls.tmp.name)
+        make_file('-f','lavfi','-i','color=c=red:s=64x64:d=2:r=12',
+                  '-an','-c:v','libx264',cls.root/'source.mp4')
+
+    @classmethod
+    def tearDownClass(cls): cls.tmp.cleanup()
+
+    def test_malformed_kind_fails_closed(self):
+        with tempfile.TemporaryDirectory() as d:
+            plan={'canvas':{'width':64,'height':64,'fps':12,'duration':1},
+                  'clips':[{'kind':[], 'path':'not-a-file.mp4',
+                            'timeline_start':0,'duration':1}]}
+            with self.assertRaises(RenderError):
+                render_timeline(plan,asset_root=self.root,output_path=Path(d)/'v.mp4')
+
+    def test_negative_canvas_positions_and_layer_order_are_allowed(self):
+        with tempfile.TemporaryDirectory() as d:
+            plan={'canvas':{'width':64,'height':64,'fps':12,'duration':1},
+                  'clips':[{'kind':'video','path':'source.mp4','timeline_start':0,
+                            'duration':1, 'width':64,'height':64,'x':-12,'y':-8,'z':-2}]}
+            result=render_timeline(plan,asset_root=self.root,output_path=Path(d)/'v.mp4')
+            self.assertEqual(result['video_streams'],1)
