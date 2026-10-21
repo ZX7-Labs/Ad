@@ -223,14 +223,14 @@ def author_delivery(treatment, brief, model, out):
     out=Path(out)
     out.parent.mkdir(parents=True,exist_ok=True)
     (out.parent/"delivery-raw.json").write_text(
-        json.dumps(raw,ensure_ascii=False,indent=2)+"\\n",encoding="utf-8")
+        json.dumps(raw,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
     try:
         verified=validate_delivery(raw,treatment)
     except (ValueError,KeyError,TypeError) as exc:
         (out.parent/"delivery-failure.json").write_text(json.dumps(
             {"reason":type(exc).__name__+": "+str(exc)},indent=2))
         raise
-    out.write_text(json.dumps(verified,ensure_ascii=False,indent=2)+"\\n",
+    out.write_text(json.dumps(verified,ensure_ascii=False,indent=2)+"\n",
                    encoding="utf-8")
     return verified
 
@@ -258,7 +258,7 @@ def main():
     except (ValueError,TypeError,KeyError) as exc:
         result["delivery_error"]=str(exc)
     (a.out/"production-manifest.json").write_text(
-        json.dumps(result,ensure_ascii=False,indent=2)+"\\n",encoding="utf-8")
+        json.dumps(result,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
     print(json.dumps(result,ensure_ascii=False,indent=2))
 
 
