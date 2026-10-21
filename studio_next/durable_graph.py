@@ -120,6 +120,25 @@ class DurableFilmGraph:
             return "execute",None,owner
         return self._transaction(operation)
 
+    def renew_running_lease(self,project_key,node_id,input_sha,owner,lease_seconds):
+        """Extend a lease ONLY for its exact live owner; never steal another stage.
+
+        The trusted BODY worker supplies this heartbeat, not the artistic
+        model. Returns false after completion, failure or ownership loss.
+        """
+        import math
+        if not isinstance(lease_seconds,(int,float)) or isinstance(lease_seconds,bool) or (
+                not math.isfinite(lease_seconds) or lease_seconds<=0):
+            raise ValueError("Finite positive original renderer lease needed")
+        now=self.clock()
+        def operation(db):
+            cursor=db.execute("""UPDATE node_results SET lease_until=?,updated_at=?
+                WHERE project_key=? AND node_id=? AND input_fingerprint=?
+                  AND owner=? AND node_state='running'""",
+                (now+lease_seconds,now,project_key,node_id,input_sha,owner))
+            return cursor.rowcount==1
+        return self._transaction(operation)
+
     def complete(self,project_key,node_id,input_sha,owner,result):
         serial=_wire(result)
         digest=fingerprint(result)
@@ -173,9 +192,11 @@ def execute_durable_film_graph(ir,catalog,*,fact_ids,store,
         raise ValueError("Source media fingerprint must come from trusted body code")
     if boundary_control is not None and not callable(boundary_control):
         raise ValueError("Only trusted operator control may stop production")
-    if not isinstance(lease_seconds,(int,float)) or lease_seconds<=0:
-        raise ValueError("Positive safe worker lease required")
-    if not isinstance(step_budget,int) or step_budget<1:
+    import math
+    if not isinstance(lease_seconds,(int,float)) or isinstance(lease_seconds,bool) or (
+            not math.isfinite(lease_seconds) or lease_seconds<=0):
+        raise ValueError("Finite positive safe worker lease required")
+    if type(step_budget) is not int or step_budget<1:
         raise ValueError("Finite approved compute budget required")
     tool_revisions=tool_revisions or {}
     if not isinstance(tool_revisions,dict):
@@ -249,13 +270,22 @@ def execute_durable_film_graph(ir,catalog,*,fact_ids,store,
                 out=cached
                 reused.append(node_id)
             else:
+                from .body_stage_lease import RunningStageHeartbeat
+                heart=RunningStageHeartbeat(
+                    store,project_key,node_id,input_key,owner,
+                    lease_seconds=lease_seconds)
                 try:
+                    heart.start()
                     with physical_tool_attempt(project_key,node_id,input_key,tid):
                         out=catalog.invoke(tid,inputs,allowed_access=permission)
                     if not output_verifier(tid,out):
                         raise ValueError("Tool provided no physically verified asset")
+                    # The heartbeat is stopped before committing, so it can
+                    # never race a completed node and claim lease loss.
+                    heart.stop()
                     store.complete(project_key,node_id,input_key,owner,out)
                 except BaseException:
+                    heart.abort()
                     store.failed(project_key,node_id,input_key,owner)
                     raise
             outputs[node_id]=out
