@@ -68,6 +68,8 @@ class RealMobileBrowserAcceptance(unittest.TestCase):
                     self.assertFalse(page.locator("#upload").is_disabled())
                     self.assertFalse(page.locator("#jobs-button").is_disabled())
                     self.assertGreater(len(page.locator("#tools").inner_text()),15)
+                    page.locator("#resources").get_by_text("Free host disk",exact=False).wait_for()
+                    self.assertIn("GPU hardware is NOT evidence",page.locator("#resources").inner_text())
 
                     page.locator("#asset-space").fill("original_recovery")
                     page.locator("#source").fill("operator-camera-sound-01")
