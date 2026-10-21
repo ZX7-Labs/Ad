@@ -35,6 +35,7 @@ class AModel:
         self.settings=type("Settings",(),{"model_id":name})()
         self.prompts=[]
     def compose(self,brief):
+        self.last_owner_context=brief
         return "My original director's film: a real actor moves through space."
     def decide(self,context):
         self.prompts.append(context)
@@ -87,6 +88,14 @@ class FilmHandoffTests(unittest.TestCase):
             self.assertEqual(json.loads((out/"director-translation.json").read_text())["scenes"][0]["id"],"shot_1")
             self.assertEqual(len(list((out/"designs").glob("design-*.json"))),4)
             self.assertEqual(delivery.prompts[0]["treatment"]["title"],"An impossible question")
+            # The artist sees real installed creative tools but no hardcoded look.
+            self.assertIn("local_creative_tools",brain.last_owner_context)
+            self.assertTrue(brain.last_owner_context["local_creative_tools"]
+                            ["creative_scope_not_restricted_to_catalog"])
+            self.assertTrue((out/"actual-creative-tools.json").is_file())
+            self.assertIn("locally_verified_creative_tools",editor.prompts[0])
+            self.assertIn("available_creative_tool_inventory",producer.prompts[0])
+
             delivery_file=out/"designs"/"delivery.json"
             self.assertEqual(json.loads(delivery_file.read_text())["voice"],"no_voice")
             self.assertTrue(json.loads((out/"designs"/"production-manifest.json").read_text())["all_designs_executable"] is False)
