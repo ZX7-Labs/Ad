@@ -37,6 +37,7 @@ class OriginalMediaIdentityTests(unittest.TestCase):
             self.assertTrue(validate_witness("body.resolve_asset",result))
             self.assertEqual(result["rights"],"owner_supplied")
             self.assertEqual(result["mime"],"audio/wav")
+            self.assertEqual(result["portable_uri"],"zx7:sha256:"+att["asset_id"])
             self.assertEqual(result["sha256"],att["asset_id"])
             self.assertEqual(result["bytes"],sound.stat().st_size)
             self.assertEqual(fingerprint_physical_inputs("body.resolve_asset",
