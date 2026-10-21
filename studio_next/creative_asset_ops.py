@@ -42,9 +42,20 @@ def validate_original_svg_art(source,*,max_bytes=4_000_000):
             raise ValueError("Embedded nonlocal media or executable SVG object is forbidden")
         for k,v in element.attrib.items():
             key=k.split("}")[-1]
-            if key.startswith("on") or key in _URI_ATTRS or _REMOTE.search(str(v)):
-                raise ValueError("Svg must contain only self-contained original graphics")
-        if name=="style" and element.text and _REMOTE.search(element.text):
+            if key.startswith("on"):
+                raise ValueError("SVG event execution is not a graphics operation")
+            if key in _URI_ATTRS:
+                if not isinstance(v,str) or not v.startswith("#") or (
+                        not re.fullmatch(r"#[A-Za-z_][\\w.-]*",v)):
+                    raise ValueError("No external asset fetch in original graphics")
+                continue
+            # Local gradients and masks are legitimate world-class vector art;
+            # only URLs that actually leave the source file are blocked.
+            stripped=_LOCAL_SVG_REF.sub("",str(v))
+            if _REMOTE.search(stripped):
+                raise ValueError("SVG must contain only self-contained original graphics")
+        if name=="style" and element.text and _REMOTE.search(
+                _LOCAL_SVG_REF.sub("",element.text)):
             raise ValueError("External style resource in original vector design")
     return {"svg_sha256":hashlib.sha256(blob).hexdigest(),
             "xml_elements":sum(1 for _ in root.iter()),"self_contained":True}
