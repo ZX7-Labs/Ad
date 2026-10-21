@@ -16,7 +16,7 @@ from .film_ir import validate_film_ir
 
 TOOL_ID = "motion_studio.composite"
 _COLOR = re.compile(r"^#[0-9a-fA-F]{6}(?:[0-9a-fA-F]{2})?$")
-_TEXT_FONTS = frozenset({"sans", "bold", "serif", "mono"})
+_FONT_NAME = re.compile(r"^[\\w .,:=-]{1,140}$",re.UNICODE)
 _DRAWABLES = frozenset({"rect", "ellipse", "line", "polygon", "text"})
 _MOTION = frozenset({"x", "y", "scale", "scale_x", "scale_y", "angle", "opacity", "reveal", "blur"})
 _EASE = frozenset({"linear", "smooth", "in", "out", "spring"})
@@ -92,10 +92,11 @@ def _artwork(asset, shot_key):
         if kind == "text":
             _require(isinstance(item.get("text"), str) and 0 < len(item["text"]) <= 500,
                      label + " requires explicitly authored text")
-            _require(item["text"].isascii(), label + " currently needs ASCII text font; non-Latin font adapter missing")
             _xy(item.get("at"), label + ".at")
             _number(item.get("size"), label + ".size", 2, 256)
-            _require(item.get("font", "sans") in _TEXT_FONTS, label + " unsupported font")
+            _require(isinstance(item.get("font","sans"),str) and
+                     _FONT_NAME.fullmatch(item.get("font","sans")) is not None,
+                     label + " font must be a specific installed family name or generic")
             _require(item.get("align", "left") in ("left", "center", "right"),
                      label + " unsupported alignment")
             if "leading" in item: _number(item["leading"], label + ".leading", 0.5, 3)
