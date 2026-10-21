@@ -86,6 +86,16 @@ def _original_custody_for(dest,workspace,expected_sha,rights):
     raise ValueError("Original media is not backed by a verified local MediaVault")
 
 
+def _except_external_urls(value):
+    """Loss-audit serialized OTIO: media URLs are the ONLY permitted edits."""
+    if isinstance(value,list):
+        return [_except_external_urls(item) for item in value]
+    if isinstance(value,dict):
+        return {key:("<verified-original-url>" if key=="target_url" else
+                     _except_external_urls(item)) for key,item in value.items()}
+    return value
+
+
 def relink_verified_otio(source,workspace,old_workspace,output):
     """Create a separately editable OTIO after verifying every video/audio ref.
 
@@ -123,6 +133,8 @@ def relink_verified_otio(source,workspace,old_workspace,output):
     timeline=otio.adapters.read_from_file(str(original))
     if not isinstance(timeline,otio.schema.Timeline):
         raise ValueError("Source is not an editable OTIO timeline")
+    original_semantics=_except_external_urls(json.loads(
+        otio.adapters.write_to_string(timeline,adapter_name="otio_json")))
     clips=list(timeline.find_clips())
     if not clips:
         raise ValueError("Empty timeline has no proven source footage")
@@ -163,6 +175,10 @@ def relink_verified_otio(source,workspace,old_workspace,output):
             "rights_verified":True
         })
 
+    revised_semantics=_except_external_urls(json.loads(
+        otio.adapters.write_to_string(timeline,adapter_name="otio_json")))
+    if revised_semantics!=original_semantics:
+        raise RuntimeError("Media migration would silently modify original creative edit")
     # Never overwrite a prior edit even on concurrent operator sessions.
     destination.parent.mkdir(parents=True,exist_ok=True)
     fd,temp_name=tempfile.mkstemp(prefix=".zx7-verified-relink-",suffix=".otio",
@@ -173,6 +189,10 @@ def relink_verified_otio(source,workspace,old_workspace,output):
         otio.adapters.write_to_file(timeline,str(temporary))
         checked=otio.adapters.read_from_file(str(temporary))
         verified_clips=list(checked.find_clips())
+        persisted_semantics=_except_external_urls(json.loads(
+            otio.adapters.write_to_string(checked,adapter_name="otio_json")))
+        if persisted_semantics!=original_semantics:
+            raise RuntimeError("Professional edit failed lossless post-write roundtrip")
         if len(verified_clips)!=len(clips) or any(
                 checked_clip.media_reference.target_url !=
                     original_clip.media_reference.target_url
