@@ -57,6 +57,18 @@ class OriginalFilmRevisionTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 preserve_artistic_revision("original","review",e,{"facts":{}},Artist(),t)
 
+    def test_one_brain_reviewer_identity_must_match_and_be_proven(self):
+        class Artist:
+            settings=type("Settings",(),{"model_id":"different-model"})()
+            def rethink(self,*args):
+                raise AssertionError("Do not use a different brain's aesthetic verdict")
+        visual=evidence()
+        visual["reviewer_model_id"]="original-reviewer"
+        with tempfile.TemporaryDirectory() as folder:
+            with self.assertRaisesRegex(ValueError,"Different film model"):
+                preserve_artistic_revision("original film","seen a weak composition",
+                    visual,{"facts":{}},Artist(),folder)
+
     def test_model_receives_visual_scope_and_only_local_no_json_mode(self):
         class Reply:
             def __enter__(self):return self
