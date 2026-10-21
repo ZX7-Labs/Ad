@@ -60,10 +60,12 @@ def render_original_blender(scene_file,video_target,*,trusted_asset_root=None,
             "filmic_quality_reviewed":False}
 
 
-def render_original_motion(ir_file,video_target,*,trusted_voice_assets=None,
+def render_original_motion(ir_file,video_target,*,width,fps,trusted_voice_assets=None,
                            runner=None,probe=None):
     if not shutil.which("ffmpeg"):
         raise RuntimeError("Real FFmpeg and locally verified animation stack required")
+    if any(isinstance(x,bool) or not isinstance(x,int) or x<=0 for x in (width,fps)):
+        raise ValueError("The film director must explicitly choose motion resolution and frame rate")
     raw=json.loads(Path(ir_file).read_text(encoding="utf-8"))
     facts=frozenset(raw.get("owner_facts",{}))
     original=compile_motion_project(raw,fact_ids=facts)
@@ -90,8 +92,8 @@ def render_original_motion(ir_file,video_target,*,trusted_voice_assets=None,
                 check=True,timeout=1200)
         run([sys.executable,"-m","motion_studio.render",
              "--project",str(project),"--out",str(root),
-             "--width",str(original.get("width",720)),
-             "--fps",str(original.get("fps",24))],check=True,timeout=3600)
+             "--width",str(width),
+             "--fps",str(fps)],check=True,timeout=3600)
         produced=root/"sample.mp4"
         if not produced.is_file() or produced.stat().st_size<1000:
             raise RuntimeError("Model-authored vector compositor generated no actual film")
