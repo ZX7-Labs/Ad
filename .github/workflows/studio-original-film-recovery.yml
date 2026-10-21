@@ -154,6 +154,13 @@ jobs:
               local_dir="supertonic_assets",max_workers=4)
           PY
           fi
+      - name: Restore real previously rendered shots before continuing remaining film
+        uses: actions/cache/restore@v4
+        with:
+          path: output/unchanged-original-film-recovery/render
+          key: zx7-decoded-real-filmed-scenes-v1-${{ github.run_id }}
+          restore-keys: |
+            zx7-decoded-real-filmed-scenes-v1-
       - name: Render exact saved director story only if it actually passes capability checks
         if: steps.readiness.outputs.render_ready == 'true'
         run: |
@@ -174,6 +181,12 @@ jobs:
           ffprobe -v error -show_format -show_streams -of json "$OUT/render/film.mp4" > "$OUT/real-mp4-proof.json"
           test -s "$OUT/render/film.mp4"
           echo "ACTUAL MODEL-CHOSEN FILM RENDERED, HUMAN QUALITY STILL UNREVIEWED"
+      - name: Persist only actual encoded clips and their independent byte checksums
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: output/unchanged-original-film-recovery/render
+          key: zx7-decoded-real-filmed-scenes-v1-${{ github.run_id }}
       - name: Persist exactly verified scene checkpoints for the NEXT attempt
         if: always()
         uses: actions/cache/save@v4
