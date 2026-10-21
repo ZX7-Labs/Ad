@@ -79,13 +79,25 @@ def plan_retime(plan,root,vault_root,*,probe=None):
     if not isinstance(plan,dict) or set(plan)!={"source","asset_id","attestation_id",
                                                 "source_fps","segments","audio"}:
         raise ValueError("Retime needs explicit owned source, exact frame rate, segments and audio")
-    source=_path_within(Path(root),plan["source"],exists=True)
-    if source.suffix.lower() not in (".mp4",".mov",".mkv",".webm"):
-        raise ValueError("Retime source must be actual video")
     if not isinstance(plan["asset_id"],str) or not isinstance(plan["attestation_id"],str):
         raise ValueError("Retime requires immutable media custody identity")
     vault=MediaVault(vault_root)
     attested=vault.inspect(plan["asset_id"],attestation_id=plan["attestation_id"])
+    name=plan["source"]
+    if not isinstance(name,str):
+        raise ValueError("Retime requires a verified source reference")
+    if name.startswith("zx7:sha256:"):
+        if name!="zx7:sha256:"+plan["asset_id"]:
+            raise ValueError("Time-mapped original footage identifier differs from verified CAS")
+        source=Path(attested["path"]).resolve()
+        if not source.is_relative_to(Path(root).resolve()):
+            raise ValueError("Actual time-mapped media escapes original workspace")
+        if attested["mime"] not in ("video/mp4","video/quicktime","video/webm"):
+            raise ValueError("Referenced verified media is not genuine video")
+    else:
+        source=_path_within(Path(root),name,exists=True)
+        if source.suffix.lower() not in (".mp4",".mov",".mkv",".webm"):
+            raise ValueError("Retime source must be actual video")
     if not attested.get("rights_attestations") or sha256_file(source)!=plan["asset_id"]:
         raise ValueError("Source footage differs from the verified rights owner bytes")
     rate=plan["source_fps"]
