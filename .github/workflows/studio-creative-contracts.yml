@@ -45,6 +45,8 @@ on:
       - "studio_next/body_plugins.py"
       - "studio_next/test_body_plugins.py"
       - "studio_next/registry.py"
+      - "studio_next/body_service.py"
+      - "studio_next/test_body_service.py"
       - "studio_next/body_archive.py"
       - "studio_next/test_body_archive.py"
       - "studio_next/body_integration.py"
