@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from .media_vault import sha256_file
+from .media_vault import sha256_file,MediaVault
 from .font_registry import resolve_artist_font
 
 _SOURCE_FIELDS={
@@ -51,7 +51,17 @@ def _file(root,relative):
 def _nested_sources(value,root,found):
     if isinstance(value,dict):
         for key,datum in value.items():
-            if (key in _NESTED_SOURCE_KEYS and isinstance(datum,str)
+            if key=="source" and isinstance(datum,str) and datum.startswith("zx7:sha256:"):
+                digest=datum[len("zx7:sha256:"):]
+                if value.get("asset_id")!=digest or not isinstance(value.get("attestation_id"),str):
+                    raise ValueError("Machine-neutral media reference lacks matching custody identity")
+                observed=MediaVault(root/"vault").inspect(digest,
+                    attestation_id=value["attestation_id"])
+                physical=Path(observed["path"]).resolve()
+                if not physical.is_relative_to(root):
+                    raise ValueError("Verified source escaped original production workspace")
+                found.add(physical)
+            elif (key in _NESTED_SOURCE_KEYS and isinstance(datum,str)
                     and Path(datum).suffix.lower() in _PRODUCTION_SUFFIXES):
                 path=_file(root,datum)
                 if path.is_file():
