@@ -44,8 +44,10 @@ def assemble_body_evidence(archived,folder):
     fixture=Path(__file__).resolve().parent/"fixtures"/"mixed_engine_timeline.json"
     shutil.copyfile(fixture,base/"original-edit.json")
     sample=base/"original-edit.json"
+    edit_spec=json.loads(sample.read_text())
+    original_canvas=edit_spec["format"]
     total=sum(probe_media(base/c["source"])["seconds"]
-              for c in json.loads(sample.read_text())["clips"])
+              for c in edit_spec["clips"])
     art=base/"designer-original"
     art.mkdir()
     (art/"artwork.svg").write_text(
@@ -72,7 +74,8 @@ def assemble_body_evidence(archived,folder):
             "out":"thumbnail.png","time_seconds":min(1.0,total/2)},["edit"]),
         ("full-decode","body.full_decode",
             {"source":"finished-actual-film.mp4",
-             "expected":{"width":320,"height":180,"require_audio":True}},["edit"]),
+             "expected":{"width":original_canvas["width"],
+                         "height":original_canvas["height"],"require_audio":True}},["edit"]),
         ("custody","body.asset_vault",
             {"source_witness":{"$node_output":"edit"}},["edit"]),
     ]
@@ -94,7 +97,8 @@ def assemble_body_evidence(archived,folder):
         raise RuntimeError("Actual original creative media did not survive crash/restart test")
     measured=audit_delivered_movie(base/"finished-actual-film.mp4",
         output=base/"delivery-evidence",
-        expected={"width":320,"height":480,"audio_required":True,
+        expected={"width":original_canvas["width"],
+                  "height":original_canvas["height"],"audio_required":True,
                   "duration_seconds":total,"time_tolerance_seconds":.3},
         decode_sample_timestamps=[min(.7,total/3),min(total-.1,total*.8)])
     if not measured["render_contract_verified"]:
