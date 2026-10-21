@@ -134,7 +134,9 @@ def relink_verified_otio(source,workspace,old_workspace,output):
         reference=clip.media_reference
         previous=_old_file_ref(reference.target_url,old)
         metadata=clip.metadata.get("zx7")
-        if not isinstance(metadata,dict):
+        # OTIO serializes a nested mapping into its own native AnyDictionary,
+        # which implements .get but does not inherit Python dict.
+        if metadata is None or not callable(getattr(metadata,"get",None)):
             raise ValueError("Clip is missing original ZX7 media identity metadata")
         declared_hash=metadata.get("source_artifact_sha256")
         rights=metadata.get("rights_class")
