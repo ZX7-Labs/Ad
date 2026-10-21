@@ -98,6 +98,20 @@ class PhysicalRetimeTests(unittest.TestCase):
         self.assertIn("owner_capture.mp4",[x["relative"] for x in materials])
         self.assertIn("retime.json",[x["relative"] for x in materials])
 
+    def test_actual_source_independent_retimming_over_content_hash_identity(self):
+        self.plan["source"]="zx7:sha256:"+self.plan["asset_id"]
+        self.save()
+        proof=fingerprint_physical_inputs("body.retime",
+            {"plan":"retime.json","out":"verified-artist-speed.mp4"},self.root)
+        self.assertIn(self.plan["asset_id"],[x["sha256"] for x in proof])
+        result=render_retime(self.plan_file,self.root,self.root/"vault",
+                            self.root/"verified-artist-speed.mp4")
+        self.assertLess(abs(result["duration_seconds"]-2.5),0.14)
+        self.assertTrue(_probe_details(self.root/"verified-artist-speed.mp4")["audio_stream_present"])
+        self.plan["source"]="zx7:sha256:"+("0"*64)
+        with self.assertRaises(ValueError):
+            plan_retime(self.plan,self.root,self.root/"vault")
+
     def test_mutated_media_and_rights_proof_rejected_before_encoder(self):
         self.src.write_bytes(self.src.read_bytes()+b"owner footage changed")
         with self.assertRaises(ValueError):
