@@ -7,16 +7,37 @@ from .contracts import ToolSpec, _json_like
 class _Entry:
     spec: ToolSpec
     runner: Callable | None
+    idempotent: bool = False
+    implementation_revision: str | None = None
 
 class ToolCatalog:
     def __init__(self):
         self._tools: dict[str,_Entry]={}
-    def register(self,spec:ToolSpec,runner:Callable|None=None):
+    def register(self,spec:ToolSpec,runner:Callable|None=None,*,
+                 idempotent=False,implementation_revision=None):
         if spec.tool_id in self._tools:
             raise ValueError(f"Duplicate tool {spec.tool_id}")
         if runner is not None and not callable(runner):
             raise TypeError("Runner must be a trusted registered callable")
-        self._tools[spec.tool_id]=_Entry(spec,runner)
+        if not isinstance(idempotent,bool):
+            raise ValueError("Trusted tool idempotency must be explicit")
+        if implementation_revision is not None and (
+                not isinstance(implementation_revision,str) or
+                not implementation_revision.strip()):
+            raise ValueError("Invalid actual executable revision")
+        self._tools[spec.tool_id]=_Entry(spec,runner,idempotent,
+                                         implementation_revision)
+    def committed_tool_revisions(self):
+        """Only registered runnable code can supply trusted cache versions."""
+        return {name:item.implementation_revision
+                for name,item in self._tools.items()
+                if item.spec.status=="installed" and item.runner is not None
+                and item.implementation_revision}
+    def trusted_idempotent_ids(self):
+        """LLM tool arguments can never grant rerunnable side effects."""
+        return {name for name,item in self._tools.items()
+                if item.spec.status=="installed" and item.runner is not None
+                and item.idempotent}
     def discover(self):
         return [entry.spec.public() for entry in self._tools.values()]
     def executable_ids(self, allowed_access=None):
