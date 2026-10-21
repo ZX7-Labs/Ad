@@ -16,6 +16,7 @@ from pathlib import Path
 
 from .open_creative import FreeformFilmBrain, preserve_original_direction
 from .creative_tool_registry import creative_tool_inventory
+from .generative_video_providers import discover_local_generators
 from .production_handoff import author_production, author_delivery
 from .providers import LocalCreativeModel, LocalModelSettings
 
@@ -131,6 +132,7 @@ def handoff_single_brain(brief, brain, translation_model, production_model,
     (out/"owner-factual-brief.json").write_text(
         json.dumps(brief,ensure_ascii=False,indent=2,allow_nan=False)+"\n",encoding="utf-8")
     tools=creative_tool_inventory()
+    tools["generative_video_models"]=discover_local_generators()
     (out/"actual-creative-tools.json").write_text(
         json.dumps(tools,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
     # The ONE director gets the real tools but retains full artistic autonomy.
