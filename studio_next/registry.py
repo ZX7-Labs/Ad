@@ -3,6 +3,37 @@ from dataclasses import dataclass
 from typing import Callable
 from .contracts import ToolSpec, _json_like
 
+def _check_technical_input_types(arguments,schema,tool_id):
+    """Native minimal JSON-schema subset; code-owned constraints, no styles."""
+    if not isinstance(schema,dict) or "properties" not in schema:
+        return  # Existing/third-party tools still retain their trusted own checks.
+    if schema.get("type")!="object" or not isinstance(schema["properties"],dict):
+        raise ValueError("Malformed installed creative tool interface")
+    if schema.get("additionalProperties") is False:
+        extras=set(arguments)-set(schema["properties"])
+        if extras:
+            raise ValueError(f"{tool_id}: unapproved argument fields: "+", ".join(sorted(extras)))
+    accepted={"string":str,"integer":int,"number":(int,float),
+              "object":dict,"array":list,"boolean":bool}
+    for key,value in arguments.items():
+        entry=schema["properties"].get(key)
+        if entry is None:
+            continue
+        if not isinstance(entry,dict) or entry.get("type") not in accepted:
+            raise ValueError("Installed tool has an invalid machine-readable argument specification")
+        kind=entry["type"]
+        if kind in ("integer","number"):
+            if isinstance(value,bool) or not isinstance(value,accepted[kind]):
+                raise TypeError(f"{tool_id}: {key} must be a {kind}")
+            import math
+            if not math.isfinite(value):
+                raise ValueError(f"{tool_id}: {key} must be finite")
+            if "minimum" in entry and value<entry["minimum"]:
+                raise ValueError(f"{tool_id}: {key} violates tool minimum")
+        elif not isinstance(value,accepted[kind]):
+            raise TypeError(f"{tool_id}: {key} must be a {kind}")
+
+
 @dataclass
 class _Entry:
     spec: ToolSpec
@@ -70,5 +101,6 @@ class ToolCatalog:
         required=spec.operation_schema.get("required",[])
         for item in required:
             if item not in arguments:raise ValueError(f"Missing {tool_id} input: {item}")
+        _check_technical_input_types(arguments,spec.operation_schema,tool_id)
         result=entry.runner(arguments)
         return _json_like(result)
