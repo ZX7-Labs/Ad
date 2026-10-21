@@ -26,6 +26,16 @@ class AutonomousArtToolDiscoveryTests(unittest.TestCase):
         self.assertFalse(any(x["can_make_arbitrary_cinematic_output"] for x in entries))
         self.assertTrue(all(x["requires_authorized_assets_and_production_validation"] for x in entries))
 
+    def test_film_standard_tool_presence_is_not_an_executable_adapter(self):
+        selected={"ges-launch-1.0","ocioconvert","oiiotool","usdcat"}
+        tools=creative_tool_inventory(finder=lambda name:
+            "/opt/real/"+name if name in selected else None)
+        installed={item["tool_id"]:item for item in tools["actual_installed_tools"]}
+        self.assertEqual(set(installed),
+                         {"gstreamer-ges","opencolorio-cli","openimageio-cli","openusd-cli"})
+        self.assertFalse(any(item["can_render_in_zx7_now"] for item in installed.values()))
+        self.assertTrue(all(item["registered_execution_adapter"] is None for item in installed.values()))
+
     def test_no_tool_presence_implies_no_tool_can_render(self):
         entries=creative_tool_inventory(finder=lambda name:None)
         self.assertEqual(entries["actual_installed_tools"],[])
