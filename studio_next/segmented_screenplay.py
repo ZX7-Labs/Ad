@@ -97,6 +97,36 @@ def complete_missing_ending(spine, brief, call_stage):
     return dict(spine,last_image=ending)
 
 
+_FILM_FIELDS = ("voice", "scene_map", "last_image", "production_unknowns")
+
+
+def normalize_spine_layout(spine):
+    """Recover misplaced *unchanged* film fields from a valid JSON response.
+
+    Local 4B models sometimes accidentally nest these film-level fields inside
+    visual_language. Promote exact existing bytes/values ONLY: no invented
+    narrative, no fabricated fact references, no style/shot substitutions.
+    A conflict between nested and root fields is a hard rejection.
+    """
+    if not isinstance(spine,dict):
+        raise ValueError("Film spine not object")
+    output=dict(spine)
+    visual=output.get("visual_language")
+    if not isinstance(visual,dict):
+        return output
+    visual=dict(visual)
+    for name in _FILM_FIELDS:
+        if name not in visual:
+            continue
+        if name in output and output[name]!=visual[name]:
+            raise ValueError("Conflicting director-authored "+name)
+        if name not in output:
+            output[name]=visual[name]
+        del visual[name]
+    output["visual_language"]=visual
+    return output
+
+
 def _good_text(s, what):
     if not isinstance(s,str) or not s.strip():
         raise ValueError("Missing director-authored "+what)
@@ -174,6 +204,7 @@ def create_screenplay(brief, pitches, selection, call_stage):
     fact_ids=frozenset(brief["facts"])
     spine=call_stage("spine",SPINE,{"owner":brief,"pitches":pitches,
                       "selected_concept":selection},2200,.63)
+    spine=normalize_spine_layout(spine)
     spine=complete_missing_ending(spine,brief,call_stage)
     beats=validate_spine(spine,fact_ids)
     scenes=[]
