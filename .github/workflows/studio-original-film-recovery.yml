@@ -1,9 +1,7 @@
 name: "ZX7 Resume Original Film — Same Director Technical Recovery"
 on:
+  # Only deliberate resource-aware retries. Source-only changes run cheap tests.
   workflow_dispatch:
-  push:
-    branches: [zx7-specialist-free-stack-20261020]
-    paths: [".github/workflows/studio-original-film-recovery.yml"]
 permissions:
   contents: read
   actions: read
@@ -76,6 +74,19 @@ jobs:
           test -n "$SERVER"
           echo "LLAMA_SERVER=$SERVER" >> "$GITHUB_ENV"
           echo "LD_LIBRARY_PATH=$(dirname "$SERVER")" >> "$GITHUB_ENV"
+      - name: Recover per-scene checkpoint archive from previous completed runs
+        uses: actions/cache/restore@v4
+        with:
+          path: output/unchanged-original-film-recovery/verified-technical-checkpoints
+          key: zx7-immutable-original-film-scenes-v2-${{ github.run_id }}
+          restore-keys: |
+            zx7-immutable-original-film-scenes-v2-
+      - name: Make the genuine current rendering tools visible BEFORE the model chooses
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y blender ffmpeg fonts-dejavu-core
+          blender --version | head -n 2
+          ffmpeg -version | head -n 1
       - name: Ask same film artist to correct only rejected renderer jobs, never its story
         run: |
           "$LLAMA_SERVER" --model "$MODEL_DIR/$MODEL_FILE" \
@@ -121,8 +132,7 @@ jobs:
       - name: Install only actual production dependencies if the whole original film is render-ready
         if: steps.readiness.outputs.render_ready == 'true'
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y blender ffmpeg fonts-dejavu-core libsndfile1 libgomp1
+          sudo apt-get install -y libsndfile1 libgomp1
           python -m pip install "numpy>=1.26,<3" "Pillow>=10,<13" "soundfile>=0.12,<1"
           python - <<'PY'
           import json
@@ -164,6 +174,12 @@ jobs:
           ffprobe -v error -show_format -show_streams -of json "$OUT/render/film.mp4" > "$OUT/real-mp4-proof.json"
           test -s "$OUT/render/film.mp4"
           echo "ACTUAL MODEL-CHOSEN FILM RENDERED, HUMAN QUALITY STILL UNREVIEWED"
+      - name: Persist exactly verified scene checkpoints for the NEXT attempt
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: output/unchanged-original-film-recovery/verified-technical-checkpoints
+          key: zx7-immutable-original-film-scenes-v2-${{ github.run_id }}
       - name: Archive all original art, unchanged scene IDs, verified render gaps and actual MP4 if achieved
         if: always()
         uses: actions/upload-artifact@v4
