@@ -116,8 +116,11 @@ class PhysicalLongRenderLeaseTests(unittest.TestCase):
             try:
                 self.assertTrue(started.wait(5))
                 time.sleep(.4)
-                self.assertEqual(store.inspect(next(iter({i["project_key"]
-                    for i in []}),"nonexistent")),[]) # no made-up signed result
+                with store._connect() as db:
+                    row=db.execute("SELECT lease_until,owner,node_state FROM node_results WHERE node_id='scene_render'").fetchone()
+                self.assertEqual(row[2],"running")
+                self.assertGreater(row[0],time.time(),
+                    "Stage lease must be renewed while the same original renderer still runs")
                 self.assertEqual(calls,["original-artwork"])
             finally:
                 release.set()
