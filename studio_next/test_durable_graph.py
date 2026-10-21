@@ -70,6 +70,52 @@ class DurableFilmExecutionTests(unittest.TestCase):
             self.assertEqual(execute_durable_film_graph(**changed)["reused"],[])
             self.assertEqual(calls,["art","finish","art","finish"])
 
+    def test_independent_shot_survives_unrelated_director_revision(self):
+        with tempfile.TemporaryDirectory() as root:
+            calls=[]
+            tool=catalog(calls)
+            original=film()
+            original["shots"].append({"id":"unrelated_shot",
+                "purpose":"Entirely different authored visual",
+                "duration_seconds":7.1})
+            original["tool_graph"]=[
+                {"id":"make","tool_id":"render.art",
+                 "purpose":"Only first shot","shot_refs":["sequence_original"],
+                 "inputs":{"scene":"sequence_original"},"depends_on":[]},
+                {"id":"other","tool_id":"edit.encode",
+                 "purpose":"Only second shot","shot_refs":["unrelated_shot"],
+                 "inputs":{"scene":"unrelated_shot"},"depends_on":[]},
+            ]
+            args=self.args(root,tool)
+            args["ir"]=original
+            first=execute_durable_film_graph(**args)
+            self.assertEqual(first["status"],"all_tool_results_verified")
+            updated=film()
+            updated["shots"].append({"id":"unrelated_shot",
+                "purpose":"Now with independent changed camera/motion",
+                "duration_seconds":13.3})
+            updated["tool_graph"]=original["tool_graph"]
+            args["ir"]=updated
+            second=execute_durable_film_graph(**args)
+            self.assertEqual(second["status"],"all_tool_results_verified")
+            self.assertEqual(second["reused"],["make"])
+            self.assertEqual(calls,["art","finish","finish"])
+
+    def test_actual_source_material_fingerprint_invalidates_cached_stage(self):
+        with tempfile.TemporaryDirectory() as root:
+            calls=[]
+            source={"actual_encoded_source_sha":"first"}
+            args=self.args(root,catalog(calls))
+            args["input_material_fingerprint"]=lambda tid,inputs:dict(source)
+            first=execute_durable_film_graph(**args)
+            self.assertEqual(first["status"],"all_tool_results_verified")
+            again=execute_durable_film_graph(**args)
+            self.assertEqual(again["reused"],["create","finish"])
+            source["actual_encoded_source_sha"]="new original footage"
+            newer=execute_durable_film_graph(**args)
+            self.assertEqual(newer["reused"],[])
+            self.assertEqual(calls,["art","finish","art","finish"])
+
     def test_missing_rights_and_paid_access_block_before_side_effects(self):
         with tempfile.TemporaryDirectory() as root:
             calls=[]
