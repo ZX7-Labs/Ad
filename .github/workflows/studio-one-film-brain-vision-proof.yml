@@ -72,12 +72,6 @@ jobs:
           test -n "$SERVER"
           echo "LLAMA_SERVER=$SERVER" >> "$GITHUB_ENV"
           echo "LD_LIBRARY_PATH=$(dirname "$SERVER")" >> "$GITHUB_ENV"
-      - name: One film brain composes an original film freely, before inspecting reference prototype
-        run: |
-          python -u -m studio_next.open_creative \
-            --brief studio_next/experiments/product.json \
-            --model "$MODEL_ALIAS" --api http://127.0.0.1:8085 \
-            --out "$OUTPUT/original-film"
       - name: Film model independently critiques real decoded preview frames
         run: |
           "$LLAMA_SERVER" --model "models/film-eye/$MODEL_FILE" \
@@ -98,13 +92,15 @@ jobs:
           else:raise SystemExit("Actual single VLM did not load; no artificial critique")
           print("SAME FILM DIRECTOR VISION READY",flush=True)
           PY
+          python -u -m studio_next.open_creative \
+            --brief studio_next/experiments/product.json \
+            --model "$MODEL_ALIAS" --api http://127.0.0.1:8085 \
+            --out "$OUTPUT/original-film"
           python -u -m studio_next.film_eye \
             --video "$ACTUAL_VIDEO" \
             --goal "$(cat "$OUTPUT/original-film/director-original.txt")" \
             --time 0.7 --time 3.5 --model "$MODEL_ALIAS" \
             --api http://127.0.0.1:8085 --out "$OUTPUT"
-      - name: Same film brain makes a creative revision against real decoded prototype feedback
-        run: |
           python -u -m studio_next.film_revision \
             --original "$OUTPUT/original-film/director-original.txt" \
             --actual-critique "$OUTPUT/director-observed-critique.txt" \
