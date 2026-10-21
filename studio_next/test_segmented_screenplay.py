@@ -1,7 +1,7 @@
 import unittest
 from studio_next.segmented_screenplay import (
     create_screenplay,validate_spine,validate_authored_shot,retryable_output,
-    complete_missing_ending)
+    complete_missing_ending, normalize_spine_layout)
 
 def story(n=2):
     return {"title":"A drawn line has consequence",
@@ -104,6 +104,33 @@ class ScriptBreakdownTests(unittest.TestCase):
             return actual_scene(x["scene_map"][0])
         with self.assertRaisesRegex(ValueError,"closing image"):
             create_screenplay({"facts":{"identity":"Owner fact"}},{},{},run)
+
+    def test_nested_spine_fields_recovered_without_changing_story(self):
+        x=story(3)
+        preserved=[dict(b) for b in x["scene_map"]]
+        nested=dict(x)
+        nested["visual_language"]=dict(x["visual_language"])
+        for name in ("voice","scene_map","last_image","production_unknowns"):
+            nested["visual_language"][name]=nested.pop(name)
+        out=normalize_spine_layout(nested)
+        self.assertEqual(out["scene_map"],preserved)
+        self.assertEqual(out, x)
+        self.assertEqual(nested["visual_language"]["voice"]["choice"], "F2")
+        self.assertEqual(len(validate_spine(out,{"identity"})),3)
+
+    def test_nested_conflicts_and_fake_fact_ids_remain_blocked(self):
+        x=story(2)
+        x["visual_language"]["scene_map"]=[{"id":"invented"}]
+        with self.assertRaisesRegex(ValueError,"Conflicting"):
+            normalize_spine_layout(x)
+        x=story(1)
+        x["scene_map"][0]["factual_intent"]=["k2"]
+        nested=dict(x)
+        nested["visual_language"]=dict(x["visual_language"])
+        for name in ("voice","scene_map","last_image","production_unknowns"):
+            nested["visual_language"][name]=nested.pop(name)
+        with self.assertRaisesRegex(ValueError,"nonexistent owner facts"):
+            validate_spine(normalize_spine_layout(nested),{"identity"})
 
     def test_only_truncation_triggers_expansion(self):
         self.assertTrue(retryable_output(ValueError("Answer was truncated")))
