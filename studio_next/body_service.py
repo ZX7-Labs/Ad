@@ -33,6 +33,7 @@ from .body_integration import run_body_project
 from .media_vault import MediaVault,sha256_file,verify_media_container
 from .body_archive import create_body_archive
 from .durable_sqlite import connect_durable_database
+from .body_mobile import ASSETS as MOBILE_ASSETS, CSP as MOBILE_CSP
 
 _ID=re.compile(r"^[A-Za-z0-9_-]{1,80}$")
 _MAX_JOB_BODY=4*1024*1024
@@ -495,8 +496,22 @@ def make_body_http_handler(coordinator,token):
             with media["path"].open("rb") as source:
                 shutil.copyfileobj(source,self.wfile,1024*1024)
         def do_GET(self):
-            if not self._authorized():return
             path=urlsplit(self.path).path
+            if path in MOBILE_ASSETS:
+                # Static shell contains NO user data or secret. Browser API calls
+                # still need the existing Bearer token and remain loopback-bound.
+                media,contents=MOBILE_ASSETS[path]
+                self.send_response(200)
+                self.send_header("Content-Type",media)
+                self.send_header("Content-Length",str(len(contents)))
+                self.send_header("Cache-Control","no-store")
+                self.send_header("Content-Security-Policy",MOBILE_CSP)
+                self.send_header("X-Content-Type-Options","nosniff")
+                self.send_header("Referrer-Policy","no-referrer")
+                self.end_headers()
+                self.wfile.write(contents)
+                return
+            if not self._authorized():return
             try:
                 if path=="/v1/health":
                     return self._reply(200,{"service":"zx7-local-body",
