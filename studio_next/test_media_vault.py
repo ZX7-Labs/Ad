@@ -10,7 +10,7 @@ class MediaVaultProductionTests(unittest.TestCase):
             input=Path(root)/"camera.mov"
             input.write_bytes(b"original user-shot film bytes"*200)
             v=MediaVault(Path(root)/"vault")
-            ref=v.ingest(input,mime="video/quicktime",rights="owner_supplied",
+            ref=v.ingest(input,mime="application/octet-stream",rights="owner_supplied",
                    source_type="owner_upload",source_id="owner-20261021",
                    evidence="Owner directly supplied this file",owner_or_generator="account-owner")
             input.unlink()
@@ -28,12 +28,24 @@ class MediaVaultProductionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             p=Path(root)/"art.png";p.write_bytes(b"original hand painting"*50)
             vault=MediaVault(Path(root)/"vault")
-            ref=vault.ingest(p,mime="image/png",rights="generated_original",
+            ref=vault.ingest(p,mime="application/octet-stream",rights="generated_original",
                    source_type="trusted_renderer",source_id="zx7-render-step",
                    evidence="Built by actual compositor",owner_or_generator="zx7-compositor")
             Path(vault.inspect(ref["asset_id"])["path"]).write_bytes(b"corrupted")
             with self.assertRaisesRegex(MediaCustodyError,"altered"):
                 vault.inspect(ref["asset_id"])
+
+    def test_real_video_media_claim_requires_a_decodable_video_not_text(self):
+        with tempfile.TemporaryDirectory() as root:
+            p=Path(root)/"invented-video.mp4"
+            p.write_bytes(b"this is a fabricated video title"*100)
+            vault=MediaVault(Path(root)/"vault")
+            with self.assertRaises((ValueError,RuntimeError,OSError,Exception)):
+                vault.ingest(p,mime="video/mp4",rights="generated_original",
+                    source_type="trusted_renderer",source_id="fake-video",
+                    evidence="No real decoding",owner_or_generator="sample")
+            self.assertFalse(list((Path(root)/"vault"/"objects").rglob(
+                "[0-9a-f]"*64)))
 
     def test_unverified_libraries_and_invented_rights_fail_closed(self):
         with tempfile.TemporaryDirectory() as root:
@@ -54,10 +66,10 @@ class MediaVaultProductionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             p=Path(root)/"sample.wav";p.write_bytes(b"sound"*100)
             v=MediaVault(Path(root)/"vault")
-            a=v.ingest(p,mime="audio/wav",rights="owner_supplied",
+            a=v.ingest(p,mime="application/octet-stream",rights="owner_supplied",
                 source_type="owner_upload",source_id="owner-upload-1",
                 evidence="Client-supplied",owner_or_generator="client")
-            b=v.ingest(p,mime="audio/wav",rights="appropriately_licensed",
+            b=v.ingest(p,mime="application/octet-stream",rights="appropriately_licensed",
                 source_type="licensed_library",source_id="sample-library-license-id",
                 evidence="Rights recorded in external receipt",owner_or_generator="licensed-asset-import")
             self.assertEqual(a["asset_id"],b["asset_id"])
