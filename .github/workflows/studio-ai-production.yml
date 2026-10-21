@@ -3,14 +3,9 @@ on:
   workflow_dispatch:
   push:
     branches: [zx7-specialist-free-stack-20261020]
+    # Heavy free-CPU film inference runs only on deliberate workflow changes.
+    # Code-only pushes get light contract tests in a separate workflow.
     paths:
-      - "studio_next/creative_challenge.py"
-      - "studio_next/segmented_screenplay.py"
-      - "studio_next/test_segmented_screenplay.py"
-      - "studio_next/production_handoff.py"
-      - "studio_next/execute_film.py"
-      - "studio_next/test_production_handoff.py"
-      - "studio_next/test_execute_film.py"
       - ".github/workflows/studio-ai-production.yml"
 permissions:
   contents: read
@@ -43,6 +38,13 @@ jobs:
           run-id: 39519288325
           github-token: ${{ github.token }}
           path: output/autonomous-film
+      - name: Restore most recent verified creative checkpoints if available
+        uses: actions/cache/restore@v4
+        with:
+          path: output/autonomous-film/creative
+          key: zx7-creative-stage-v1-${{ github.run_id }}
+          restore-keys: |
+            zx7-creative-stage-v1-
       - name: Install real CPU production engines and archival voice SDK
         run: |
           sudo apt-get update -qq
@@ -105,7 +107,15 @@ jobs:
             --brief studio_next/experiments/product.json \
             --out "$OUTPUT/creative" --model "$MODEL_ALIAS" \
             --api http://127.0.0.1:8085 --resume --segmented || echo "Original screenplay rejected or incomplete"
-          if [ -f "$OUTPUT/creative/result.json" ]; then
+          if [ -f "$OUTPUT/creative/result.json" ] && python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("output/autonomous-film/creative/result.json")
+          qa=json.loads(p.read_text())["audit"]
+          assert qa.get("structural_passed") and qa.get("human_audition_candidate"), (
+              "Unapproved story: production must not silently promote a rejected draft")
+          PY
+          then
             python -u -m studio_next.production_handoff \
               --treatment "$OUTPUT/creative/result.json" \
               --out "$OUTPUT/design" --model "$MODEL_ALIAS" \
@@ -160,6 +170,12 @@ jobs:
           print("PHYSICAL AI-DIRECTED FILM EXISTS",p,p.stat().st_size,flush=True)
           print("Creative quality is NOT independently approved",flush=True)
           PY
+      - name: Persist every verified per-stage checkpoint even on a creative failure
+        uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: output/autonomous-film/creative
+          key: zx7-creative-stage-v1-${{ github.run_id }}
       - name: Retain original source, rejected drafts, full design and real footage, if achieved
         uses: actions/upload-artifact@v4
         if: always()
