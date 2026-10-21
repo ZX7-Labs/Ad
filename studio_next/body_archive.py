@@ -22,6 +22,7 @@ import tempfile
 from pathlib import Path
 
 from .media_vault import sha256_file
+from .body_portability import prepare_relocated_workspace
 
 _MANIFEST="__zx7_body_snapshot_manifest__.json"
 _MAGIC="ZX7-BODY-REAL-MEDIA-V1"
@@ -115,8 +116,10 @@ def create_body_archive(workspace,archive):
             "claim":"Operator must retain archive digest in a trusted channel"}
 
 
-def restore_body_archive(archive,destination,*,expected_sha256):
+def restore_body_archive(archive,destination,*,expected_sha256,relocate=False):
     """Validate *every* tar byte/path before publishing a restored workspace."""
+    if type(relocate) is not bool:
+        raise ValueError("Explicit boolean portable recovery permission required")
     source=Path(archive).resolve()
     target=Path(destination).resolve()
     if not isinstance(expected_sha256,str) or len(expected_sha256)!=64 or (
@@ -182,9 +185,21 @@ def restore_body_archive(archive,destination,*,expected_sha256):
                         raise ValueError("Restored scene checkpoint SQLite is corrupted")
             # Atomic publish into the same location used by original source
             # references. Reuse across changed paths requires explicit rebind.
-            if manifest.get("source_workspace")!=str(target):
-                raise ValueError("Restore path differs from original media references")
+            original_root=manifest.get("source_workspace")
+            moved=None
+            if original_root!=str(target):
+                if not relocate:
+                    raise ValueError("Restore path differs from original media references")
+                moved=prepare_relocated_workspace(temp,old_root=original_root,
+                    destination=target,archive_sha256=expected_sha256)
+            elif relocate:
+                raise ValueError("Cross-host migration requested at unchanged workspace path")
+            # Namespace and SQLite metadata transformed only inside the
+            # fully verified staging directory, before one atomic publication.
             os.replace(temp,target)
         return {"restored":str(target),"files":len(accounted),
                 "archive_sha256":expected_sha256,"all_physical_bytes_verified":True,
-                "artistic_project_preserved":True}
+                "artistic_project_preserved":True,
+                "relocated":moved is not None,
+                "old_execution_state_quarantined":moved is not None,
+                "old_jobs_auto_resumable":moved is None}
