@@ -22,7 +22,7 @@ jobs:
       - name: Install actual trusted original artist tools (not images or APIs)
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y blender ffmpeg fonts-dejavu-core libsndfile1
+          sudo apt-get install -y blender ffmpeg fonts-dejavu-core fonts-urw-base35 libsndfile1
           python -m pip install --no-cache-dir "numpy>=1.26,<3" "Pillow>=10,<13" "opentimelineio>=0.17,<1"
           blender --version | head -n 2
           ffmpeg -version | head -n 1
