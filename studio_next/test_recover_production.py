@@ -69,8 +69,9 @@ class ArchivedFilmRecoveryTests(unittest.TestCase):
             self.assertEqual(len(model.contexts),2)
             self.assertEqual(model.contexts[0]["actual_validator_result"],
                              "Invalid3DShot: invalid real geometry")
-            self.assertTrue("blender_validator_source" in
-                            model.contexts[0]["actual_renderer_contract"])
+            self.assertIn("validation_code_sha256",model.contexts[0]["actual_renderer_contract"])
+            self.assertIn("blender3d",model.contexts[0]["actual_renderer_contract"])
+            self.assertNotIn("blender_validator_source",model.contexts[0]["actual_renderer_contract"])
             self.assertTrue(result["original_film_story_unchanged"])
             self.assertFalse(result["all_designs_executable"])
             self.assertFalse(result["movie_rendered"])
