@@ -27,6 +27,7 @@ from .durable_graph import DurableFilmGraph,execute_durable_film_graph
 from .media_vault import MediaVault,sha256_file
 from .composite_mix import render_composition
 from .film_finishing import finish_authorized_movie
+from .production_qc import full_decode_inspection
 from .body_plugins import discover_enabled_body_plugins
 from .body_materials import fingerprint_physical_inputs
 
@@ -98,6 +99,7 @@ def _trusted_body_revision(tool_id):
         "body.asset_vault":["media_vault.py"],
         "body.composite_mix":["composite_mix.py","media_vault.py"],
         "body.film_finish":["film_finishing.py","media_vault.py"],
+        "body.full_decode":["production_qc.py","delivery_audit.py"],
         "body.blender3d":["native_body_engines.py","blender_scene.py"],
         "body.motion2d":["native_body_engines.py","motion_bridge.py","font_registry.py"],
     }
@@ -110,6 +112,7 @@ def _trusted_body_revision(tool_id):
         "body.asset_vault":[],
         "body.composite_mix":["ffmpeg","ffprobe"],
         "body.film_finish":["ffmpeg","ffprobe"],
+        "body.full_decode":["ffmpeg","ffprobe"],
         "body.blender3d":["blender","ffmpeg"],
         "body.motion2d":["ffmpeg","ffprobe"],
     }
@@ -201,6 +204,16 @@ def body_catalog(workspace,*,vault_root=None):
             dest.unlink(missing_ok=True)
             raise
 
+    def deep_media_qc(inputs):
+        """Decode every actual video/audio stream, not just inspect metadata."""
+        source=_path_within(root,inputs["source"],exists=True)
+        report=full_decode_inspection(source,expected=inputs.get("expected"))
+        if not report["technical_delivery_verified"]:
+            raise RuntimeError("Full original media failed actual decode or director specifications: "+
+                               str(report["delivery_mismatches"]))
+        # The standard tool-result witness is also rechecked on every restart.
+        return report
+
     def render3d(inputs):
         source=_path_within(root,inputs["scene_json"],exists=True)
         dest=_body_output(root,inputs["out"],allowed=(".mp4",))
@@ -248,6 +261,10 @@ def body_catalog(workspace,*,vault_root=None):
                 "asset_id":ref["asset_id"],"attestation_id":ref["attestation_id"],
                 "rights":ref["rights"]}
 
+    add("body.full_decode","physical full-movie delivery quality assurance",
+        "Actually decode entire picture/sound; preserve deliberate creative style",
+        "read",bool(shutil.which("ffmpeg") and shutil.which("ffprobe")),
+        ["source"],deep_media_qc)
     add("body.film_finish","measured film color grade and sound finishing",
         "Local FFmpeg real picture operations and original audio loudness mastering",
         "write",bool(shutil.which("ffmpeg") and shutil.which("ffprobe")),
