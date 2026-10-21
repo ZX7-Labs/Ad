@@ -37,8 +37,8 @@ class StandaloneNoAssistantLocalBodyClientTests(unittest.TestCase):
                 payload=b"artistic original camera materials"*4096
                 original.write_bytes(payload)
                 receipt=client.upload("film-owner",original,
-                    mime="application/octet-stream",source_id="original-director-source",
-                    rights_evidence="Authentically owner supplied original camera material")
+                    mime="application/octet-stream",source_id="studio-मूल-स्रोत",
+                    rights_evidence="परीक्षण सामग्री का हिंदी विवरण")
                 self.assertEqual(receipt["asset_id"],hashlib.sha256(payload).hexdigest())
                 screenplay={
                     "project":{"creative_intent":"An original artistic film"},
