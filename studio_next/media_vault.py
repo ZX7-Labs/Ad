@@ -31,6 +31,8 @@ def verify_media_container(path,mime):
     """Physical decoder/magic check; provenance text alone cannot create a film."""
     path=Path(path)
     if mime.startswith("video/"):
+        if shutil.which("ffprobe") is None:
+            raise MediaCustodyError("Real video decoder not installed; refuse unverifiable source")
         from .delivery_audit import _probe_details
         return _probe_details(path)
     if mime=="image/png":
