@@ -9,6 +9,8 @@ on:
       - "studio_next/body_mobile.py"
       - "studio_next/body_service.py"
       - "studio_next/body_verified_delivery.py"
+      - "studio_next/body_host_resources.py"
+      - "studio_next/test_body_host_resources.py"
       - "studio_next/body_download_tickets.py"
       - "studio_next/media_vault.py"
       - "studio_next/body_integration.py"
