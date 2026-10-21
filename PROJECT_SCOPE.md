@@ -1,4 +1,4 @@
-# AD Studio — product goal and acceptance boundary
+> **CONTINUITY FOR EVERY NEW CHAT:** Read [`ZX7_START_HERE.md`](ZX7_START_HERE.md) first. It contains the owner's complete non-hardcoded world-class autonomous filmmaking mandate, verified vs unverified milestones, model failures, experiment links, and the next autonomous decision. Do not ask the owner to repeat the project vision.\n\n# AD Studio — product goal and acceptance boundary
 
 ## Goal recovered from the owner's shared conversation
 
