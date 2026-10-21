@@ -18,6 +18,7 @@ zx7-body = "studio_next.body_service:main"
 zx7-client = "studio_next.body_client:main"
 zx7-desktop = "studio_next.body_desktop:main"
 zx7-tools = "studio_next.body_capabilities:main"
+zx7-archive = "studio_next.body_archive:main"
 
 [tool.setuptools.packages.find]
 include = ["studio_next", "motion_studio"]
