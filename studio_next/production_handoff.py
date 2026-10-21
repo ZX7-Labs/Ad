@@ -142,7 +142,7 @@ def validate_visual_design(scene, design, facts):
             "audio_required":bool(scene.get("narration")),"project":project}
 
 
-def author_production(treatment, facts, model, output_dir):
+def author_production(treatment, facts, model, output_dir, *, tool_inventory=None):
     """Per-scene model design, no prewritten scene graph or template choice.
 
     Never silently discards a scene; every defect is an auditable unresolved shot.
@@ -169,6 +169,11 @@ def author_production(treatment, facts, model, output_dir):
                 "motion2d":"actual procedural 2D/2.5D compositor for explicit rights-cleared vector artwork",
                 "unresolved":"preserve intent when tools/assets are unavailable",
             },
+            "available_creative_tool_inventory":tool_inventory if tool_inventory is not None else
+                __import__("studio_next.creative_tool_registry",
+                    fromlist=["creative_tool_inventory"]).creative_tool_inventory(),
+            "tool_policy":"Installed tools are real capabilities, not visual presets; "
+               "propose missing skills as production gaps, never invent completed files.",
             "instruction":"Do not choose a medium to fit the installed engines. "
             "Choose the artistic medium and mark unavailable needs honestly.",
         }
