@@ -20,6 +20,7 @@ from .registry import ToolCatalog
 from .edit_timeline import render_edit,_path_within
 from .editorial_interchange import export_editable_timeline
 from .creative_asset_ops import rasterize_original_svg,extract_director_selected_frame
+from .native_body_engines import render_original_blender,render_original_motion
 from .delivery_audit import audit_delivered_movie,_probe_details
 from .durable_graph import DurableFilmGraph,execute_durable_film_graph
 from .media_vault import MediaVault,sha256_file
@@ -121,6 +122,23 @@ def body_catalog(workspace,*,vault_root=None):
         extract_director_selected_frame(original,target,at_seconds=inputs["time_seconds"])
         return _witness(target)
 
+    def render3d(inputs):
+        source=_path_within(root,inputs["scene_json"],exists=True)
+        dest=_body_output(root,inputs["out"],allowed=(".mp4",))
+        trusted_asset_root=_path_within(root,inputs["assets_root"],exists=False) if (
+            isinstance(inputs.get("assets_root"),str) and inputs["assets_root"]) else None
+        render_original_blender(source,dest,trusted_asset_root=trusted_asset_root)
+        return _witness(dest)
+
+    def render2d(inputs):
+        source=_path_within(root,inputs["original_film_ir"],exists=True)
+        dest=_body_output(root,inputs["out"],allowed=(".mp4",))
+        voice_root=_path_within(root,inputs["voice_assets"],exists=False) if (
+            isinstance(inputs.get("voice_assets"),str) and inputs["voice_assets"]) else None
+        render_original_motion(source,dest,width=inputs["width"],fps=inputs["fps"],
+                               trusted_voice_assets=voice_root)
+        return _witness(dest)
+
     def vault_asset(inputs):
         source=_path_within(root,inputs["source"],exists=True)
         ref=vault.ingest(source,mime=inputs["mime"],rights=inputs["rights"],
@@ -136,6 +154,11 @@ def body_catalog(workspace,*,vault_root=None):
                        "rights":ref["rights"]})
         return witness
 
+    add("body.blender3d","physical 3D filmmaking","Blender real rendered geometries, materials and moving camera",
+        "write",bool(shutil.which("blender") and shutil.which("ffmpeg")),
+        ["scene_json","out"],render3d)
+    add("body.motion2d","original 2D/2.5D animation","Independent vector character and motion compositor",
+        "write",bool(shutil.which("ffmpeg")),["original_film_ir","out","width","fps"],render2d)
     add("body.inspect","measure physical media","FFprobe validates actual source video",
         "read",bool(shutil.which("ffprobe")),["source"],inspect)
     add("body.render_edit","editorial timeline","Headless FFmpeg actual movie assembler",
@@ -189,7 +212,8 @@ def run_body_project(film_ir,workspace,*,db_name="production.sqlite3"):
        film_ir,catalog,fact_ids=set(film_ir.get("owner_facts",{})),
        store=store,output_verifier=validate_witness,
        trusted_idempotent_tools={"body.inspect","body.render_edit","body.otio",
-                                 "body.vector_png","body.film_thumbnail","body.asset_vault"},
+                                 "body.vector_png","body.film_thumbnail","body.asset_vault",
+                                 "body.blender3d","body.motion2d"},
        tool_revisions=actual_versions,allowed_access={"read","write"})
 
 
