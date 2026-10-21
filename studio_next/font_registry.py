@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
+import unicodedata
 from pathlib import Path
 
 # Exact historically approved fallback binaries for the legacy project.
@@ -51,3 +52,44 @@ def resolve_artist_font(name,*,which=None,match=None):
         if desired not in names:
             raise RuntimeError("Specific creative font absent; do not silently substitute")
     return str(selected)
+
+
+def require_unicode_font_coverage(path,text):
+    """Fail closed instead of printing tofu squares for Hindi/other scripts.
+
+    FontTools checks actual physical Unicode cmap; RAQM/Harfbuzz is needed
+    for joining/shaping. No arbitrary creative font substitution.
+    """
+    if not isinstance(text,str):
+        raise ValueError("Type copy must be model-authored Unicode text")
+    if text.isascii():
+        return True
+    try:
+        from fontTools.ttLib import TTFont,TTCollection
+        from PIL import features
+    except ImportError as exc:
+        raise RuntimeError("Actual Unicode glyph inspection runtime not installed") from exc
+    if not features.check("raqm"):
+        raise RuntimeError("Unicode complex text requires installed RAQM shaping engine")
+    face=Path(path)
+    if not face.is_file():
+        raise RuntimeError("Artist-selected original font is not physically installed")
+    try:
+        if face.suffix.lower()==".ttc":
+            faces=TTCollection(str(face)).fonts
+        else:
+            faces=[TTFont(str(face),fontNumber=0,lazy=True)]
+        cmap=set()
+        for font in faces:
+            for table in font["cmap"].tables:
+                if table.isUnicode():
+                    cmap.update(table.cmap.keys())
+    except Exception as exc:
+        raise RuntimeError("Physical font's Unicode map could not be decoded") from exc
+    chars={ord(c) for c in text if not c.isspace() and (
+        unicodedata.category(c)!="Cf")}
+    absent=sorted(chars-cmap)
+    if absent:
+        raise RuntimeError("Artist-selected installed font lacks "+
+          str(len(absent))+" required Unicode glyphs; never silently substitute")
+    return True
