@@ -52,6 +52,34 @@ class IndependentLocalCreativeServiceTests(unittest.TestCase):
                 self.assertEqual(recovered.inspect("shot-1")["attempts"],1)
             finally:recovered.close()
 
+    def test_desktop_job_browser_and_explicit_retries_reuse_same_original_plan(self):
+        with tempfile.TemporaryDirectory() as root:
+            executed=[]
+            def run(ir,workspace):
+                executed.append(ir)
+                return {"status":"blocked","errors":["missing originally licensed actor footage"],
+                        "video_proven":False}
+            owner=LocalBodyCoordinator(root,execute=run)
+            try:
+                owner.submit(plan(),workspace_id="independent-film",job_id="film-a")
+                for _ in range(150):
+                    if owner.inspect("film-a")["status"]=="blocked":break
+                    time.sleep(.01)
+                items=owner.list_jobs()
+                self.assertEqual(items["jobs"][0]["job_id"],"film-a")
+                self.assertEqual(items["jobs"][0]["status"],"blocked")
+                with self.assertRaisesRegex(ValueError,"bounded"):
+                    owner.list_jobs(limit=10000)
+                retried=owner.retry_job("film-a")
+                self.assertTrue(retried["original_film_ir_unchanged"])
+                for _ in range(150):
+                    if owner.inspect("film-a")["attempts"]>=2 and (
+                            owner.inspect("film-a")["status"]=="blocked"):break
+                    time.sleep(.01)
+                self.assertEqual(executed,[plan(),plan()])
+                self.assertEqual(owner.inspect("film-a")["attempts"],2)
+            finally:owner.close()
+
     def test_one_process_owns_same_original_workspace_at_a_time(self):
         with tempfile.TemporaryDirectory() as root:
             first=LocalBodyCoordinator(root,execute=lambda ir,path:{
