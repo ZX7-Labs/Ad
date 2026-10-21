@@ -6,6 +6,8 @@ on:
     paths:
       - "studio_next/body_mobile.py"
       - "studio_next/precision_retime.py"
+      - "studio_next/creative_tool_registry.py"
+      - "studio_next/test_creative_tool_registry.py"
       - "studio_next/test_precision_retime.py"
       - "studio_next/body_integration.py"
       - "studio_next/body_materials.py"
@@ -28,7 +30,7 @@ jobs:
       - name: Compile server and serve static shell with protected APIs
         run: |
           python -m compileall -q studio_next
-          python -m unittest studio_next.test_body_mobile studio_next.test_body_download_tickets studio_next.test_precision_retime -v
+          python -m unittest studio_next.test_body_mobile studio_next.test_body_download_tickets studio_next.test_precision_retime studio_next.test_creative_tool_registry -v
       - name: Parse actual client JavaScript in Node
         run: |
           python - <<'PY'
