@@ -21,7 +21,7 @@ def write_silent_voice_slot(path: Path, *, sample_rate=16000, seconds=.05):
         writer.setnchannels(1)
         writer.setsampwidth(2)
         writer.setframerate(sample_rate)
-        writer.writeframes(b"\\x00\\x00"*samples)
+        writer.writeframes(bytes(samples*2))
     return samples/sample_rate
 
 
