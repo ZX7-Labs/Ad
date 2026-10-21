@@ -33,6 +33,31 @@ class FilmVisualReviewTests(unittest.TestCase):
             with patch("studio_next.film_eye.urlopen",server):
                 self.assertIn("subject",brain.evaluate("The director imagines a meaningful story",frames))
 
+    def test_unrelated_archived_technical_footage_not_described_as_new_own_film(self):
+        import hashlib
+        tiny_jpeg=b"\\xff\\xd8\\xff"+bytes(range(110))+b"\\xff\\xd9"
+        with tempfile.TemporaryDirectory() as directory:
+            p=Path(directory)/"real.jpg"
+            p.write_bytes(tiny_jpeg)
+            frames=[{"path":str(p),"timestamp_seconds":1.0,
+                "frame_sha256":hashlib.sha256(tiny_jpeg).hexdigest()}]
+            class Response:
+                def __enter__(self):return self
+                def __exit__(self,*args):return False
+                def read(self,limit):
+                    return json.dumps({"choices":[{"finish_reason":"stop",
+                        "message":{"content":"This is a separate old technical demo"}}]}).encode()
+            def server(request,timeout):
+                payload=json.loads(request.data)
+                system=payload["messages"][0]["content"]
+                self.assertIn("NOT the film you imagined",system)
+                self.assertIn("SEPARATE",system)
+                return Response()
+            brain=VisualFilmDirector(LocalModelSettings(model_id="test"))
+            with patch("studio_next.film_eye.urlopen",server):
+                self.assertIn("separate",brain.evaluate("New movie unrendered",frames,
+                                                       reference_prototype=True))
+
     def test_real_media_provenance_required_no_fake_frame_paths(self):
         brain=VisualFilmDirector(LocalModelSettings(model_id="test"))
         with self.assertRaises(ValueError):
