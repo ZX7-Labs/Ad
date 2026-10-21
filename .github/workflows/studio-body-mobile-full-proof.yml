@@ -110,7 +110,14 @@ jobs:
           root=Path('output/body-release-proof')
           log=(root/'all-tests.log').read_text()
           match=re.search(r'Ran (\d+) tests',log)
-          summary=re.search(r'^OK(?: \\(skipped=(\\d+)\\))?
+          statuses=[line for line in log.splitlines()
+                    if line in ('OK','OK (skipped=1)')]
+          assert match and len(statuses)==1,log[-2000:]
+          skipped=[line for line in log.splitlines() if ' ... skipped ' in line]
+          if statuses[0]=='OK (skipped=1)':
+              assert len(skipped)==1 and 'test_browser_owner_media_job_tools_and_one_use_exact_download' in skipped[0],skipped
+          else:
+              assert not skipped,skipped
           physical=json.loads((root/'native/verified-native-body-result.json').read_text())
           assert physical['real_3d_rendered'] and physical['real_2d_rendered']
           assert physical['exact_all_nodes_resumed']
