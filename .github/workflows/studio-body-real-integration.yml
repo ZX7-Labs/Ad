@@ -49,6 +49,34 @@ jobs:
           python -u -m studio_next.body_proof \
             --archived genuine-artifacts \
             --out output/verified-body-tools
+      - name: Prove complete physical film workspace survives loss and exact-source restart
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json,shutil
+          from studio_next.body_archive import create_body_archive,restore_body_archive
+          from studio_next.body_integration import run_body_project
+          root=Path("output/verified-body-tools").resolve()
+          snapshot=Path("output/verified-body-tools-loss-recovery.tar.gz").resolve()
+          archive=create_body_archive(root,snapshot)
+          original=json.loads((root/"film-body-ir.json").read_text())
+          count=len(original["tool_graph"])
+          shutil.rmtree(root)
+          result=restore_body_archive(snapshot,root,expected_sha256=archive["sha256"])
+          resumed=run_body_project(original,root)
+          assert resumed["status"]=="all_tool_results_verified",resumed
+          assert len(resumed["reused"])==count,resumed
+          assert len(resumed["completed"])==count
+          (Path("output")/"verified-body-restore-proof.json").write_text(json.dumps({
+             "physical_archive_sha256":archive["sha256"],
+             "archived_real_file_count":archive["files"],
+             "all_restored_file_bytes_verified":result["all_physical_bytes_verified"],
+             "original_completed_tool_jobs_reused":len(resumed["reused"]),
+             "fresh_creative_or_render_inference_calls":0,
+             "archive_is_operator_hash_anchored_not_signed":True
+          },indent=2)+"\n")
+          print("FULL PHYSICAL WORKSPACE LOST AND RESTORED WITH ORIGINAL REAL TOOL OUTPUTS",flush=True)
+          PY
       - name: Verify playable media and genuine separate editable and graphic artifacts
         run: |
           python - <<'PY'
@@ -91,6 +119,8 @@ jobs:
             output/verified-body-tools/actual-delivery-audit.json
             output/verified-body-tools/delivery-evidence/
             output/verified-body-tools/production.sqlite3
+            output/verified-body-tools-loss-recovery.tar.gz
+            output/verified-body-restore-proof.json
             output/verified-body-tools/vault/
           if-no-files-found: warn
           retention-days: 7
