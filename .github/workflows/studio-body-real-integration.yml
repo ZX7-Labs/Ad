@@ -100,6 +100,7 @@ jobs:
           from http.server import ThreadingHTTPServer
           from urllib.request import urlopen,Request
           from studio_next.body_service import LocalBodyCoordinator,make_body_http_handler
+          from studio_next.body_client import ZX7BodyClient
           from studio_next.delivery_audit import _probe_details
           from studio_next.body_integration import _witness,validate_witness
           root=Path("output/body-autonomous-service-proof").resolve()
@@ -143,16 +144,14 @@ jobs:
                    headers={"Authorization":"Bearer "+token}),timeout=30) as res:
                   return json.loads(res.read())
           try:
-              raw=original_source.read_bytes()
-              asset_request=Request(
-                 origin+"/v1/workspaces/real-art-original/assets/real-master.mp4",
-                 data=raw,method="POST",
-                 headers={"Authorization":"Bearer "+token,
-                   "Content-Type":"video/mp4",
-                   "X-Source-Id":"ZX7-original-first-party-technical-film",
-                   "X-Rights-Evidence":"Owner/operator of separately verified original studio-generated test footage"})
-              with urlopen(asset_request,timeout=30) as response:
-                  attached=json.loads(response.read())
+              client=ZX7BodyClient(endpoint=origin,token=token)
+              source_upload=Path("output/real-master.mp4").resolve()
+              shutil.copyfile(original_source,source_upload)
+              attached=client.upload("real-art-original",source_upload,
+                  source_id="ZX7-original-first-party-technical-film",
+                  rights_evidence="Owner/operator of separately verified original studio-generated test footage",
+                  mime="video/mp4")
+              raw=source_upload.read_bytes()
               assert attached["verified_real_media_bytes"]
               assert attached["bytes"]==len(raw)
               assert (project/"real-master.mp4").read_bytes()==raw
@@ -175,7 +174,13 @@ jobs:
                   received=source.read()
                   assert source.headers["Content-Type"]=="image/png"
               assert received==(project/"artist-frame.png").read_bytes()
-              assert len(get("/v1/tools")["tools"])>=5
+              from studio_next.media_vault import sha256_file
+              client_download=Path("output/original-studio-retrieved-frame.png").resolve()
+              verified_download=client.download(receipt["job_id"],
+                  "artist-frame.png",client_download)
+              assert verified_download["sha256"]==sha256_file(project/"artist-frame.png")
+              assert client_download.read_bytes()==received
+              assert len(client.tools()["tools"])>=5
               (root/"auth-body-evidence.json").write_text(json.dumps({
                   "standalone_http_authenticated":True,
                   "real_model_independent_job_completed":True,
@@ -281,6 +286,7 @@ jobs:
             output/verified-body-tools-loss-recovery.tar.gz
             output/verified-body-restore-proof.json
             output/body-autonomous-service-proof/auth-body-evidence.json
+            output/original-studio-retrieved-frame.png
             output/body-autonomous-service-proof/body-jobs.sqlite3
             output/body-autonomous-service-proof/restored-autonomous-service-proof.json
             output/complete-local-body-service-recovery.tar.gz
