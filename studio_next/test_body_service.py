@@ -1,6 +1,7 @@
 import io
 import hashlib
 import json
+import sqlite3
 import tempfile
 import threading
 import time
@@ -81,6 +82,86 @@ class IndependentLocalCreativeServiceTests(unittest.TestCase):
                 self.assertEqual(result["status"],"blocked")
                 self.assertFalse(result["result"]["video_proven"])
             finally:c.close()
+
+    def test_two_concurrent_jobs_cannot_overwrite_one_original_project(self):
+        with tempfile.TemporaryDirectory() as root:
+            start=threading.Event()
+            release=threading.Event()
+            gate=threading.Lock()
+            in_progress=[0]
+            simultaneous=[0]
+            def actual_artistic_work(ir,workspace):
+                with gate:
+                    in_progress[0]+=1
+                    simultaneous[0]=max(simultaneous[0],in_progress[0])
+                start.set()
+                release.wait(timeout=3)
+                try:
+                    return {"status":"all_tool_results_verified",
+                            "completed":["artist-shot"],"video_proven":False}
+                finally:
+                    with gate:in_progress[0]-=1
+            service=LocalBodyCoordinator(root,execute=actual_artistic_work,workers=2)
+            try:
+                service.submit(plan(),workspace_id="same-film",job_id="artist-one")
+                self.assertTrue(start.wait(timeout=2))
+                service.submit(plan(),workspace_id="same-film",job_id="artist-two")
+                time.sleep(.05)
+                self.assertEqual(simultaneous[0],1)
+                release.set()
+                for _ in range(200):
+                    if (service.inspect("artist-one")["status"]=="completed" and
+                        service.inspect("artist-two")["status"]=="completed"):break
+                    time.sleep(.01)
+                self.assertEqual(simultaneous[0],1)
+                self.assertEqual(service.inspect("artist-two")["status"],"completed")
+            finally:
+                release.set()
+                service.close()
+
+    def test_interrupted_job_restarts_from_original_sqlite_not_new_story(self):
+        with tempfile.TemporaryDirectory() as root:
+            first=LocalBodyCoordinator(root)
+            try:
+                root_name="same-owner-original"
+                with first._connect() as db:
+                    db.execute("INSERT INTO jobs VALUES(?,?,?,?,?,?,?)",
+                        ("interrupted",root_name,json.dumps(plan()),"running",
+                         1,None,time.time()))
+            finally:first.close()
+            observed=[]
+            def resumed(ir,workspace):
+                observed.append(ir)
+                return {"status":"all_tool_results_verified",
+                        "reused":["artwork"],"video_proven":False}
+            second=LocalBodyCoordinator(root,execute=resumed)
+            try:
+                self.assertEqual(second.pending_restart(),1)
+                for _ in range(100):
+                    if second.inspect("interrupted")["status"]=="completed":break
+                    time.sleep(.01)
+                self.assertEqual(observed,[plan()])
+                self.assertEqual(second.inspect("interrupted")["attempts"],2)
+                self.assertEqual(second.inspect("interrupted")["status"],"completed")
+            finally:second.close()
+
+    def test_api_exposes_actual_stored_tool_progress_not_invented_percent(self):
+        with tempfile.TemporaryDirectory() as root:
+            from studio_next.durable_graph import DurableFilmGraph
+            service=LocalBodyCoordinator(root,execute=lambda ir,w:{
+                "status":"all_tool_results_verified","completed":[]})
+            try:
+                directory=service._workspace("evidence");directory.mkdir()
+                ledger=DurableFilmGraph(directory/"production.sqlite3")
+                ledger.start_or_reuse("original-key","shotA","shaA",
+                    trusted_idempotent=True,
+                    existing_result_verifier=lambda _:True,lease_seconds=120)
+                service.submit(plan(),workspace_id="evidence",job_id="evidence-job")
+                state=service.inspect("evidence-job")["actual_tool_progress"]
+                self.assertTrue(state["tool_progress_is_actual_sqlite"])
+                self.assertEqual(state["observed_tool_states"][0]["node_id"],"shotA")
+                self.assertEqual(state["observed_tool_states"][0]["state"],"running")
+            finally:service.close()
 
     def test_owner_can_import_actual_bytes_with_immutable_rights_custody(self):
         with tempfile.TemporaryDirectory() as root:
