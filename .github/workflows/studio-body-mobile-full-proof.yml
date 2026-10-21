@@ -11,6 +11,8 @@ on:
       - "studio_next/precision_retime.py"
       - "studio_next/body_archive.py"
       - "studio_next/body_portability.py"
+      - "studio_next/body_asset_links.py"
+      - "studio_next/test_body_asset_links.py"
       - "studio_next/test_body_portability.py"
       - "studio_next/creative_tool_registry.py"
       - "studio_next/test_creative_tool_registry.py"
@@ -84,6 +86,7 @@ jobs:
           "$RUNNER_TEMP/zx7-body-installed/bin/zx7-client" --help
           "$RUNNER_TEMP/zx7-body-installed/bin/zx7-desktop" --help
           "$RUNNER_TEMP/zx7-body-installed/bin/zx7-archive" --help
+          "$RUNNER_TEMP/zx7-body-installed/bin/zx7-relink-otio" --help
       - name: Save exact release evidence without certifying artistic quality
         run: |
           python - <<'PY'
