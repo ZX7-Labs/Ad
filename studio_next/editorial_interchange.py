@@ -36,6 +36,7 @@ def export_editable_timeline(edit_json,media_root,dest,*,probe=probe_media):
     rate=fmt["fps"]
     timeline=otio.schema.Timeline(name=src.stem)
     track=otio.schema.Track(name="ZX7 Director Cut",kind=otio.schema.TrackKind.Video)
+    soundtrack=otio.schema.Track(name="Original Director Sound",kind=otio.schema.TrackKind.Audio)
     timings=[]
     for clip in edit["clips"]:
         source=_path_within(root,clip["source"],exists=True)
@@ -57,21 +58,49 @@ def export_editable_timeline(edit_json,media_root,dest,*,probe=probe_media):
             "source_path":clip["source"],
             "measured_seconds":float(meta["seconds"])}
         track.append(entry)
+        if clip["audio"]=="preserve_source":
+            if meta.get("audio") is not True:
+                raise ValueError("Actual audible source cannot be invented in editable project")
+            sound_ref=otio.schema.ExternalReference(
+                target_url=source.as_uri(),
+                available_range=otio.opentime.TimeRange(origin,duration))
+            recorded=otio.schema.Clip(
+                name=clip["id"]+" (original production sound)",
+                media_reference=sound_ref,
+                source_range=otio.opentime.TimeRange(origin,duration))
+            recorded.metadata["zx7"]={
+                "audio_director_choice":"preserve_source",
+                "source_artifact_sha256":entry.metadata["zx7"]["source_artifact_sha256"],
+                "source_path":clip["source"],
+                "rights_class":clip["rights"]}
+            soundtrack.append(recorded)
+        else:
+            # Preserve exact director-selected silent portion as editable
+            # duration, not synthetic/invented narration.
+            silence=otio.schema.Gap(
+                source_range=otio.opentime.TimeRange(origin,duration))
+            silence.metadata["zx7"]={"audio_director_choice":"intentional_silence"}
+            soundtrack.append(silence)
         timings.append({"id":clip["id"],"measured_seconds":meta["seconds"],
                         "duration_frames":frames})
     timeline.tracks.append(track)
+    timeline.tracks.append(soundtrack)
     timeline.metadata["zx7"]={
         "director_delivery":fmt,
-        "video_and_audio_composited_elsewhere":True,
+        "editable_video_and_original_audio_tracks_present":True,
+        "final_encoded_movie_mixed_elsewhere":True,
         "source_edit_sha256":hashlib.sha256(src.read_bytes()).hexdigest(),
         "model_has_no_hardcoded_style":True}
     export.parent.mkdir(parents=True,exist_ok=True)
     otio.adapters.write_to_file(timeline,str(export))
     # Validate deserialization using the actual installed OTIO implementation.
     check=otio.adapters.read_from_file(str(export))
-    if len(check.video_tracks())!=1 or len(check.video_tracks()[0])!=len(edit["clips"]):
+    if (len(check.video_tracks())!=1 or
+            len(check.video_tracks()[0])!=len(edit["clips"]) or
+            len(check.audio_tracks())!=1 or
+            len(check.audio_tracks()[0])!=len(edit["clips"])):
         export.unlink(missing_ok=True)
-        raise RuntimeError("The professional editable timeline did not roundtrip")
+        raise RuntimeError("The professional editable audiovisual timeline did not roundtrip")
     return {"edit_file":str(export),"clips":timings,
             "export_format":"real OpenTimelineIO",
             "source_media_was_physically_probed":True,
