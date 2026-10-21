@@ -35,7 +35,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: zx7-first-model-directed-production-evidence
-          run-id: 39523755643
+          run-id: 39524196131
           github-token: ${{ github.token }}
           path: output/autonomous-film
       - name: Restore most recent verified creative checkpoints if available
