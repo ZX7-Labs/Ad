@@ -1,3 +1,5 @@
+> **CURRENT VERIFIED STATE:** Read [`ZX7_CURRENT_REALITY.json`](ZX7_CURRENT_REALITY.json) for exact original-film failure, legally checked video generators, whether real GPU is available, and per-shot resume status. This human/project handoff file is NOT an LLM prompt. Never feed the full repository MD documentation into the filmmaking model; pass only owner facts, relevant scene and live tool capabilities.
+
 # ZX7 STUDIO — READ THIS FIRST IN ANY NEW CHAT
 
 **Current owner's authoritative creative mandate, recorded 2026-10-21.**
