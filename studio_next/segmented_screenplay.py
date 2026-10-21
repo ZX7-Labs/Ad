@@ -97,6 +97,86 @@ def complete_missing_ending(spine, brief, call_stage):
     return dict(spine,last_image=ending)
 
 
+FACT_GROUNDING = """You are an independent film script factual-grounding editor.
+An existing ambitious original film includes invalid evidence IDs. Do NOT
+pretend unknown attributes are verified facts. The owner fact ledger below is
+the ONLY authoritative factual evidence. A literary metaphor or fictional
+staging is allowed; exact real product specs, macro texture, app failure,
+device glitches or material features require actual owner evidence.
+For THIS one beat, decide if its visible action and composition need creative
+revision to avoid implying unsupported product or competitor facts. You may
+change its dramatic_action and visual_goal thoughtfully while PRESERVING
+the director's purpose, duration, continuity arc and other beats.
+No flattening to default graphics/cards to avoid filming challenges.
+Return exactly JSON:
+{"id":"exact current beat id",
+"dramatic_action":"real specific action as repaired",
+"visual_goal":"real specific framing, objects, composition, technical needs",
+"factual_intent":["exact source keys or empty for purely fictional action"],
+"fact_quotes":{"exact owner fact key":"copy verbatim owner's fact text"},
+"reason":"explain how revisions prevent unsupported claims and keep this film's story"}.
+Every fact_quotes value MUST be an exact copy of the owner ledger entry.
+Do not use abbreviated IDs such as k2 unless the ledger itself has key k2.
+Do not invent substitute evidence or assert a real product photo exists.
+"""
+
+
+def reground_invalid_beats(spine, brief, call_stage):
+    """Ask the author to revise only unsupported facts, never launder fake IDs.
+
+    Records all model responses in checkpoint stages. Does not rewrite the
+    rejected original JSON or silently make unsupported claims into facts.
+    """
+    if not isinstance(spine,dict) or not isinstance(brief,dict):
+        raise TypeError("Film blueprint and owner ledger required")
+    facts=brief.get("facts")
+    if not isinstance(facts,dict) or not all(isinstance(k,str) and
+         isinstance(v,str) for k,v in facts.items()):
+        raise ValueError("Grounding needs string-valued original owner facts")
+    scene_map=spine.get("scene_map")
+    if not isinstance(scene_map,list):
+        return spine
+    corrected=[]
+    revised=False
+    for index,beat in enumerate(scene_map):
+        if not isinstance(beat,dict) or not isinstance(beat.get("factual_intent"),list):
+            raise ValueError("Cannot ground non-structured beat")
+        refs=beat["factual_intent"]
+        bad=[name for name in refs if not isinstance(name,str) or name not in facts]
+        if not bad:
+            corrected.append(beat)
+            continue
+        response=call_stage(f"fact-repair-{index+1:03d}",FACT_GROUNDING,
+            {"owner_facts":facts,"original_plot":spine.get("story"),
+             "current_beat":beat,"invalid_ids":bad,
+             "scene_map":[{"id":x.get("id"),"purpose":x.get("purpose"),
+                  "dramatic_action":x.get("dramatic_action")}
+                  for x in scene_map if isinstance(x,dict)]},850,.35)
+        if not isinstance(response,dict) or set(response)!={
+            "id","dramatic_action","visual_goal","factual_intent",
+            "fact_quotes","reason"}:
+            raise ValueError("Grounding revision must be complete and auditable")
+        if response["id"]!=beat.get("id"):
+            raise ValueError("Grounding silently replaced authored shot ID")
+        for key in ("dramatic_action","visual_goal","reason"):
+            _good_text(response.get(key),key)
+        accepted=response["factual_intent"]
+        quotes=response["fact_quotes"]
+        if (not isinstance(accepted,list) or
+            any(not isinstance(key,str) or key not in facts for key in accepted) or
+            len(accepted)!=len(set(accepted)) or not isinstance(quotes,dict) or
+            set(quotes)!=set(accepted) or
+            any(quotes[key]!=facts[key] for key in accepted)):
+            raise ValueError("Grounding did not prove every owner fact reference")
+        new=dict(beat)
+        new["dramatic_action"]=response["dramatic_action"]
+        new["visual_goal"]=response["visual_goal"]
+        new["factual_intent"]=list(accepted)
+        corrected.append(new)
+        revised=True
+    return dict(spine,scene_map=corrected) if revised else spine
+
+
 _FILM_FIELDS = ("voice", "scene_map", "last_image", "production_unknowns")
 
 
@@ -220,6 +300,7 @@ def create_screenplay(brief, pitches, selection, call_stage):
                       "selected_concept":selection},2200,.63)
     spine=normalize_spine_layout(spine)
     spine=complete_missing_ending(spine,brief,call_stage)
+    spine=reground_invalid_beats(spine,brief,call_stage)
     beats=validate_spine(spine,fact_ids)
     scenes=[]
     for i,beat in enumerate(beats):
