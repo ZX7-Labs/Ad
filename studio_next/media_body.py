@@ -33,10 +33,11 @@ def _number(value: Any, field: str, *, positive=False) -> float:
     return float(value)
 
 
-def _integer(value: Any, field: str, *, positive=False) -> int:
+def _integer(value: Any, field: str, *, positive=False, signed=False) -> int:
     if isinstance(value, bool) or not isinstance(value, int):
         raise RenderError(f"{field} must be integer")
-    _number(value, field, positive=positive)
+    if not signed:
+        _number(value, field, positive=positive)
     return value
 
 
@@ -102,7 +103,7 @@ def render_timeline(project: dict, *, asset_root: str | Path, output_path: str |
     timeout = _number(timeout_seconds, "timeout_seconds", positive=True)
     sources = []
     for index, item in enumerate(clips):
-        if not isinstance(item, dict) or item.get("kind") not in _ALLOWED:
+        if not isinstance(item, dict) or not isinstance(item.get("kind"), str) or item["kind"] not in _ALLOWED:
             raise RenderError(f"Clip {index} has invalid media kind")
         kind = item["kind"]
         file = _asset(base, item.get("path"), kind)
@@ -128,12 +129,12 @@ def render_timeline(project: dict, *, asset_root: str | Path, output_path: str |
         if kind != "audio":
             source["width"] = _integer(item.get("width", width), f"clip[{index}].width", positive=True)
             source["height"] = _integer(item.get("height", height), f"clip[{index}].height", positive=True)
-            source["x"] = _integer(item.get("x", 0), f"clip[{index}].x")
-            source["y"] = _integer(item.get("y", 0), f"clip[{index}].y")
+            source["x"] = _integer(item.get("x", 0), f"clip[{index}].x", signed=True)
+            source["y"] = _integer(item.get("y", 0), f"clip[{index}].y", signed=True)
             alpha = _number(item.get("opacity", 1.0), f"clip[{index}].opacity")
             if alpha > 1: raise RenderError(f"Clip {index} opacity > 1")
             source["alpha"] = alpha
-            source["z"] = _integer(item.get("z", 0), f"clip[{index}].z")
+            source["z"] = _integer(item.get("z", 0), f"clip[{index}].z", signed=True)
         else:
             volume = _number(item.get("volume", 1.0), f"clip[{index}].volume")
             source["volume"] = volume
@@ -197,10 +198,14 @@ def render_timeline(project: dict, *, asset_root: str | Path, output_path: str |
             raise RenderError(f"FFmpeg failed: {run.stderr[-1600:]}")
         evidence = _probe(tmp, ffprobe, timeout=min(timeout, 30))
         streams = evidence.get("streams", [])
-        if not any(s.get("codec_type") == "video" for s in streams):
-            raise RenderError("Export did not contain video")
-        if audio_inputs and not any(s.get("codec_type") == "audio" for s in streams):
-            raise RenderError("Export did not contain requested audio")
+        video = next((s for s in streams if s.get("codec_type") == "video"), None)
+        audio = next((s for s in streams if s.get("codec_type") == "audio"), None)
+        if not video or video.get("codec_name") != "h264":
+            raise RenderError("Export is missing H.264 video")
+        if video.get("width") != width or video.get("height") != height:
+            raise RenderError("Export dimensions differ from authored canvas")
+        if audio_inputs and (not audio or audio.get("codec_name") != "aac"):
+            raise RenderError("Export is missing required AAC audio")
         actual = float(evidence.get("format", {}).get("duration", 0))
         if not math.isfinite(actual) or abs(actual-duration) > max(0.15, 2/fps):
             raise RenderError(f"Export length mismatch: expected {duration}s, got {actual}s")
