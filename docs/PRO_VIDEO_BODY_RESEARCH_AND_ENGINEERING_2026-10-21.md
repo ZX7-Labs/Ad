@@ -61,3 +61,18 @@ G. With BODY production release passing: later connect and evaluate creative int
 
 ## Release stop gates
 No verified license, source footage, actual tool binary/model weights/GPU, owner permission, safe tool path, valid frame/sample timing, cross-host cached identity or measurable physical output => BLOCK. No silent 3D-to-2D substitutions, no invented audio, no hidden paid provider, no untrusted executable code, no false creative-quality certificate.
+
+
+## Independent follow-up: professional asset identity & scalable render control (2026-10-21)
+The previous discussion used "manual editor" only as an example. The architecture is NOT optimized for manual steps. The more general systems problem is that an artist can describe any future visual technique, but the runtime must find actual source media, coordinate effects across tools and machines, deliver reproducible outputs and return observable evidence, without lengthy textual tool instructions.
+
+Research candidate **OpenAssetIO**: an open-source interoperability standard for tools and content-management systems. Assess its manager/reference pattern as the long-term portable media identity boundary, not as a magic asset generator. Our currently deployed source of truth remains the existing SHA-256 MediaVault. Research: https://github.com/OpenAssetIO/OpenAssetIO and https://www.aswf.io/news/openassetio-forms-as-sandbox-project-at-academy-software-foundation/ . This project's APIs and release suitability still require an actual integration test.
+
+Research candidate **OpenCue**: an open-source render management/scheduler used for splitting animation/VFX production into dispatchable tasks. It requires worker hosts and resources; it does **not** provide free GPU hardware or a cloud service. Future adoption is gated by a physical shot/frame-level benchmark and verified worker identity/resource/rights isolation. Research: https://github.com/AcademySoftwareFoundation/OpenCue and https://github.com/AcademySoftwareFoundation/OpenCue/blob/main/docs/_docs/concepts/opencue-overview.md .
+
+**Implemented evidence-driven architecture step**: new archive relocation is explicit and fail-closed. Owner-controlled SHA256 validates original archive; staged content is hash-verified; content-addressed MediaVault receipts and original media remain usable at destination. Host-bound SQLite jobs, execution DAG databases, publication journals and locks are preserved under an inert historical namespace, never automatically treated as completed work on a new machine. Root-relative film plans and OTIO paths require separate validated rebind. A true portable live-job protocol is NOT implemented, and secure original cross-machine resumption remains an outstanding release gate. Offline CLI refuses a busy render service, unresolved jobs and partial uploads.
+
+**Future hard gates, not a new roadmap of prompts**:
+1. Give asset references stable machine-neutral identity, with a tested resolver and explicit rights/bytes validation at every tool boundary. Test cross-host import without silently editing the director's original creative decisions.
+2. Test live frame/shot scheduling and persistence under worker crash, concurrent hosts and partial success. Consider OpenCue only when one machine is a measured bottleneck and independently authorized render worker compute exists.
+3. Replace isolated aesthetic tests with end-to-end editing-technique and audiovisual evaluation. Recent papers such as *Beyond Coherence: Benchmarking Professional Editing-Technique Execution in Multi-Shot Audio-Video Generation* and *AVE-Compass* emphasize that coherence and synchronized sound/visual edits require separate tests. These research findings do not establish a production-ready model.
