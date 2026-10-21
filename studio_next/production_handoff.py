@@ -18,6 +18,7 @@ from pathlib import Path
 from .blender_scene import validate_blender_shot
 from .motion_bridge import compile_motion_project
 from .providers import LocalCreativeModel, LocalModelSettings
+from .creative_tool_registry import creative_tool_inventory
 
 PRODUCTION_SYSTEM = """You are the production designer and technical cinematographer of a real original film.
 You are executing an ALREADY AUTHORED creative treatment, not pitching new concepts.
@@ -170,8 +171,7 @@ def author_production(treatment, facts, model, output_dir, *, tool_inventory=Non
                 "unresolved":"preserve intent when tools/assets are unavailable",
             },
             "available_creative_tool_inventory":tool_inventory if tool_inventory is not None else
-                __import__("studio_next.creative_tool_registry",
-                    fromlist=["creative_tool_inventory"]).creative_tool_inventory(),
+                creative_tool_inventory(),
             "tool_policy":"Installed tools are real capabilities, not visual presets; "
                "propose missing skills as production gaps, never invent completed files.",
             "instruction":"Do not choose a medium to fit the installed engines. "
