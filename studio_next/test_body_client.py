@@ -48,7 +48,7 @@ class StandaloneNoAssistantLocalBodyClientTests(unittest.TestCase):
                 created=folder/"original-film-ir.json"
                 created.write_text(json.dumps(screenplay),encoding="utf-8")
                 run=client.submit(created,"film-owner")
-                status=client.wait(run["job_id"],poll_seconds=.01,max_seconds=4)
+                status=client.wait(run["job_id"],poll_seconds=.1,max_seconds=4)
                 self.assertEqual(status["status"],"completed")
                 self.assertEqual(status["attempts"],1)
                 artifacts=client.artifacts(run["job_id"])
