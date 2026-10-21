@@ -21,7 +21,7 @@ _FORBIDDEN={"script","foreignObject","iframe","object","embed",
             "image","feImage","audio","video"}
 _URI_ATTRS={"href","src","xlink:href"}
 _REMOTE=re.compile(r"(?i)(?:@import|url\s*\(|expression\s*\(|javascript:|file:|https?://|data:)")
-_LOCAL_SVG_REF=re.compile(r"url\\(\\s*#[a-zA-Z_][\\w.-]*\\s*\\)",re.I)
+_LOCAL_SVG_REF=re.compile(r"url\(\s*#[a-zA-Z_][\w.-]*\s*\)",re.I)
 _EXTENSION={".png",".webp",".jpeg",".jpg"}
 
 
