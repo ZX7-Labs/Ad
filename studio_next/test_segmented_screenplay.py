@@ -206,6 +206,23 @@ class ScriptBreakdownTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"replaced authored"):
             reground_invalid_beats(x,{"facts":{"identity":"Real notebook"}},wrong_scene)
 
+    def test_model_can_revise_existing_continuity_and_audio_without_extra_facts(self):
+        x=story(1)
+        x["scene_map"][0]["factual_intent"]=["k2"]
+        def revise(stage,prompt,context,tokens,temp):
+            return {"id":"scene_0","dramatic_action":"Conceptual writing",
+                    "visual_goal":"A specific purposeful filmed action",
+                    "factual_intent":[],
+                    "fact_quotes":{},
+                    "reason":"Avoid unsupported actual product texture",
+                    "continuity_in":"A human hand enters",
+                    "continuity_out":"The shot connects to a written line",
+                    "sound_goal":"Quiet paper scratching"}
+        repaired=reground_invalid_beats(x,{"facts":{"identity":"Pocket paper notebook"}},revise)
+        self.assertEqual(repaired["scene_map"][0]["sound_goal"],"Quiet paper scratching")
+        self.assertEqual(repaired["scene_map"][0]["factual_intent"],[])
+        self.assertEqual(x["scene_map"][0]["factual_intent"],["k2"])
+
     def test_only_truncation_triggers_expansion(self):
         self.assertTrue(retryable_output(ValueError("Answer was truncated")))
         self.assertFalse(retryable_output(ValueError("Made up a client fact")))
