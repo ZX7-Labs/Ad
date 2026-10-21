@@ -37,6 +37,10 @@ on:
       - "studio_next/test_body_controls.py"
       - "studio_next/test_body_publication.py"
       - "studio_next/test_body_desktop.py"
+# Free runner minutes: superseded same-branch proof runs cannot waste native compute.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
