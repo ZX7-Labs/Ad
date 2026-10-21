@@ -206,19 +206,34 @@ def body_catalog(workspace,*,vault_root=None):
         return _witness(dest)
 
     def vault_asset(inputs):
-        source=_path_within(root,inputs["source"],exists=True)
-        ref=vault.ingest(source,mime=inputs["mime"],rights=inputs["rights"],
-                 source_type=inputs["source_type"],
-                 source_id=inputs["source_id"],evidence=inputs["evidence"],
-                 owner_or_generator=inputs["issuer"])
-        # Transport as a verified reference, NOT by inventing an MP4 path.
+        """Only a validated output from an actually installed production node.
+
+        Model text cannot assert that an arbitrary web image or private file
+        has owner-supplied/generated/legal rights. This operation admits only
+        graph-bound, physically decoded output of a trusted registered maker.
+        Other rights classes require an authenticated external ingestion API.
+        """
+        if not isinstance(inputs,dict) or set(inputs)!={"source_witness"}:
+            raise ValueError("Generated media custody requires only a trusted producer output")
+        proof=inputs["source_witness"]
+        if not _verify_witness(proof):
+            raise ValueError("No physically proven producer output for media custody")
+        source=Path(proof["path"]).resolve()
+        if not source.is_relative_to(root):
+            raise ValueError("Only genuine media from this original workspace")
+        supported={".mp4":"video/mp4",".png":"image/png",
+                   ".mov":"video/quicktime",".webm":"video/webm"}
+        mime=supported.get(source.suffix.lower())
+        if mime is None:
+            raise ValueError("Unrecognized verified tool output cannot be laundered into licensed media")
+        ref=vault.ingest(source,mime=mime,rights="generated_original",
+                  source_type="trusted_renderer",source_id=proof["sha256"],
+                  evidence="Verified original media from a registered trusted executable",
+                  owner_or_generator="zx7-authorized-body-graph")
         record=vault.inspect(ref["asset_id"],attestation_id=ref["attestation_id"])
-        witness=_witness(record["path"]) if Path(record["path"]).suffix.lower() in (
-            ".mp4",".mov",".mkv",".webm",".otio",".png") else {
-                "path":record["path"],"sha256":ref["asset_id"]}
-        witness.update({"asset_id":ref["asset_id"],"attestation_id":ref["attestation_id"],
-                       "rights":ref["rights"]})
-        return witness
+        return {"path":record["path"],"sha256":ref["asset_id"],
+                "asset_id":ref["asset_id"],"attestation_id":ref["attestation_id"],
+                "rights":ref["rights"]}
 
     add("body.composite_mix","original timeline multilayer edit, licensed voices and audio mix",
         "Actual physical rights-verified layered FFmpeg compositor from model-owned canvas",
@@ -242,9 +257,9 @@ def body_catalog(workspace,*,vault_root=None):
         "write",bool(shutil.which("inkscape")),["source_svg","out","width","height"],vector_art)
     add("body.film_thumbnail","original movie frame artwork","FFmpeg decode actual selected frame",
         "write",bool(shutil.which("ffmpeg")),["source_film","out","time_seconds"],thumbnail)
-    add("body.asset_vault","audited media provenance","Hash and preserve rights-cleared actual file",
-        "write",True,["source","mime","rights","source_type","source_id","evidence","issuer"],
-        vault_asset)
+    add("body.asset_vault","audited generated-media provenance",
+        "Custody is accepted only from an actually verified trusted renderer node",
+        "write",True,["source_witness"],vault_asset)
     for spec,runner,idempotent,version,operational,materials in discover_enabled_body_plugins():
         if not operational:
             from dataclasses import replace
@@ -279,7 +294,28 @@ def validate_witness(_tool_id,result):
     return _verify_witness(result)
 
 
+def _require_authentic_generated_media_lineage(film_ir):
+    """Reject model-supplied rights labels and fake producer objects up front."""
+    graph=film_ir.get("tool_graph",[]) if isinstance(film_ir,dict) else []
+    if not isinstance(graph,list):
+        raise ValueError("Real body graph required for custody validation")
+    node_by_id={n["id"]:n for n in graph if isinstance(n,dict) and isinstance(n.get("id"),str)}
+    trusted_producers={"body.blender3d","body.motion2d","body.render_edit",
+                       "body.composite_mix","body.vector_png","body.film_thumbnail"}
+    for node in graph:
+        if not isinstance(node,dict) or node.get("tool_id")!="body.asset_vault":
+            continue
+        inputs=node.get("inputs")
+        refs=node.get("depends_on",[])
+        if not isinstance(inputs,dict) or set(inputs)!={"source_witness"} or (
+                len(refs)!=1 or refs[0] not in node_by_id or
+                node_by_id[refs[0]].get("tool_id") not in trusted_producers or
+                inputs["source_witness"]!={"$node_output":refs[0]}):
+            raise ValueError("LLM cannot invent license/source claims; vault requires exact trusted renderer dependency")
+
+
 def run_body_project(film_ir,workspace,*,db_name="production.sqlite3"):
+    _require_authentic_generated_media_lineage(film_ir)
     root=Path(workspace)
     catalog=body_catalog(root)
     store=DurableFilmGraph(root/db_name)
