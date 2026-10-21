@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
-from studio_next.body_integration import body_catalog,validate_witness
+from studio_next.body_integration import body_catalog,validate_witness,_require_authentic_generated_media_lineage
 
 
 class TrustedCreativeBodyToolTests(unittest.TestCase):
@@ -29,6 +29,28 @@ class TrustedCreativeBodyToolTests(unittest.TestCase):
             self.assertTrue(validate_witness("body.vector_png",result))
             p.write_bytes(b"not same artwork"*100)
             self.assertFalse(validate_witness("body.vector_png",result))
+
+    def test_model_cannot_issue_rights_certificate_for_arbitrary_file(self):
+        original={"id":"old","tool_id":"body.asset_vault","depends_on":[],
+                  "inputs":{"source":"found-online.mp4","rights":"generated_original",
+                            "evidence":"trust me"}}
+        with self.assertRaisesRegex(ValueError,"cannot invent license"):
+            _require_authentic_generated_media_lineage({"tool_graph":[original]})
+        fabricated={"id":"vault","tool_id":"body.asset_vault",
+                    "depends_on":["inspect"],
+                    "inputs":{"source_witness":{"$node_output":"inspect"}}}
+        read={"id":"inspect","tool_id":"body.inspect",
+              "inputs":{"source":"unauthorized.mp4"},"depends_on":[]}
+        with self.assertRaisesRegex(ValueError,"trusted renderer dependency"):
+            _require_authentic_generated_media_lineage(
+                {"tool_graph":[read,fabricated]})
+        trusted={"id":"edit","tool_id":"body.render_edit","inputs":{},
+                 "depends_on":[]}
+        valid={"id":"vault","tool_id":"body.asset_vault",
+               "depends_on":["edit"],
+               "inputs":{"source_witness":{"$node_output":"edit"}}}
+        self.assertIsNone(_require_authentic_generated_media_lineage(
+            {"tool_graph":[trusted,valid]}))
 
     def test_no_model_supplied_shell_or_untrusted_media_rights(self):
         with tempfile.TemporaryDirectory() as root:
