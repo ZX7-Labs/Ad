@@ -10,6 +10,8 @@ on:
       - "studio_next/body_portability.py"
       - "studio_next/body_asset_links.py"
       - "studio_next/test_body_asset_identity.py"
+      - "studio_next/test_body_asset_uri.py"
+      - "studio_next/composite_mix.py"
       - "studio_next/body_tool_contracts.py"
       - "studio_next/test_body_asset_links.py"
       - "studio_next/test_body_portability.py"
@@ -37,7 +39,7 @@ jobs:
       - name: Compile server and serve static shell with protected APIs
         run: |
           python -m compileall -q studio_next
-          python -m unittest studio_next.test_body_mobile studio_next.test_body_download_tickets studio_next.test_precision_retime studio_next.test_creative_tool_registry studio_next.test_body_portability studio_next.test_body_asset_links studio_next.test_body_asset_identity -v
+          python -m unittest studio_next.test_body_mobile studio_next.test_body_download_tickets studio_next.test_precision_retime studio_next.test_creative_tool_registry studio_next.test_body_portability studio_next.test_body_asset_links studio_next.test_body_asset_identity studio_next.test_body_asset_uri -v
       - name: Parse actual client JavaScript in Node
         run: |
           python - <<'PY'
