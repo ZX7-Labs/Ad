@@ -38,8 +38,40 @@ def _linux_memory():
             "measurement":"physical_linux_meminfo"}
 
 
+def _cgroup_effective_limits(cpu,memory,cgroup_root):
+    """Respect actual container CPU/memory quotas, not host-wide illusion."""
+    root=Path(cgroup_root)
+    limited=dict(memory)
+    cores=cpu
+    try:
+        limit_text=(root/"memory.max").read_text(encoding="ascii").strip()
+        usage=int((root/"memory.current").read_text(encoding="ascii").strip())
+        if limit_text!="max":
+            limit=int(limit_text)
+            if 0<limit<2**60 and 0<=usage:
+                free=max(0,limit-usage)
+                current=limited.get("available_bytes")
+                total=limited.get("total_bytes")
+                limited["available_bytes"]=min(current,free) if type(current) is int else free
+                limited["total_bytes"]=min(total,limit) if type(total) is int else limit
+                limited["measurement"]=str(limited.get("measurement","unknown"))+"+cgroup_v2_limit"
+    except (OSError,ValueError):
+        pass
+    try:
+        quota,period=(root/"cpu.max").read_text(encoding="ascii").split()
+        if quota!="max":
+            allowed=float(quota)/float(period)
+            if math.isfinite(allowed) and allowed>0:
+                physical_cores=max(1,math.ceil(allowed))
+                cores=min(cores,physical_cores) if type(cores) is int else physical_cores
+    except (OSError,ValueError,ZeroDivisionError):
+        pass
+    return cores,limited
+
+
 def inspect_host_resources(workspace, *, cpu_count=None,disk_usage=None,
-                           memory=None,nvidia_binary=None,gpu_runner=None):
+                           memory=None,nvidia_binary=None,gpu_runner=None,
+                           cgroup_root=None):
     """Only operator-owned installed runtime is probed; no network/paid API."""
     root=Path(workspace).resolve()
     if not root.is_dir():
@@ -53,6 +85,8 @@ def inspect_host_resources(workspace, *, cpu_count=None,disk_usage=None,
     ram=(memory or _linux_memory)()
     if not isinstance(ram,dict):
         raise ValueError("Host memory reporter returned unknown evidence")
+    processor,ram=_cgroup_effective_limits(
+        processor,ram,cgroup_root or "/sys/fs/cgroup")
     actual_binary=(shutil.which("nvidia-smi") if nvidia_binary is None else nvidia_binary)
     gpu={"driver_query_status":"no_nvidia_driver_executable","devices":[]}
     if actual_binary:
