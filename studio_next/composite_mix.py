@@ -180,8 +180,13 @@ def actual_composite_command(plan,workspace,vault,out):
             output=f"stack{index}"
             posx=_motion_expression(layer,"x")
             posy=_motion_expression(layer,"y")
+            if layer.get("motion"):
+                # FFmpeg comma/colon-bearing expressions are quoted only
+                # when keyframe calculations need them.
+                posx="'"+posx+"'"
+                posy="'"+posy+"'"
             filters.append(
-                f"[{base}][v{index}]overlay=x='{posx}':y='{posy}':"
+                f"[{base}][v{index}]overlay=x={posx}:y={posy}:"
                 f"eof_action=pass:shortest=0:"
                 f"enable='between(t,{start},{start+duration})':format=auto[{output}]")
             base=output
