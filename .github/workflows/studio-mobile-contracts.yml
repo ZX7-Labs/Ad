@@ -25,6 +25,10 @@ on:
       - "studio_next/body_service.py"
       - "studio_next/test_body_mobile.py"
       - ".github/workflows/studio-mobile-contracts.yml"
+# Free runner minutes: superseded same-branch proof runs cannot waste native compute.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
