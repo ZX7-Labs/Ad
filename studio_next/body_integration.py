@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import importlib.metadata
+import importlib.util
 import os
 import uuid
 import json
@@ -191,6 +192,10 @@ def body_catalog(workspace,*,vault_root=None):
     root=Path(workspace).resolve()
     vault=MediaVault(vault_root or (root/"vault"))
     catalog=ToolCatalog()
+    video_io=bool(shutil.which("ffmpeg") and shutil.which("ffprobe"))
+    motion_libraries=all(importlib.util.find_spec(name) is not None
+                         for name in ("numpy","PIL","fontTools"))
+    png_decoder=bool(importlib.util.find_spec("PIL") is not None or shutil.which("ffmpeg"))
 
     def add(id,capability,description,access,ready,required,fn,*,idempotent=True):
         catalog.register(ToolSpec(id,capability,description,access,
@@ -355,23 +360,23 @@ def body_catalog(workspace,*,vault_root=None):
         "write",bool(shutil.which("ffmpeg") and shutil.which("ffprobe")),
         ["plan","out"],composite)
     add("body.blender3d","physical 3D filmmaking","Blender real rendered geometries, materials and moving camera",
-        "write",bool(shutil.which("blender") and shutil.which("ffmpeg")),
+        "write",bool(shutil.which("blender") and video_io),
         ["scene_json","out"],render3d)
     add("body.motion2d","original 2D/2.5D animation","Independent vector character and motion compositor",
-        "write",bool(shutil.which("ffmpeg")),["original_film_ir","out","width","fps"],render2d)
+        "write",bool(video_io and motion_libraries),["original_film_ir","out","width","fps"],render2d)
     add("body.inspect","measure physical media","FFprobe validates actual source video",
         "read",bool(shutil.which("ffprobe")),["source"],inspect)
     add("body.render_edit","editorial timeline","Headless FFmpeg actual movie assembler",
-        "write",bool(shutil.which("ffmpeg")),["edit","out"],edit)
+        "write",video_io,["edit","out"],edit)
     try:import opentimelineio
     except ImportError:otio_ready=False
     else:otio_ready=True
     add("body.otio","editable edit interchange","Real Academy Software Foundation OpenTimelineIO",
-        "write",otio_ready,["edit","out"],export_edit)
+        "write",bool(otio_ready and shutil.which("ffprobe")),["edit","out"],export_edit)
     add("body.vector_png","original vector art and thumbnail","Inkscape headless real vector to PNG",
-        "write",bool(shutil.which("inkscape")),["source_svg","out","width","height"],vector_art)
+        "write",bool(shutil.which("inkscape") and png_decoder),["source_svg","out","width","height"],vector_art)
     add("body.film_thumbnail","original movie frame artwork","FFmpeg decode actual selected frame",
-        "write",bool(shutil.which("ffmpeg")),["source_film","out","time_seconds"],thumbnail)
+        "write",video_io,["source_film","out","time_seconds"],thumbnail)
     add("body.asset_vault","audited generated-media provenance",
         "Custody is accepted only from an actually verified trusted renderer node",
         "write",True,["source_witness"],vault_asset)

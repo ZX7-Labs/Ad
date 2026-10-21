@@ -45,6 +45,16 @@ jobs:
           python -m pip wheel --no-deps --wheel-dir output/body-release-proof/wheels .
           python -m venv --system-site-packages "$RUNNER_TEMP/zx7-body-installed"
           "$RUNNER_TEMP/zx7-body-installed/bin/python" -m pip install --no-deps output/body-release-proof/wheels/*.whl
+          python -m venv "$RUNNER_TEMP/zx7-body-minimal"
+          "$RUNNER_TEMP/zx7-body-minimal/bin/python" -m pip install --no-deps output/body-release-proof/wheels/*.whl
+          "$RUNNER_TEMP/zx7-body-minimal/bin/python" -I - <<'PY'
+          import tempfile
+          from studio_next.body_integration import body_catalog
+          with tempfile.TemporaryDirectory() as root:
+              installed={x['id']:x for x in body_catalog(root).discover()}
+              assert installed['body.motion2d']['status']=='needs_setup',installed
+          print('MINIMAL INSTALLED WHEEL DOES NOT CLAIM ABSENT RENDERER LIBRARIES')
+          PY
       - name: Installed package independently renders original 3D, 2D, sound, editable cut and full decoded MP4
         working-directory: ${{ runner.temp }}
         run: |

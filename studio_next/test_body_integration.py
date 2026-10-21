@@ -25,6 +25,16 @@ def actual_rgb_png():
 
 
 class TrustedCreativeBodyToolTests(unittest.TestCase):
+    def test_native_motion_is_not_advertised_when_required_python_renderer_is_missing(self):
+        actual=importlib.util.find_spec
+        with tempfile.TemporaryDirectory() as root:
+            with patch("studio_next.body_integration.importlib.util.find_spec",
+                       side_effect=lambda name:None if name=="PIL" else actual(name)):
+                catalog=body_catalog(root)
+            tools={x["id"]:x for x in catalog.discover()}
+            self.assertEqual(tools["body.motion2d"]["status"],"needs_setup")
+            self.assertNotIn("body.motion2d",catalog.executable_ids({"write"}))
+
     def test_true_apps_discovered_not_fake_installation(self):
         with tempfile.TemporaryDirectory() as root:
             c=body_catalog(root)
