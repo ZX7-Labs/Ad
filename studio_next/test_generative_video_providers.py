@@ -1,4 +1,5 @@
 import json
+import hashlib
 import tempfile
 import unittest
 from pathlib import Path
@@ -39,9 +40,12 @@ class ActualVideoGeneratorDiscoveryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             p=Path(root)/"wan21-t2v-13b"
             p.mkdir()
+            weights=p/"quantized-sample.safetensors"
+            weights.write_bytes(b"verified binary"*100)
             (p/"deployment.json").write_text(json.dumps({
-                "model_id":"wan21-t2v-13b","weight_sha256":"a"*64,
-                "weight_file_is_hash_verified":True,
+                "model_id":"wan21-t2v-13b",
+                "weight_file":weights.name,
+                "weight_sha256":hashlib.sha256(weights.read_bytes()).hexdigest(),
                 "license_accepted_or_verified":True,
                 "required_comfyui_nodes":["WanVideoModelLoader","SaveVideo"]}))
             def fake(url):
