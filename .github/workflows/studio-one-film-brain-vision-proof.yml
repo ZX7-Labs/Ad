@@ -72,6 +72,12 @@ jobs:
           test -n "$SERVER"
           echo "LLAMA_SERVER=$SERVER" >> "$GITHUB_ENV"
           echo "LD_LIBRARY_PATH=$(dirname "$SERVER")" >> "$GITHUB_ENV"
+      - name: One film brain composes an original film freely, before inspecting reference prototype
+        run: |
+          python -u -m studio_next.open_creative \
+            --brief studio_next/experiments/product.json \
+            --model "$MODEL_ALIAS" --api http://127.0.0.1:8085 \
+            --out "$OUTPUT/original-film"
       - name: Film model independently critiques real decoded preview frames
         run: |
           "$LLAMA_SERVER" --model "models/film-eye/$MODEL_FILE" \
@@ -94,9 +100,28 @@ jobs:
           PY
           python -u -m studio_next.film_eye \
             --video "$ACTUAL_VIDEO" \
-            --goal "This genuine archival ZX7 technical clip joins an original vector-motion shot to an actually Blender-rendered, sculpted metal ring with directed light and moving 3D camera. Assess what is really visible: causal composition, material readability and whether the cut would move an audience. This was NOT previously accepted as professional cinema." \
+            --goal "$(cat "$OUTPUT/original-film/director-original.txt")" \
             --time 0.7 --time 3.5 --model "$MODEL_ALIAS" \
             --api http://127.0.0.1:8085 --out "$OUTPUT"
+      - name: Same film brain makes a creative revision against real decoded prototype feedback
+        run: |
+          python -u -m studio_next.film_revision \
+            --original "$OUTPUT/original-film/director-original.txt" \
+            --actual-critique "$OUTPUT/director-observed-critique.txt" \
+            --visual-evidence "$OUTPUT/visual-critique-evidence.json" \
+            --brief studio_next/experiments/product.json \
+            --model "$MODEL_ALIAS" --api http://127.0.0.1:8085 \
+            --out "$OUTPUT/revised-film"
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          root=Path(os.environ["OUTPUT"])
+          result=json.loads((root/"revised-film/artistic-revision-manifest.json").read_text())
+          assert result["same_original_film_preserved"]
+          assert result["real_frame_count"]>=2
+          assert not result["revised_video_rendered"]
+          print("GENUINE MODEL VISUAL-REVISION EVIDENCE SAVED; NOT A RE-RENDERED FILM")
+          PY
       - name: Archive actual visual evidence and unaudited single-brain critique
         if: always()
         uses: actions/upload-artifact@v4
