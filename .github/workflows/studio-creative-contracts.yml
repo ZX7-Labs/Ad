@@ -4,6 +4,11 @@ on:
   push:
     branches: [zx7-specialist-free-stack-20261020]
     paths:
+      - "motion_studio/render.py"
+      - "studio_next/font_registry.py"
+      - "studio_next/test_font_registry.py"
+      - "studio_next/body_capabilities.py"
+      - "studio_next/test_body_capabilities.py"
       - "motion_studio/voice.py"
       - "studio_next/test_voice_slots.py"
       - "studio_next/review_own_film.py"
