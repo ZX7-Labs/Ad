@@ -98,6 +98,15 @@ jobs:
           assert any(s.get("codec_type")=="video" for s in meta["streams"])
           assert any(s.get("codec_type")=="audio" for s in meta["streams"])
           assert movie.stat().st_size>10000
+          import opentimelineio as otio
+          editable=otio.adapters.read_from_file(str(root/"finished-actual-film.otio"))
+          assert len(editable.video_tracks())==1
+          assert len(editable.audio_tracks())==1
+          audio=editable.audio_tracks()[0]
+          assert len(audio)==len(editable.video_tracks()[0])
+          assert isinstance(audio[0],otio.schema.Clip)
+          assert isinstance(audio[1],otio.schema.Gap)
+          print("PROFESSIONAL EDITABLE PICTURE+ORIGINAL SOUND+INTENTIONAL SILENCE VERIFIED")
           print("VERIFIED ACTUAL INTEROPERABLE MEDIA BODY:")
           for f in (movie,root/"finished-actual-film.otio",
                     root/"designed-original.png",root/"thumbnail.png"):
