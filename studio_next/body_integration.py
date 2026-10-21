@@ -31,6 +31,8 @@ from .film_finishing import finish_authorized_movie
 from .production_qc import full_decode_inspection
 from .body_plugins import discover_enabled_body_plugins
 from .body_materials import fingerprint_physical_inputs
+from .generative_video_providers import discover_local_generators
+from .comfy_video_runtime import render_actual_generated_scene,validate_video_job
 
 
 def _body_output(workspace,name,*,allowed=(".mp4",".otio",".png")):
@@ -102,6 +104,7 @@ def _trusted_body_revision(tool_id):
         "body.composite_mix":["composite_mix.py","media_vault.py"],
         "body.film_finish":["film_finishing.py","media_vault.py"],
         "body.full_decode":["production_qc.py","delivery_audit.py"],
+        "body.generate_video":["comfy_video_runtime.py","generative_video_providers.py"],
         "body.blender3d":["native_body_engines.py","blender_scene.py"],
         "body.motion2d":["native_body_engines.py","motion_bridge.py","font_registry.py"],
     }
@@ -115,6 +118,7 @@ def _trusted_body_revision(tool_id):
         "body.composite_mix":["ffmpeg","ffprobe"],
         "body.film_finish":["ffmpeg","ffprobe"],
         "body.full_decode":["ffmpeg","ffprobe"],
+        "body.generate_video":["ffprobe"],
         "body.blender3d":["blender","ffmpeg"],
         "body.motion2d":["ffmpeg","ffprobe"],
     }
@@ -171,13 +175,13 @@ def body_catalog(workspace,*,vault_root=None):
     vault=MediaVault(vault_root or (root/"vault"))
     catalog=ToolCatalog()
 
-    def add(id,capability,description,access,ready,required,fn):
+    def add(id,capability,description,access,ready,required,fn,*,idempotent=True):
         catalog.register(ToolSpec(id,capability,description,access,
             status="installed" if ready else "needs_setup",
             license="various installed FOSS or verified asset provenance",
             resource="local machine",
             operation_schema={"required":required}),fn if ready else None,
-            idempotent=True,
+            idempotent=idempotent,
             implementation_revision=_trusted_body_revision(id) if ready else None,
             material_fingerprint=(lambda inputs,name=id:
                 fingerprint_physical_inputs(name,inputs,root)) if ready else None)
@@ -235,6 +239,29 @@ def body_catalog(workspace,*,vault_root=None):
         # The standard tool-result witness is also rechecked on every restart.
         return report
 
+    def generate_genuine_video(inputs):
+        """Only a real approved local GPU model may execute an authored shot.
+
+        The director owns text, frame timing, camera/acting, aspect and seed.
+        The model-specific Comfy graph is supplied by audited host installer;
+        no raw model Python, web URLs or arbitrary shell commands are allowed.
+        """
+        source=_path_within(root,inputs["video_job"],exists=True)
+        dest=_body_output(root,inputs["out"],allowed=(".mp4",))
+        job=validate_video_job(json.loads(source.read_text(encoding="utf-8")))
+        local_endpoint=os.getenv("ZX7_COMFY_API")
+        local_weights=os.getenv("ZX7_VIDEO_DEPLOYMENTS","models/creative-video")
+        stable_sha=hashlib.sha256(source.read_bytes()).hexdigest()[:32]
+        physical_job_folder=root/"_real_generated_jobs"/stable_sha
+        actual=render_actual_generated_scene(
+            job,physical_job_folder,deployment_root=local_weights,
+            comfy_endpoint=local_endpoint)
+        filmed=Path(actual["clip"])
+        if not filmed.is_file():
+            raise RuntimeError("Real video diffusion tool supplied no source footage")
+        return _commit_actual_body_output(
+            dest,lambda staged:shutil.copyfile(filmed,staged))
+
     def render3d(inputs):
         source=_path_within(root,inputs["scene_json"],exists=True)
         dest=_body_output(root,inputs["out"],allowed=(".mp4",))
@@ -284,6 +311,20 @@ def body_catalog(workspace,*,vault_root=None):
                 "asset_id":ref["asset_id"],"attestation_id":ref["attestation_id"],
                 "rights":ref["rights"]}
 
+    # This is a dormant native capability until REAL local GPU, licensed
+    # checkpoint components and a live self-hosted graph are verified.
+    # A model is never told it can make cinematic live-action from CPU-only tools.
+    endpoint=os.getenv("ZX7_COMFY_API")
+    available=discover_local_generators(
+        comfy_endpoint=endpoint,
+        deployed_root=os.getenv("ZX7_VIDEO_DEPLOYMENTS","models/creative-video"))
+    native_video_ready=bool(shutil.which("ffprobe") and any(
+        x["ready_for_independent_execution_trial"]
+        for x in available["video_generation_options"]))
+    add("body.generate_video","actual self-hosted text-to-video cinematography",
+        "Director-authored actor/camera/action prompt executed by locally verified GPU diffusion model",
+        "write",native_video_ready,["video_job","out"],
+        generate_genuine_video,idempotent=False)
     add("body.full_decode","physical full-movie delivery quality assurance",
         "Actually decode entire picture/sound; preserve deliberate creative style",
         "read",bool(shutil.which("ffmpeg") and shutil.which("ffprobe")),
