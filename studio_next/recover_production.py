@@ -55,13 +55,34 @@ def audited_renderer_contract():
     It is an execution *interface*, not a cinematic style/shot template.
     """
     return {
-        "blender_backend":"Blender Cycles CPU with actual validated geometry",
-        "blender_validator_source":inspect.getsource(validate_blender_shot),
-        "blender_supported_object_kinds":sorted(SHAPES),
-        "blender_supported_light_kinds":sorted(LIGHTS),
+        "format":"Machine-readable tool ABI, NOT a film prompt/style list",
+        "validation_code_sha256":hashlib.sha256(
+            inspect.getsource(validate_blender_shot).encode("utf-8")).hexdigest(),
+        "blender3d":{
+            "shot_id":"unchanged original scene id",
+            "width":"positive int","height":"positive int",
+            "fps":"positive int","frames":"positive int",
+            "camera":{
+                "required":["location:3 numbers","target:3 numbers","lens_mm:1..300"],
+                "optional":["animate_location:[{frame:positive int,value:3 numbers}]",
+                            "animate_target:frames+values",
+                            "depth_of_field:{focus_distance,fstop}"]},
+            "world":{"color":"3 numbers 0..1","strength":"0..100"},
+            "materials":"nonempty list of {id, color:[r,g,b,a] 0..1, metallic:0..1, roughness:0.001..1}",
+            "objects":{"required":["id","type","material","location:[x,y,z]",
+                "rotation_degrees:[x,y,z]","scale:[x,y,z]>0"],
+                "types":sorted(SHAPES),
+                "optional":["animate transforms as {frame,value} curves",
+                    "vertices+faces for custom_mesh only",
+                    "asset+rights for verified local licensed_glb only"]},
+            "lights":{"required":["id","type","location:[x,y,z]",
+                "rotation_degrees:[x,y,z]","energy>=0","color:[r,g,b] 0..1"],
+                "types":sorted(LIGHTS),"optional":["size>0"]},
+            "optional":["samples:positive int"],
+            "strict_fields_only":True,"safety":"No Python/scripts, URLs or invented assets"},
         "other_registered_engines":{
-            "motion2d":"Original explicit vector-based artwork, needs valid Film IR",
-            "unresolved":"Keep requested artistic visuals without falsely rendering them"},
+            "motion2d":"Requires separately validated original Film IR, not a generic scene card",
+            "unresolved":"Keep desired real footage/3D/VFX when not actually producible"}
     }
 
 
