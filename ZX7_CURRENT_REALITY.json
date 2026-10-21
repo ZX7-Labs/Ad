@@ -1,0 +1,50 @@
+{
+  "schema": 1,
+  "date": "2026-10-21",
+  "purpose": "One autonomous artist-grade film/editorial/design/3D/thumbnail intelligence; one brain chooses ALL actually connected tools; no artistic templates or giant MD prompt",
+  "branch": "zx7-specialist-free-stack-20261020",
+  "main_untouched": true,
+  "original_film": {
+    "name": "The Fold",
+    "model": "Qwen3.5-9B Defiant Fable creative writing candidate",
+    "shots": 6,
+    "seconds": 22,
+    "voice": "M3",
+    "input_photos_or_video": false,
+    "topic": "FOLD is a paper notebook; no verified product photographs",
+    "original_run": 39541436321,
+    "original_artifact": 12322320408
+  },
+  "recovery": {
+    "run_id": 39550779036,
+    "github_status": "success",
+    "created_mp4": false,
+    "verified_unresolved_scenes": 6,
+    "why": "Photoreal acting, hands, crowds, paper and original realistic sound unavailable on free GitHub CPU Blender tooling",
+    "archive_artifact": 12324718334
+  },
+  "video_models": {
+    "verified_hub_licenses": "Wan 2.1 T2V 1.3B, VACE 1.3B, Wan 2.2 TI2V 5B declare Apache-2.0; actual GPU is necessary",
+    "actual_gpu_verified": false,
+    "video_created_by_generator": false,
+    "comfyui_tool_bridge": "implemented; requires self-hosted loopback ComfyUI, actual compatible GPU, 3+ separately hash-verified local weight files, native trusted editable API workflow; untested on GPU",
+    "new_dynamic_adapters": true
+  },
+  "resumption": {
+    "film_vision_preserved": true,
+    "per_scene_raw_output": "SHA-keyed atomic stage checkpoint",
+    "per_scene_actual_media": "SHA+ffprobe+exact director/tool proof",
+    "github_cache_restore_save": "best effort; runtime killed before upload can lose most recent work",
+    "fully_fault_tolerant": false
+  },
+  "quality": {
+    "world_class_film_brain_proven": false,
+    "audiovisual_quality_independently_judged": false
+  },
+  "next": "Connect proven free local CUDA GPU or other lawful high-fidelity real media generation capacity, install model weights/workflow, generate actual original MP4 and assess full acting/audio/video rather than tests alone",
+  "reference_links": [
+    "https://github.com/oyzitjfzj/Ad/actions/runs/39541436321",
+    "https://github.com/oyzitjfzj/Ad/actions/runs/39550779036",
+    "https://github.com/oyzitjfzj/Ad/actions/runs/39558630600"
+  ]
+}
