@@ -12,10 +12,8 @@ class DesignerOriginalThumbnailOpsTests(unittest.TestCase):
               '<defs><linearGradient id="original"><stop stop-color="#ff03a0"/></linearGradient></defs>'
               '<path d="M 0 100 L 300 250" fill="url(#original)"/>'
               '<text x="50" y="100">Unique artist headline</text></svg>')
-            # Reusing a local symbolic gradient is art, not fetching a remote file.
-            # The standalone SVG source passes if no external deps exist.
-            with self.assertRaises(ValueError):
-                validate_original_svg_art(p)
+            # Original gradients, masks and textures are NOT film style presets.
+            self.assertTrue(validate_original_svg_art(p)["self_contained"])
             p.write_text('<svg xmlns="http://www.w3.org/2000/svg">'
                   '<path d="M 0 100 L 300 250" fill="#ff03a0"/>'
                   '<text x="50" y="100">Unique artist headline</text></svg>')
