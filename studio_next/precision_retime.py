@@ -50,6 +50,31 @@ def _tempo_chain(speed):
     return ",".join(f"atempo={s:.12g}" for s in steps)
 
 
+def _source_timebase(path):
+    """Verify physical decoded frame count and that clip is constant-frame-rate."""
+    raw=subprocess.check_output([
+        "ffprobe","-v","error","-count_frames","-select_streams","v:0",
+        "-show_entries","stream=avg_frame_rate,r_frame_rate,nb_read_frames",
+        "-of","json",str(path)],timeout=90)
+    streams=json.loads(raw).get("streams",[])
+    if len(streams)!=1:
+        raise ValueError("Original retime requires one identifiable video stream")
+    stream=streams[0]
+    try:
+        avg=Fraction(stream["avg_frame_rate"])
+        nominal=Fraction(stream["r_frame_rate"])
+        count=int(stream["nb_read_frames"])
+    except (KeyError,ValueError,TypeError,ZeroDivisionError) as exc:
+        raise ValueError("Source video lacks measured frame rate/count") from exc
+    if not avg or not nominal or count<=0:
+        raise ValueError("Invalid actual source timing")
+    # CFR is a capability requirement for this adapter. A proper VFR
+    # normalization tool can be installed separately with user approval.
+    if abs(avg-nominal)/avg>Fraction(1,1000):
+        raise ValueError("Variable-rate media needs explicit CFR conform before frame-precision editing")
+    return avg,count
+
+
 def plan_retime(plan,root,vault_root,*,probe=None):
     if not isinstance(plan,dict) or set(plan)!={"source","asset_id","attestation_id",
                                                 "source_fps","segments","audio"}:
@@ -102,12 +127,14 @@ def plan_retime(plan,root,vault_root,*,probe=None):
         allparts.append({"first":first,"end":end,"speed":speed,"duration":duration})
     if expected>24*3600:
         raise ValueError("Local retime stage exceeds its 24-hour output safety capacity")
-    # The physical adapter uses decoded frames; reject substantial source-rate
-    # discrepancies, not silently re-time variable-frame-rate originals.
-    if plan.get("source_fps") and meta.get("fps"):
-        measured=Fraction(str(meta["fps"])).limit_denominator(1001000)
+    # Verify real source timing and its decoded frame count, not a user claim.
+    # Dependency injection here is used only for isolated tests.
+    if probe is None:
+        measured,physical_frame_count=_source_timebase(source)
         if abs(measured-fps)/fps>Fraction(1,1000):
-            raise ValueError("Actual source frame rate differs from user-authorized timebase")
+            raise ValueError("Actual source rate differs from the selected frame timebase")
+        if any(item["end"]>physical_frame_count for item in allparts):
+            raise ValueError("Selected original edit reaches beyond source footage")
     return {"source":source,"fps":fps,"audio":audio,"parts":allparts,
             "expected_seconds":float(expected),"source_fps":rate,
             "width":meta["width"],"height":meta["height"]}
