@@ -1,12 +1,17 @@
 import json
 import tempfile
 import unittest
+import shutil
+import subprocess
+import wave
 from pathlib import Path
 
 from studio_next.composite_mix import actual_composite_command,render_composition
 from studio_next.media_vault import MediaVault
 
 
+@unittest.skipUnless(shutil.which('ffmpeg') and shutil.which('ffprobe'),
+                     'Native media decoder/encoder not installed; real integration runs separately')
 class LayeredProductionCompositingTests(unittest.TestCase):
     def fixture(self,root):
         workspace=Path(root)
@@ -14,7 +19,9 @@ class LayeredProductionCompositingTests(unittest.TestCase):
         layers=[]
         for index in range(3):
             video=workspace/f"camera_{index}.mp4"
-            video.write_bytes(b"actual source footage"*200+bytes([index]))
+            subprocess.run(["ffmpeg","-hide_banner","-loglevel","error","-y",
+                "-f","lavfi","-i",f"color=c=0x{index+1}{index+2}3366:s=320x240:r=24:d=1.5",
+                "-c:v","mpeg4","-q:v","5",str(video)],check=True,timeout=40)
             ref=vault.ingest(video,mime="video/mp4",rights="owner_supplied",
                 source_type="owner_upload",source_id=f"owner-{index}",
                 evidence="Original owner source fixture",
@@ -25,7 +32,9 @@ class LayeredProductionCompositingTests(unittest.TestCase):
                 "x":index*70,"y":-index*20,"width":200,"height":140,
                 "opacity":1-index*.25})
         sound=workspace/"narration.wav"
-        sound.write_bytes(b"recorded owner voice"*80)
+        with wave.open(str(sound),"wb") as wav:
+            wav.setnchannels(1);wav.setsampwidth(2);wav.setframerate(16000)
+            wav.writeframes(bytes(2*16000*2))
         sound_ref=vault.ingest(sound,mime="audio/wav",rights="owner_supplied",
             source_type="owner_upload",source_id="owner_audio",
             evidence="Owner supplied this real voice track",owner_or_generator="owner")
@@ -67,6 +76,21 @@ class LayeredProductionCompositingTests(unittest.TestCase):
             command=actual_composite_command(plan,root,vault,Path(root)/"cinema.mp4")
             self.assertIn("overlay=",command[command.index("-filter_complex")+1])
             self.assertEqual(command[command.index("-filter_complex")+1].count("]overlay="),34)
+
+    def test_physically_encoded_multilayer_movie_has_audio_and_rights(self):
+        from studio_next.delivery_audit import _probe_details
+        with tempfile.TemporaryDirectory() as root:
+            plan,file,vault=self.fixture(root)
+            # Deliberate modest actual media dimensions; no creative size preset.
+            plan["canvas"].update(width=640,height=360,fps=24,duration=2)
+            file.write_text(json.dumps(plan))
+            destination=Path(root)/"physical-director-cut.mp4"
+            result=render_composition(file,root,Path(root)/"vault",destination)
+            proof=_probe_details(destination)
+            self.assertTrue(result["verified_physically"])
+            self.assertEqual((proof["width"],proof["height"]),(640,360))
+            self.assertTrue(proof["audio_stream_present"])
+            self.assertEqual(result["video_layers"],3)
 
     def test_real_mixer_output_must_match_movie_bytes(self):
         with tempfile.TemporaryDirectory() as root:
