@@ -75,3 +75,18 @@ During actual native amplitude-gain integration testing, an earlier audio-window
 - Unchanged global claim: **0/12 final BODY subsystem release gates accepted**. 
 
 - **Sensor fast suite independently resolved:** [39795394553](https://github.com/oyzitjfzj/Ad/actions/runs/39795394553) **COMPLETED SUCCESS** at code `cf06d00f43e29cec8af86111baf3e79d08fe07eb`: **140 fast sensor/security cases, 77 pass, 63 FFmpeg/Blender dependent skips**. The 3 new honest-state/job-auth tests each passed. This is not a native rendered-media proof; matching full [39795394570](https://github.com/oyzitjfzj/Ad/actions/runs/39795394570) and browser [39795394408](https://github.com/oyzitjfzj/Ad/actions/runs/39795394408) still require final result verification.
+
+
+## 22 October — film lineage isolation for truthful BODY feedback
+
+**Defect identified through live code review:** `LocalBodyCoordinator._stage_progress` previously queried all durable SQLite `node_results` under a shared workspace without filtering by actual `project_key`. When multiple independent films used one workspace, the brain/mobile view could misattribute unrelated stages to the wrong job. A raw completed/blocked result could borrow unrelated rows. This is a correctness/owner-state issue even when all rendered media bytes are valid.
+
+**Code fix:** `durable_project_key` now calculates the exact trusted execution namespace with the same project, facts and authorized read/write permissions as the DAG itself. `inspect(job)` computes expected identity from the stored original immutable IR. Native stage queries use a matching `project_key` and only node IDs declared by that original project; queued jobs receive no borrowed historical stages. Completed/paused result only sees stages when its trusted reported project identity matches. Stage rows are explicitly marked **shared film-lineage cache state, not individual job-attempt receipts**, and the separate compact `body_sensory` response exposes that scope.
+
+**Physical tests and release evidence:**
+- [39799784236](https://github.com/oyzitjfzj/Ad/actions/runs/39799784236) matching code `77d019a2e9d6d63882334469ae755d24cd857c16`: fast authenticated security CI **SUCCESS**, 141 tests (78 passed, 63 native-codec skipped).
+- [39799783858](https://github.com/oyzitjfzj/Ad/actions/runs/39799783858) matching code: separate real Chromium **SUCCESS**.
+- [39799783915](https://github.com/oyzitjfzj/Ad/actions/runs/39799783915) matching code: integrated native runner's unit suite **461 cases, 460 passed, one standalone-browser skip**, real wheel/Blender/film/audio/artifact stages also green; check GitHub workflow's final conclusion separately.
+- Follow-up feedback scope explicit label and test at code `2000b2b9e454f5063d179f80cf89d84992f695c3`: [full native 39800480144](https://github.com/oyzitjfzj/Ad/actions/runs/39800480144), [security 39800480223](https://github.com/oyzitjfzj/Ad/actions/runs/39800480223). Both were queued when written; verify before certification.
+
+This fixes project-level stage attribution but **does not** implement cryptographically independent signed per-job histories, distributed actors, genuine semantic film review, full NLE, or fully accepted 12 subsystem release gates. A shared creative project may intentionally reuse authenticated prior stages, so that cache is not the history of one job attempt. Preserve original The Fold, approved M3/F2, the draft boundary and main.
