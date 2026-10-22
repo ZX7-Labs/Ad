@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import os
 import shutil
 import subprocess
 import tempfile
@@ -99,6 +100,31 @@ class OriginalFilmObservationIntegration(unittest.TestCase):
             self.assertFalse(manifest["creative_story_or_style_approval"])
             self.assertTrue(manifest["full_picture_and_sound_decode_verified"])
         self.assertEqual(sha256_file(self.original),identity)
+        # Small real footage + its timestamped PNGs/audio evidence remain
+        # available as downloadable GitHub Actions proof artifacts.
+        retain=os.getenv("ZX7_OBSERVATION_PROOF")
+        if retain:
+            store=Path(retain).resolve()
+            store.mkdir(parents=True,exist_ok=True)
+            for source,name in ((out,"actual-review.zxreview"),
+                                (self.original,"original-reviewed-picture-sound.mp4")):
+                saved=store/name
+                if saved.exists():
+                    raise FileExistsError("Never overwrite owner review evidence")
+                shutil.copyfile(source,saved)
+            with zipfile.ZipFile(out) as archive:
+                for entry in ("frames/review_0001.png","frames/review_0002.png",
+                              "frames/review_0003.png","review.json"):
+                    saved=store/Path(entry).name
+                    saved.write_bytes(archive.read(entry))
+            (store/"review-proof.json").write_text(json.dumps({
+                "source_movie_sha256":identity,
+                "original_archive_sha256":sha256_file(out),
+                "actual_png_frames":3,
+                "actual_audio_windows_decoded":2,
+                "pixels_not_synthesized_or_inferred":True,
+                "objective_observations_not_artistic_approval":True
+            },sort_keys=True,indent=2)+"\n")
         with self.assertRaisesRegex(ValueError,"new standalone"):
             produce_review_bundle(self.plan_file,self.root,self.root/"vault",out)
     def test_rights_spoof_timestamp_injection_or_truncated_audio_block_before_export(self):
@@ -125,6 +151,19 @@ class OriginalFilmObservationIntegration(unittest.TestCase):
                 self.assertFalse((self.root/"no-forged-review.zxreview").exists())
             self.plan=original
         self.save()
+    def test_review_bundle_rejects_forged_audio_windows_even_with_original_pngs(self):
+        good=self.root/"good.zxreview"
+        produce_review_bundle(self.plan_file,self.root,self.root/"vault",good)
+        forged=self.root/"forged.zxreview"
+        with zipfile.ZipFile(good) as inp,zipfile.ZipFile(forged,"x") as out:
+            report=json.loads(inp.read("review.json"))
+            report["audio_window_evidence"][0]["mean_dbfs"]="I say this is perfect"
+            for name in inp.namelist():
+                out.writestr(name,json.dumps(report) if name=="review.json"
+                             else inp.read(name))
+        with self.assertRaisesRegex(ValueError,"loudness"):
+            verify_review_bundle(forged)
+
     def test_registered_operation_is_real_replay_verifiable_and_tampering_denied(self):
         catalog=body_catalog(self.root)
         status={x["id"]:x for x in catalog.discover()}
