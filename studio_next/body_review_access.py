@@ -39,7 +39,7 @@ def read_verified_review(archive,expected_sha256,workspace):
     """Read only factual measurements, no claims about the creative result."""
     file,manifest=_verified_review(archive,expected_sha256,workspace)
     return {"path":str(file),"sha256":expected_sha256,"bytes":file.stat().st_size,
-        "schema":1,
+        "schema":2,
         "original_source_sha256":manifest["source_sha256"],
         "original_duration_seconds":manifest["source_original_duration_seconds"],
         "actual_picture_width":manifest["source_picture_width"],
