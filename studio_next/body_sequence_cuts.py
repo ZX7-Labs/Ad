@@ -132,7 +132,10 @@ def render_verified_sequence(plan_file,workspace,vault_root,output):
         not destination.is_relative_to(root) or destination.exists() or
         destination.suffix.lower()!=".mp4"):
         raise ValueError("Native original cut requires owned plan and new workspace MP4")
+    accepted_plan_sha256=sha256_file(document)
     plan=json.loads(document.read_text(encoding="utf-8"))
+    if sha256_file(document)!=accepted_plan_sha256:
+        raise ValueError("Director timeline modified during source validation")
     checked=plan_verified_sequence(plan,root,vault_root)
     destination.parent.mkdir(parents=True,exist_ok=True)
     try:
@@ -151,6 +154,8 @@ def render_verified_sequence(plan_file,workspace,vault_root,output):
         if any(sha256_file(original)!=digest for original,digest in
                checked["originals"].items()):
             raise ValueError("Original footage changed during precise film cut")
+        if sha256_file(document)!=accepted_plan_sha256:
+            raise ValueError("Director's exact timeline changed during physical frame cut")
         return {"path":str(destination),"sha256":sha256_file(destination),
                 "bytes":destination.stat().st_size,
                 "original_physical_source_assets":len(checked["originals"]),
