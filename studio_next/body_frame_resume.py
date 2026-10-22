@@ -68,8 +68,14 @@ def _job_signature(scene, blender):
 
 def _store_state(path,state):
     temporary=path.with_name("." + path.name + ".uncommitted")
-    if temporary.exists() or temporary.is_symlink():
-        raise FileExistsError("Unreconciled original VFX checkpoint write")
+    # An interrupted process may leave a half-written temporary receipt.
+    # The caller holds the exclusive original-render file lock, so this
+    # namespaced temporary entry has no live writer. Ignore its untrusted
+    # content and rebuild only from the LAST fully committed receipt.
+    if temporary.is_symlink() or (temporary.exists() and not temporary.is_file()):
+        raise ValueError("Untrusted original VFX checkpoint journal entry")
+    if temporary.exists():
+        temporary.unlink()
     try:
         with temporary.open("x",encoding="utf-8") as out:
             json.dump(state,out,sort_keys=True,indent=2)
