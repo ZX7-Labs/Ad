@@ -21,6 +21,8 @@ on:
       - "studio_next/body_dependency_scope.py"
       - "studio_next/body_revision_impact.py"
       - "studio_next/body_color_pipeline.py"
+      - "studio_next/test_body_chroma_vfx.py"
+      - "studio_next/composite_mix.py"
       - "studio_next/test_body_color_pipeline.py"
       - "studio_next/body_integration.py"
       - "studio_next/body_materials.py"
