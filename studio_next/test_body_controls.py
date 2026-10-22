@@ -50,9 +50,9 @@ class ActualProductionControlTests(unittest.TestCase):
                  'purpose': 'Encode the original commissioned vector artwork',
                  'inputs': {'source_svg': 'original.svg', 'out': 'original.png',
                             'width': 96, 'height': 64}},
-                {'id': 'custody', 'tool_id': 'body.asset_vault', 'depends_on': ['draw'],
-                 'purpose': 'Retain verified artist media with original source custody',
-                 'inputs': {'source_witness': {'$node_output': 'draw'}}}]}
+                {'id': 'custody', 'tool_id': 'body.inspect', 'depends_on': ['draw'],
+                 'purpose': 'Independently inspect actual rendered artist pixels',
+                 'inputs': {'source': 'original.png'}}]}
         filename = root / 'film.json'
         filename.write_text(json.dumps(plan))
         return project, filename

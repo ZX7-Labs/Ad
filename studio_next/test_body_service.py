@@ -248,8 +248,14 @@ class IndependentLocalCreativeServiceTests(unittest.TestCase):
     def test_api_exposes_actual_stored_tool_progress_not_invented_percent(self):
         with tempfile.TemporaryDirectory() as root:
             from studio_next.durable_graph import DurableFilmGraph
-            service=LocalBodyCoordinator(root,execute=lambda ir,w:{
-                "status":"all_tool_results_verified","completed":[]})
+            entered=threading.Event()
+            release=threading.Event()
+            def genuine_coordinator_race(ir,w):
+                entered.set()
+                if not release.wait(8):
+                    raise RuntimeError("Test did not release actual coordinator")
+                return {"status":"all_tool_results_verified","completed":[]}
+            service=LocalBodyCoordinator(root,execute=genuine_coordinator_race)
             try:
                 directory=service._workspace("evidence");directory.mkdir()
                 ledger=DurableFilmGraph(directory/"production.sqlite3")
@@ -260,20 +266,27 @@ class IndependentLocalCreativeServiceTests(unittest.TestCase):
                     trusted_idempotent=True,
                     existing_result_verifier=lambda _:True,lease_seconds=120)
                 service.submit(plan(),workspace_id="evidence",job_id="evidence-job")
-                # A synthetic executor that cannot furnish the graph project
-                # key may not borrow status from the workspace database.
-                state=service.inspect("evidence-job")["actual_tool_progress"]
-                self.assertFalse(state["tool_progress_is_actual_sqlite"])
-                with service._connect() as db:
-                    db.execute("UPDATE jobs SET status='running',result=NULL WHERE id=?",
-                               ("evidence-job",))
+                self.assertTrue(entered.wait(4),"Real worker never entered")
+                self.assertEqual(service.inspect("evidence-job")["status"],"running")
                 state=service.inspect("evidence-job")["actual_tool_progress"]
                 self.assertTrue(state["tool_progress_is_actual_sqlite"])
                 self.assertEqual(state["observed_tool_states"][0]["node_id"],"render")
                 self.assertEqual(state["observed_tool_states"][0]["state"],"running")
                 self.assertEqual(state["stage_scope"],
                     "verified_shared_project_lineage_not_single_job_attempt")
-            finally:service.close()
+                release.set()
+                for _ in range(150):
+                    if service.inspect("evidence-job")["status"]=="completed":
+                        break
+                    time.sleep(.01)
+                self.assertEqual(service.inspect("evidence-job")["status"],"completed")
+                # The fake executor has no signed graph result/project key.
+                # A completed job may not claim another attempt's stage cache.
+                self.assertFalse(service.inspect("evidence-job")
+                                 ["actual_tool_progress"]["tool_progress_is_actual_sqlite"])
+            finally:
+                release.set()
+                service.close()
 
 
     def test_two_projects_same_workspace_never_mix_unrelated_stages(self):

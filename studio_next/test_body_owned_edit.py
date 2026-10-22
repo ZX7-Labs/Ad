@@ -121,7 +121,7 @@ class TrueOwnerAttestedGenericEditorTests(unittest.TestCase):
         def race(argv,**kwargs):
             nonlocal did
             result=real_run(argv,**kwargs)
-            if not did:
+            if not did and argv and argv[0]=="ffmpeg":
                 did=True
                 (self.root/"actual_0.mp4").write_bytes(b"changed during native encoder")
             return result
@@ -138,7 +138,7 @@ class TrueOwnerAttestedGenericEditorTests(unittest.TestCase):
         def race(argv,**kwargs):
             nonlocal did
             result=real_run(argv,**kwargs)
-            if not did:
+            if not did and argv and argv[0]=="ffmpeg":
                 did=True
                 self.plan_file.write_text("{}")
             return result
