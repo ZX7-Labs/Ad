@@ -27,6 +27,7 @@ _SOURCE_FIELDS={
     "body.full_decode":("source",),
     "body.generate_video":("video_job",),
     "body.blender3d":("scene_json","assets_root"),
+    "body.exr_passes":("scene_json","assets_root"),
     "body.motion2d":("original_film_ir","voice_assets"),
 }
 _NESTED_SOURCE_KEYS=frozenset(("source","path","image_path","texture_path",
