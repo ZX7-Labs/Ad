@@ -37,9 +37,13 @@ def _measurable(v,field):
     return float(v)
 
 def _snapshot_window(movie,start,end):
+    # ffmpeg output-level -ss/-t can trim AFTER the volumedetect filter:
+    # that would report whole-movie audio as if it belonged to this window.
+    # atrim runs BEFORE the meter inside the actual filtergraph.
     result=subprocess.run(["ffmpeg","-hide_banner","-nostdin","-loglevel","info",
-        "-i",str(movie),"-ss",str(start),"-t",str(end-start),
-        "-map","0:a:0","-vn","-af","volumedetect","-f","null","-"],
+        "-i",str(movie),"-map","0:a:0","-vn",
+        "-af",f"atrim=start={start}:end={end},asetpts=PTS-STARTPTS,volumedetect",
+        "-f","null","-"],
         capture_output=True,text=True,timeout=180,check=False)
     if result.returncode:
         raise ValueError("Selected original audio window did not physically decode")
@@ -102,7 +106,7 @@ def verify_review_bundle(archive):
         try:manifest=json.loads(z.read("review.json"))
         except (ValueError,UnicodeError) as exc:
             raise ValueError("Invalid original scene review JSON") from exc
-        if not isinstance(manifest,dict) or manifest.get("schema")!=1:
+        if not isinstance(manifest,dict) or manifest.get("schema")!=2:
             raise ValueError("Unknown original audiovisual review schema")
         images=manifest.get("frames")
         if not isinstance(images,list) or not (1<=len(images)<=_MAX_SAMPLES):
@@ -237,7 +241,7 @@ def produce_review_bundle(plan_path,workspace,vault_root,output):
                 audio.append(_snapshot_window(movie,a,b))
             if sha256_file(movie)!=original_hash:
                 raise ValueError("Owner film changed while extracting actual review evidence")
-            manifest={"schema":1,"source_sha256":original_hash,
+            manifest={"schema":2,"source_sha256":original_hash,
                       "source_asset_id":plan["media"]["asset_id"],
                       "source_attestation_id":plan["media"]["attestation_id"],
                       "source_original_duration_seconds":measured["duration_seconds"],
@@ -247,6 +251,7 @@ def produce_review_bundle(plan_path,workspace,vault_root,output):
                       "full_picture_and_sound_decode_verified":True,
                       "sampled_original_frames_only_not_all_frame_visual_evaluation":True,
                       "frames":images,"audio_window_evidence":audio,
+                      "audio_windows_metered_after_original_exact_atrim":True,
                       "audio_windows_do_not_prove_dialogue_intelligibility":True,
                       "color_values_are_display_RGB_not_scene_linear_or_ACES":True,
                       "motion_sample_delta_is_not_optical_flow_or_continuity_judgment":True,
