@@ -335,7 +335,8 @@ def main():
     import sys
     args=p.parse_args(sys.argv[sys.argv.index("--")+1:] if "--" in sys.argv else None)
     job=json.loads(args.scene.read_text(encoding="utf-8"))
-    print(json.dumps(render_blender_shot(job,args.out,verified_assets_root=args.assets_root),
+    print(json.dumps(render_blender_shot(job,args.out,verified_assets_root=args.assets_root,
+                 original_exr_passes=args.exr_passes),
                      indent=2),flush=True)
 
 
