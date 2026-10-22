@@ -157,7 +157,9 @@ class LayeredProductionCompositingTests(unittest.TestCase):
                         "duration_seconds":2.0,"audio_stream_present":True}
             result=render_composition(file,root,Path(root)/"vault",output,
                  runner=fake_runner,probe=fake_probe)
-            self.assertTrue(result["verified_physically"])
+            self.assertFalse(result["verified_physically"])
+            self.assertTrue(result["test_runner_or_probe_injected"])
+            self.assertFalse(result["full_picture_and_sound_decoder_completed"])
             self.assertEqual(result["video_layers"],3)
             with self.assertRaises(ValueError):
                 render_composition(file,root,Path(root)/"vault",output,

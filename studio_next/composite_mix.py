@@ -10,15 +10,19 @@ brand/font presets, forced scene counts or genre-based edits.
 """
 from __future__ import annotations
 
+import copy
 import json
 import math
 import os
 import re
+import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 
 from .media_vault import MediaVault,sha256_file,MediaCustodyError
 from .delivery_audit import _probe_details
+from .production_qc import full_decode_inspection
 
 _COLOR=re.compile(r"^#[a-fA-F0-9]{6}$")
 _ID=re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$")
@@ -305,10 +309,59 @@ def actual_composite_command(plan,workspace,vault,out):
     return args
 
 
+
+_SUFFIX_BY_MIME={
+    "video/mp4":".mp4","video/quicktime":".mov","video/webm":".webm",
+    "audio/wav":".wav","audio/mpeg":".mp3","audio/flac":".flac",
+    "image/png":".png","image/jpeg":".jpg","image/webp":".webp"
+}
+
+
+def _freeze_composition_sources(plan,root,vault,private):
+    """Copy every owner-attested original into readonly CAS-sealed render inputs.
+
+    This isolates the actual native compositor from a mutable or temporarily
+    swapped artist checkout path. The planned scene, layers and sound envelopes
+    are *not* modified, only the private physical decoder input addresses.
+    """
+    clone=copy.deepcopy(plan)
+    preserved={}
+    sealed={}
+    for kind in ("video_layers","audio_tracks"):
+        for layer in clone[kind]:
+            identity=layer["asset_id"]
+            attestation=layer["attestation_id"]
+            record=vault.inspect(identity,attestation_id=attestation)
+            mime=record["mime"]
+            suffix=_SUFFIX_BY_MIME.get(mime)
+            if suffix is None:
+                raise ValueError("No exact decoder format for original layer material")
+            original_layer=next(x for x in plan[kind] if x["id"]==layer["id"])
+            original=_exact_media(original_layer,vault,root,
+                                  need=kind)
+            preserved[str(original)]=identity
+            frozen=sealed.get((identity,suffix))
+            if frozen is None:
+                frozen=private/(identity+suffix)
+                with Path(record["path"]).open("rb") as input_stream, frozen.open("xb") as output:
+                    shutil.copyfileobj(input_stream,output,1024*1024)
+                    output.flush()
+                    os.fsync(output.fileno())
+                if sha256_file(frozen)!=identity:
+                    raise ValueError("Native compositor source changed while sealing original media")
+                os.chmod(frozen,0o400)
+                sealed[(identity,suffix)]=frozen
+            layer["source"]=str(frozen.relative_to(root))
+    validate_composition(clone,root,vault)
+    return clone,preserved,sealed
+
 def render_composition(plan_json,workspace,vault_root,out,*,runner=None,probe=None):
     root=Path(workspace).resolve()
     source=Path(plan_json)
+    before=sha256_file(source)
     plan=json.loads(source.read_text(encoding="utf-8"))
+    if sha256_file(source)!=before:
+        raise ValueError("Director composition plan changed during initial read")
     vault=MediaVault(vault_root)
     output=Path(out).resolve()
     if output.suffix.lower()!=".mp4" or output.exists():
@@ -317,23 +370,55 @@ def render_composition(plan_json,workspace,vault_root,out,*,runner=None,probe=No
     temporary=output.with_name(output.stem+".incomplete.mp4")
     if temporary.exists():
         raise FileExistsError("Unreconciled original editor output exists")
-    cmd=actual_composite_command(plan,root,vault,temporary)
     try:
-        (runner or subprocess.run)(cmd,check=True,timeout=3600)
-        if not temporary.is_file() or temporary.stat().st_size<100:
-            raise RuntimeError("FFmpeg did not generate real audiovisual media")
-        detail=(probe or _probe_details)(temporary)
-        expected=plan["canvas"]
-        if detail["width"]!=expected["width"] or detail["height"]!=expected["height"] or (
-                abs(detail["duration_seconds"]-expected["duration"])>
-                max(.12,2/expected["fps"])) or not detail["audio_stream_present"]:
-            raise RuntimeError("Physical composited movie disagrees with original editorial dimensions/timing/audio")
-        os.replace(temporary,output)
+        with tempfile.TemporaryDirectory(prefix=".zx7-owned-sources-",dir=root) as working:
+            frozen,originals,snapshots=_freeze_composition_sources(
+                plan,root,vault,Path(working))
+            if sha256_file(source)!=before:
+                raise ValueError("Original audiovisual plan changed before rendering")
+            cmd=actual_composite_command(frozen,root,vault,temporary)
+            (runner or subprocess.run)(cmd,check=True,timeout=3600)
+            if not temporary.is_file() or temporary.stat().st_size<100:
+                raise RuntimeError("FFmpeg did not generate real audiovisual media")
+            detail=(probe or _probe_details)(temporary)
+            expected=plan["canvas"]
+            if detail["width"]!=expected["width"] or detail["height"]!=expected["height"] or (
+                    abs(detail["duration_seconds"]-expected["duration"])>
+                    max(.12,2/expected["fps"])) or not detail["audio_stream_present"]:
+                raise RuntimeError("Rendered composite disagrees with authored geometry/timing/audio")
+            real_codec_proof=runner is None and probe is None
+            if real_codec_proof:
+                qa=full_decode_inspection(temporary,expected={
+                    "width":expected["width"],
+                    "height":expected["height"],
+                    "require_audio":True})
+                if not qa["technical_delivery_verified"] or not qa[
+                        "full_picture_and_sound_decoder_completed"]:
+                    raise RuntimeError("Actual composited film failed whole video/audio decode")
+            if sha256_file(source)!=before or any(
+                    sha256_file(path)!=digest for path,digest in originals.items()):
+                raise ValueError("Owner media or director plan changed during real compositing")
+            if any(sha256_file(path)!=digest for (digest,_),path in snapshots.items()):
+                raise ValueError("Original frozen media bytes changed during compositing")
+            for kind in ("video_layers","audio_tracks"):
+                for layer in plan[kind]:
+                    vault.inspect(layer["asset_id"],
+                                  attestation_id=layer["attestation_id"])
+            # Hardlink rejects any concurrent creator's approved result; an
+            # os.replace() could silently overwrite an already accepted movie.
+            with temporary.open("rb") as movie:
+                os.fsync(movie.fileno())
+            os.link(temporary,output)
+        temporary.unlink(missing_ok=True)
         return {"path":str(output),"sha256":sha256_file(output),
                 "bytes":output.stat().st_size,"duration_seconds":detail["duration_seconds"],
                 "video_layers":len(plan["video_layers"]),
                 "audio_tracks":len(plan["audio_tracks"]),"audio_present":True,
-                "verified_physically":True,"human_artistic_approval":False}
+                "verified_physically":real_codec_proof,
+                "full_picture_and_sound_decoder_completed":real_codec_proof,
+                "test_runner_or_probe_injected":not real_codec_proof,
+                "sealed_original_cas_during_decode":True,
+                "human_artistic_approval":False}
     except BaseException:
         temporary.unlink(missing_ok=True)
         raise
