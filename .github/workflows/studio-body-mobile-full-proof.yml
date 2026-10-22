@@ -75,6 +75,7 @@ jobs:
       - name: Verify complete contracts, real process death, pause/restart/resume and actual graphical client
         env:
           ZX7_DESKTOP_QA_PNG: ${{ github.workspace }}/output/body-release-proof/desktop-qa.png
+          ZX7_INCREMENTAL_CINEMA_PROOF: ${{ github.workspace }}/output/body-release-proof/incremental-cinema
         run: |
           mkdir -p output/body-release-proof
           python -m compileall -q studio_next motion_studio
