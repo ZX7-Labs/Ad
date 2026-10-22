@@ -26,9 +26,11 @@ import time
 import uuid
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlsplit,unquote
+from urllib.parse import urlsplit,unquote,parse_qs
 
 from .body_capabilities import operational_tool_summary,explain_operational_tool
+from .body_affordances import BodyAffordanceSurface
+from .body_integration import body_catalog
 from .body_integration import run_body_project
 from .media_vault import MediaVault,sha256_file,verify_media_container
 from .body_archive import create_body_archive
@@ -552,6 +554,26 @@ def make_body_http_handler(coordinator,token):
                     return self._reply(200,coordinator.list_jobs())
                 if path=="/v1/resources":
                     return self._reply(200,coordinator.host_resource_status())
+                if path=="/v1/affordances":
+                    opts=parse_qs(urlsplit(self.path).query,keep_blank_values=True)
+                    if any(k not in ("capability","limit","cursor","include_unavailable") or
+                           len(v)!=1 for k,v in opts.items()):
+                        raise ValueError("Invalid bounded somatic capability query")
+                    limit=int(opts.get("limit",["12"])[0])
+                    flag=opts.get("include_unavailable",["false"])[0]
+                    if flag not in ("true","false"):
+                        raise ValueError("Invalid unavailable-tool query option")
+                    catalog=body_catalog(coordinator.projects)
+                    return self._reply(200,BodyAffordanceSurface(catalog).discover(
+                        capability=opts.get("capability",[None])[0],limit=limit,
+                        include_unavailable=flag=="true",
+                        cursor=opts.get("cursor",[None])[0],
+                        allowed_access=frozenset({"read","write"})))
+                if path.startswith("/v1/affordances/"):
+                    name=path.removeprefix("/v1/affordances/")
+                    return self._reply(200,BodyAffordanceSurface(
+                        body_catalog(coordinator.projects)).describe(name,
+                            allowed_access=frozenset({"read","write"})))
                 if path=="/v1/tools":
                     return self._reply(200,{"tools":operational_tool_summary(
                         coordinator.projects)})
@@ -575,6 +597,26 @@ def make_body_http_handler(coordinator,token):
         def do_POST(self):
             if not self._authorized():return
             path=urlsplit(self.path).path
+            if path=="/v1/affordances/preflight":
+                # A sensory validation, NEVER a privileged execution or grant.
+                # The owner must submit an independently protected Film IR job.
+                try:
+                    length=int(self.headers.get("Content-Length","0"))
+                    if not 0<length<=_MAX_JOB_BODY:
+                        raise ValueError("Bounded sensory preflight input required")
+                    payload=json.loads(self.rfile.read(length))
+                    if not isinstance(payload,dict) or set(payload)!={
+                            "workspace_id","tool_id","inputs"}:
+                        raise ValueError("Preflight takes exact existing workspace, tool and data")
+                    workspace=coordinator._workspace(payload["workspace_id"])
+                    if not workspace.is_dir():
+                        raise ValueError("Original owner workspace not present")
+                    return self._reply(200,BodyAffordanceSurface(
+                        body_catalog(workspace)).preflight(
+                            payload["tool_id"],payload["inputs"],
+                            allowed_access=frozenset({"read","write"})))
+                except (ValueError,TypeError,RuntimeError,PermissionError) as exc:
+                    return self._reply(400,{"error":str(exc)})
             if path=="/v1/revisions/impact":
                 # Read-only architectural diff. It does not execute a model,
                 # reserve compute, alter the original Film IR or certify any
