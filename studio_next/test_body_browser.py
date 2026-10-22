@@ -67,7 +67,8 @@ class RealMobileBrowserAcceptance(unittest.TestCase):
                     page.locator("#status").get_by_text("Connected",exact=False).wait_for()
                     self.assertFalse(page.locator("#upload").is_disabled())
                     self.assertFalse(page.locator("#jobs-button").is_disabled())
-                    page.wait_for_function("document.querySelector('#tools').textContent.length > 15",timeout=15000)
+                    page.locator("#tools .entry").first.wait_for(timeout=15000)
+                    self.assertGreater(len(page.locator("#tools").inner_text()),15)
                     page.locator("#resources").get_by_text("Free host disk",exact=False).wait_for()
                     self.assertIn("GPU hardware is NOT evidence",page.locator("#resources").inner_text())
 
