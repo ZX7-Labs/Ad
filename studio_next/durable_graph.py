@@ -27,6 +27,7 @@ from .registry import ToolCatalog
 from .stage_checkpoint import fingerprint
 from .body_publication import physical_tool_attempt
 from .durable_sqlite import connect_durable_database
+from .body_dependency_scope import select_verified_node_assets
 
 
 class RecoveryBlocked(RuntimeError):
@@ -250,11 +251,13 @@ def execute_durable_film_graph(ir,catalog,*,fact_ids,store,
         relevant_shots=[shot for shot in ir["shots"]
                         if not related or shot["id"] in related]
         try:
+            relevant_assets=select_verified_node_assets(
+                ir.get("assets",[]),node,relevant_shots)
             materials=(input_material_fingerprint(tid,inputs)
                        if input_material_fingerprint is not None else None)
             input_key=fingerprint({"tool_id":tid,"version":tool_version,
                 "artistic_tool_node":node,"original_shots":relevant_shots,
-                "verified_assets":ir.get("assets",[]),
+                "verified_assets":relevant_assets,
                 "actual_material_sha":materials,
                 "args":inputs,"dependencies":{
                     dep:fingerprint(outputs[dep]) for dep in node.get("depends_on",[])}})
@@ -280,6 +283,14 @@ def execute_durable_film_graph(ir,catalog,*,fact_ids,store,
                         out=catalog.invoke(tid,inputs,allowed_access=permission)
                     if not output_verifier(tid,out):
                         raise ValueError("Tool provided no physically verified asset")
+                    # The physical original media may have changed while a
+                    # long-running encoder was working. Provenance is binding
+                    # only if SAME BYTES still exist at commit time.
+                    if input_material_fingerprint is not None:
+                        after_materials=input_material_fingerprint(tid,inputs)
+                        if after_materials!=materials:
+                            raise RecoveryBlocked(
+                                "Original source changed during physical render; cannot certify stale input")
                     # The heartbeat is stopped before committing, so it can
                     # never race a completed node and claim lease loss.
                     heart.stop()
