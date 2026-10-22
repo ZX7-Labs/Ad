@@ -25,6 +25,11 @@ PAGE = """<!doctype html><html lang="en"><head>
 <label for="workspace">Workspace ID</label><input id="workspace">
 <label for="film">Original Film IR JSON</label><input id="film" type="file" accept=".json,application/json">
 <button id="submit" disabled>Submit film</button><output id="submit-status"></output></section>
+<section><h2>Non-destructive edit impact</h2><p>Compare two original Film IR revisions. This checks graph changes; real cached media must still be verified before reuse.</p>
+<label for="before-film">Earlier approved Film IR</label><input id="before-film" type="file" accept=".json,application/json">
+<label for="after-film">Revised Film IR</label><input id="after-film" type="file" accept=".json,application/json">
+<button id="impact-button" disabled>Preview affected operations</button>
+<pre id="impact"></pre></section>
 <section><h2>Durable jobs</h2><button id="jobs-button" disabled>Refresh jobs</button><div id="jobs"></div></section>
 <footer>Production BODY control; no external port, no creative-brain claims.</footer></main>
 <script defer src="/studio.js"></script></body></html>"""
@@ -52,7 +57,7 @@ async function api(path,options={}){
  if(!r.ok){let s='HTTP '+r.status;try{s=(await r.json()).error||s}catch(_){}throw Error(s)}
  return r.json();
 }
-function enabled(v){for(const id of ['tools-button','resources-button','jobs-button','upload','submit'])e(id).disabled=!v}
+function enabled(v){for(const id of ['tools-button','resources-button','impact-button','jobs-button','upload','submit'])e(id).disabled=!v}
 async function tools(){
  const root=e('tools');root.replaceChildren();
  for(const t of (await api('/v1/tools')).tools||[]){const n=node('div',t.tool_id+' — '+t.capability+' ('+t.access+')');n.className='entry';root.append(n)}
@@ -110,6 +115,20 @@ e('connect').onclick=async()=>{
 e('tools-button').onclick=()=>tools().catch(err=>print('status',err.message));
 e('resources-button').onclick=()=>resources().catch(err=>print('status',err.message));
 e('jobs-button').onclick=()=>jobs().catch(err=>print('status',err.message));
+e('impact-button').onclick=async()=>{
+ try{
+  const old=e('before-film').files[0],updated=e('after-film').files[0];
+  if(!old||!updated||old.size>1800000||updated.size>1800000)
+    throw Error('Two original Film IR files below 1.8 MB each are required');
+  const payload={before:JSON.parse(await old.text()),after:JSON.parse(await updated.text())};
+  const report=await api('/v1/revisions/impact',{method:'POST',
+       headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  print('impact','Candidate unaffected stages: '+report.original_unchanged_candidates.join(', ')
+    +'\nStages requiring new execution: '+report.new_or_changed_operations.join(', ')
+    +'\nDeleted original stages: '+report.deleted_original_operations.join(', ')
+    +'\nOriginal source bytes and rights must be reverified at runtime');
+ }catch(err){print('impact',err.message)}
+};
 e('submit').onclick=async()=>{try{
  const space=e('workspace').value.trim(),file=e('film').files[0];
  if(!valid(space)||!file||!file.size||file.size>4000000)throw Error('Workspace and JSON under 4 MB required');
