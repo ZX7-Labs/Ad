@@ -58,6 +58,8 @@ on:
       - "studio_next/creative_tool_registry.py"
       - "studio_next/test_creative_tool_registry.py"
       - "studio_next/test_precision_retime.py"
+      - "studio_next/body_sequence_cuts.py"
+      - "studio_next/test_body_sequence_cuts.py"
       - "studio_next/body_integration.py"
       - "studio_next/body_materials.py"
       - "studio_next/body_download_tickets.py"
