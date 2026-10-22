@@ -12,6 +12,7 @@ _ARG_TYPES={
     "scene_json":"string","original_film_ir":"string","voice_assets":"string",
     "assets_root":"string","edit":"string","plan":"string","video_job":"string","out":"string",
     "width":"integer","height":"integer","fps":"integer",
+    "bundle":"string","bundle_sha256":"string","frame_index":"integer",
     "time_seconds":"number","expected":"object","source_witness":"object",
 }
 _EXAMPLES_DISALLOWED=True
