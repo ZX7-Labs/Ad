@@ -176,9 +176,15 @@ def validate_blender_shot(job, *, verified_assets_root=None):
 
 
 def render_blender_shot(job, out: Path, *, verified_assets_root=None,
-                        original_exr_passes=False):
+                        original_exr_passes=False, frame_start=None, frame_end=None):
     """This entry point must run under installed Blender, never eval model code."""
     validate_blender_shot(job,verified_assets_root=verified_assets_root)
+    # Validate the ACTUAL full authored scene before building any subset.
+    # This changes execution granularity, never the artist's animation clock.
+    if frame_start is not None or frame_end is not None:
+        if (type(frame_start) is not int or type(frame_end) is not int or
+                not 1 <= frame_start <= frame_end <= job["frames"]):
+            raise Invalid3DShot("Render range must be an ordered inclusive subset of original shot")
     import bpy
     from math import radians
     from mathutils import Vector
@@ -209,8 +215,8 @@ def render_blender_shot(job, out: Path, *, verified_assets_root=None,
     else:
         scene.render.image_settings.file_format="PNG"
         scene.render.image_settings.color_mode="RGB"
-    scene.frame_start=1
-    scene.frame_end=job["frames"]
+    scene.frame_start=1 if frame_start is None else frame_start
+    scene.frame_end=job["frames"] if frame_end is None else frame_end
     scene.render.fps=job["fps"]
     world=bpy.data.worlds.new("ZX7 director-owned world")
     scene.world=world
@@ -332,11 +338,16 @@ def main():
     p.add_argument("--assets-root",type=Path,default=None)
     p.add_argument("--exr-passes",action="store_true",
                    help="Physical 32-bit float linear multi-pass VFX EXR instead of display PNG")
+    p.add_argument("--frame-start",type=int,default=None,
+                   help="Original 1-based absolute render frame start (inclusive)")
+    p.add_argument("--frame-end",type=int,default=None,
+                   help="Original 1-based absolute render frame end (inclusive)")
     import sys
     args=p.parse_args(sys.argv[sys.argv.index("--")+1:] if "--" in sys.argv else None)
     job=json.loads(args.scene.read_text(encoding="utf-8"))
     print(json.dumps(render_blender_shot(job,args.out,verified_assets_root=args.assets_root,
-                 original_exr_passes=args.exr_passes),
+                 original_exr_passes=args.exr_passes,
+                 frame_start=args.frame_start,frame_end=args.frame_end),
                      indent=2),flush=True)
 
 
