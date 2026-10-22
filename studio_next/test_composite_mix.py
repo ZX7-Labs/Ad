@@ -162,6 +162,33 @@ class LayeredProductionCompositingTests(unittest.TestCase):
                 actual_composite_command(plan,root,vault,out)
             self.assertFalse(out.exists())
 
+    def test_camera_movie_longer_than_its_audio_cannot_invent_missing_sound(self):
+        with tempfile.TemporaryDirectory() as root:
+            plan,_,vault=self.fixture(root)
+            camera=Path(root)/"picture-two-seconds-audio-one-second.mp4"
+            command=["ffmpeg","-hide_banner","-loglevel","error","-nostdin",
+                     "-y","-f","lavfi","-i",
+                     "color=c=red:s=160x90:r=24:d=2",
+                     "-f","lavfi","-i",
+                     "sine=frequency=540:sample_rate=48000:duration=1",
+                     "-c:v","libx264","-c:a","aac",str(camera)]
+            subprocess.run(command,check=True,capture_output=True,timeout=45)
+            record=vault.ingest(camera,mime="video/mp4",rights="owner_supplied",
+                source_type="owner_upload",source_id="original-camera-short-sound",
+                evidence="Physically recorded differing picture and sound clocks",
+                owner_or_generator="owner")
+            audio=plan["audio_tracks"][0]
+            audio.update(source=camera.name,asset_id=record["asset_id"],
+                         attestation_id=record["attestation_id"],
+                         start=0,source_in=1.30,duration=.40)
+            out=Path(root)/"must-never-imply-missing-speech.mp4"
+            with self.assertRaisesRegex(ValueError,"source trim exceeds"):
+                actual_composite_command(plan,root,vault,out)
+            self.assertFalse(out.exists())
+            audio.update(source_in=.35,duration=.4)
+            args=actual_composite_command(plan,root,vault,out)
+            self.assertIn("-filter_complex",args)
+
     def test_mutable_checkout_swap_cannot_change_cas_sealed_camera_or_sound(self):
         from studio_next import composite_mix
         from studio_next.media_vault import sha256_file

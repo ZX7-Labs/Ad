@@ -120,19 +120,33 @@ def _gain_automation_expression(layer):
 
 
 
-def _decoded_source_duration(path):
-    """Measure actual source length. No silent playback past owner footage."""
+def _decoded_source_duration(path,kind):
+    """Measure the chosen video/audio STREAM, never the container's duration.
+
+    A camera MP4 may have two seconds of picture but only one second of
+    recorded sound. Container length is not evidence for the audio bus.
+    """
+    if kind not in ("video","audio"):
+        raise ValueError("Only actual picture and sound clocks can be measured")
     try:
         raw=subprocess.check_output([
-            "ffprobe","-v","error","-show_entries","format=duration",
+            "ffprobe","-v","error","-show_entries",
+            "stream=codec_type,duration,duration_ts,time_base",
             "-of","json",str(path)],timeout=45)
-        value=json.loads(raw).get("format",{}).get("duration")
-        duration=float(value)
-    except (OSError,ValueError,TypeError,KeyError,
+        streams=json.loads(raw)["streams"]
+        wanted="video" if kind=="video" else "audio"
+        chosen=next(s for s in streams if s.get("codec_type")==wanted)
+        value=chosen.get("duration")
+        if value in (None,"N/A"):
+            from fractions import Fraction
+            duration=float(int(chosen["duration_ts"])*Fraction(chosen["time_base"]))
+        else:
+            duration=float(value)
+    except (OSError,ValueError,TypeError,KeyError,StopIteration,
             subprocess.SubprocessError) as exc:
-        raise ValueError("Actual original source duration cannot be established") from exc
+        raise ValueError("Actual original "+kind+" stream duration cannot be established") from exc
     if not math.isfinite(duration) or duration<=0:
-        raise ValueError("Original source has no finite decodable duration")
+        raise ValueError("Original "+kind+" stream has no finite decodable duration")
     return duration
 
 def validate_composition(plan,workspace,vault):
@@ -183,9 +197,10 @@ def validate_composition(plan,workspace,vault):
             if start+duration>seconds+1/canvas["fps"]:
                 raise ValueError("Layer exceeds editor-authored total duration")
             file=_exact_media(layer,vault,root,need=kind)
-            if file not in real_source_lengths:
-                real_source_lengths[file]=_decoded_source_duration(file)
-            if source_in+duration>real_source_lengths[file]+0.015:
+            clock=(file,kind)
+            if clock not in real_source_lengths:
+                real_source_lengths[clock]=_decoded_source_duration(file,kind)
+            if source_in+duration>real_source_lengths[clock]+0.015:
                 raise ValueError("Original source trim exceeds physically decoded footage or sound")
             if kind=="video" and contract is not None:
                 # This is not a silent metadata label. Every incoming
