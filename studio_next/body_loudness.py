@@ -78,6 +78,8 @@ def inspect_original_loudness(plan_file,workspace,vault_root):
     return {
         "path":str(movie),
         "sha256":digest,"bytes":movie.stat().st_size,
+        "duration_seconds":physical["duration_seconds"],"audio_present":True,
+        "width":physical["width"],"height":physical["height"],
         "original_film_audio_measurement":"FFmpeg ebur128 with true-peak detector",
         "integrated_loudness_lufs":integrated,
         "loudness_range_lu":lra,
