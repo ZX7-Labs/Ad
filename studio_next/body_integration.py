@@ -35,6 +35,7 @@ from .body_color_pipeline import render_verified_color_job
 from .body_exr_passes import render_original_exr_passes,verify_exr_bundle
 from .body_frame_resume import render_resumable_exr_passes
 from .precision_retime import render_retime
+from .body_sequence_cuts import render_verified_sequence
 from .production_qc import full_decode_inspection
 from .body_loudness import inspect_original_loudness
 from .body_observation import produce_review_bundle,verify_review_bundle
@@ -127,6 +128,7 @@ def _trusted_body_revision(tool_id):
         "body.resolve_asset":["media_vault.py"],
         "body.render_edit":["edit_timeline.py"],
         "body.retime":["precision_retime.py","media_vault.py","delivery_audit.py"],
+        "body.sequence_cuts":["body_sequence_cuts.py","precision_retime.py","media_vault.py","body_color_pipeline.py"],
         "body.otio":["editorial_interchange.py"],
         "body.vector_png":["creative_asset_ops.py"],
         "body.film_thumbnail":["creative_asset_ops.py","delivery_audit.py"],
@@ -152,6 +154,7 @@ def _trusted_body_revision(tool_id):
         "body.resolve_asset":[],
         "body.render_edit":["ffmpeg","ffprobe"],
         "body.retime":["ffmpeg","ffprobe"],
+        "body.sequence_cuts":["ffmpeg","ffprobe"],
         "body.otio":[],
         "body.vector_png":["inkscape"],
         "body.film_thumbnail":["ffmpeg","ffprobe"],
@@ -289,6 +292,12 @@ def body_catalog(workspace,*,vault_root=None):
         target=_body_output(root,inputs['out'],allowed=('.mp4',))
         return _commit_actual_body_output(target,
             lambda staged:render_retime(plan,root,vault.root,staged))
+
+    def cut_owned_picture(inputs):
+        plan=_path_within(root,inputs["plan"],exists=True)
+        dest=_body_output(root,inputs["out"],allowed=(".mp4",))
+        return _commit_actual_body_output(dest,
+             lambda stage:render_verified_sequence(plan,root,vault.root,stage))
 
     def export_edit(inputs):
         original=_path_within(root,inputs["edit"],exists=True)
@@ -534,6 +543,9 @@ def body_catalog(workspace,*,vault_root=None):
         "read",bool(shutil.which("ffprobe")),["source"],inspect)
     add("body.render_edit","editorial timeline","Headless FFmpeg actual movie assembler",
         "write",video_io,["edit","out"],edit)
+    add("body.sequence_cuts","precise multishot original rights-attested picture and audio edit",
+        "Real verified BT.709 CFR sources, original frame spans, independent sound custody, no unlicensed guessed footage",
+        "write",video_io,["plan","out"],cut_owned_picture)
     add("body.retime","frame-accurate retime and soundtrack sync",
         "Original frame-index speed changes; real rights-checked source and pitch-preserving sound",
         "write",video_io,["plan","out"],retime_footage)
