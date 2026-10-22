@@ -114,7 +114,7 @@ def validate_composition(plan,workspace,vault):
                        "start","source_in","duration","x","y","width","height","opacity"}
                       if kind=="video" else
                       {"id","source","asset_id","attestation_id","start","source_in","duration","gain_db"})
-            supported=required|({"motion","fade_in_seconds","fade_out_seconds"}
+            supported=required|({"motion","fade_in_seconds","fade_out_seconds","chroma_key"}
                                 if kind=="video" else set())
             if not required.issubset(layer) or not set(layer).issubset(supported):
                 raise ValueError("Director-specified "+kind+" layer is incomplete or uses untrusted effects")
@@ -136,6 +136,16 @@ def validate_composition(plan,workspace,vault):
                         raise ValueError("Creative layer position must be exact integer pixels")
                 a=_positive(layer["opacity"],"opacity",allow_zero=True)
                 if a>1:raise ValueError("Alpha beyond physical range")
+                if "chroma_key" in layer:
+                    key=layer["chroma_key"]
+                    if not isinstance(key,dict) or set(key)!={"color","similarity","blend"}:
+                        raise ValueError("Chroma matte needs explicitly authored color, similarity and blend")
+                    if not isinstance(key["color"],str) or not _COLOR.fullmatch(key["color"]):
+                        raise ValueError("Original VFX matte key color must be exact RGB")
+                    sim=_positive(key["similarity"],"key similarity")
+                    blend=_positive(key["blend"],"key edge blending",allow_zero=True)
+                    if sim>1 or blend>1:
+                        raise ValueError("VFX key compositor strength must stay in physical alpha range")
                 motion=layer.get("motion",[])
                 if not isinstance(motion,list):
                     raise ValueError("Actual editor motion keyframes must be an array")
@@ -178,7 +188,12 @@ def actual_composite_command(plan,workspace,vault,out):
         if row["kind"]=="video":
             visual=(f"[{index}:v:0]trim=start={source_in}:duration={duration},"
                 f"setpts=PTS-STARTPTS,scale={layer['width']}:{layer['height']}:flags=lanczos,"
-                f"fps={fps},format=rgba,colorchannelmixer=aa={layer['opacity']}")
+                f"fps={fps},format=rgba")
+            if "chroma_key" in layer:
+                key=layer["chroma_key"]
+                visual+=(f",colorkey=0x{key['color'][1:]}:"
+                         f"similarity={key['similarity']}:blend={key['blend']}")
+            visual+=f",colorchannelmixer=aa={layer['opacity']}"
             if layer.get("fade_in_seconds",0)>0:
                 visual+=(f",fade=t=in:st=0:"
                          f"d={layer['fade_in_seconds']}:alpha=1")
