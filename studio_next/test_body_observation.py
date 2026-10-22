@@ -21,6 +21,8 @@ from studio_next.body_integration import body_catalog,validate_witness
 from studio_next.body_materials import fingerprint_physical_inputs
 from studio_next.media_vault import MediaVault,sha256_file
 
+@unittest.skipUnless(importlib.util.find_spec("PIL"),
+    "Actual Pillow pixel decoder required for review bundle validation")
 class ReviewInputContracts(unittest.TestCase):
     def test_bogus_review_zip_and_missing_source_refuse_approval(self):
         with tempfile.TemporaryDirectory() as tmp:
