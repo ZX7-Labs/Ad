@@ -34,6 +34,9 @@ def _name(path):
         raise ValueError("Untrusted archive path cannot leave film workspace")
     if path==_MANIFEST:
         raise ValueError("Original media cannot shadow production manifest")
+    if any(component.startswith(".zx7-owned-sources-")
+           for component in path.split("/")):
+        raise ValueError("Transient sealed cinema sources cannot become project backups")
     return path
 
 
@@ -66,6 +69,9 @@ def create_body_archive(workspace,archive):
         copies={}
         sources=[]
         for path in sorted(root.rglob("*")):
+            if any(piece.startswith(".zx7-owned-sources-")
+                   for piece in path.relative_to(root).parts):
+                raise ValueError("Cannot archive private in-flight original media snapshots")
             if path.is_symlink():
                 raise ValueError("Untrusted symlink in creative media workspace")
             if path.is_dir():

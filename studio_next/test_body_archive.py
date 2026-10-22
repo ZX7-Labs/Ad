@@ -53,6 +53,48 @@ class PhysicalBodySnapshotTests(unittest.TestCase):
                                      expected_sha256=a["sha256"])
             self.assertFalse(project.exists())
 
+    def test_private_original_decoder_snapshots_never_escape_into_owner_backups(self):
+        with tempfile.TemporaryDirectory() as root:
+            p=Path(root)
+            source=p/"original"
+            source.mkdir()
+            (source/"owner-plan.json").write_text('{"director":"original"}')
+            transient=source/".zx7-owned-sources-private-execution"
+            transient.mkdir()
+            (transient/"owned-temporary-video.mp4").write_bytes(b"temporary original media")
+            target=p/"backup.tar.gz"
+            with self.assertRaisesRegex(ValueError,"in-flight original media"):
+                create_body_archive(source,target)
+            self.assertFalse(target.exists())
+            import shutil
+            shutil.rmtree(transient)
+            preserved=create_body_archive(source,target)
+            self.assertEqual(preserved["files"],1)
+            # Even a previously signed attacker-authored archive may never
+            # import an in-flight decoder snapshot as legitimate owner media.
+            self.assertTrue(preserved["sha256"])
+            import io,json,hashlib
+            raw=p/"forged.tar.gz"
+            snapshot_bytes=b"untrusted decoder snapshot"
+            forged_name=".zx7-owned-sources-foreign/hidden.mp4"
+            manifest={"kind":"ZX7-BODY-REAL-MEDIA-V1","schema":1,
+                      "source_workspace":str(source),"files":[
+                      {"path":forged_name,
+                       "sha256":hashlib.sha256(snapshot_bytes).hexdigest(),
+                       "bytes":len(snapshot_bytes)}]}
+            with tarfile.open(raw,"w:gz") as forged:
+                for name,blob in ((forged_name,snapshot_bytes),
+                                  ("__zx7_body_snapshot_manifest__.json",
+                                   json.dumps(manifest).encode())):
+                    item=tarfile.TarInfo(name);item.size=len(blob)
+                    forged.addfile(item,io.BytesIO(blob))
+            import shutil
+            shutil.rmtree(source)
+            with self.assertRaisesRegex(ValueError,"Transient sealed cinema sources"):
+                restore_body_archive(raw,source,
+                    expected_sha256=hashlib.sha256(raw.read_bytes()).hexdigest())
+            self.assertFalse(source.exists())
+
     def test_reject_nonempty_destination_and_archive_inside_workspace(self):
         with tempfile.TemporaryDirectory() as root:
             p=Path(root)
