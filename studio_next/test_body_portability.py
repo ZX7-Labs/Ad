@@ -166,6 +166,36 @@ class PortableWorkspaceTests(unittest.TestCase):
             result=save_body_archive_offline(original,base/"backup.tar.gz")
             self.assertTrue(result["sha256"])
 
+    def test_original_machine_frame_checkpoints_are_inert_after_host_move(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d)
+            original=root/"compute-one"/"film"
+            frames=original/".zx7-frame-checkpoints"/"sceneA"/"frames"
+            frames.mkdir(parents=True)
+            (frames/"frame_0001.exr").write_bytes(
+                b"Original host had CPU-rendered VFX frames, not portable job authority")
+            (frames.parent/"checkpoint.json").write_text(json.dumps({
+                "schema":1,"job_signature":"old-machine-render-version",
+                "frame_count":2,"frames":{"1":{"sha256":"0"*64}}}))
+            (frames.parent/"owner-render.lock").write_bytes(b"")
+            (original/"artist-scene.json").write_text(
+                '{"shot_id":"original-owner-scene","artistic_intent":"preserved"}')
+            archive=create_body_archive(original,root/"signed-owner.tar.gz")
+            new=root/"compute-two"/"film"
+            result=restore_body_archive(archive["archive"],new,
+                       expected_sha256=archive["sha256"],relocate=True)
+            self.assertTrue(result["old_execution_state_quarantined"])
+            self.assertFalse((new/".zx7-frame-checkpoints").exists())
+            history=new/".zx7-relocated-history"/".zx7-frame-checkpoints"
+            self.assertEqual((history/"sceneA/frames/frame_0001.exr").read_bytes(),
+                b"Original host had CPU-rendered VFX frames, not portable job authority")
+            self.assertEqual((new/"artist-scene.json").read_text(),
+                 (original/"artist-scene.json").read_text())
+            report=json.loads((new/".zx7-relocation-report.json").read_text())
+            self.assertTrue(any(".zx7-frame-checkpoints" in p
+                      for p in report["historical_metadata_moved"]))
+            self.assertFalse(report["ready_to_autonomously_resume_original_jobs"])
+
     def test_reject_archived_forged_rel_location_and_history_names(self):
         with tempfile.TemporaryDirectory() as path:
             base=Path(path)
