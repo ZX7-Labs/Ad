@@ -89,3 +89,21 @@ Research directions: Crayotter traceable heterogeneous long-video editing; DIREC
 
 ## 7. Status disclaimer
 This document is an independently maintained engineering plan, not a complete app, certified editor or creative model. Exact current technical test results must come from the matching GitHub Actions commit after relevant code changes. Never backdate success from a previous green run. Do not merge draft PR #3 into main until exit criteria satisfy the owner and are independently evidenced.
+
+
+## 8. Measured BODY progress on 22 October 2026 — actual footage observations
+
+**New, physically tested**: original rights-attested movie → entire native picture/sound decode → artist-selected original 8-bit RGB review PNG frames → bounded chosen audio-window dBFS evidence → SHA256-bound portable .zxreview archive with exact source ownership identity. The complete archive is independently re-opened and each PNG is losslessly decoded and its exact bytes, timestamps, frame shapes and sample provenance rechecked. A movie's black/still/quiet interval is never marked aesthetically bad by this tool. Source inspection rejects changed bytes, forged media custody, invalid timecode, malformed audio level and altered archived PNG.
+
+**Readback operation**: BODY exposes verified review metadata to a future director/vision model and independently extracts a single exact decoded source PNG at an authorized original timecode, with permissions and cache-input fingerprints.
+
+**Revision comparison**: BODY computes true 8-bit RGB pixel differences only between matched timecodes from two independently verified original movie reviews, plus original audio-window mean/peak levels at exactly matching intervals; it records all unmatched timecodes without inventing optical flow/semantic similarity or rearranging original shots. It returns measured differences, not claims of "better story" or creative approval.
+
+**Native evidence at code commit 9005b8c6a2ab7f88fdc4d9dc5cd50e8d14bd6abe**:
+- https://github.com/oyzitjfzj/Ad/actions/runs/39755064211
+- 426 native tests completed (425 success, one separate Chromium browser test skipped in this runner); real picture/sound, licensed review PNGs, original audio volume measurements, changed blue-vs-red movie pixels, version readback and archive-tampering refusal independently passed.
+- https://github.com/oyzitjfzj/Ad/actions/runs/39755064211/artifacts/12415771381 has actual original reviewed MP4, three independently decoded PNGs and the review artifact alongside older Blender/VFX, color grade and professional timeline proofs.
+- https://github.com/oyzitjfzj/Ad/actions/runs/39755051067 verified separate security contracts on this engineering series.
+- The actual phone-size Chromium acceptance suite is independent from the native-decode suite. Never cite a local Chromium pass as external production Android HTTPS operation.
+
+**Still missing**: proven multimodal artistic interpretation and semantic continuity, editable mask/advanced tracking/optical flow, OCIO/ACES color-space pinning across real input formats, cross-host worker farm, actual free licensed generative cinematic actors, off-device secure persistent Android access, and independently judged narrative/ad/story creative quality. Zero G0-G8 global-complete certification.
