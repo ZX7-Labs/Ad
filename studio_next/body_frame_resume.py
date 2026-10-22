@@ -238,6 +238,7 @@ def render_resumable_exr_passes(scene_file,workspace,output,*,chunk_frames=1,
             manifest["frames"].append({"file":"frames/"+_original_frame(i),
                                        **data})
         # Storage is checked before final original archive publication.
+        dest.parent.mkdir(parents=True,exist_ok=True)
         available=shutil.disk_usage(dest.parent).free
         needed=sum(frame_root.joinpath(_original_frame(i)).stat().st_size
                    for i in range(1,count+1))
