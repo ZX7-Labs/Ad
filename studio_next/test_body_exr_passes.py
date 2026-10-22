@@ -34,6 +34,21 @@ class ExrSceneContracts(unittest.TestCase):
             with self.assertRaises(ValueError):
                 verify_exr_bundle(bare)
 
+    def test_duplicate_or_unlisted_frame_cannot_pretend_reusable_VFX_proof(self):
+        with tempfile.TemporaryDirectory() as d:
+            destination=Path(d)/"misleading-vfx.zip"
+            invalid={"schema":1,"frames":[
+                {"file":"frames/frame_0001.exr","sha256":"0"*64,
+                 "bytes":15,"channels":["Combined.R"]},
+                {"file":"frames/frame_0001.exr","sha256":"0"*64,
+                 "bytes":15,"channels":["Combined.R"]}]}
+            with zipfile.ZipFile(destination,"w") as bundle:
+                bundle.writestr("manifest.json",json.dumps(invalid))
+                bundle.writestr("frames/frame_0001.exr",b"fake scene no real pixels")
+                bundle.writestr("frames/frame_0002.exr",b"hidden unlisted unlicensed frame")
+            with self.assertRaisesRegex(ValueError,"duplicate or unverified"):
+                verify_exr_bundle(destination)
+
     def test_absent_real_openexr_decoder_does_not_claim_a_ready_film_tool(self):
         with tempfile.TemporaryDirectory() as d:
             installed={tool["id"]:tool for tool in body_catalog(d).discover()}
