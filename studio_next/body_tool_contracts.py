@@ -10,7 +10,7 @@ _ARG_TYPES={
     "source":"string","source_svg":"string","source_film":"string",
     "asset_id":"string","attestation_id":"string",
     "scene_json":"string","original_film_ir":"string","voice_assets":"string",
-    "assets_root":"string","edit":"string","plan":"string","video_job":"string","out":"string",
+    "assets_root":"string","edit":"string","plan":"string","operation":"string","video_job":"string","out":"string",
     "width":"integer","height":"integer","fps":"integer",
     "bundle":"string","bundle_sha256":"string","frame_index":"integer",
     "before_bundle":"string","before_sha256":"string",

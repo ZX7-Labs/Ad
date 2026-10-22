@@ -18,6 +18,7 @@ _SOURCE_FIELDS={
     "body.render_edit":("edit",),
     "body.retime":("plan",),
     "body.sequence_cuts":("plan",),
+    "body.timeline_revision":("plan","operation"),
     "body.otio":("edit",),
     "body.vector_png":("source_svg",),
     "body.film_thumbnail":("source_film",),

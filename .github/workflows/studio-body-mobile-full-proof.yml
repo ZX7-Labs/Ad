@@ -60,6 +60,8 @@ on:
       - "studio_next/test_precision_retime.py"
       - "studio_next/body_sequence_cuts.py"
       - "studio_next/test_body_sequence_cuts.py"
+      - "studio_next/body_timeline_revision.py"
+      - "studio_next/test_body_timeline_revision.py"
       - "studio_next/body_integration.py"
       - "studio_next/body_materials.py"
       - "studio_next/body_download_tickets.py"
