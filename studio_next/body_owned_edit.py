@@ -18,6 +18,7 @@ from pathlib import Path
 
 from .edit_timeline import validate_edit, edit_ffmpeg_command, probe_media, _path_within
 from .media_vault import MediaVault, sha256_file
+from .production_qc import full_decode_inspection
 
 
 def validate_owned_edit(plan, workspace, vault_root):
@@ -122,6 +123,13 @@ def render_verified_owned_edit(plan_file, workspace, vault_root, output):
             final=probe_media(output)
             if not final["audio"]:
                 raise RuntimeError("Encoded film lacks independently decoded soundtrack")
+            qa=full_decode_inspection(output,expected={
+                "width":plan["format"]["width"],
+                "height":plan["format"]["height"],
+                "require_audio":True})
+            if not qa["technical_delivery_verified"] or not qa[
+                    "full_picture_and_sound_decoder_completed"]:
+                raise RuntimeError("Entire film picture/sound failed actual full decoding")
             if sha256_file(plan_file)!=before or any(
                     sha256_file(path)!=digest for path,digest in originals.items()):
                 raise ValueError("Original footage or director cut changed while encoding")
@@ -141,6 +149,8 @@ def render_verified_owned_edit(plan_file, workspace, vault_root, output):
                 "encoded_media_probe":final,
                 "original_footage_unchanged":True,
                 "sealed_original_cas_during_decode":True,
+                "full_picture_and_sound_decoder_completed":True,
+                "technical_delivery_verified":True,
                 "ownership_independently_legally_certified":False,
                 "artistic_quality_certified":False}
     except BaseException:

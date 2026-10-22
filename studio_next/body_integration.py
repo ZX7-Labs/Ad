@@ -311,6 +311,16 @@ def body_catalog(workspace,*,vault_root=None):
             if observed["plan_sha256"]!=initial_sha:
                 raise ValueError("Verified rendering used a different director cut")
         receipt=_commit_actual_body_output(target,produce)
+        # Crash recovery may reuse an existing exact movie. It must still
+        # fully decode picture and soundtrack before accepting that film.
+        if not verification:
+            check=full_decode_inspection(target,expected={
+                "width":authored["format"]["width"],
+                "height":authored["format"]["height"],
+                "require_audio":True})
+            if not check["technical_delivery_verified"] or not check[
+                    "full_picture_and_sound_decoder_completed"]:
+                raise RuntimeError("Recovered owner movie failed full physical decode")
         if sha256_file(plan)!=initial_sha or any(
                 sha256_file(path)!=digest for path,digest in source_hashes.items()):
             raise ValueError("Original proof changed while recovering or publishing")
@@ -318,6 +328,7 @@ def body_catalog(workspace,*,vault_root=None):
                 "distinct_originals":len(source_hashes),
                 "director_plan_sha256":initial_sha,
                 "original_footage_unchanged":True,
+                "full_picture_and_sound_decoder_completed":True,
                 "artistic_quality_certified":False}
 
     def retime_footage(inputs):

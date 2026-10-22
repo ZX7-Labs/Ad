@@ -64,6 +64,7 @@ class TrueOwnerAttestedGenericEditorTests(unittest.TestCase):
         self.assertTrue(validate_witness("body.render_edit_owned",output))
         self.assertEqual(output["source_custody_count"],2)
         self.assertEqual(output["distinct_originals"],2)
+        self.assertTrue(output["full_picture_and_sound_decoder_completed"])
         self.assertEqual([sha256_file(self.root/c["source"]) for c in self.plan["clips"]],old)
         movie=self.root/"original-owner-final.mp4"
         decoded=subprocess.run(["ffmpeg","-hide_banner","-loglevel","error",
@@ -124,7 +125,7 @@ class TrueOwnerAttestedGenericEditorTests(unittest.TestCase):
         replacement=(self.root/"actual_1.mp4").read_bytes()
 
         def adversarial_source_swap(argv,**kwargs):
-            if argv and argv[0]=="ffmpeg":
+            if argv and argv[0]=="ffmpeg" and "-filter_complex" in argv:
                 sources=[Path(argv[pos+1]) for pos,part in enumerate(argv[:-1])
                          if part=="-i"]
                 self.assertEqual(len(sources),2)
@@ -146,6 +147,7 @@ class TrueOwnerAttestedGenericEditorTests(unittest.TestCase):
                          self.root/"vault",self.root/"sealed-cas-cinema.mp4")
         self.assertEqual(proof["source_custody_count"],2)
         self.assertTrue(proof["sealed_original_cas_during_decode"])
+        self.assertTrue(proof["full_picture_and_sound_decoder_completed"])
         self.assertEqual(sha256_file(first),expected[0])
         self.assertEqual(sha256_file(self.root/"actual_1.mp4"),expected[1])
         self.assertTrue((self.root/"sealed-cas-cinema.mp4").is_file())
