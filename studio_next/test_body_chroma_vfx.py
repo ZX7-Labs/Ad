@@ -84,6 +84,64 @@ class ActualChromaMatteFilmmaking(unittest.TestCase):
                     {"plan":self.file.name},self.root)
         self.assertIn(self.evidence["asset_id"],[x["sha256"] for x in inputs])
 
+    def test_physical_original_vfx_then_rights_checked_color_grade_prores_audio(self):
+        """Prove real original camera -> matte -> CAS -> LUT -> 10-bit sound."""
+        from studio_next.body_color_pipeline import render_verified_color_job
+        from studio_next.test_body_color_pipeline import _lut_original
+        from studio_next.media_vault import sha256_file
+        from studio_next.body_color_pipeline import _actual_bt709_source
+        original_master=self.root/"step-one-original-keyed-film.mp4"
+        initial=render_composition(self.file,self.root,self.root/"vault",
+                                   original_master)
+        self.assertTrue(initial["audio_present"])
+        self.assertEqual(_actual_bt709_source(original_master)["color_space"],"bt709")
+        source=self.vault.ingest(original_master,mime="video/mp4",
+                        rights="generated_original",source_type="trusted_renderer",
+                        source_id=initial["sha256"],
+                        evidence="Actual physically verified original keyed camera film",
+                        owner_or_generator="zx7-verified-native-editor")
+        original_sha=sha256_file(original_master)
+        lut=self.root/"artist-original-color-look.cube"
+        lut.write_bytes(_lut_original())
+        color_proof=self.vault.ingest(lut,mime="application/octet-stream",
+                        rights="owner_supplied",source_type="owner_upload",
+                        source_id="original-editor-approved-lut",
+                        evidence="Authored original red/green LUT technical fixture",
+                        owner_or_generator="owner")
+        color_plan={
+             "media":{"source":"zx7:sha256:"+source["asset_id"],
+                      "asset_id":source["asset_id"],
+                      "attestation_id":source["attestation_id"]},
+             "color_transform":{"kind":"display_referred_3d_lut",
+                 "input_color_space":"bt709","output_color_space":"bt709",
+                 "cube":{"source":"zx7:sha256:"+color_proof["asset_id"],
+                         "asset_id":color_proof["asset_id"],
+                         "attestation_id":color_proof["attestation_id"]},
+                 "interpolation":"tetrahedral"},
+             "output_profile":"prores_10bit_sdr"}
+        spec=self.root/"director-matched-color-plan.json"
+        spec.write_text(json.dumps(color_plan),encoding="utf-8")
+        output=self.root/"final-vfx-graded-master.mov"
+        final=render_verified_color_job(spec,self.root,self.root/"vault",output)
+        self.assertEqual(final["output_profile"],"prores_10bit_sdr")
+        self.assertEqual(final["source_movie_sha256"],source["asset_id"])
+        self.assertTrue(final["audio_present"])
+        self.assertFalse(final["claimed_aces_hdr_or_scene_linear"])
+        self.assertEqual(sha256_file(original_master),original_sha)
+        self.assertTrue(_probe_details(output)["audio_stream_present"])
+        _actual_bt709_source(output)
+        before=self.pixel(original_master,80,50)
+        # Decode 10-bit ProRes back into RGB pixels, never use JSON claims.
+        after=self.pixel(output,80,50)
+        self.assertGreater(before[0],before[1]+60,before)
+        self.assertGreater(after[1],after[0]+40,after)
+        self.assertGreater(self.pixel(output,7,7)[2],120)
+        subprocess.run(["ffmpeg","-hide_banner","-loglevel","error","-xerror",
+                        "-i",str(output),"-map","0:v:0","-map","0:a:0",
+                        "-f","null","-"],check=True,timeout=45)
+        self.assertTrue(original_master.exists())
+        self.assertTrue(self.original.exists())
+
     def test_false_key_parameters_unlicensed_media_or_shell_injection_blocked(self):
         layer=self.film["video_layers"][0]
         for field,value in (("similarity",0),("similarity",2),
