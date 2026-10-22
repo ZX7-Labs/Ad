@@ -51,6 +51,8 @@ def inspect_original_loudness(plan_file,workspace,vault_root):
     if not physical["audio_stream_present"]:
         raise ValueError("Actual authored film has no audio to measure")
     digest=sha256_file(movie)
+    record=MediaVault(vault_root).inspect(digest,
+                         attestation_id=media["attestation_id"])
     if digest!=media["asset_id"]:
         raise ValueError("Source changed before native sound loudness measurement")
     proc=subprocess.run(
@@ -78,6 +80,8 @@ def inspect_original_loudness(plan_file,workspace,vault_root):
     return {
         "path":str(movie),
         "sha256":digest,"bytes":movie.stat().st_size,
+        "asset_id":digest,"attestation_id":media["attestation_id"],
+        "rights":record["rights_attestations"][0]["rights"],
         "duration_seconds":physical["duration_seconds"],"audio_present":True,
         "width":physical["width"],"height":physical["height"],
         "original_film_audio_measurement":"FFmpeg ebur128 with true-peak detector",
