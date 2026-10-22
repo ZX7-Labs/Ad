@@ -89,9 +89,11 @@ def _motion_expression(layer,axis):
 
 
 def _gain_automation_expression(layer):
-    """Dynamically interpolate author gain points; measured at FFmpeg AUDIO FRAME boundaries.
+    """Evaluate director-authored linear-amplitude interpolation per PCM sample.
 
-    This is not PCM-sample-accurate automation.
+    FFmpeg aeval evaluates with t = physical time of EACH audio sample.
+    This removes audio-frame-boundary stepping from the previous volume
+    filter. It costs more CPU than a frame-based gain envelope.
     """
     points=layer.get("gain_keyframes")
     if not points:
@@ -108,7 +110,9 @@ def _gain_automation_expression(layer):
     t=float(first["at_seconds"])
     if t:
         expr=f"if(lt(t,{t:.9g}),{amp(first):.12g},{expr})"
-    return "volume='"+expr+"':eval=frame"
+    # Expression is numeric-only and made exclusively from validated artist
+    # gain/time values. It is never arbitrary model-written FFmpeg syntax.
+    return "aeval=exprs='val(ch)*("+expr+")':c=same"
 
 
 def validate_composition(plan,workspace,vault):
