@@ -90,6 +90,20 @@ def verify_exr_bundle(bundle):
         entries=manifest.get("frames")
         if not isinstance(entries,list) or not entries or len(members)!=len(entries)+1:
             raise ValueError("Physical EXR bundle missing image frames")
+        verified_names=[entry.get("file") for entry in entries
+                        if isinstance(entry,dict)]
+        expected_names=["frames/frame_"+f"{index:04d}"+".exr"
+                        for index in range(1,len(entries)+1)]
+        if sorted(verified_names)!=sorted(expected_names) or (
+                set(verified_names)!=set(members)-{"manifest.json"}):
+            raise ValueError("Original EXR stage has missing, duplicate or unverified frame identity")
+        if zipped.getinfo("manifest.json").file_size>32*1024*1024:
+            raise ValueError("Untrusted EXR manifest too large")
+        # Inspect headers and capacity before extracting compressed media.
+        available=shutil.disk_usage(tempfile.gettempdir()).free
+        scratch_required=sum(zipped.getinfo(name).file_size for name in verified_names)
+        if scratch_required+16*1024*1024>available:
+            raise RuntimeError("Not enough physical scratch disk for 32f VFX verification")
         with tempfile.TemporaryDirectory(prefix="zx7-verify-exr-") as stage:
             for item in entries:
                 if not isinstance(item,dict) or set(item)!={"file","sha256","bytes","channels"}:
