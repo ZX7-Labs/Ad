@@ -63,6 +63,9 @@ def sense_body_job(coordinator,job_id,*,max_stages=16):
         "observed_at_job_update":snapshot["updated_at"],
         "operator_requested_action":snapshot.get("requested_action"),
         "actual_durable_stage_database_found":observed,
+        "stage_observation_scope":progress.get(
+            "stage_scope","no_verified_project_lineage"),
+        "stage_entries_are_shared_film_cache_not_job_attempt_receipts":True,
         "recent_native_stages":rows if observed else [],
         "additional_stages_omitted":max(0,len(source)-max_stages),
         "failure_reasons":errors,

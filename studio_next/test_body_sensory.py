@@ -39,6 +39,10 @@ class FilmBodySensoryReceiptTests(unittest.TestCase):
                 self.assertFalse(sensed["cinematic_or_narrative_quality_certified"])
                 self.assertEqual(seen[0],original_ir())
                 self.assertFalse(sensed["actual_durable_stage_database_found"])
+                self.assertEqual(sensed["stage_observation_scope"],
+                                 "no_verified_project_lineage")
+                self.assertTrue(
+                    sensed["stage_entries_are_shared_film_cache_not_job_attempt_receipts"])
                 self.assertEqual(sensed["recent_native_stages"],[])
                 for bad in ("../../../etc/shadow","","fake job with spaces"):
                     with self.assertRaises(ValueError):
@@ -90,6 +94,8 @@ class FilmBodySensoryReceiptTests(unittest.TestCase):
                     time.sleep(.01)
                 observation=sense_body_job(owner,"original-a")
                 self.assertEqual(observation["recent_native_stages"],[])
+                self.assertEqual(observation["stage_observation_scope"],
+                                 "no_verified_project_lineage")
                 self.assertFalse(observation["actual_durable_stage_database_found"])
                 self.assertFalse(observation["movie_physically_decoded_by_this_observation"])
             finally:
