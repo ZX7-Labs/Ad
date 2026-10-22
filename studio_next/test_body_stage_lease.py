@@ -6,6 +6,7 @@ import threading
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from studio_next.body_stage_lease import RunningStageHeartbeat
 from studio_next.durable_graph import DurableFilmGraph, RecoveryBlocked, execute_durable_film_graph
@@ -106,25 +107,43 @@ class PhysicalLongRenderLeaseTests(unittest.TestCase):
                     "purpose":"Render actual originally intended footage",
                     "inputs":{"artwork":"artist chooses"},"depends_on":[]}]}
             result=[]
+            renewals=[]
+            repeated_renewal=threading.Event()
+            actual_renew=store.renew_running_lease
+            def measure_real_renewal(*args,**kwargs):
+                success=actual_renew(*args,**kwargs)
+                if success:
+                    renewals.append(time.monotonic())
+                    if len(renewals)>=5:
+                        repeated_renewal.set()
+                return success
             thread=threading.Thread(target=lambda:result.append(
                 execute_durable_film_graph(ir,catalog,fact_ids=set(),store=store,
                     trusted_idempotent_tools={"render.art"},
                     output_verifier=lambda _id,out:out.get("asset")=="original-cinema",
                     tool_revisions={"render.art":"real-v1"},
                     lease_seconds=.15)),daemon=True)
-            thread.start()
-            try:
-                self.assertTrue(started.wait(5))
-                time.sleep(.4)
-                with store._connect() as db:
-                    row=db.execute("SELECT lease_until,owner,node_state FROM node_results WHERE node_id='scene_render'").fetchone()
-                self.assertEqual(row[2],"running")
-                self.assertGreater(row[0],time.time(),
-                    "Stage lease must be renewed while the same original renderer still runs")
-                self.assertEqual(calls,["original-artwork"])
-            finally:
-                release.set()
-                thread.join(5)
+            with patch.object(store,"renew_running_lease",
+                              side_effect=measure_real_renewal):
+                thread.start()
+                try:
+                    self.assertTrue(started.wait(5))
+                    self.assertTrue(repeated_renewal.wait(5),
+                        "Original renderer never successfully renewed its real SQLite lease")
+                    with store._connect() as db:
+                        row=db.execute("""SELECT lease_until,owner,node_state
+                            FROM node_results WHERE node_id='scene_render'""").fetchone()
+                    self.assertEqual(row[2],"running")
+                    self.assertTrue(row[1])
+                    # Five real successful SQLite renewals during a blocked
+                    # physical renderer prove continued custody beyond the
+                    # original 150ms lease. A wall-clock 'lease_until > now'
+                    # assertion after a scheduled sleep is not deterministic
+                    # under preempted/free CI hosts.
+                    self.assertEqual(calls,["original-artwork"])
+                finally:
+                    release.set()
+                    thread.join(5)
             self.assertFalse(thread.is_alive())
             self.assertEqual(result[0]["status"],"all_tool_results_verified")
             self.assertEqual(result[0]["completed"],["scene_render"])
