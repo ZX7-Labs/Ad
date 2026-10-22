@@ -1,0 +1,58 @@
+name: "ZX7 BODY — Real Source-Custody Editorial Proof"
+on:
+  workflow_dispatch:
+  push:
+    branches: [zx7-body/mobile-operator-20261021]
+    paths:
+      - ".github/workflows/studio-body-owned-edit-proof.yml"
+      - "studio_next/body_owned_edit.py"
+      - "studio_next/test_body_owned_edit.py"
+      - "studio_next/body_integration.py"
+      - "studio_next/body_publication.py"
+      - "studio_next/body_materials.py"
+      - "studio_next/edit_timeline.py"
+      - "studio_next/test_body_integration.py"
+      - "studio_next/media_vault.py"
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  source-verified-cuts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Provision genuine original picture, soundtrack and PNG decoders
+        run: |
+          if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y ffmpeg
+          fi
+          python -m pip install --disable-pip-version-check "Pillow>=10,<13"
+          ffmpeg -version | head -n 1
+          ffprobe -version | head -n 1
+      - name: Test decoded original sound and video, owner custody, producer-only vault, crash reuse and races
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p output/source-custody-proof
+          python -m compileall -q studio_next
+          python -m unittest studio_next.test_body_owned_edit studio_next.test_body_integration -v 2>&1 | tee output/source-custody-proof/actual-codec-tests.log
+          grep -E '^OK( \(skipped=[0-9]+\))?$' output/source-custody-proof/actual-codec-tests.log
+          if grep -E '^OK \(skipped=[1-9][0-9]*\)$' output/source-custody-proof/actual-codec-tests.log; then
+            echo "Codec-specific source rights proof may not be skipped" >&2
+            exit 1
+          fi
+      - name: Retain physical proof logs, including test failure reasons
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zx7-original-source-custody-editorial-proof
+          path: output/source-custody-proof/
+          if-no-files-found: warn
+          retention-days: 7
