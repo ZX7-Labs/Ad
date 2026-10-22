@@ -6,7 +6,10 @@ on:
     paths:
       - ".github/workflows/studio-body-browser-acceptance.yml"
       - "studio_next/test_body_browser.py"
+      - "studio_next/test_body_revision_impact.py"
       - "studio_next/body_mobile.py"
+      - "studio_next/test_body_revision_http.py"
+      - "studio_next/body_revision_impact.py"
       - "studio_next/body_service.py"
       - "studio_next/body_verified_delivery.py"
       - "studio_next/body_host_resources.py"
