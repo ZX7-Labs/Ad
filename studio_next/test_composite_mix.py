@@ -145,6 +145,49 @@ class LayeredProductionCompositingTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,"untrusted"):
                 actual_composite_command(original,root,vault,Path(root)/"invalid.mp4")
 
+    def test_mutable_checkout_swap_cannot_change_cas_sealed_camera_or_sound(self):
+        from studio_next import composite_mix
+        from studio_next.media_vault import sha256_file
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as root:
+            plan,document,vault=self.fixture(root)
+            plan["canvas"].update(width=320,height=240,fps=24,duration=2)
+            document.write_text(json.dumps(plan),encoding="utf-8")
+            original=Path(root)/"camera_0.mp4"
+            saved=original.read_bytes()
+            replacements=(Path(root)/"camera_1.mp4").read_bytes()
+            hashes={layer["asset_id"] for layer in (
+                plan["video_layers"]+plan["audio_tracks"])}
+            actual_run=subprocess.run
+            seen=[]
+            def intercept(argv,**kwargs):
+                if argv and argv[0]=="ffmpeg" and "-filter_complex" in argv:
+                    files=[Path(argv[i+1]) for i,v in enumerate(argv[:-1])
+                           if v=="-i"]
+                    self.assertEqual(len(files),4)
+                    for path in files:
+                        self.assertIn(".zx7-owned-sources-",str(path))
+                        self.assertFalse(path.stat().st_mode & 0o222)
+                        self.assertIn(sha256_file(path),hashes)
+                    seen.extend(files)
+                    original.write_bytes(replacements)
+                    try:
+                        return actual_run(argv,**kwargs)
+                    finally:
+                        original.write_bytes(saved)
+                return actual_run(argv,**kwargs)
+            movie=Path(root)/"original-artist-mixed.mp4"
+            with patch.object(composite_mix.subprocess,"run",side_effect=intercept):
+                proof=render_composition(document,root,Path(root)/"vault",movie)
+            self.assertTrue(proof["verified_physically"])
+            self.assertTrue(proof["full_picture_and_sound_decoder_completed"])
+            self.assertTrue(proof["sealed_original_cas_during_decode"])
+            self.assertEqual(sha256_file(original),plan["video_layers"][0]["asset_id"])
+            self.assertTrue(movie.is_file())
+            self.assertEqual(len(seen),4)
+            self.assertFalse(any(x.exists() for x in seen))
+            self.assertFalse(list(Path(root).glob(".zx7-owned-sources-*")))
+
     def test_real_mixer_output_must_match_movie_bytes(self):
         with tempfile.TemporaryDirectory() as root:
             plan,file,vault=self.fixture(root)
