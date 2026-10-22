@@ -36,6 +36,7 @@ from .body_exr_passes import render_original_exr_passes,verify_exr_bundle
 from .body_frame_resume import render_resumable_exr_passes
 from .precision_retime import render_retime
 from .production_qc import full_decode_inspection
+from .body_loudness import inspect_original_loudness
 from .body_observation import produce_review_bundle,verify_review_bundle
 from .body_review_access import read_verified_review,extract_verified_review_frame
 from .body_review_compare import compare_verified_revisions
@@ -134,6 +135,7 @@ def _trusted_body_revision(tool_id):
         "body.film_finish":["film_finishing.py","media_vault.py"],
         "body.color_lut":["body_color_pipeline.py","media_vault.py","delivery_audit.py"],
         "body.full_decode":["production_qc.py","delivery_audit.py"],
+        "body.loudness":["body_loudness.py","media_vault.py","composite_mix.py"],
         "body.review":["body_observation.py","production_qc.py","media_vault.py"],
         "body.review_data":["body_review_access.py","body_observation.py"],
         "body.review_frame":["body_review_access.py","body_observation.py"],
@@ -158,6 +160,7 @@ def _trusted_body_revision(tool_id):
         "body.film_finish":["ffmpeg","ffprobe"],
         "body.color_lut":["ffmpeg","ffprobe"],
         "body.full_decode":["ffmpeg","ffprobe"],
+        "body.loudness":["ffmpeg","ffprobe"],
         "body.review":["ffmpeg","ffprobe"],
         "body.review_data":[],
         "body.review_frame":[],
@@ -349,6 +352,10 @@ def body_catalog(workspace,*,vault_root=None):
             lambda staged:extract_verified_review_frame(
                 archive,inputs["bundle_sha256"],root,inputs["frame_index"],staged))
 
+    def physical_audio_loudness(inputs):
+        original=_path_within(root,inputs["plan"],exists=True)
+        return inspect_original_loudness(original,root,vault.root)
+
     def deep_media_qc(inputs):
         """Decode every actual video/audio stream, not just inspect metadata."""
         source=_path_within(root,inputs["source"],exists=True)
@@ -486,6 +493,10 @@ def body_catalog(workspace,*,vault_root=None):
         "write",bool(shutil.which("ffmpeg") and shutil.which("ffprobe") and
                      importlib.util.find_spec("PIL") is not None),
         ["plan","out"],review_actual_film)
+    add("body.loudness","measure actual first soundtrack LUFS, LRA and measured true-peak",
+        "Read-only native FFmpeg EBU R128 measurement of original rights-cleared movie, no forced mastering targets",
+        "read",bool(shutil.which("ffmpeg") and shutil.which("ffprobe")),
+        ["plan"],physical_audio_loudness)
     add("body.full_decode","physical full-movie delivery quality assurance",
         "Actually decode entire picture/sound; preserve deliberate creative style",
         "read",bool(shutil.which("ffmpeg") and shutil.which("ffprobe")),
