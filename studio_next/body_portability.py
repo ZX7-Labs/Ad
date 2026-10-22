@@ -82,6 +82,18 @@ def prepare_relocated_workspace(staging, *, old_root, destination, archive_sha25
         os.replace(item,target)
         moved.append(relative.as_posix())
 
+    # Only historical receipts/frames are permitted at the destination.
+    # Remove the now-empty old-host checkpoint folder itself: otherwise an
+    # unrelated new local worker could mistake its existence for initialized
+    # runtime state despite all actual frame files being quarantined.
+    stale_roots=[p for p in root.rglob(".zx7-frame-checkpoints")
+                 if _HISTORY not in p.relative_to(root).parts and p.is_dir()]
+    for stale in stale_roots:
+        for folder in sorted((p for p in stale.rglob("*") if p.is_dir()),
+                             key=lambda p:len(p.parts),reverse=True):
+            folder.rmdir()
+        stale.rmdir()
+
     # A portably retained asset vault is still subject to MediaVault's normal
     # content digest + attestation verification on every checkout/invocation.
     media_files=sum(
