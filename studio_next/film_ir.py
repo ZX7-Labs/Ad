@@ -123,6 +123,12 @@ def validate_film_ir(ir:dict, *, installed_tool_ids:set[str], fact_ids:set[str])
             if not isinstance(refs,list) or not refs or any(
                     not isinstance(r,str) or r not in shot_ids for r in refs):
                 errors.append(f"Tool node {uid} has invalid authored shot scope")
+        if "asset_refs" in node:
+            refs=node["asset_refs"]
+            if not isinstance(refs,list) or any(
+                    not isinstance(r,str) or r not in asset_ids for r in refs
+                    ) or len(set(map(str,refs)))!=len(refs):
+                errors.append(f"Tool node {uid} has invalid original media asset scope")
     for node in nodes:
         if not isinstance(node,dict) or not _nonempty(node.get("id")):continue
         deps=node.get("depends_on",[])
