@@ -114,6 +114,45 @@ class TrueOwnerAttestedGenericEditorTests(unittest.TestCase):
         raw["clips"][0].pop("attestation_id")
         with self.assertRaises(ValueError):
             validate_owned_edit(raw,self.root,self.root/"vault")
+    def test_actual_decoder_reads_read_only_private_cas_not_mutable_source(self):
+        from studio_next import body_owned_edit
+        original_run=subprocess.run
+        invoked=[]
+        first=self.root/"actual_0.mp4"
+        expected=[sha256_file(self.root/c["source"]) for c in self.plan["clips"]]
+        original=first.read_bytes()
+        replacement=(self.root/"actual_1.mp4").read_bytes()
+
+        def adversarial_source_swap(argv,**kwargs):
+            if argv and argv[0]=="ffmpeg":
+                sources=[Path(argv[pos+1]) for pos,part in enumerate(argv[:-1])
+                         if part=="-i"]
+                self.assertEqual(len(sources),2)
+                for source,digest in zip(sources,expected):
+                    self.assertIn(".zx7-owned-sources-",str(source))
+                    self.assertEqual(sha256_file(source),digest)
+                    self.assertFalse(source.stat().st_mode & 0o222)
+                invoked.extend(sources)
+                first.write_bytes(replacement)
+                try:
+                    return original_run(argv,**kwargs)
+                finally:
+                    first.write_bytes(original)
+            return original_run(argv,**kwargs)
+
+        with patch.object(body_owned_edit.subprocess,"run",
+                          side_effect=adversarial_source_swap):
+            proof=render_verified_owned_edit(self.plan_file,self.root,
+                         self.root/"vault",self.root/"sealed-cas-cinema.mp4")
+        self.assertEqual(proof["source_custody_count"],2)
+        self.assertTrue(proof["sealed_original_cas_during_decode"])
+        self.assertEqual(sha256_file(first),expected[0])
+        self.assertEqual(sha256_file(self.root/"actual_1.mp4"),expected[1])
+        self.assertTrue((self.root/"sealed-cas-cinema.mp4").is_file())
+        self.assertEqual(len(invoked),2)
+        self.assertTrue(all(not path.exists() for path in invoked))
+        self.assertFalse(list(self.root.glob(".zx7-owned-sources-*")))
+
     def test_mutated_original_source_after_native_encode_never_published(self):
         from studio_next import body_owned_edit
         real_run=subprocess.run

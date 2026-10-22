@@ -10,7 +10,10 @@ from __future__ import annotations
 
 import copy
 import json
+import os
+import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 
 from .edit_timeline import validate_edit, edit_ffmpeg_command, probe_media, _path_within
@@ -49,6 +52,42 @@ def validate_owned_edit(plan, workspace, vault_root):
     return cleaned,originals
 
 
+
+def _seal_original_sources(clean, authorized, root, vault_root, private_directory):
+    """Privately copy verified immutable CAS sources for one physical encode.
+
+    The editor must consume these frozen bytes, not a mutable working path.
+    A caller who changes and restores the working file during FFmpeg must not
+    alter decoded frames without changing the approved source digest.
+    """
+    sealed=copy.deepcopy(clean)
+    vault=MediaVault(vault_root)
+    pinned={}
+    for index,clip in enumerate(authorized["clips"]):
+        digest=clip["asset_id"]
+        attestation=clip["attestation_id"]
+        stored=vault.inspect(digest,attestation_id=attestation)
+        suffix=Path(clip["source"]).suffix.lower()
+        if suffix not in (".mp4",".mov",".webm",".mkv"):
+            raise ValueError("Original video must have an explicitly supported file container")
+        identity=(digest,suffix)
+        target=pinned.get(identity)
+        if target is None:
+            target=private_directory/(digest+suffix)
+            # A private 0700 directory and read-only private copy ensure the
+            # encoder never follows editable source paths or network URLs.
+            with Path(stored["path"]).open("rb") as source, target.open("xb") as handle:
+                shutil.copyfileobj(source,handle,1024*1024)
+                handle.flush()
+                os.fsync(handle.fileno())
+            if sha256_file(target)!=digest:
+                raise ValueError("Verified immutable footage changed during source sealing")
+            os.chmod(target,0o400)
+            pinned[identity]=target
+        sealed["clips"][index]["source"]=str(target.relative_to(root))
+    validate_edit(sealed,root)
+    return sealed,pinned
+
 def render_verified_owned_edit(plan_file, workspace, vault_root, output):
     root=Path(workspace).resolve()
     plan_file=Path(plan_file).resolve()
@@ -62,30 +101,46 @@ def render_verified_owned_edit(plan_file, workspace, vault_root, output):
     if sha256_file(plan_file)!=before:
         raise ValueError("Original editor plan changed before custody inspection")
     clean,originals=validate_owned_edit(plan,root,vault_root)
-    sources=[probe_media(_path_within(root,c["source"],exists=True))
-             for c in clean["clips"]]
-    # Probe cannot convey custody authority; the attested CAS check above can.
-    if sha256_file(plan_file)!=before or any(
-            sha256_file(path)!=digest for path,digest in originals.items()):
-        raise ValueError("Original source or plan changed before the actual encoder")
     output.parent.mkdir(parents=True,exist_ok=True)
     try:
-        command=edit_ffmpeg_command(clean,root,output,source_info=sources)
-        # No arbitrary owner/model shell commands. No unverified auto downloads.
-        complete=subprocess.run(command,capture_output=True,text=True,timeout=3600)
-        if complete.returncode:
-            raise RuntimeError("Source-attested native editor failed: "+complete.stderr[-1400:])
-        final=probe_media(output)
-        if not final["audio"]:
-            raise RuntimeError("Encoded film lacks independently decoded soundtrack")
-        if sha256_file(plan_file)!=before or any(
-                sha256_file(path)!=digest for path,digest in originals.items()):
-            raise ValueError("Original footage or director cut changed while encoding")
+        # The original workspace path is checked for custody, but NOT passed
+        # to the native decoder. Only locally sealed original CAS bytes may
+        # become actual FFmpeg inputs during this transaction.
+        with tempfile.TemporaryDirectory(prefix=".zx7-owned-sources-",dir=root) as directory:
+            frozen,pinned=_seal_original_sources(
+                clean,plan,root,vault_root,Path(directory))
+            sources=[probe_media(_path_within(root,c["source"],exists=True))
+                     for c in frozen["clips"]]
+            if sha256_file(plan_file)!=before or any(
+                    sha256_file(path)!=digest for path,digest in originals.items()):
+                raise ValueError("Original source or plan changed before the actual encoder")
+            command=edit_ffmpeg_command(frozen,root,output,source_info=sources)
+            # No arbitrary owner/model shell commands or mutable source paths.
+            complete=subprocess.run(command,capture_output=True,text=True,timeout=3600)
+            if complete.returncode:
+                raise RuntimeError("Source-attested native editor failed: "+complete.stderr[-1400:])
+            final=probe_media(output)
+            if not final["audio"]:
+                raise RuntimeError("Encoded film lacks independently decoded soundtrack")
+            if sha256_file(plan_file)!=before or any(
+                    sha256_file(path)!=digest for path,digest in originals.items()):
+                raise ValueError("Original footage or director cut changed while encoding")
+            if any(sha256_file(path)!=digest for (digest,_),path in pinned.items()):
+                raise ValueError("Sealed original footage changed while encoding")
+            # Recheck CAS bytes and original rights on the committing side of
+            # the native subprocess, not merely at the beginning of the edit.
+            vault=MediaVault(vault_root)
+            for clip in plan["clips"]:
+                stored=vault.inspect(clip["asset_id"],
+                        attestation_id=clip["attestation_id"])
+                if stored["rights_attestations"][0]["rights"]!=clip["rights"]:
+                    raise ValueError("Original source rights changed during encoding")
         return {"source_custody_count":len(clean["clips"]),
                 "distinct_originals":len(originals),
                 "plan_sha256":before,
                 "encoded_media_probe":final,
                 "original_footage_unchanged":True,
+                "sealed_original_cas_during_decode":True,
                 "ownership_independently_legally_certified":False,
                 "artistic_quality_certified":False}
     except BaseException:
