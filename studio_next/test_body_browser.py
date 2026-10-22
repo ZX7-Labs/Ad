@@ -121,6 +121,35 @@ class RealMobileBrowserAcceptance(unittest.TestCase):
                     denied.read()
                     client.close()
 
+                    # Real operator revision preview: changing shot B cannot
+                    # recompute the independently authored and proved shot A.
+                    original_ir={"project":{"creative_intent":"Original art"},
+                       "shots":[
+                        {"id":"a","purpose":"Owned visual scene one","duration_seconds":2.0},
+                        {"id":"b","purpose":"Owned visual scene two","duration_seconds":3.0}],
+                       "tool_graph":[
+                        {"id":"first","tool_id":"body.vector_png","purpose":"Draw A",
+                          "shot_refs":["a"],"inputs":{"source_svg":"a.svg"},
+                          "depends_on":[]},
+                        {"id":"second","tool_id":"body.vector_png","purpose":"Draw B",
+                          "shot_refs":["b"],"inputs":{"source_svg":"b.svg"},
+                          "depends_on":[]},
+                        {"id":"finish","tool_id":"body.render_edit","purpose":"Join cinema",
+                          "depends_on":["first","second"],"inputs":{"edit":"film.json"}}]}
+                    revised=json.loads(json.dumps(original_ir))
+                    revised["shots"][1]["duration_seconds"]=6.0
+                    before=base/"before-artist.json"
+                    after=base/"after-artist.json"
+                    before.write_text(json.dumps(original_ir),encoding="utf-8")
+                    after.write_text(json.dumps(revised),encoding="utf-8")
+                    page.locator("#before-film").set_input_files(str(before))
+                    page.locator("#after-film").set_input_files(str(after))
+                    page.locator("#impact-button").click()
+                    page.locator("#impact").get_by_text("Candidate unaffected stages:",exact=False).wait_for()
+                    self.assertIn("first",page.locator("#impact").inner_text())
+                    self.assertIn("second, finish",page.locator("#impact").inner_text())
+                    self.assertIn("reverified at runtime",page.locator("#impact").inner_text())
+
                     # Mobile UI must remain one-column without horizontal scroll.
                     is_fitted=page.evaluate("""() =>
                         document.documentElement.scrollWidth <= window.innerWidth + 1
