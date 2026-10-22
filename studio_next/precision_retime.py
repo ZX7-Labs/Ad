@@ -50,6 +50,48 @@ def _tempo_chain(speed):
     return ",".join(f"atempo={s:.12g}" for s in steps)
 
 
+def _verify_decoded_frame_clock(path,expected_rate,expected_count):
+    """Verify actual presentation times, not merely avg vs guessed FPS.
+
+    ffprobe emits one best-effort decoded presentation timestamp per frame.
+    Some decoders append side-data to that CSV record; its FIRST field is
+    the frame timestamp. B-frame packet/decoding DTS order is NOT used.
+    """
+    from decimal import Decimal,InvalidOperation
+    command=["ffprobe","-v","error","-select_streams","v:0",
+             "-show_frames","-show_entries","frame=best_effort_timestamp_time",
+             "-of","csv=p=0",str(path)]
+    try:
+        output=subprocess.run(command,capture_output=True,text=True,
+                              timeout=240,check=True)
+    except (OSError,subprocess.CalledProcessError,subprocess.TimeoutExpired) as exc:
+        raise ValueError("Unable to decode original frame presentation clock") from exc
+    previous=None
+    count=0
+    interval=Fraction(1,1)/expected_rate
+    # ffprobe decimal time has microsecond output rounding. Allow two last
+    # display digits of uncertainty; never accept a true frame skip/duplicate.
+    permitted=max(Fraction(3,1000000),interval/100000)
+    for record in output.stdout.splitlines():
+        text=record.split(",",1)[0].strip()
+        if not text:
+            continue
+        try: now=Fraction(Decimal(text))
+        except (InvalidOperation,ValueError,OverflowError) as exc:
+            raise ValueError("Unmeasurable physical source frame PTS") from exc
+        count+=1
+        if count>expected_count:
+            raise ValueError("More decoded frame timestamps than measured source frames")
+        if previous is not None:
+            gap=now-previous
+            if gap<=0 or abs(gap-interval)>permitted:
+                raise ValueError("Variable-rate or irregular original frame timestamps; explicit conform required")
+        previous=now
+    if count!=expected_count:
+        raise ValueError("Physical original frame timestamps incomplete")
+    return count
+
+
 def _source_timebase(path):
     """Verify physical decoded frame count and that clip is constant-frame-rate."""
     raw=subprocess.check_output([
@@ -72,6 +114,7 @@ def _source_timebase(path):
     # normalization tool can be installed separately with user approval.
     if abs(avg-nominal)/avg>Fraction(1,1000):
         raise ValueError("Variable-rate media needs explicit CFR conform before frame-precision editing")
+    _verify_decoded_frame_clock(path,avg,count)
     return avg,count
 
 
