@@ -24,14 +24,35 @@ from studio_next.body_frame_resume import render_resumable_exr_passes
 from studio_next.body_integration import body_catalog
 from studio_next.body_materials import fingerprint_physical_inputs
 from studio_next.media_vault import sha256_file
-from studio_next.test_body_exr_passes import Real32FloatMultiPassVfx
+from studio_next.test_blender_scene import sample
+
+def _source_scene(root):
+    # Import the pure authored-scene fixture, NOT a unittest.TestCase class.
+    # unittest.discover registers exposed TestCase imports and would rerun
+    # their unrelated physical render + archive publication a second time.
+    film=sample()
+    film["shot_id"]="verified-resumable-independent-camera"
+    film["frames"]=2
+    film["fps"]=12
+    film["width"]=96
+    film["height"]=64
+    film["samples"]=2
+    film["camera"]["animate_location"][-1]["frame"]=2
+    for obj in film["objects"]:
+        for curve in obj.get("animate",{}).values():
+            if curve:
+                curve[-1]["frame"]=2
+    source=Path(root)/"resumable-original-scene.json"
+    source.write_text(json.dumps(film),encoding="utf-8")
+    return source,film
+
 
 
 class PhysicalFrameRangeContracts(unittest.TestCase):
     def test_invalid_absolute_blender_frame_ranges_before_executable_import(self):
         with tempfile.TemporaryDirectory() as td:
             root=Path(td)
-            source,scene=Real32FloatMultiPassVfx().scene(root)
+            source,scene=_source_scene(root)
             for a,b in ((0,1),(-1,2),(2,1),(1,99),(True,1),(1,False),(1,None)):
                 with self.subTest(range=(a,b)):
                     with self.assertRaises(Invalid3DShot):
@@ -47,7 +68,7 @@ class ActualResumableCyclesOriginalFrames(unittest.TestCase):
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory()
         self.root=Path(self.temp.name)
-        source,scene=Real32FloatMultiPassVfx().scene(self.root)
+        source,scene=_source_scene(self.root)
         self.source=source
         scene["frames"]=3
         scene["camera"]["animate_location"][-1]["frame"]=3
