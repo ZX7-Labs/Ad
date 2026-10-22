@@ -36,6 +36,7 @@ from .body_exr_passes import render_original_exr_passes,verify_exr_bundle
 from .body_frame_resume import render_resumable_exr_passes
 from .precision_retime import render_retime
 from .production_qc import full_decode_inspection
+from .body_observation import produce_review_bundle,verify_review_bundle
 from .body_plugins import discover_enabled_body_plugins
 from .body_tool_contracts import real_operation_schema
 from .body_materials import fingerprint_physical_inputs
@@ -70,6 +71,8 @@ def _witness(file):
         verify_media_container(f,"image/png")
     elif f.suffix.lower()==".zip":
         verify_exr_bundle(f)
+    elif f.suffix.lower()==".zxreview":
+        verify_review_bundle(f)
     return out
 
 
@@ -86,6 +89,11 @@ def _verify_witness(result):
     if p.suffix.lower()==".zip":
         try:
             return bool(verify_exr_bundle(p)["original_exr_passes_real"])
+        except (ValueError,RuntimeError,OSError,zipfile.BadZipFile):
+            return False
+    if p.suffix.lower()==".zxreview":
+        try:
+            return bool(verify_review_bundle(p)["true_image_decoders_completed"])
         except (ValueError,RuntimeError,OSError,zipfile.BadZipFile):
             return False
     if p.suffix.lower()==".png":
@@ -124,6 +132,7 @@ def _trusted_body_revision(tool_id):
         "body.film_finish":["film_finishing.py","media_vault.py"],
         "body.color_lut":["body_color_pipeline.py","media_vault.py","delivery_audit.py"],
         "body.full_decode":["production_qc.py","delivery_audit.py"],
+        "body.review":["body_observation.py","production_qc.py","media_vault.py"],
         "body.generate_video":["comfy_video_runtime.py","generative_video_providers.py"],
         "body.blender3d":["native_body_engines.py","blender_scene.py"],
         "body.exr_passes":["body_exr_passes.py","blender_scene.py","media_vault.py"],
@@ -144,6 +153,7 @@ def _trusted_body_revision(tool_id):
         "body.film_finish":["ffmpeg","ffprobe"],
         "body.color_lut":["ffmpeg","ffprobe"],
         "body.full_decode":["ffmpeg","ffprobe"],
+        "body.review":["ffmpeg","ffprobe"],
         "body.generate_video":["ffprobe"],
         "body.blender3d":["blender","ffmpeg"],
         "body.exr_passes":["blender"],
@@ -304,6 +314,12 @@ def body_catalog(workspace,*,vault_root=None):
         return _commit_actual_body_output(dest,
              lambda staged:render_verified_color_job(plan,root,vault.root,staged))
 
+    def review_actual_film(inputs):
+        original=_path_within(root,inputs["plan"],exists=True)
+        dest=_body_output(root,inputs["out"],allowed=(".zxreview",))
+        return _commit_actual_body_output(dest,
+            lambda staged:produce_review_bundle(original,root,vault.root,staged))
+
     def deep_media_qc(inputs):
         """Decode every actual video/audio stream, not just inspect metadata."""
         source=_path_within(root,inputs["source"],exists=True)
@@ -424,6 +440,11 @@ def body_catalog(workspace,*,vault_root=None):
         "Director-authored actor/camera/action prompt executed by locally verified GPU diffusion model",
         "write",native_video_ready,["video_job","out"],
         generate_genuine_video,idempotent=False)
+    add("body.review","actual original movie picture+sound observations for creative revision",
+        "Fully decoded licensed original; director-selected PNG frames, image differences, audio-window dBFS and SHA-bound portable review package",
+        "write",bool(shutil.which("ffmpeg") and shutil.which("ffprobe") and
+                     importlib.util.find_spec("PIL") is not None),
+        ["plan","out"],review_actual_film)
     add("body.full_decode","physical full-movie delivery quality assurance",
         "Actually decode entire picture/sound; preserve deliberate creative style",
         "read",bool(shutil.which("ffmpeg") and shutil.which("ffprobe")),
