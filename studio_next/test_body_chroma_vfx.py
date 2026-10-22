@@ -25,7 +25,10 @@ class ActualChromaMatteFilmmaking(unittest.TestCase):
             "-f","lavfi","-i","color=c=green:s=160x90:r=12:d=1",
             "-f","lavfi","-i","sine=frequency=680:duration=1",
             "-filter_complex","[0:v]drawbox=x=55:y=25:w=50:h=40:color=red:t=fill[v]",
-            "-map","[v]","-map","1:a:0","-c:v","libx264","-pix_fmt","yuv420p",
+            "-map","[v]","-map","1:a:0","-c:v","libx264",
+            "-x264-params","colorprim=bt709:transfer=bt709:colormatrix=bt709",
+            "-color_primaries","bt709","-color_trc","bt709",
+            "-colorspace","bt709","-pix_fmt","yuv420p",
             "-c:a","aac","-shortest",str(self.original)],
             capture_output=True,check=True,timeout=60)
         self.vault=MediaVault(self.root/"vault")
@@ -40,7 +43,8 @@ class ActualChromaMatteFilmmaking(unittest.TestCase):
                 "start":0,"source_in":0,"duration":1}
         self.film={
           "canvas":{"width":160,"height":90,"fps":12,"duration":1,
-                    "background":"#0000FF"},
+                    "background":"#0000FF",
+                    "color_semantics":{"input":"bt709","output":"bt709"}},
           "video_layers":[{"id":"actor_matting","x":0,"y":0,"width":160,
                            "height":90,"opacity":1,
                            "chroma_key":{"color":"#008000",
@@ -74,6 +78,8 @@ class ActualChromaMatteFilmmaking(unittest.TestCase):
         self.assertGreater(keyed[2],keyed[0]+70,keyed)
         self.assertGreater(foreground[0],foreground[1]+60,foreground)
         self.assertTrue(_probe_details(output)["audio_stream_present"])
+        from studio_next.body_color_pipeline import _actual_bt709_source
+        self.assertEqual(_actual_bt709_source(output)["color_primaries"],"bt709")
         inputs=fingerprint_physical_inputs("body.composite_mix",
                     {"plan":self.file.name},self.root)
         self.assertIn(self.evidence["asset_id"],[x["sha256"] for x in inputs])
