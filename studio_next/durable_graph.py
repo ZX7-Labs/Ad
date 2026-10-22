@@ -173,6 +173,24 @@ class DurableFilmGraph:
                 for a,b,c,d in rows]
 
 
+def durable_project_key(ir, *, fact_ids, allowed_access):
+    """Derive the exact graph namespace from host-approved facts and access.
+
+    Same film revisions may share a cache; unrelated films must never appear
+    as a single job's execution progress merely because they share a folder.
+    No media is executed or approved by calculating this identifier.
+    """
+    if not isinstance(ir,dict) or not isinstance(ir.get("project"),dict):
+        raise ValueError("A real immutable creative project is required")
+    rights=set(fact_ids)
+    permitted=frozenset(allowed_access)
+    if not permitted.issubset({"read","write","network","paid"}):
+        raise ValueError("Invalid production access scope")
+    return fingerprint({"creative_project":ir["project"],
+        "fact_ids":sorted(rights),"owner_facts":ir.get("owner_facts",{}),
+        "permission":sorted(permitted),"durable_schema":2})
+
+
 def execute_durable_film_graph(ir,catalog,*,fact_ids,store,
                                 trusted_idempotent_tools=frozenset(),
                                 output_verifier=None,tool_revisions=None,
@@ -221,9 +239,7 @@ def execute_durable_film_graph(ir,catalog,*,fact_ids,store,
     # Stable project identity permits *unchanged* shots to be resumed after
     # the artist revises an unrelated shot. Every node still authenticates
     # its own art, inputs, media assets, installed tool and upstream lineage.
-    project_key=fingerprint({"creative_project":ir["project"],
-        "fact_ids":sorted(rights),"owner_facts":ir.get("owner_facts",{}),
-        "permission":sorted(permission),"durable_schema":2})
+    project_key=durable_project_key(ir,fact_ids=rights,allowed_access=permission)
     outputs={}
     complete=[];reused=[];errors=[];trace=[]
     for node_id in validation.order:

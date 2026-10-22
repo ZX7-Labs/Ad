@@ -41,6 +41,7 @@ from .body_download_tickets import DownloadTickets
 from .body_verified_delivery import verified_artifact_snapshot
 from .body_host_resources import inspect_host_resources
 from .body_revision_impact import plan_film_revision_impact
+from .durable_graph import durable_project_key
 
 _ID=re.compile(r"^[A-Za-z0-9_-]{1,80}$")
 _MAX_JOB_BODY=4*1024*1024
@@ -334,25 +335,42 @@ class LocalBodyCoordinator:
                           "physically_encoded_quality_certified":False})
         return {"job_id":identity,"assets":items}
 
-    def _stage_progress(self,workspace_id):
-        """Real persisted tool states, never invented percent complete."""
+    def _stage_progress(self,workspace_id,*,project_key=None,node_ids=()):
+        """Read only this actual creative project lineage's persisted stages.
+
+        Stage caches are shared across revisions of the SAME creative project:
+        they are NOT individual job attempts or approved movie evidence.
+        """
+        empty={"observed_tool_states":[],
+               "tool_progress_is_actual_sqlite":False,
+               "stage_scope":"no_verified_project_lineage"}
+        if not isinstance(project_key,str) or not re.fullmatch(r"[a-f0-9]{64}",project_key):
+            return empty
+        if not isinstance(node_ids,(set,list,tuple,frozenset)) or not all(
+                isinstance(n,str) for n in node_ids):
+            return empty
+        approved=set(node_ids)
+        if not approved:
+            return {**empty,"stage_scope":"film_lineage_with_no_stage_nodes"}
         location=self._workspace(workspace_id)
         path=location/"production.sqlite3"
         if not path.is_file():
-            return {"observed_tool_states":[],"tool_progress_is_actual_sqlite":False}
+            return empty
         try:
-            from .durable_graph import DurableFilmGraph
             with sqlite3.connect(f"file:{path}?mode=ro",uri=True,timeout=4) as db:
                 tables=db.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
                 if ("node_results",) not in tables:
-                    return {"observed_tool_states":[],"tool_progress_is_actual_sqlite":False}
+                    return empty
                 rows=db.execute("""SELECT node_id,node_state,attempts,updated_at
-                    FROM node_results ORDER BY updated_at DESC LIMIT 500""").fetchall()
-            return {"observed_tool_states":[{"node_id":a,"state":b,"attempts":c,
-                "updated_at":d} for a,b,c,d in rows],
-                "tool_progress_is_actual_sqlite":True}
+                    FROM node_results WHERE project_key=?
+                    ORDER BY updated_at DESC LIMIT 500""",(project_key,)).fetchall()
+            return {"observed_tool_states":[
+                {"node_id":a,"state":b,"attempts":c,"updated_at":d}
+                for a,b,c,d in rows if a in approved],
+                "tool_progress_is_actual_sqlite":True,
+                "stage_scope":"verified_shared_project_lineage_not_single_job_attempt"}
         except (sqlite3.Error,ValueError,OSError):
-            return {"observed_tool_states":[],"tool_progress_is_actual_sqlite":False}
+            return empty
 
     def host_resource_status(self):
         """Only live technical capacity, never unverified AI model execution."""
@@ -439,14 +457,33 @@ class LocalBodyCoordinator:
         if not isinstance(identity,str) or not _ID.fullmatch(identity):
             raise ValueError("Invalid original job identity")
         with self._connect() as db:
-            row=db.execute("""SELECT workspace_id,status,attempts,result,modified
-                FROM jobs WHERE id=?""",(identity,)).fetchone()
+            row=db.execute("""SELECT workspace_id,status,attempts,result,modified,
+                       original_ir FROM jobs WHERE id=?""",(identity,)).fetchone()
         if row is None:raise ValueError("Unknown job")
+        result=json.loads(row[3]) if row[3] else None
+        original=json.loads(row[5])
+        nodes=original.get("tool_graph",[]) if isinstance(original,dict) else []
+        node_ids={n["id"] for n in nodes if isinstance(n,dict)
+                  and isinstance(n.get("id"),str)}
+        # Persisted finished reports must match THIS job's original project.
+        # A queued job can never claim previous or another worker's progress.
+        project_key=None
+        if row[1]!="queued" and isinstance(original,dict):
+            try:
+                expected=durable_project_key(original,
+                    fact_ids=set(original.get("owner_facts",{})),
+                    allowed_access=frozenset({"read","write"}))
+            except (TypeError,ValueError):
+                expected=None
+            if expected is not None and (row[1]=="running" or (
+                    isinstance(result,dict) and result.get("project_key")==expected)):
+                project_key=expected
         return {"job_id":identity,"workspace_id":row[0],"status":row[1],
-                "attempts":row[2],"result":json.loads(row[3]) if row[3] else None,
+                "attempts":row[2],"result":result,
                 "updated_at":row[4],
                 "requested_action":self._requested_control(identity),
-                "actual_tool_progress":self._stage_progress(row[0])}
+                "actual_tool_progress":self._stage_progress(row[0],
+                     project_key=project_key,node_ids=node_ids)}
 
     def pending_restart(self):
         with self._connect() as db:

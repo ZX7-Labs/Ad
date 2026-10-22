@@ -64,6 +64,37 @@ class FilmBodySensoryReceiptTests(unittest.TestCase):
                 self.assertIsNotNone(sensed["persisted_result_sha256"])
             finally:owner.close()
 
+
+    def test_sensory_does_not_misattribute_other_film_stages_in_shared_workspace(self):
+        from studio_next.durable_graph import DurableFilmGraph,durable_project_key
+        with tempfile.TemporaryDirectory() as root:
+            owner=LocalBodyCoordinator(root,execute=lambda ir,w:{
+                "status":"blocked","errors":["Original shot unrenderable"]})
+            try:
+                a=original_ir()
+                b=original_ir()
+                b["project"]={"creative_intent":"Different creative original"}
+                a["tool_graph"]=[{"id":"shot","tool_id":"body.inspect",
+                                 "inputs":{"source":"not-used.mp4"},"depends_on":[]}]
+                b["tool_graph"]=[{"id":"shot","tool_id":"body.inspect",
+                                 "inputs":{"source":"not-used.mp4"},"depends_on":[]}]
+                own=owner._workspace("shared-workspace");own.mkdir(parents=True)
+                ledger=DurableFilmGraph(own/"production.sqlite3")
+                bkey=durable_project_key(b,fact_ids=set(),allowed_access={"read","write"})
+                ledger.start_or_reuse(bkey,"shot","b-hash",
+                       trusted_idempotent=True,existing_result_verifier=lambda _:True,
+                       lease_seconds=120)
+                owner.submit(a,workspace_id="shared-workspace",job_id="original-a")
+                for _ in range(200):
+                    if owner.inspect("original-a")["status"]=="blocked":break
+                    time.sleep(.01)
+                observation=sense_body_job(owner,"original-a")
+                self.assertEqual(observation["recent_native_stages"],[])
+                self.assertFalse(observation["actual_durable_stage_database_found"])
+                self.assertFalse(observation["movie_physically_decoded_by_this_observation"])
+            finally:
+                owner.close()
+
     def test_authenticated_phone_api_exposes_bounded_sensor_without_file_leak(self):
         with tempfile.TemporaryDirectory() as root:
             owner=LocalBodyCoordinator(root,execute=lambda ir,w:{
