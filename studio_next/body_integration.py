@@ -37,6 +37,7 @@ from .body_frame_resume import render_resumable_exr_passes
 from .precision_retime import render_retime
 from .body_sequence_cuts import render_verified_sequence
 from .body_timeline_revision import render_editorial_revision
+from .body_owned_edit import render_verified_owned_edit
 from .production_qc import full_decode_inspection
 from .body_loudness import inspect_original_loudness
 from .body_observation import produce_review_bundle,verify_review_bundle
@@ -128,6 +129,7 @@ def _trusted_body_revision(tool_id):
         "body.inspect":["delivery_audit.py"],
         "body.resolve_asset":["media_vault.py"],
         "body.render_edit":["edit_timeline.py"],
+        "body.render_edit_owned":["body_owned_edit.py","edit_timeline.py","media_vault.py"],
         "body.retime":["precision_retime.py","media_vault.py","delivery_audit.py"],
         "body.sequence_cuts":["body_sequence_cuts.py","precision_retime.py","media_vault.py","body_color_pipeline.py"],
         "body.timeline_revision":["body_timeline_revision.py","body_sequence_cuts.py","precision_retime.py","media_vault.py","body_color_pipeline.py"],
@@ -155,6 +157,7 @@ def _trusted_body_revision(tool_id):
         "body.inspect":["ffprobe"],
         "body.resolve_asset":[],
         "body.render_edit":["ffmpeg","ffprobe"],
+        "body.render_edit_owned":["ffmpeg","ffprobe"],
         "body.retime":["ffmpeg","ffprobe"],
         "body.sequence_cuts":["ffmpeg","ffprobe"],
         "body.timeline_revision":["ffmpeg","ffprobe"],
@@ -289,6 +292,19 @@ def body_catalog(workspace,*,vault_root=None):
         output=_body_output(root,inputs["out"],allowed=(".mp4",))
         return _commit_actual_body_output(
             output,lambda staged:render_edit(original,root,staged))
+
+    def edit_attested(inputs):
+        plan=_path_within(root,inputs["edit"],exists=True)
+        target=_body_output(root,inputs["out"],allowed=(".mp4",))
+        verification={}
+        def produce(stage):
+            verification.update(render_verified_owned_edit(plan,root,vault.root,stage))
+        receipt=_commit_actual_body_output(target,produce)
+        return {**receipt,"source_custody_count":verification["source_custody_count"],
+                "distinct_originals":verification["distinct_originals"],
+                "director_plan_sha256":verification["plan_sha256"],
+                "original_footage_unchanged":True,
+                "artistic_quality_certified":False}
 
     def retime_footage(inputs):
         plan=_path_within(root,inputs['plan'],exists=True)
@@ -558,8 +574,12 @@ def body_catalog(workspace,*,vault_root=None):
         "read",True,["asset_id","attestation_id"],resolve_owner_media)
     add("body.inspect","measure physical media","FFprobe validates actual source video",
         "read",bool(shutil.which("ffprobe")),["source"],inspect)
-    add("body.render_edit","editorial timeline","Headless FFmpeg actual movie assembler",
+    add("body.render_edit","legacy editorial timeline (unattested rights label)",
+        "Legacy technical rendering only: a plan's rights string is NOT custody evidence. Use body.render_edit_owned for attested source footage.",
         "write",video_io,["edit","out"],edit)
+    add("body.render_edit_owned","source-attested independent mixed-source editing",
+        "Exact existing MediaVault content and owner-license attestation for every clip, original fit/fill and independent source sound, physically rendered and verified",
+        "write",video_io,["edit","out"],edit_attested)
     add("body.sequence_cuts","precise multishot original rights-attested picture and audio edit",
         "Real verified BT.709 CFR sources, original frame spans, independent sound custody, no unlicensed guessed footage",
         "write",video_io,["plan","out"],cut_owned_picture)

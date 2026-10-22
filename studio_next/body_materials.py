@@ -16,6 +16,7 @@ _SOURCE_FIELDS={
     "body.inspect":("source",),
     "body.resolve_asset":(),
     "body.render_edit":("edit",),
+    "body.render_edit_owned":("edit",),
     "body.retime":("plan",),
     "body.sequence_cuts":("plan",),
     "body.timeline_revision":("plan","operation"),
@@ -124,6 +125,9 @@ def fingerprint_physical_inputs(tool_id,inputs,workspace):
             if p.suffix.lower()==".json":
                 document=json.loads(p.read_text(encoding="utf-8"))
                 _nested_sources(document,root,found)
+                if tool_id=="body.render_edit_owned":
+                    from .body_owned_edit import validate_owned_edit
+                    validate_owned_edit(document,root,root/"vault")
                 if tool_id=="body.motion2d":
                     _authored_typefaces(document,selected_fonts)
         elif p.is_dir():
