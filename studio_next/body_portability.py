@@ -26,7 +26,10 @@ _DIGEST = set("0123456789abcdef")
 def _historical_runtime(rel: Path) -> bool:
     """Identify old host-bound execution controls, not artistic source."""
     pieces=rel.parts
-    if ".zx7-publications" in pieces:
+    if ".zx7-publications" in pieces or ".zx7-frame-checkpoints" in pieces:
+        # Render-checkpoint identities bind executable/tool version and host
+        # locks. They belong to the original machine, not the artist source
+        # files; keep their bytes for review but never activate on new host.
         return True
     if rel.name.startswith(".zx7-uncommitted-"):
         return True
