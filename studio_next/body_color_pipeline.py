@@ -154,7 +154,8 @@ def render_verified_color_job(plan_file,workspace,vault_root,output):
             raise ValueError("Color-transform bytes changed during preparation")
         cmd=["ffmpeg","-hide_banner","-loglevel","error","-nostdin","-n",
              "-i",str(proof["movie"]),
-             "-vf","lut3d=file=lookup.cube:interp="+proof["interp"],
+             "-vf","lut3d=file=lookup.cube:interp="+proof["interp"]+
+                   ",setparams=range=tv:color_primaries=bt709:color_trc=bt709:colorspace=bt709",
              "-map","0:v:0"]
         if original["audio_stream_present"]:
             cmd.extend(["-map","0:a:0"])
@@ -164,7 +165,7 @@ def render_verified_color_job(plan_file,workspace,vault_root,output):
         else:
             cmd.extend(["-c:v","prores_ks","-profile:v","3",
                         "-pix_fmt","yuv422p10le",
-                        "-c:a","pcm_s24le"])
+                        "-c:a","pcm_s24le","-movflags","+write_colr"])
         cmd.extend(["-color_primaries","bt709","-color_trc","bt709",
                     "-colorspace","bt709",str(destination)])
         try:
