@@ -124,13 +124,38 @@ class TrustedCreativeBodyToolTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"trusted renderer dependency"):
             _require_authentic_generated_media_lineage(
                 {"tool_graph":[read,fabricated]})
-        trusted={"id":"edit","tool_id":"body.render_edit","inputs":{},
-                 "depends_on":[]}
+        legacy={"id":"edit","tool_id":"body.render_edit","inputs":{},
+                "depends_on":[]}
         valid={"id":"vault","tool_id":"body.asset_vault",
                "depends_on":["edit"],
                "inputs":{"source_witness":{"$node_output":"edit"}}}
+        with self.assertRaisesRegex(ValueError,"trusted renderer dependency"):
+            _require_authentic_generated_media_lineage(
+                {"tool_graph":[legacy,valid]})
+        for untrusted in ("body.vector_png","body.film_thumbnail"):
+            with self.subTest(tool=untrusted),self.assertRaisesRegex(
+                    ValueError,"trusted renderer dependency"):
+                _require_authentic_generated_media_lineage(
+                    {"tool_graph":[{**legacy,"tool_id":untrusted},valid]})
+        trusted={**legacy,"tool_id":"body.render_edit_owned"}
         self.assertIsNone(_require_authentic_generated_media_lineage(
             {"tool_graph":[trusted,valid]}))
+
+    def test_actual_png_witness_cannot_mint_generated_rights_by_direct_catalog_call(self):
+        with tempfile.TemporaryDirectory() as root:
+            path=Path(root)/"real-original-graphic.png"
+            path.write_bytes(actual_rgb_png())
+            catalog=body_catalog(root)
+            import hashlib
+            actual={"path":str(path),"sha256":hashlib.sha256(path.read_bytes()).hexdigest(),
+                    "bytes":path.stat().st_size}
+            self.assertTrue(validate_witness("body.vector_png",actual))
+            with self.assertRaisesRegex(PermissionError,"verified durable producer DAG"):
+                catalog.invoke("body.asset_vault",{"source_witness":actual},
+                               allowed_access={"write"})
+            from studio_next.media_vault import MediaVault,MediaCustodyError
+            with self.assertRaises(MediaCustodyError):
+                MediaVault(Path(root)/"vault").inspect(actual["sha256"])
 
     def test_no_model_supplied_shell_or_untrusted_media_rights(self):
         with tempfile.TemporaryDirectory() as root:

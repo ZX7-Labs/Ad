@@ -33,6 +33,16 @@ def physical_tool_attempt(project_key, node_id, input_key, tool_id):
         _ATTEMPT.reset(token)
 
 
+def current_trusted_attempt_tool():
+    """Current verified host-graph operation, or None outside execution.
+
+    A bare model/owner-supplied output witness is not authority to certify
+    generated rights. A graph-bound producer proof must be established first.
+    """
+    identity=_ATTEMPT.get()
+    return identity.get("tool_id") if isinstance(identity,dict) else None
+
+
 def _sync_directory(directory):
     fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
     try:

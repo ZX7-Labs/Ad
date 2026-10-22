@@ -49,7 +49,8 @@ from .body_materials import fingerprint_physical_inputs
 from .generative_video_providers import discover_local_generators
 from .comfy_video_runtime import render_actual_generated_scene,validate_video_job
 from .body_publication import (publication_record_exists, prepare_publication,
-                               recover_publication, sync_published_file)
+                               recover_publication, sync_published_file,
+                               current_trusted_attempt_tool)
 
 
 def _body_output(workspace,name,*,allowed=(".mp4",".otio",".png")):
@@ -484,6 +485,8 @@ def body_catalog(workspace,*,vault_root=None):
         """
         if not isinstance(inputs,dict) or set(inputs)!={"source_witness"}:
             raise ValueError("Generated media custody requires only a trusted producer output")
+        if current_trusted_attempt_tool()!="body.asset_vault":
+            raise PermissionError("Only the verified durable producer DAG may issue generated-media provenance")
         proof=inputs["source_witness"]
         if not _verify_witness(proof):
             raise ValueError("No physically proven producer output for media custody")
@@ -641,9 +644,12 @@ def _require_authentic_generated_media_lineage(film_ir):
     if not isinstance(graph,list):
         raise ValueError("Real body graph required for custody validation")
     node_by_id={n["id"]:n for n in graph if isinstance(n,dict) and isinstance(n.get("id"),str)}
-    trusted_producers={"body.blender3d","body.motion2d","body.render_edit",
-                       "body.composite_mix","body.film_finish","body.vector_png",
-                       "body.film_thumbnail"}
+    # A legacy rights label, raw SVG, or extracted image cannot manufacture
+    # generated-original rights. Only trusted originating renderers or editors
+    # which themselves require MediaVault source custody may be archived.
+    trusted_producers={"body.blender3d","body.motion2d",
+                       "body.render_edit_owned",
+                       "body.composite_mix","body.film_finish"}
     for node in graph:
         if not isinstance(node,dict) or node.get("tool_id")!="body.asset_vault":
             continue

@@ -55,10 +55,11 @@ def native_original_body_proof(output):
            "inputs":{"source":"actual-full-mixed-film.mp4",
                      "expected":{"require_audio":True}},
            "depends_on":["finish"]},
-          {"id":"archive","tool_id":"body.asset_vault",
-           "purpose":"Store final actual encoded film with rights attestation",
-           "inputs":{"source_witness":{"$node_output":"finish"}},
-           "depends_on":["finish"]}]}
+          # Legacy body.render_edit is retained only as a technical
+          # multi-engine compositor test. Its unverified license string
+          # is NOT qualified to mint generated-original MediaVault rights.
+          # The separate body.render_edit_owned uses real CAS attestations.
+          ]}
     (root/"original-tool-graph.json").write_text(json.dumps(ir,indent=2)+"\n")
     first=run_body_project(ir,root)
     if first["status"]!="all_tool_results_verified":
