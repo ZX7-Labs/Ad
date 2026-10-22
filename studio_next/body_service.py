@@ -37,6 +37,7 @@ from .body_mobile import ASSETS as MOBILE_ASSETS, CSP as MOBILE_CSP
 from .body_download_tickets import DownloadTickets
 from .body_verified_delivery import verified_artifact_snapshot
 from .body_host_resources import inspect_host_resources
+from .body_revision_impact import plan_film_revision_impact
 
 _ID=re.compile(r"^[A-Za-z0-9_-]{1,80}$")
 _MAX_JOB_BODY=4*1024*1024
@@ -574,6 +575,22 @@ def make_body_http_handler(coordinator,token):
         def do_POST(self):
             if not self._authorized():return
             path=urlsplit(self.path).path
+            if path=="/v1/revisions/impact":
+                # Read-only architectural diff. It does not execute a model,
+                # reserve compute, alter the original Film IR or certify any
+                # physical media as cached. Authentication is mandatory.
+                try:
+                    length=int(self.headers.get("Content-Length","0"))
+                    if not (0<length<=_MAX_JOB_BODY):
+                        raise ValueError("Bounded original film revision pair required")
+                    payload=json.loads(self.rfile.read(length))
+                    if not isinstance(payload,dict) or set(payload)!={"before","after"}:
+                        raise ValueError("Exactly two original film IR revisions required")
+                    return self._reply(200,plan_film_revision_impact(
+                        payload["before"],payload["after"]))
+                except (ValueError,TypeError,RecursionError) as exc:
+                    return self._reply(400,{"error":str(exc)})
+
             if path.startswith("/v1/jobs/") and path.endswith("/download-ticket"):
                 rest=path.removeprefix("/v1/jobs/").removesuffix("/download-ticket")
                 if "/artifacts/" not in rest:
