@@ -22,6 +22,8 @@ on:
       - "studio_next/body_frame_resume.py"
       - "studio_next/body_observation.py"
       - "studio_next/body_review_access.py"
+      - "studio_next/body_review_compare.py"
+      - "studio_next/test_body_review_compare.py"
       - "studio_next/test_body_review_access.py"
       - "studio_next/test_body_observation.py"
       - "studio_next/test_body_frame_resume.py"
@@ -75,7 +77,7 @@ jobs:
       - name: Compile server and serve static shell with protected APIs
         run: |
           python -m compileall -q studio_next
-          python -m unittest studio_next.test_body_mobile studio_next.test_body_download_tickets studio_next.test_precision_retime studio_next.test_creative_tool_registry studio_next.test_body_portability studio_next.test_body_asset_links studio_next.test_body_asset_identity studio_next.test_body_asset_uri studio_next.test_body_verified_delivery studio_next.test_body_stage_lease studio_next.test_body_host_resources studio_next.test_body_dependency_scope studio_next.test_body_revision_impact studio_next.test_body_revision_http studio_next.test_body_incremental_cinema studio_next.test_body_color_pipeline studio_next.test_body_chroma_vfx studio_next.test_body_exr_passes studio_next.test_body_frame_resume studio_next.test_body_observation studio_next.test_body_review_access -v
+          python -m unittest studio_next.test_body_mobile studio_next.test_body_download_tickets studio_next.test_precision_retime studio_next.test_creative_tool_registry studio_next.test_body_portability studio_next.test_body_asset_links studio_next.test_body_asset_identity studio_next.test_body_asset_uri studio_next.test_body_verified_delivery studio_next.test_body_stage_lease studio_next.test_body_host_resources studio_next.test_body_dependency_scope studio_next.test_body_revision_impact studio_next.test_body_revision_http studio_next.test_body_incremental_cinema studio_next.test_body_color_pipeline studio_next.test_body_chroma_vfx studio_next.test_body_exr_passes studio_next.test_body_frame_resume studio_next.test_body_observation studio_next.test_body_review_access studio_next.test_body_review_compare -v
       - name: Parse actual client JavaScript in Node
         run: |
           python - <<'PY'
