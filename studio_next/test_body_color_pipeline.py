@@ -74,7 +74,9 @@ class PhysicalFilmColorLutTests(unittest.TestCase):
         _run(["ffmpeg","-hide_banner","-loglevel","error","-nostdin","-y",
               "-f","lavfi","-i","color=red:size=160x90:rate=12:duration=1",
               "-f","lavfi","-i","sine=frequency=430:sample_rate=48000:duration=1",
-              "-c:v","libx264","-pix_fmt","yuv420p",
+              "-c:v","libx264","-x264-params",
+              "colorprim=bt709:transfer=bt709:colormatrix=bt709",
+              "-pix_fmt","yuv420p",
               "-color_primaries","bt709","-color_trc","bt709",
               "-colorspace","bt709",
               "-c:a","aac","-shortest",str(self.camera)])
