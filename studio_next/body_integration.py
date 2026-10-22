@@ -304,10 +304,12 @@ def body_catalog(workspace,*,vault_root=None):
         if sha256_file(plan)!=initial_sha:
             raise ValueError("Director cut changed while preflighting original inputs")
         original,source_hashes=validate_owned_edit(authored,root,vault.root)
+        verification={}
         def produce(stage):
             if sha256_file(plan)!=initial_sha:
                 raise ValueError("Director cut changed before original renderer")
             observed=render_verified_owned_edit(plan,root,vault.root,stage)
+            verification.update(observed)
             if observed["plan_sha256"]!=initial_sha:
                 raise ValueError("Verified rendering used a different director cut")
         receipt=_commit_actual_body_output(target,produce)
