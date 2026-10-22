@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import shutil
 import tempfile
 import unittest
@@ -114,6 +115,41 @@ class Real32FloatMultiPassVfx(unittest.TestCase):
             self.assertEqual(final["sha256"],sha256_file(root/"nested-pass-proof.zip"))
             self.assertTrue(verify_exr_bundle(root/"nested-pass-proof.zip")
                             ["original_exr_passes_real"])
+            store=os.environ.get("ZX7_EXR_VFX_PROOF")
+            if store:
+                output_dir=Path(store).resolve()
+                output_dir.mkdir(parents=True,exist_ok=True)
+                import shutil as actual_copy
+                receipts=[]
+                for movie in (output,root/"nested-pass-proof.zip"):
+                    original_render=output_dir/movie.name
+                    if original_render.exists():
+                        raise FileExistsError("Do not overwrite previously accepted EXR art proof")
+                    actual_copy.copyfile(movie,original_render)
+                    receipts.append({"file":movie.name,
+                                     "sha256":sha256_file(original_render),
+                                     "bytes":original_render.stat().st_size,
+                                     "decoded_every_original_frame":verify_exr_bundle(
+                                         original_render)["original_exr_passes_real"]})
+                first=output_dir/"real-scene-linear-first-frame.exr"
+                if first.exists():
+                    raise FileExistsError("Never overwrite original scene linear art")
+                with zipfile.ZipFile(output) as packed:
+                    first.write_bytes(packed.read("frames/frame_0001.exr"))
+                original=inspect_real_exr_frame(first)
+                (output_dir/"real-32float-exr-evidence.json").write_text(json.dumps({
+                     "schema":1,"verified_studio_brain_not_changed":True,
+                     "genuine_Blender_CPU_exr":True,
+                     "actual_float_channel_precision_bits":original["decoded_float_precision_bits"],
+                     "channels":original["actual_channel_names"],
+                     "actual_verified_height":original["height"],
+                     "actual_verified_width":original["width"],
+                     "archive_receipts":receipts,
+                     "ACES_color_config_claimed":False,
+                     "film_ready_without_further_compositing":False,
+                     "independent_human_quality_approval":False},indent=2)+"\n",
+                     encoding="utf-8")
+
 
     def test_non_authorized_external_GLB_only_claims_are_not_vfx_evidence(self):
         with tempfile.TemporaryDirectory() as d:
