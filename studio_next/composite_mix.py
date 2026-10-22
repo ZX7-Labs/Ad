@@ -92,8 +92,15 @@ def validate_composition(plan,workspace,vault):
     if not isinstance(plan,dict) or set(plan)!={"canvas","video_layers","audio_tracks"}:
         raise ValueError("An actual editor-authored canvas and tracks required")
     canvas=plan["canvas"]
-    if not isinstance(canvas,dict) or set(canvas)!={"width","height","fps","duration","background"}:
+    expected_canvas={"width","height","fps","duration","background"}
+    if not isinstance(canvas,dict) or not expected_canvas.issubset(canvas) or (
+            set(canvas)-expected_canvas-{"color_semantics"}):
         raise ValueError("Editor must specify all physical delivery parameters")
+    contract=canvas.get("color_semantics")
+    if contract is not None and (
+            not isinstance(contract,dict) or set(contract)!={"input","output"}
+            or contract!={"input":"bt709","output":"bt709"}):
+        raise ValueError("Only measured and explicitly declared BT.709 SDR compositing color is supported")
     for field in ("width","height","fps"):
         _int(canvas[field],field)
     seconds=_positive(canvas["duration"],"composition duration")
@@ -128,6 +135,12 @@ def validate_composition(plan,workspace,vault):
             if start+duration>seconds+1/canvas["fps"]:
                 raise ValueError("Layer exceeds editor-authored total duration")
             file=_exact_media(layer,vault,root,need=kind)
+            if kind=="video" and contract is not None:
+                # This is not a silent metadata label. Every incoming
+                # picture must physically carry the declared SDR VUI, or
+                # we cannot claim a consistent compositor output.
+                from .body_color_pipeline import _actual_bt709_source
+                _actual_bt709_source(file)
             for field in ("width","height"):
                 if kind=="video":_int(layer[field],field)
             if kind=="video":
@@ -223,7 +236,12 @@ def actual_composite_command(plan,workspace,vault,out):
                 f"aformat=channel_layouts=stereo,volume={layer['gain_db']}dB,"
                 f"adelay={lag}|{lag},apad,atrim=duration={secs}[audio{index}]")
             music.append(f"[audio{index}]")
-    filters.append(f"[{base}]format=yuv420p[vout]")
+    if "color_semantics" in c:
+        filters.append(f"[{base}]format=yuv420p,"
+                       "setparams=range=tv:color_primaries=bt709:"
+                       "color_trc=bt709:colorspace=bt709[vout]")
+    else:
+        filters.append(f"[{base}]format=yuv420p[vout]")
     if music:
         if len(music)==1:
             filters.append(f"{music[0]}anull[aout]")
@@ -235,7 +253,11 @@ def actual_composite_command(plan,workspace,vault,out):
     args+=["-filter_complex",";".join(filters),"-map","[vout]","-map","[aout]",
            "-c:v","libx264","-pix_fmt","yuv420p","-crf","18",
            "-c:a","aac","-b:a","192k","-r",str(fps),
-           "-t",str(secs),"-movflags","+faststart",str(out)]
+           "-t",str(secs),"-movflags","+faststart"]
+    if "color_semantics" in c:
+        args+=["-color_primaries","bt709","-color_trc","bt709",
+               "-colorspace","bt709"]
+    args.append(str(out))
     return args
 
 
