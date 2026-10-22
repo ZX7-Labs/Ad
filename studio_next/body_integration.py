@@ -37,7 +37,7 @@ from .body_frame_resume import render_resumable_exr_passes
 from .precision_retime import render_retime
 from .body_sequence_cuts import render_verified_sequence
 from .body_timeline_revision import render_editorial_revision
-from .body_owned_edit import render_verified_owned_edit
+from .body_owned_edit import render_verified_owned_edit,validate_owned_edit
 from .production_qc import full_decode_inspection
 from .body_loudness import inspect_original_loudness
 from .body_observation import produce_review_bundle,verify_review_bundle
@@ -297,13 +297,26 @@ def body_catalog(workspace,*,vault_root=None):
     def edit_attested(inputs):
         plan=_path_within(root,inputs["edit"],exists=True)
         target=_body_output(root,inputs["out"],allowed=(".mp4",))
-        verification={}
+        # Read independent input/source facts even when the output is recovered
+        # directly from an atomic crash journal without calling the encoder.
+        initial_sha=sha256_file(plan)
+        authored=json.loads(plan.read_text(encoding="utf-8"))
+        if sha256_file(plan)!=initial_sha:
+            raise ValueError("Director cut changed while preflighting original inputs")
+        original,source_hashes=validate_owned_edit(authored,root,vault.root)
         def produce(stage):
-            verification.update(render_verified_owned_edit(plan,root,vault.root,stage))
+            if sha256_file(plan)!=initial_sha:
+                raise ValueError("Director cut changed before original renderer")
+            observed=render_verified_owned_edit(plan,root,vault.root,stage)
+            if observed["plan_sha256"]!=initial_sha:
+                raise ValueError("Verified rendering used a different director cut")
         receipt=_commit_actual_body_output(target,produce)
-        return {**receipt,"source_custody_count":verification["source_custody_count"],
-                "distinct_originals":verification["distinct_originals"],
-                "director_plan_sha256":verification["plan_sha256"],
+        if sha256_file(plan)!=initial_sha or any(
+                sha256_file(path)!=digest for path,digest in source_hashes.items()):
+            raise ValueError("Original proof changed while recovering or publishing")
+        return {**receipt,"source_custody_count":len(original["clips"]),
+                "distinct_originals":len(source_hashes),
+                "director_plan_sha256":initial_sha,
                 "original_footage_unchanged":True,
                 "artistic_quality_certified":False}
 

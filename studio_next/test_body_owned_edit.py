@@ -75,6 +75,24 @@ class TrueOwnerAttestedGenericEditorTests(unittest.TestCase):
             body.invoke("body.render_edit_owned",
                  {"edit":"director-edit.json","out":"original-owner-final.mp4"},
                  allowed_access={"write"})
+    def test_exact_owned_cas_render_recovery_reuses_physical_original_without_reencoding(self):
+        from studio_next.body_publication import physical_tool_attempt
+        body=body_catalog(self.root)
+        args={"edit":"director-edit.json","out":"recovered-owner-final.mp4"}
+        with physical_tool_attempt("physical-project","artist-cut","exact-inputs",
+                                   "body.render_edit_owned"):
+            first=body.invoke("body.render_edit_owned",args,allowed_access={"write"})
+            first_sha=first["sha256"]
+            # Existing identical attempt must recover its verified physical
+            # master, not re-render, overwrite or lose source-count evidence.
+            second=body.invoke("body.render_edit_owned",args,allowed_access={"write"})
+        self.assertEqual(second["sha256"],first_sha)
+        self.assertEqual(second["source_custody_count"],2)
+        self.assertEqual(second["distinct_originals"],2)
+        self.assertEqual(second["director_plan_sha256"],sha256_file(self.plan_file))
+        self.assertTrue(validate_witness("body.render_edit_owned",second))
+        self.assertFalse(list(self.root.glob(".zx7-uncommitted-*.mp4")))
+
     def test_model_claim_cannot_invent_licensed_original_or_wrong_sha(self):
         before=sha256_file(self.plan_file)
         for changes in (
