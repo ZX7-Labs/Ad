@@ -26,6 +26,8 @@ _SOURCE_FIELDS={
     "body.color_lut":("plan",),
     "body.full_decode":("source",),
     "body.review":("plan",),
+    "body.review_data":("bundle",),
+    "body.review_frame":("bundle",),
     "body.generate_video":("video_job",),
     "body.blender3d":("scene_json","assets_root"),
     "body.exr_passes":("scene_json","assets_root"),
