@@ -25,6 +25,7 @@ _SOURCE_FIELDS={
     "body.film_finish":("plan",),
     "body.color_lut":("plan",),
     "body.full_decode":("source",),
+    "body.loudness":("plan",),
     "body.review":("plan",),
     "body.review_data":("bundle",),
     "body.review_frame":("bundle",),
