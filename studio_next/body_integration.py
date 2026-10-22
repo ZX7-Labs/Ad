@@ -17,6 +17,7 @@ import os
 import uuid
 import json
 import shutil
+import zipfile
 from pathlib import Path
 
 from .contracts import ToolSpec
@@ -31,6 +32,7 @@ from .media_vault import MediaVault,sha256_file,verify_media_container,MediaCust
 from .composite_mix import render_composition
 from .film_finishing import finish_authorized_movie
 from .body_color_pipeline import render_verified_color_job
+from .body_exr_passes import render_original_exr_passes,verify_exr_bundle
 from .precision_retime import render_retime
 from .production_qc import full_decode_inspection
 from .body_plugins import discover_enabled_body_plugins
@@ -65,6 +67,8 @@ def _witness(file):
                     "audio_present":meta["audio_stream_present"]})
     elif f.suffix.lower()==".png":
         verify_media_container(f,"image/png")
+    elif f.suffix.lower()==".zip":
+        verify_exr_bundle(f)
     return out
 
 
@@ -78,6 +82,11 @@ def _verify_witness(result):
         observed=_probe_details(p)
         return (abs(observed["duration_seconds"]-result["duration_seconds"])<.08
                 and observed["audio_stream_present"]==result["audio_present"])
+    if p.suffix.lower()==".zip":
+        try:
+            return bool(verify_exr_bundle(p)["original_exr_passes_real"])
+        except (ValueError,RuntimeError,OSError,zipfile.BadZipFile):
+            return False
     if p.suffix.lower()==".png":
         try:
             verify_media_container(p,"image/png")
@@ -116,6 +125,7 @@ def _trusted_body_revision(tool_id):
         "body.full_decode":["production_qc.py","delivery_audit.py"],
         "body.generate_video":["comfy_video_runtime.py","generative_video_providers.py"],
         "body.blender3d":["native_body_engines.py","blender_scene.py"],
+        "body.exr_passes":["body_exr_passes.py","blender_scene.py","media_vault.py"],
         "body.motion2d":["native_body_engines.py","motion_bridge.py","font_registry.py",
                          "silent_audio.py","../motion_studio/render.py","../motion_studio/voice.py"],
     }
@@ -134,6 +144,7 @@ def _trusted_body_revision(tool_id):
         "body.full_decode":["ffmpeg","ffprobe"],
         "body.generate_video":["ffprobe"],
         "body.blender3d":["blender","ffmpeg"],
+        "body.exr_passes":["blender"],
         "body.motion2d":["ffmpeg","ffprobe"],
     }
     known=dependencies.get(tool_id)
@@ -154,7 +165,8 @@ def _trusted_body_revision(tool_id):
         h.update(json.dumps({"command":cmd,"binary_path":str(file),
               "size":stat.st_size,"mtime_ns":stat.st_mtime_ns},sort_keys=True).encode())
     runtime_libraries={"body.motion2d":("numpy","Pillow","fonttools","supertonic"),
-                       "body.otio":("opentimelineio",)}
+                       "body.otio":("opentimelineio",),
+                       "body.exr_passes":("OpenEXR",)}
     for library in runtime_libraries.get(tool_id,()):
         try:version=importlib.metadata.version(library)
         except importlib.metadata.PackageNotFoundError:version="not_installed"
@@ -331,6 +343,14 @@ def body_catalog(workspace,*,vault_root=None):
             dest,lambda staged:render_original_blender(
                 source,staged,trusted_asset_root=trusted_asset_root))
 
+    def render_scene_linear_exr(inputs):
+        scene=_path_within(root,inputs["scene_json"],exists=True)
+        dest=_body_output(root,inputs["out"],allowed=(".zip",))
+        asset_root=_path_within(root,inputs["assets_root"],exists=False) if (
+            isinstance(inputs.get("assets_root"),str) and inputs["assets_root"]) else None
+        return _commit_actual_body_output(dest,lambda staged:
+            render_original_exr_passes(scene,root,staged,assets_root=asset_root))
+
     def render2d(inputs):
         source=_path_within(root,inputs["original_film_ir"],exists=True)
         dest=_body_output(root,inputs["out"],allowed=(".mp4",))
@@ -400,6 +420,11 @@ def body_catalog(workspace,*,vault_root=None):
         "Actual physical rights-verified layered FFmpeg compositor from model-owned canvas",
         "write",bool(shutil.which("ffmpeg") and shutil.which("ffprobe")),
         ["plan","out"],composite)
+    add("body.exr_passes","real 32bit scene-linear multilayer 3D VFX passes",
+        "Blender Cycles CPU verified RGBA/depth/vector/normal EXR frames in immutable bundle",
+        "write",bool(shutil.which("blender") and
+                      importlib.util.find_spec("OpenEXR") is not None),
+        ["scene_json","out"],render_scene_linear_exr)
     add("body.blender3d","physical 3D filmmaking","Blender real rendered geometries, materials and moving camera",
         "write",bool(shutil.which("blender") and video_io),
         ["scene_json","out"],render3d)
