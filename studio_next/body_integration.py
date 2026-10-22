@@ -33,6 +33,7 @@ from .composite_mix import render_composition
 from .film_finishing import finish_authorized_movie
 from .body_color_pipeline import render_verified_color_job
 from .body_exr_passes import render_original_exr_passes,verify_exr_bundle
+from .body_frame_resume import render_resumable_exr_passes
 from .precision_retime import render_retime
 from .production_qc import full_decode_inspection
 from .body_plugins import discover_enabled_body_plugins
@@ -126,6 +127,7 @@ def _trusted_body_revision(tool_id):
         "body.generate_video":["comfy_video_runtime.py","generative_video_providers.py"],
         "body.blender3d":["native_body_engines.py","blender_scene.py"],
         "body.exr_passes":["body_exr_passes.py","blender_scene.py","media_vault.py"],
+        "body.exr_checkpoint":["body_frame_resume.py","body_exr_passes.py","blender_scene.py","media_vault.py"],
         "body.motion2d":["native_body_engines.py","motion_bridge.py","font_registry.py",
                          "silent_audio.py","../motion_studio/render.py","../motion_studio/voice.py"],
     }
@@ -145,6 +147,7 @@ def _trusted_body_revision(tool_id):
         "body.generate_video":["ffprobe"],
         "body.blender3d":["blender","ffmpeg"],
         "body.exr_passes":["blender"],
+        "body.exr_checkpoint":["blender"],
         "body.motion2d":["ffmpeg","ffprobe"],
     }
     known=dependencies.get(tool_id)
@@ -334,6 +337,22 @@ def body_catalog(workspace,*,vault_root=None):
         return _commit_actual_body_output(
             dest,lambda staged:shutil.copyfile(filmed,staged))
 
+    def render_checkpointed_exr(inputs):
+        scene=_path_within(root,inputs["scene_json"],exists=True)
+        dest=_body_output(root,inputs["out"],allowed=(".zip",))
+        evidence=render_resumable_exr_passes(scene,root,dest)
+        # Verified zip/physical EXR scene frames, not arbitrary bytes.
+        result=_witness(dest)
+        if not _verify_witness(result):
+            raise ValueError("Rendered EXR stage failed native release verification")
+        result.update({"actual_32bit_float_VFX_passes":True,
+                       "verified_frame_reuse_count":evidence["verified_frame_reuse_count"],
+                       "newly_rendered_frame_count":evidence["newly_rendered_frame_count"],
+                       "original_scene_sha256":evidence["original_scene_sha256"],
+                       "human_artist_quality_approved":False,
+                       "distributed_worker_execution_proven":False})
+        return result
+
     def render3d(inputs):
         source=_path_within(root,inputs["scene_json"],exists=True)
         dest=_body_output(root,inputs["out"],allowed=(".mp4",))
@@ -420,6 +439,11 @@ def body_catalog(workspace,*,vault_root=None):
         "Actual physical rights-verified layered FFmpeg compositor from model-owned canvas",
         "write",bool(shutil.which("ffmpeg") and shutil.which("ffprobe")),
         ["plan","out"],composite)
+    add("body.exr_checkpoint","durable original-frame 32float VFX render and exact verified resume",
+        "Original Blender Cycles CPU shot with per-frame EXR hash+decoder checkpoints; never a GPU farm",
+        "write",bool(shutil.which("blender") and
+                      importlib.util.find_spec("OpenEXR") is not None),
+        ["scene_json","out"],render_checkpointed_exr)
     add("body.exr_passes","real 32bit scene-linear multilayer 3D VFX passes",
         "Blender Cycles CPU verified RGBA/depth/vector/normal EXR frames in immutable bundle",
         "write",bool(shutil.which("blender") and
