@@ -1,0 +1,99 @@
+"""Trusted small feedback snapshot must not hallucinate finished video or style."""
+import json
+import tempfile
+import threading
+import time
+import unittest
+from http.server import ThreadingHTTPServer
+from urllib.error import HTTPError
+from urllib.request import Request,urlopen
+from studio_next.body_sensory import sense_body_job
+from studio_next.body_service import LocalBodyCoordinator,make_body_http_handler
+
+
+def original_ir():
+    return {"project":{"creative_intent":"Real independently authored original work"},
+      "shots":[{"id":"artist1","purpose":"Performer requested; source may be blocked"}],
+      "tool_graph":[]}
+
+
+class FilmBodySensoryReceiptTests(unittest.TestCase):
+    def test_blocked_original_shot_yields_facts_not_a_hallucinated_movie(self):
+        with tempfile.TemporaryDirectory() as root:
+            seen=[]
+            def work(ir,location):
+                seen.append(ir)
+                return {"status":"blocked","errors":["Original real performer source not available"],
+                        "video_proven":False,"completed":[]}
+            owner=LocalBodyCoordinator(root,execute=work)
+            try:
+                owner.submit(original_ir(),workspace_id="original-film",job_id="first")
+                for _ in range(200):
+                    if owner.inspect("first")["status"]=="blocked":break
+                    time.sleep(.01)
+                sensed=sense_body_job(owner,"first")
+                self.assertEqual(sensed["job_state"],"blocked")
+                self.assertEqual(sensed["failure_reasons"],
+                                 ["Original real performer source not available"])
+                self.assertFalse(sensed["movie_physically_decoded_by_this_observation"])
+                self.assertFalse(sensed["cinematic_or_narrative_quality_certified"])
+                self.assertEqual(seen[0],original_ir())
+                self.assertFalse(sensed["actual_durable_stage_database_found"])
+                self.assertEqual(sensed["recent_native_stages"],[])
+                for bad in ("../../../etc/shadow","","fake job with spaces"):
+                    with self.assertRaises(ValueError):
+                        sense_body_job(owner,bad)
+            finally:
+                owner.close()
+
+    def test_completed_executor_does_not_imply_media_or_aesthetic_quality(self):
+        with tempfile.TemporaryDirectory() as root:
+            owner=LocalBodyCoordinator(root,execute=lambda ir,w:{
+                "status":"all_tool_results_verified",
+                "completed":["text-only"],"video_proven":True})
+            try:
+                owner.submit(original_ir(),workspace_id="different",
+                             job_id="no-actual-film")
+                for _ in range(200):
+                    if owner.inspect("no-actual-film")["status"]=="completed":break
+                    time.sleep(.01)
+                sensed=sense_body_job(owner,"no-actual-film")
+                self.assertEqual(sensed["job_state"],"completed")
+                self.assertFalse(sensed["movie_physically_decoded_by_this_observation"])
+                self.assertNotIn("video_proven",sensed)
+                self.assertIsNotNone(sensed["persisted_result_sha256"])
+            finally:owner.close()
+
+    def test_authenticated_phone_api_exposes_bounded_sensor_without_file_leak(self):
+        with tempfile.TemporaryDirectory() as root:
+            owner=LocalBodyCoordinator(root,execute=lambda ir,w:{
+                "status":"blocked","errors":["No legally verified visual source"]})
+            owner.submit(original_ir(),workspace_id="my-movie",job_id="legal-block")
+            for _ in range(200):
+                if owner.inspect("legal-block")["status"]=="blocked":break
+                time.sleep(.01)
+            token="local-owner-"+("z"*48)
+            server=ThreadingHTTPServer(("127.0.0.1",0),
+                         make_body_http_handler(owner,token))
+            thread=threading.Thread(target=server.serve_forever,daemon=True)
+            thread.start()
+            base=f"http://127.0.0.1:{server.server_port}"
+            try:
+                with self.assertRaises(HTTPError) as err:
+                    urlopen(base+"/v1/jobs/legal-block/sense",timeout=5)
+                self.assertEqual(err.exception.code,401)
+                req=Request(base+"/v1/jobs/legal-block/sense",
+                       headers={"Authorization":"Bearer "+token})
+                with urlopen(req,timeout=5) as response:
+                    output=json.loads(response.read())
+                self.assertEqual(output["job_state"],"blocked")
+                self.assertEqual(output["failure_reasons"],
+                                 ["No legally verified visual source"])
+                self.assertNotIn("original_ir",str(output))
+                self.assertFalse(output["movie_physically_decoded_by_this_observation"])
+            finally:
+                server.shutdown();server.server_close();thread.join(timeout=4)
+                owner.close()
+
+if __name__=="__main__":
+    unittest.main()

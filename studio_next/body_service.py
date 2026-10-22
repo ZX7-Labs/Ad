@@ -30,6 +30,7 @@ from urllib.parse import urlsplit,unquote,parse_qs
 
 from .body_capabilities import operational_tool_summary,explain_operational_tool
 from .body_affordances import BodyAffordanceSurface
+from .body_sensory import sense_body_job
 from .body_integration import body_catalog
 from .body_integration import run_body_project
 from .media_vault import MediaVault,sha256_file,verify_media_container
@@ -583,6 +584,9 @@ def make_body_http_handler(coordinator,token):
                         coordinator.projects,name))
                 if path.startswith("/v1/jobs/"):
                     rest=path.removeprefix("/v1/jobs/")
+                    if rest.endswith("/sense"):
+                        identity=rest.removesuffix("/sense")
+                        return self._reply(200,sense_body_job(coordinator,identity))
                     if "/artifacts/" in rest:
                         identity,relative=rest.split("/artifacts/",1)
                         self._stream_artifact(identity,unquote(relative))
