@@ -13,6 +13,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 import tempfile
@@ -205,6 +206,35 @@ class ActualNonDestructiveCinemaRevision(unittest.TestCase):
                   "-f","null","-"])
             self.assertTrue((root/"prepared-b.mp4").is_file())
             self.assertTrue((root/"prepared-b-new.mp4").is_file())
+            # CI can retain both real originals and mastered files for
+            # review by a future physical/visual evaluator. These are tiny
+            # technical proof fixtures, not an artistic cinematography score.
+            preserve=os.getenv("ZX7_INCREMENTAL_CINEMA_PROOF")
+            if preserve:
+                destination=Path(preserve).resolve()
+                destination.mkdir(parents=True,exist_ok=True)
+                records=[]
+                for filename in ("prepared-a.mp4","prepared-b.mp4",
+                                 "prepared-b-new.mp4","film-first.mp4",
+                                 "film-revised.mp4"):
+                    from_path=root/filename
+                    to_path=destination/filename
+                    if to_path.exists():
+                        raise FileExistsError("Review evidence must not be overwritten")
+                    shutil.copyfile(from_path,to_path)
+                    meta=_probe_details(to_path)
+                    records.append({"file":filename,
+                        "sha256":sha256_file(to_path),
+                        "bytes":to_path.stat().st_size,
+                        "duration_seconds":meta["duration_seconds"],
+                        "original_audio_present":meta["audio_stream_present"]})
+                (destination/"verified-two-revision-media.json").write_text(
+                    json.dumps({"first_master_retained":True,
+                                "unrelated_video_stage_reused":True,
+                                "originals_decode_with_actual_audio":True,
+                                "independent_artistic_quality_certified":False,
+                                "real_media":records},indent=2)+"\n",
+                    encoding="utf-8")
 
 
 if __name__=="__main__":
