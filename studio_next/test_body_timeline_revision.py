@@ -155,5 +155,53 @@ class OwnedFilmRevisionProof(unittest.TestCase):
         self.assertTrue(validate_witness("body.timeline_revision",result))
         self.assertTrue((self.root/"body-edited.mp4").exists())
 
+    def test_editorial_revision_survives_archive_import_on_a_different_host(self):
+        from studio_next.body_archive import create_body_archive,restore_body_archive
+        from studio_next.body_sequence_cuts import render_verified_sequence
+        original=render_editorial_revision(self.planfile,self.operationfile,self.root,
+              self.root/"vault",self.root/"approved.mp4")
+        with tempfile.TemporaryDirectory() as offhost:
+            off=Path(offhost)
+            snapshot=create_body_archive(self.root,off/"studio.tar.gz")
+            relocated=off/"new-machine-workspace"
+            restore_body_archive(off/"studio.tar.gz",relocated,
+                                 expected_sha256=snapshot["sha256"],relocate=True)
+            revision=relocated/original["revision_plan"]
+            self.assertEqual(sha256_file(revision),original["revision_plan_sha256"])
+            self.assertEqual(sha256_file(relocated/"approved.mp4"),
+                             sha256_file(self.root/"approved.mp4"))
+            evidence=render_verified_sequence(revision,relocated,
+                         relocated/"vault",relocated/"new-worker.mp4")
+            self.assertEqual(evidence["physical_original_frames_delivered"],34)
+            self.assertTrue(evidence["original_audio_stream_present"])
+
+    def test_changed_original_editor_instructions_during_real_render_refused(self):
+        from unittest.mock import patch
+        real_render=render_editorial_revision.__globals__["render_verified_sequence"]
+        mutated=False
+        def tamper(*args,**kwargs):
+            nonlocal mutated
+            result=real_render(*args,**kwargs)
+            self.operationfile.write_text('{"operations":[{"kind":"slip","clip":0,"delta":1}]}')
+            mutated=True
+            return result
+        with patch("studio_next.body_timeline_revision.render_verified_sequence",
+                   side_effect=tamper):
+            with self.assertRaisesRegex(ValueError,"changed during render"):
+                render_editorial_revision(self.planfile,self.operationfile,self.root,
+                    self.root/"vault",self.root/"must-never-publish.mp4")
+        self.assertTrue(mutated)
+        self.assertFalse((self.root/"must-never-publish.mp4").exists())
+
+    def test_existing_revision_is_immutable_even_if_actor_changes_hidden_json(self):
+        result=render_editorial_revision(self.planfile,self.operationfile,self.root,
+                 self.root/"vault",self.root/"accepted.mp4")
+        revision=self.root/result["revision_plan"]
+        revision.write_text('{"edited":"malicious rewrite"}')
+        with self.assertRaisesRegex(ValueError,"immutable timeline revision"):
+            render_editorial_revision(self.planfile,self.operationfile,self.root,
+               self.root/"vault",self.root/"blocked-replay.mp4")
+        self.assertFalse((self.root/"blocked-replay.mp4").exists())
+
 if __name__=="__main__":
     unittest.main()
