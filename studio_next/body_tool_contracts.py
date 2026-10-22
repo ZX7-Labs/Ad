@@ -13,6 +13,8 @@ _ARG_TYPES={
     "assets_root":"string","edit":"string","plan":"string","video_job":"string","out":"string",
     "width":"integer","height":"integer","fps":"integer",
     "bundle":"string","bundle_sha256":"string","frame_index":"integer",
+    "before_bundle":"string","before_sha256":"string",
+    "after_bundle":"string","after_sha256":"string",
     "time_seconds":"number","expected":"object","source_witness":"object",
 }
 _EXAMPLES_DISALLOWED=True
