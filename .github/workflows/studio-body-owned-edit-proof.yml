@@ -7,6 +7,8 @@ on:
       - ".github/workflows/studio-body-owned-edit-proof.yml"
       - "studio_next/body_owned_edit.py"
       - "studio_next/test_body_owned_edit.py"
+      - "studio_next/body_archive.py"
+      - "studio_next/test_body_archive.py"
       - "studio_next/test_body_custody_graph.py"
       - "studio_next/body_integration.py"
       - "studio_next/body_publication.py"
@@ -43,7 +45,7 @@ jobs:
           set -o pipefail
           mkdir -p output/source-custody-proof
           python -m compileall -q studio_next
-          python -m unittest studio_next.test_body_owned_edit studio_next.test_body_custody_graph studio_next.test_body_integration -v 2>&1 | tee output/source-custody-proof/actual-codec-tests.log
+          python -m unittest studio_next.test_body_owned_edit studio_next.test_body_custody_graph studio_next.test_body_archive studio_next.test_body_integration -v 2>&1 | tee output/source-custody-proof/actual-codec-tests.log
           grep -E '^OK( \(skipped=[0-9]+\))?$' output/source-custody-proof/actual-codec-tests.log
           if grep -E '^OK \(skipped=[1-9][0-9]*\)$' output/source-custody-proof/actual-codec-tests.log; then
             echo "Codec-specific source rights proof may not be skipped" >&2

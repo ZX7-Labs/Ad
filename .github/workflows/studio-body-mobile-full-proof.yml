@@ -10,6 +10,7 @@ on:
       - "studio_next/body_mobile.py"
       - "studio_next/precision_retime.py"
       - "studio_next/body_archive.py"
+      - "studio_next/test_body_archive.py"
       - "studio_next/body_portability.py"
       - "studio_next/body_asset_links.py"
       - "studio_next/body_verified_delivery.py"
