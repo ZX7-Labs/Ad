@@ -38,6 +38,7 @@ from .precision_retime import render_retime
 from .production_qc import full_decode_inspection
 from .body_observation import produce_review_bundle,verify_review_bundle
 from .body_review_access import read_verified_review,extract_verified_review_frame
+from .body_review_compare import compare_verified_revisions
 from .body_plugins import discover_enabled_body_plugins
 from .body_tool_contracts import real_operation_schema
 from .body_materials import fingerprint_physical_inputs
@@ -136,6 +137,7 @@ def _trusted_body_revision(tool_id):
         "body.review":["body_observation.py","production_qc.py","media_vault.py"],
         "body.review_data":["body_review_access.py","body_observation.py"],
         "body.review_frame":["body_review_access.py","body_observation.py"],
+        "body.review_compare":["body_review_compare.py","body_review_access.py","body_observation.py"],
         "body.generate_video":["comfy_video_runtime.py","generative_video_providers.py"],
         "body.blender3d":["native_body_engines.py","blender_scene.py"],
         "body.exr_passes":["body_exr_passes.py","blender_scene.py","media_vault.py"],
@@ -159,6 +161,7 @@ def _trusted_body_revision(tool_id):
         "body.review":["ffmpeg","ffprobe"],
         "body.review_data":[],
         "body.review_frame":[],
+        "body.review_compare":[],
         "body.generate_video":["ffprobe"],
         "body.blender3d":["blender","ffmpeg"],
         "body.exr_passes":["blender"],
@@ -187,6 +190,7 @@ def _trusted_body_revision(tool_id):
                        "body.review":("Pillow",),
                        "body.review_data":("Pillow",),
                        "body.review_frame":("Pillow",),
+                       "body.review_compare":("Pillow",),
                        "body.exr_passes":("OpenEXR",)}
     for library in runtime_libraries.get(tool_id,()):
         try:version=importlib.metadata.version(library)
@@ -332,6 +336,12 @@ def body_catalog(workspace,*,vault_root=None):
         archive=_path_within(root,inputs["bundle"],exists=True)
         return read_verified_review(archive,inputs["bundle_sha256"],root)
 
+    def review_compare(inputs):
+        prior=_path_within(root,inputs["before_bundle"],exists=True)
+        after=_path_within(root,inputs["after_bundle"],exists=True)
+        return compare_verified_revisions(prior,inputs["before_sha256"],
+                 after,inputs["after_sha256"],root)
+
     def review_frame(inputs):
         archive=_path_within(root,inputs["bundle"],exists=True)
         output=_body_output(root,inputs["out"],allowed=(".png",))
@@ -459,6 +469,10 @@ def body_catalog(workspace,*,vault_root=None):
         "Director-authored actor/camera/action prompt executed by locally verified GPU diffusion model",
         "write",native_video_ready,["video_job","out"],
         generate_genuine_video,idempotent=False)
+    add("body.review_compare","physically compare actual original film picture and audio revision evidence",
+        "SHA verified matching native decoded PNG timecodes and observed dBFS windows; no fake artist score",
+        "read",bool(importlib.util.find_spec("PIL") is not None),
+        ["before_bundle","before_sha256","after_bundle","after_sha256"],review_compare)
     add("body.review_data","read actual original film picture and soundtrack review measurements",
         "Trusted decoder-validated source/timestamp/pixel/audio evidence; no invented creative judgement",
         "read",bool(importlib.util.find_spec("PIL") is not None),
