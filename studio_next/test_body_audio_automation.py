@@ -2,10 +2,11 @@
 
 Verifies actual H264/AAC director cut has an audible -24 dB relative region
 in the specified audio track, not just an FFmpeg string or mocked command.
-Frame-block volume evaluation is deliberately NOT described as sample-exact.
+Actual sample-by-sample FFmpeg aeval interpolation is independently checked.
 """
 from __future__ import annotations
 import json
+import array
 import shutil
 import subprocess
 import tempfile
@@ -61,8 +62,8 @@ class OriginalKeyframedSoundtrackTests(unittest.TestCase):
         filter_args=actual_composite_command(
             self.film,self.root,self.vault,self.root/"original-decision.mp4")
         filter_graph=filter_args[filter_args.index("-filter_complex")+1]
-        self.assertIn("volume='if(lt(t,",filter_graph)
-        self.assertIn(":eval=frame",filter_graph)
+        self.assertIn("aeval=exprs='val(ch)*(if(lt(t,",filter_graph)
+        self.assertIn(":c=same",filter_graph)
         self.assertIn("volume=0dB",filter_graph)
         output=self.root/"original-decision.mp4"
         result=render_composition(self.plan,self.root,self.root/"vault",output)
@@ -77,6 +78,39 @@ class OriginalKeyframedSoundtrackTests(unittest.TestCase):
         subprocess.run(["ffmpeg","-hide_banner","-loglevel","error","-xerror",
             "-i",str(output),"-map","0:v:0","-map","0:a:0",
             "-f","null","-"],check=True,capture_output=True,timeout=30)
+    def test_raw_physical_pcm_gain_matches_individual_sample_interpolation(self):
+        # FFmpeg volume=eval=frame would apply one gain per AUDIO BLOCK;
+        # this regression asserts the absolute 48 kHz sample 24000 and
+        # adjacent sample 24001 have independent correct interpolation.
+        from studio_next.composite_mix import _gain_automation_expression
+        envelope={"gain_keyframes":[{"at_seconds":0,"gain_db":0},
+                                    {"at_seconds":1,"gain_db":-20}]}
+        actual_filter=_gain_automation_expression(envelope)
+        self.assertIn("aeval=exprs=",actual_filter)
+        self.assertNotIn("eval=frame",actual_filter)
+        def decoded(filter_string):
+            cmd=["ffmpeg","-hide_banner","-loglevel","error","-nostdin",
+                 "-f","lavfi","-i",
+                 "aevalsrc=0.5:sample_rate=48000:duration=1",
+                 "-af",filter_string,"-ar","48000","-ac","2",
+                 "-c:a","pcm_f32le","-f","f32le","pipe:1"]
+            output=subprocess.run(cmd,capture_output=True,timeout=35)
+            self.assertEqual(output.returncode,0,output.stderr.decode()[-900:])
+            pcm=array.array("f")
+            pcm.frombytes(output.stdout)
+            self.assertEqual(len(pcm),48000*2)
+            return pcm
+        reference=decoded("aformat=channel_layouts=stereo")
+        changed=decoded("aformat=channel_layouts=stereo,"+actual_filter)
+        for sample in (0,1,12000,24000,24001,36000,47999):
+            with self.subTest(sample=sample):
+                expected=1-0.9*sample/48000
+                amplitude=changed[sample*2]/reference[sample*2]
+                self.assertAlmostEqual(amplitude,expected,delta=0.00005)
+                self.assertAlmostEqual(changed[sample*2+1]/reference[sample*2+1],
+                                       expected,delta=0.00005)
+        self.assertNotEqual(changed[24000*2],changed[24001*2])
+
     def test_bad_artist_gains_and_shot_timeline_escapes_refused_without_render(self):
         line=self.film["audio_tracks"][0]
         cases=[
