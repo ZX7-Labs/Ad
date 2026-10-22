@@ -34,6 +34,7 @@ def real_operation_schema(tool_id,required):
     optional={
         "body.motion2d":("voice_assets",),
         "body.blender3d":("assets_root",),
+        "body.exr_passes":("assets_root",),
         "body.full_decode":("expected",),
     }.get(tool_id,())
     for name in optional:
