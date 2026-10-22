@@ -9,12 +9,14 @@ The color/pitch choices are test fixtures only, never a studio style preset.
 """
 from __future__ import annotations
 import copy
+import array
 import json
 import shutil
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from studio_next.body_sequence_cuts import plan_verified_sequence,render_verified_sequence
 from studio_next.body_integration import body_catalog,validate_witness
@@ -92,6 +94,47 @@ class RealOwnedSequenceCuts(unittest.TestCase):
         subprocess.run(["ffmpeg","-hide_banner","-loglevel","error","-xerror",
             "-i",str(output),"-map","0:v:0","-map","0:a:0",
             "-f","null","-"],capture_output=True,check=True,timeout=40)
+    def test_real_picture_cut_preserves_each_separate_source_sound_frequency(self):
+        result=render_verified_sequence(self.document,self.root,self.root/"vault",
+                    self.root/"audited-source-sound.mp4")
+        self.assertEqual(result["physical_original_frames_delivered"],36)
+        def sound_hz(start,period=0.20):
+            raw=subprocess.run(["ffmpeg","-hide_banner","-loglevel","error",
+                "-ss",str(start),"-i",str(self.root/"audited-source-sound.mp4"),
+                "-vn","-t",str(period),"-ar","48000","-ac","1",
+                "-c:a","pcm_s16le","-f","s16le","pipe:1"],
+                capture_output=True,timeout=40)
+            self.assertEqual(raw.returncode,0,raw.stderr)
+            pcm=array.array("h")
+            pcm.frombytes(raw.stdout)
+            self.assertGreater(len(pcm),4800)
+            crossing=sum(1 for before,after in zip(pcm,pcm[1:])
+                         if before<=0<after)
+            return crossing/(len(pcm)/48000)
+        original_first=sound_hz(.12)
+        different_second=sound_hz(.90)
+        self.assertAlmostEqual(original_first,410,delta=20)
+        self.assertAlmostEqual(different_second,690,delta=25)
+
+    def test_timeline_changed_while_real_encoder_runs_is_not_accepted(self):
+        actual_run=subprocess.run
+        altered=False
+        def race(argv,**kwargs):
+            nonlocal altered
+            result=actual_run(argv,**kwargs)
+            if not altered and argv and argv[0]=="ffmpeg":
+                altered=True
+                edited=copy.deepcopy(self.plan)
+                edited["clips"][0]["first_frame"]=7
+                self.document.write_text(json.dumps(edited),encoding="utf-8")
+            return result
+        with patch("studio_next.body_sequence_cuts.subprocess.run",side_effect=race):
+            with self.assertRaisesRegex(ValueError,"timeline changed"):
+                render_verified_sequence(self.document,self.root,self.root/"vault",
+                    self.root/"never-accept-raced-cut.mp4")
+        self.assertTrue(altered)
+        self.assertFalse((self.root/"never-accept-raced-cut.mp4").exists())
+
     def test_actual_original_audio_can_be_explicitly_silenced_for_separate_shot(self):
         self.plan["clips"][0]["audio"]="intentional_silence";self.save()
         output=self.root/"author-chose-silence.mp4"
