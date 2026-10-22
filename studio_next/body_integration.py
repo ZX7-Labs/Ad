@@ -30,6 +30,7 @@ from .durable_graph import DurableFilmGraph,execute_durable_film_graph
 from .media_vault import MediaVault,sha256_file,verify_media_container,MediaCustodyError
 from .composite_mix import render_composition
 from .film_finishing import finish_authorized_movie
+from .body_color_pipeline import render_verified_color_job
 from .precision_retime import render_retime
 from .production_qc import full_decode_inspection
 from .body_plugins import discover_enabled_body_plugins
@@ -111,6 +112,7 @@ def _trusted_body_revision(tool_id):
         "body.asset_vault":["media_vault.py"],
         "body.composite_mix":["composite_mix.py","media_vault.py"],
         "body.film_finish":["film_finishing.py","media_vault.py"],
+        "body.color_lut":["body_color_pipeline.py","media_vault.py","delivery_audit.py"],
         "body.full_decode":["production_qc.py","delivery_audit.py"],
         "body.generate_video":["comfy_video_runtime.py","generative_video_providers.py"],
         "body.blender3d":["native_body_engines.py","blender_scene.py"],
@@ -128,6 +130,7 @@ def _trusted_body_revision(tool_id):
         "body.asset_vault":[],
         "body.composite_mix":["ffmpeg","ffprobe"],
         "body.film_finish":["ffmpeg","ffprobe"],
+        "body.color_lut":["ffmpeg","ffprobe"],
         "body.full_decode":["ffmpeg","ffprobe"],
         "body.generate_video":["ffprobe"],
         "body.blender3d":["blender","ffmpeg"],
@@ -280,6 +283,12 @@ def body_catalog(workspace,*,vault_root=None):
             dest,lambda staged:finish_authorized_movie(
                 source,root,vault.root,staged))
 
+    def color_grade_movie(inputs):
+        plan=_path_within(root,inputs["plan"],exists=True)
+        dest=_body_output(root,inputs["out"],allowed=(".mp4",".mov"))
+        return _commit_actual_body_output(dest,
+             lambda staged:render_verified_color_job(plan,root,vault.root,staged))
+
     def deep_media_qc(inputs):
         """Decode every actual video/audio stream, not just inspect metadata."""
         source=_path_within(root,inputs["source"],exists=True)
@@ -380,6 +389,9 @@ def body_catalog(workspace,*,vault_root=None):
         "Actually decode entire picture/sound; preserve deliberate creative style",
         "read",bool(shutil.which("ffmpeg") and shutil.which("ffprobe")),
         ["source"],deep_media_qc)
+    add("body.color_lut","original licensed 3D color LUT and protected soundtrack",
+        "Live FFmpeg exact BT.709 3D-CUBE transform; 8-bit viewing or 10-bit ProRes master",
+        "write",video_io,["plan","out"],color_grade_movie)
     add("body.film_finish","measured film color grade and sound finishing",
         "Local FFmpeg real picture operations and original audio loudness mastering",
         "write",bool(shutil.which("ffmpeg") and shutil.which("ffprobe")),
