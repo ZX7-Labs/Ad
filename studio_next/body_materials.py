@@ -105,6 +105,15 @@ def fingerprint_physical_inputs(tool_id,inputs,workspace):
         raise ValueError("Unregistered tool needs trusted source-fingerprint adapter")
     found=set()
     selected_fonts=set()
+    if tool_id=="body.resolve_asset":
+        # Resolve by actual immutable CAS bytes and exact owner attestation.
+        # An argument pair alone is NEVER enough to advertise a usable source.
+        receipt=MediaVault(root/"vault").inspect(
+            inputs.get("asset_id"),attestation_id=inputs.get("attestation_id"))
+        original=Path(receipt["path"]).resolve()
+        if not original.is_relative_to(root):
+            raise ValueError("Source custody escaped the original owner workspace")
+        found.add(original)
     for key in keys:
         source=inputs.get(key)
         if source is None:

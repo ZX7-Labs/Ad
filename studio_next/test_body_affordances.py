@@ -145,6 +145,27 @@ class LocalOwnerAffordanceHttpTests(unittest.TestCase):
                         "workspace_id":"test-film","tool_id":"body.resolve_asset",
                         "inputs":{"asset_id":"0"*64,"attestation_id":"forged"}})
                 self.assertEqual(bad.exception.code,400)
+                from studio_next.media_vault import MediaVault
+                original=workspace/"licensed-owner-asset.bin"
+                original.write_bytes(b"physically owned original bytes"*150)
+                v=MediaVault(workspace/"vault")
+                admitted=v.ingest(original,mime="application/octet-stream",
+                    rights="owner_supplied",source_type="owner_upload",
+                    source_id="original-local-owner",
+                    evidence="Independent owner-authenticated source proof",
+                    owner_or_generator="owner")
+                good=request("/v1/affordances/preflight",{
+                        "workspace_id":"test-film","tool_id":"body.resolve_asset",
+                        "inputs":{"asset_id":admitted["asset_id"],
+                                  "attestation_id":admitted["attestation_id"]}})
+                self.assertEqual(good["material_witness_count"],1)
+                self.assertFalse(good["owner_authorization_to_execute_granted"])
+                with self.assertRaises(HTTPError) as fake:
+                    request("/v1/affordances/preflight",{
+                        "workspace_id":"test-film","tool_id":"body.resolve_asset",
+                        "inputs":{"asset_id":admitted["asset_id"],
+                                  "attestation_id":"forged"}})
+                self.assertEqual(fake.exception.code,400)
                 self.assertFalse(any(workspace.glob("*.mp4")))
                 with self.assertRaises(HTTPError) as badcap:
                     request("/v1/affordances?limit=500")

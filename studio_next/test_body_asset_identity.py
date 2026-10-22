@@ -40,8 +40,13 @@ class OriginalMediaIdentityTests(unittest.TestCase):
             self.assertEqual(result["portable_uri"],"zx7:sha256:"+att["asset_id"])
             self.assertEqual(result["sha256"],att["asset_id"])
             self.assertEqual(result["bytes"],sound.stat().st_size)
-            self.assertEqual(fingerprint_physical_inputs("body.resolve_asset",
-                {"asset_id":att["asset_id"],"attestation_id":att["attestation_id"]},root),[])
+            recorded=fingerprint_physical_inputs("body.resolve_asset",
+                {"asset_id":att["asset_id"],"attestation_id":att["attestation_id"]},root)
+            self.assertEqual(len(recorded),1)
+            self.assertEqual(recorded[0]["sha256"],att["asset_id"])
+            with self.assertRaises(MediaCustodyError):
+                fingerprint_physical_inputs("body.resolve_asset",
+                    {"asset_id":att["asset_id"],"attestation_id":"forged"},root)
             # Changed original working file does NOT poison already immutable CAS.
             sound.write_bytes(b"different post-ingest original source")
             self.assertTrue(validate_witness("body.resolve_asset",result))
