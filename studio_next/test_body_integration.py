@@ -142,6 +142,8 @@ class TrustedCreativeBodyToolTests(unittest.TestCase):
             {"tool_graph":[trusted,valid]}))
 
     def test_actual_png_witness_cannot_mint_generated_rights_by_direct_catalog_call(self):
+        if importlib.util.find_spec("PIL") is None and not shutil.which("ffmpeg"):
+            self.skipTest("Actual PNG decoder required to prove a genuine source witness")
         with tempfile.TemporaryDirectory() as root:
             path=Path(root)/"real-original-graphic.png"
             path.write_bytes(actual_rgb_png())
