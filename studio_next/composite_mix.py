@@ -88,6 +88,29 @@ def _motion_expression(layer,axis):
     return f"if(lt(t,{before:.8f}),{marks[0][axis]},{expr})"
 
 
+def _gain_automation_expression(layer):
+    """Dynamically interpolate author gain points; measured at FFmpeg AUDIO FRAME boundaries.
+
+    This is not PCM-sample-accurate automation.
+    """
+    points=layer.get("gain_keyframes")
+    if not points:
+        return None
+    def amp(point):
+        return 10**(float(point["gain_db"])/20)
+    expr=format(amp(points[-1]),".12g")
+    for earlier,later in reversed(list(zip(points,points[1:]))):
+        a=float(earlier["at_seconds"]); b=float(later["at_seconds"])
+        level=amp(earlier); delta=amp(later)-level
+        expr=(f"if(lt(t,{b:.9g}),{level:.12g}+({delta:.12g})"
+              f"*(t-{a:.9g})/{b-a:.9g},{expr})")
+    first=points[0]
+    t=float(first["at_seconds"])
+    if t:
+        expr=f"if(lt(t,{t:.9g}),{amp(first):.12g},{expr})"
+    return "volume='"+expr+"':eval=frame"
+
+
 def validate_composition(plan,workspace,vault):
     if not isinstance(plan,dict) or set(plan)!={"canvas","video_layers","audio_tracks"}:
         raise ValueError("An actual editor-authored canvas and tracks required")
@@ -122,7 +145,7 @@ def validate_composition(plan,workspace,vault):
                       if kind=="video" else
                       {"id","source","asset_id","attestation_id","start","source_in","duration","gain_db"})
             supported=required|({"motion","fade_in_seconds","fade_out_seconds","chroma_key"}
-                                if kind=="video" else set())
+                                if kind=="video" else {"gain_keyframes"})
             if not required.issubset(layer) or not set(layer).issubset(supported):
                 raise ValueError("Director-specified "+kind+" layer is incomplete or uses untrusted effects")
             identifier=layer["id"]
@@ -181,6 +204,20 @@ def validate_composition(plan,workspace,vault):
                 if isinstance(gain,bool) or not isinstance(gain,(int,float)) or (
                         not math.isfinite(gain) or abs(gain)>120):
                     raise ValueError("Unsafe audio gain")
+                envelope=layer.get("gain_keyframes",[])
+                if not isinstance(envelope,list) or len(envelope)>64:
+                    raise ValueError("Original audio envelope must be a bounded list")
+                previous=-1.0
+                for key in envelope:
+                    if not isinstance(key,dict) or set(key)!={"at_seconds","gain_db"}:
+                        raise ValueError("Audio automation points need time and gain")
+                    at=_positive(key["at_seconds"],"audio automation time",allow_zero=True)
+                    value=key["gain_db"]
+                    if (at<=previous or at>duration or
+                        isinstance(value,bool) or not isinstance(value,(int,float))
+                        or not math.isfinite(value) or abs(value)>120):
+                        raise ValueError("Audio envelope contains out-of-range or unordered points")
+                    previous=at
             inputs.append({"kind":kind,"layer":layer,"file":file,
                            "start":start,"source_in":source_in,"duration":duration})
     return inputs
@@ -230,11 +267,14 @@ def actual_composite_command(plan,workspace,vault,out):
             base=output
         else:
             lag=round(start*1000)
-            filters.append(
-                f"[{index}:a:0]atrim=start={source_in}:duration={duration},"
+            effects=(f"[{index}:a:0]atrim=start={source_in}:duration={duration},"
                 "asetpts=PTS-STARTPTS,aresample=48000,"
-                f"aformat=channel_layouts=stereo,volume={layer['gain_db']}dB,"
-                f"adelay={lag}|{lag},apad,atrim=duration={secs}[audio{index}]")
+                f"aformat=channel_layouts=stereo,volume={layer['gain_db']}dB")
+            envelope=_gain_automation_expression(layer)
+            if envelope is not None:
+                effects+=","+envelope
+            effects+=f",adelay={lag}|{lag},apad,atrim=duration={secs}[audio{index}]"
+            filters.append(effects)
             music.append(f"[audio{index}]")
     if "color_semantics" in c:
         filters.append(f"[{base}]format=yuv420p,"
