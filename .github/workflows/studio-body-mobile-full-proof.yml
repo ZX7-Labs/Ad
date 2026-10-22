@@ -24,6 +24,8 @@ on:
       - "studio_next/body_exr_passes.py"
       - "studio_next/body_frame_resume.py"
       - "studio_next/body_observation.py"
+      - "studio_next/body_review_access.py"
+      - "studio_next/test_body_review_access.py"
       - "studio_next/test_body_observation.py"
       - "studio_next/test_body_frame_resume.py"
       - "studio_next/blender_scene.py"
