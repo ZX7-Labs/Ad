@@ -179,6 +179,7 @@ def _trusted_body_revision(tool_id):
               "size":stat.st_size,"mtime_ns":stat.st_mtime_ns},sort_keys=True).encode())
     runtime_libraries={"body.motion2d":("numpy","Pillow","fonttools","supertonic"),
                        "body.otio":("opentimelineio",),
+                       "body.review":("Pillow",),
                        "body.exr_passes":("OpenEXR",)}
     for library in runtime_libraries.get(tool_id,()):
         try:version=importlib.metadata.version(library)
