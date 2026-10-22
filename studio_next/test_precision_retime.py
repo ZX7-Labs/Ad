@@ -7,9 +7,10 @@ import subprocess
 import tempfile
 import unittest
 from fractions import Fraction
+from unittest.mock import patch
 from pathlib import Path
 
-from studio_next.precision_retime import _speed,_tempo_chain,plan_retime,retime_command,render_retime
+from studio_next.precision_retime import _speed,_tempo_chain,_verify_decoded_frame_clock,plan_retime,retime_command,render_retime
 from studio_next.media_vault import MediaVault
 from studio_next.body_integration import body_catalog
 from studio_next.body_materials import fingerprint_physical_inputs
@@ -27,6 +28,30 @@ class RetimeContractTests(unittest.TestCase):
                   {"numerator":100000,"denominator":1},{}):
             with self.assertRaises(ValueError):
                 _speed(q)
+    def test_every_decoded_frame_pts_must_match_exact_original_clock(self):
+        # Avg fps equals 24 in each case; mid-stream irregularity is still
+        # fatal. B-frame first-record SEI side data does not hide real PTS.
+        valid="0.000000,H.264 User Data SEI\n0.041667\n0.083333\n0.125000\n0.166667\n"
+        def audit(rows):
+            completed=subprocess.CompletedProcess(["ffprobe"],0,
+                                         stdout=rows,stderr="")
+            with patch("studio_next.precision_retime.subprocess.run",
+                       return_value=completed) as running:
+                return _verify_decoded_frame_clock(
+                    Path("/original/film.mp4"),Fraction(24,1),5)
+        self.assertEqual(audit(valid),5)
+        for bad in (
+            "0.000000\n0.041667\n0.083333\n0.145000\n0.166667\n",
+            "0.000000\n0.041667\n0.041667\n0.125000\n0.166667\n",
+            "0.000000\n0.041667\n0.083333\n0.125000\n",
+            "0.000000\n0.041667\n0.083333\n0.125000\n0.166667\n0.208333\n",
+            "0.000000\n0.041667\nnan\n0.125000\n0.166667\n"
+        ):
+            with self.subTest(bad=bad):
+                with self.assertRaisesRegex(ValueError,
+                         "Variable-rate|frame timestamps|PTS"):
+                    audit(bad)
+
     def test_prepared_tool_filter_does_not_interpret_model_code(self):
         spec={"source":Path("/trusted/media.mp4"),"fps":Fraction(24000,1001),
               "audio":"preserve_source",
