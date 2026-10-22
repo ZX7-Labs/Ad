@@ -28,6 +28,7 @@ _SOURCE_FIELDS={
     "body.review":("plan",),
     "body.review_data":("bundle",),
     "body.review_frame":("bundle",),
+    "body.review_compare":("before_bundle","after_bundle"),
     "body.generate_video":("video_job",),
     "body.blender3d":("scene_json","assets_root"),
     "body.exr_passes":("scene_json","assets_root"),
