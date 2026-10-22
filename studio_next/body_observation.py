@@ -45,7 +45,7 @@ def _snapshot_window(movie,start,end):
         raise ValueError("Selected original audio window did not physically decode")
     findings=re.findall(r"(mean_volume|max_volume):\s*(-?(?:\d+(?:\.\d+)?|inf))\s*dB",
                         result.stderr or "")
-    levels={k:float(v) for k,v in findings}
+    levels={k:("-inf" if v=="-inf" else float(v)) for k,v in findings}
     if "mean_volume" not in levels or "max_volume" not in levels:
         raise ValueError("No actual audio-window dBFS evidence from FFmpeg decoder")
     return {"start_seconds":start,"end_seconds":end,
@@ -133,8 +133,43 @@ def verify_review_bundle(archive):
                     picture_shapes.add((img.width,img.height))
             except (UnidentifiedImageError,OSError) as exc:
                 raise ValueError("Original preview failed real pixel decoding") from exc
-        if len(picture_shapes)!=1 or manifest.get("source_sha256") is None:
+        provenance=manifest.get("source_sha256")
+        if (len(picture_shapes)!=1 or not isinstance(provenance,str)
+                or not _HEX.fullmatch(provenance)
+                or manifest.get("source_asset_id")!=provenance
+                or not isinstance(manifest.get("source_attestation_id"),str)
+                or not manifest["source_attestation_id"]):
             raise ValueError("Review frame dimensions or source provenance do not agree")
+        duration=manifest.get("source_original_duration_seconds")
+        if isinstance(duration,bool) or not isinstance(duration,(int,float)) or (
+                not math.isfinite(duration) or duration<=0):
+            raise ValueError("Review has no measurable original movie duration")
+        observed_times=[]
+        for item in images:
+            time=item.get("time_seconds")
+            if isinstance(time,bool) or not isinstance(time,(int,float)) or (
+                    not math.isfinite(time) or not 0<=time<duration or
+                    (observed_times and time<=observed_times[-1])):
+                raise ValueError("Review frame timecodes do not match a real movie clock")
+            observed_times.append(time)
+        windows=manifest.get("audio_window_evidence")
+        if not isinstance(windows,list) or len(windows)>_MAX_SAMPLES:
+            raise ValueError("Unbounded original audio observation receipt")
+        for window in windows:
+            if not isinstance(window,dict):
+                raise ValueError("Unverifiable soundtrack observation record")
+            start,end=window.get("start_seconds"),window.get("end_seconds")
+            if (type(start) not in (int,float) or type(end) not in (int,float)
+                 or not math.isfinite(start) or not math.isfinite(end)
+                 or not 0<=start<end<=duration):
+                raise ValueError("Audio evidence window outside original film timebase")
+            for level in ("mean_dbfs","peak_dbfs"):
+                value=window.get(level)
+                if value!="-inf" and (
+                     type(value) not in (int,float) or not math.isfinite(value)):
+                    raise ValueError("Original audio loudness record is malformed")
+        if windows and manifest.get("source_has_actual_audio") is not True:
+            raise ValueError("Reported actual audio windows absent from source")
         return {"actual_sampled_frames":len(images),
                 "true_image_decoders_completed":True,
                 "source_sha256":manifest["source_sha256"],
