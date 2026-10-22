@@ -119,6 +119,22 @@ def _gain_automation_expression(layer):
     return "aeval=exprs='val(ch)*("+expr+")':c=same"
 
 
+
+def _decoded_source_duration(path):
+    """Measure actual source length. No silent playback past owner footage."""
+    try:
+        raw=subprocess.check_output([
+            "ffprobe","-v","error","-show_entries","format=duration",
+            "-of","json",str(path)],timeout=45)
+        value=json.loads(raw).get("format",{}).get("duration")
+        duration=float(value)
+    except (OSError,ValueError,TypeError,KeyError,
+            subprocess.SubprocessError) as exc:
+        raise ValueError("Actual original source duration cannot be established") from exc
+    if not math.isfinite(duration) or duration<=0:
+        raise ValueError("Original source has no finite decodable duration")
+    return duration
+
 def validate_composition(plan,workspace,vault):
     if not isinstance(plan,dict) or set(plan)!={"canvas","video_layers","audio_tracks"}:
         raise ValueError("An actual editor-authored canvas and tracks required")
@@ -144,6 +160,7 @@ def validate_composition(plan,workspace,vault):
     root=Path(workspace).resolve()
     seen=set()
     inputs=[]
+    real_source_lengths={}
     for kind,items in (("video",video),("audio",audio)):
         for layer in items:
             if not isinstance(layer,dict):
@@ -166,6 +183,10 @@ def validate_composition(plan,workspace,vault):
             if start+duration>seconds+1/canvas["fps"]:
                 raise ValueError("Layer exceeds editor-authored total duration")
             file=_exact_media(layer,vault,root,need=kind)
+            if file not in real_source_lengths:
+                real_source_lengths[file]=_decoded_source_duration(file)
+            if source_in+duration>real_source_lengths[file]+0.015:
+                raise ValueError("Original source trim exceeds physically decoded footage or sound")
             if kind=="video" and contract is not None:
                 # This is not a silent metadata label. Every incoming
                 # picture must physically carry the declared SDR VUI, or

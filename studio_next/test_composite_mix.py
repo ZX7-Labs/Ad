@@ -145,6 +145,23 @@ class LayeredProductionCompositingTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,"untrusted"):
                 actual_composite_command(original,root,vault,Path(root)/"invalid.mp4")
 
+    def test_real_layer_source_duration_boundaries_before_render(self):
+        with tempfile.TemporaryDirectory() as root:
+            plan,_,vault=self.fixture(root)
+            out=Path(root)/"must-not-invent-missing-source.mp4"
+            plan["video_layers"][0]["source_in"]=1.3
+            plan["video_layers"][0]["duration"]=0.6
+            with self.assertRaisesRegex(ValueError,"source trim exceeds"):
+                actual_composite_command(plan,root,vault,out)
+            self.assertFalse(out.exists())
+            plan["video_layers"][0]["source_in"]=0
+            plan["video_layers"][0]["duration"]=1
+            plan["audio_tracks"][0]["source_in"]=1.6
+            plan["audio_tracks"][0]["duration"]=0.8
+            with self.assertRaisesRegex(ValueError,"source trim exceeds"):
+                actual_composite_command(plan,root,vault,out)
+            self.assertFalse(out.exists())
+
     def test_mutable_checkout_swap_cannot_change_cas_sealed_camera_or_sound(self):
         from studio_next import composite_mix
         from studio_next.media_vault import sha256_file
