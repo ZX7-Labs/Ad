@@ -184,7 +184,8 @@ class PhysicalFilmColorLutTests(unittest.TestCase):
         self.assertEqual(specs["body.color_lut"]["status"],"installed")
         self.assertEqual(specs["body.color_lut"]["schema"]["required"],["plan","out"])
         out=tools.invoke("body.color_lut",{"plan":self.planfile.name,
-                                          "out":"registered-master.mp4"})
+                                          "out":"registered-master.mp4"},
+                         allowed_access={"read","write"})
         self.assertTrue((self.root/"registered-master.mp4").exists())
         self.assertEqual(out["sha256"],sha256_file(self.root/"registered-master.mp4"))
         self.assertTrue(_probe_details(self.root/"registered-master.mp4")["audio_stream_present"])
