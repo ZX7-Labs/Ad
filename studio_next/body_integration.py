@@ -37,6 +37,7 @@ from .body_frame_resume import render_resumable_exr_passes
 from .precision_retime import render_retime
 from .production_qc import full_decode_inspection
 from .body_observation import produce_review_bundle,verify_review_bundle
+from .body_review_access import read_verified_review,extract_verified_review_frame
 from .body_plugins import discover_enabled_body_plugins
 from .body_tool_contracts import real_operation_schema
 from .body_materials import fingerprint_physical_inputs
@@ -133,6 +134,8 @@ def _trusted_body_revision(tool_id):
         "body.color_lut":["body_color_pipeline.py","media_vault.py","delivery_audit.py"],
         "body.full_decode":["production_qc.py","delivery_audit.py"],
         "body.review":["body_observation.py","production_qc.py","media_vault.py"],
+        "body.review_data":["body_review_access.py","body_observation.py"],
+        "body.review_frame":["body_review_access.py","body_observation.py"],
         "body.generate_video":["comfy_video_runtime.py","generative_video_providers.py"],
         "body.blender3d":["native_body_engines.py","blender_scene.py"],
         "body.exr_passes":["body_exr_passes.py","blender_scene.py","media_vault.py"],
@@ -154,6 +157,8 @@ def _trusted_body_revision(tool_id):
         "body.color_lut":["ffmpeg","ffprobe"],
         "body.full_decode":["ffmpeg","ffprobe"],
         "body.review":["ffmpeg","ffprobe"],
+        "body.review_data":[],
+        "body.review_frame":[],
         "body.generate_video":["ffprobe"],
         "body.blender3d":["blender","ffmpeg"],
         "body.exr_passes":["blender"],
@@ -180,6 +185,8 @@ def _trusted_body_revision(tool_id):
     runtime_libraries={"body.motion2d":("numpy","Pillow","fonttools","supertonic"),
                        "body.otio":("opentimelineio",),
                        "body.review":("Pillow",),
+                       "body.review_data":("Pillow",),
+                       "body.review_frame":("Pillow",),
                        "body.exr_passes":("OpenEXR",)}
     for library in runtime_libraries.get(tool_id,()):
         try:version=importlib.metadata.version(library)
@@ -321,6 +328,17 @@ def body_catalog(workspace,*,vault_root=None):
         return _commit_actual_body_output(dest,
             lambda staged:produce_review_bundle(original,root,vault.root,staged))
 
+    def review_data(inputs):
+        archive=_path_within(root,inputs["bundle"],exists=True)
+        return read_verified_review(archive,inputs["bundle_sha256"],root)
+
+    def review_frame(inputs):
+        archive=_path_within(root,inputs["bundle"],exists=True)
+        output=_body_output(root,inputs["out"],allowed=(".png",))
+        return _commit_actual_body_output(output,
+            lambda staged:extract_verified_review_frame(
+                archive,inputs["bundle_sha256"],root,inputs["frame_index"],staged))
+
     def deep_media_qc(inputs):
         """Decode every actual video/audio stream, not just inspect metadata."""
         source=_path_within(root,inputs["source"],exists=True)
@@ -441,6 +459,14 @@ def body_catalog(workspace,*,vault_root=None):
         "Director-authored actor/camera/action prompt executed by locally verified GPU diffusion model",
         "write",native_video_ready,["video_job","out"],
         generate_genuine_video,idempotent=False)
+    add("body.review_data","read actual original film picture and soundtrack review measurements",
+        "Trusted decoder-validated source/timestamp/pixel/audio evidence; no invented creative judgement",
+        "read",bool(importlib.util.find_spec("PIL") is not None),
+        ["bundle","bundle_sha256"],review_data)
+    add("body.review_frame","extract one actually decoded original film review picture",
+        "Only exact SHA256-bound review archives and selected original PNG frames allowed",
+        "write",bool(importlib.util.find_spec("PIL") is not None),
+        ["bundle","bundle_sha256","frame_index","out"],review_frame)
     add("body.review","actual original movie picture+sound observations for creative revision",
         "Fully decoded licensed original; director-selected PNG frames, image differences, audio-window dBFS and SHA-bound portable review package",
         "write",bool(shutil.which("ffmpeg") and shutil.which("ffprobe") and
