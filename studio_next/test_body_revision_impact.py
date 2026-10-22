@@ -54,7 +54,7 @@ class OriginalFilmImpactTests(unittest.TestCase):
                              ["render1","audio_master"])
             self.assertEqual(report["new_or_changed_operations"],
                              ["render2","final"])
-            self.assertEqual(report["directly_changed_operations"],["render2","final"])
+            self.assertEqual(report["directly_changed_operations"],["final","render2"])
             self.assertFalse(report["reusable_cached_bytes_proven"])
 
     def test_changing_only_audio_node_propagates_to_master_not_original_picture(self):
