@@ -82,6 +82,7 @@ jobs:
         env:
           ZX7_DESKTOP_QA_PNG: ${{ github.workspace }}/output/body-release-proof/desktop-qa.png
           ZX7_INCREMENTAL_CINEMA_PROOF: ${{ github.workspace }}/output/body-release-proof/incremental-cinema
+          ZX7_COLOR_VFX_PROOF: ${{ github.workspace }}/output/body-release-proof/color-vfx-proven
         run: |
           mkdir -p output/body-release-proof
           python -m compileall -q studio_next motion_studio
