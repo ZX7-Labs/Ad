@@ -151,6 +151,26 @@ class OriginalFilmObservationIntegration(unittest.TestCase):
                 self.assertFalse((self.root/"no-forged-review.zxreview").exists())
             self.plan=original
         self.save()
+    def test_legacy_whole_movie_audio_meter_receipts_cannot_masquerade_as_local_windows(self):
+        genuine=self.root/"correct-window-v2.zxreview"
+        produce_review_bundle(self.plan_file,self.root,self.root/"vault",genuine)
+        with zipfile.ZipFile(genuine) as store:
+            original=json.loads(store.read("review.json"))
+            self.assertEqual(original["schema"],2)
+            self.assertTrue(original["audio_windows_metered_after_original_exact_atrim"])
+            observed=[v["mean_dbfs"] for v in original["audio_window_evidence"]]
+            self.assertEqual(len(observed),2)
+        forged=self.root/"old-whole-film-meter.zxreview"
+        with zipfile.ZipFile(genuine) as real,zipfile.ZipFile(forged,"x") as legacy:
+            content=json.loads(real.read("review.json"))
+            content["schema"]=1
+            content.pop("audio_windows_metered_after_original_exact_atrim")
+            for member in real.namelist():
+                legacy.writestr(member,
+                    json.dumps(content) if member=="review.json" else real.read(member))
+        with self.assertRaisesRegex(ValueError,"schema"):
+            verify_review_bundle(forged)
+
     def test_review_bundle_rejects_forged_audio_windows_even_with_original_pngs(self):
         good=self.root/"good.zxreview"
         produce_review_bundle(self.plan_file,self.root,self.root/"vault",good)
