@@ -94,6 +94,9 @@ def verify_exr_bundle(bundle):
                         if isinstance(entry,dict)]
         expected_names=["frames/frame_"+f"{index:04d}"+".exr"
                         for index in range(1,len(entries)+1)]
+        if len(verified_names)!=len(entries) or any(
+                not isinstance(name,str) for name in verified_names):
+            raise ValueError("Invalid original EXR manifest member identity")
         if sorted(verified_names)!=sorted(expected_names) or (
                 set(verified_names)!=set(members)-{"manifest.json"}):
             raise ValueError("Original EXR stage has missing, duplicate or unverified frame identity")
