@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import tempfile
@@ -141,6 +142,41 @@ class ActualChromaMatteFilmmaking(unittest.TestCase):
                         "-f","null","-"],check=True,timeout=45)
         self.assertTrue(original_master.exists())
         self.assertTrue(self.original.exists())
+        # Preserve a physically decodable pair of real test movies and their
+        # source-to-pixel evidence in one GitHub Actions review artifact.
+        # Technical VFX/color acceptance is NOT creative human acceptance.
+        evidence_dir=os.getenv("ZX7_COLOR_VFX_PROOF")
+        if evidence_dir:
+            destination=Path(evidence_dir).resolve()
+            destination.mkdir(parents=True,exist_ok=True)
+            def archive_original(path):
+                target=destination/path.name
+                if target.exists():
+                    raise FileExistsError("Never overwrite accepted original media evidence")
+                shutil.copyfile(path,target)
+                return {"file":target.name,"sha256":sha256_file(target),
+                        "bytes":target.stat().st_size,
+                        "video_and_real_original_audio":_probe_details(target)["audio_stream_present"]}
+            files=[archive_original(x) for x in (
+                self.original,original_master,output)]
+            screenshot=destination/"actual-verified-10bit-grade-frame.png"
+            subprocess.run(["ffmpeg","-hide_banner","-loglevel","error",
+                "-i",str(output),"-frames:v","1",str(screenshot)],
+                capture_output=True,check=True,timeout=30)
+            (destination/"physical-color-vfx-evidence.json").write_text(
+                json.dumps({"schema":1,"rights_verified_by_MediaVault":True,
+                    "actual_VFX_matting_pixels_compared":True,
+                    "actual_lut_pixels_compared":True,
+                    "source_movie_original_sha256":original_sha,
+                    "original_LUT_sha256":color_proof["asset_id"],
+                    "bt709_tag_checked_through_output":True,
+                    "ten_bit_prores_original_sound_decoded":True,
+                    "scene_linear_OCIO_ACES_claimed":False,
+                    "artist_human_quality_approved":False,
+                    "original_files":files,
+                    "decoded_frame":{"file":screenshot.name,
+                        "sha256":sha256_file(screenshot)}},indent=2)+"\n",
+                encoding="utf-8")
 
     def test_false_key_parameters_unlicensed_media_or_shell_injection_blocked(self):
         layer=self.film["video_layers"][0]
