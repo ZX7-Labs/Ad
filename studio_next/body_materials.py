@@ -23,6 +23,7 @@ _SOURCE_FIELDS={
     "body.asset_vault":("source",),
     "body.composite_mix":("plan",),
     "body.film_finish":("plan",),
+    "body.color_lut":("plan",),
     "body.full_decode":("source",),
     "body.generate_video":("video_job",),
     "body.blender3d":("scene_json","assets_root"),
