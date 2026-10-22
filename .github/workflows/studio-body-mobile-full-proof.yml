@@ -23,6 +23,7 @@ on:
       - "studio_next/test_body_revision_http.py"
       - "studio_next/body_revision_impact.py"
       - "studio_next/test_body_revision_impact.py"
+      - "studio_next/test_body_incremental_cinema.py"
       - "studio_next/test_body_dependency_scope.py"
       - "studio_next/film_ir.py"
       - "studio_next/test_body_verified_delivery.py"
