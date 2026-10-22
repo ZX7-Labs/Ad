@@ -20,7 +20,7 @@ from pathlib import Path
 
 from studio_next.blender_scene import Invalid3DShot,render_blender_shot
 from studio_next.body_exr_passes import inspect_real_exr_frame,verify_exr_bundle
-from studio_next.body_frame_resume import render_resumable_exr_passes
+from studio_next.body_frame_resume import render_resumable_exr_passes,_store_state
 from studio_next.body_integration import body_catalog
 from studio_next.body_materials import fingerprint_physical_inputs
 from studio_next.media_vault import sha256_file
@@ -49,6 +49,26 @@ def _source_scene(root):
 
 
 class PhysicalFrameRangeContracts(unittest.TestCase):
+    def test_half_written_checkpoint_receipt_recovers_only_committed_state(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d)
+            committed=root/"checkpoint.json"
+            _store_state(committed,{"schema":1,"frames":{"1":"original-sha"}})
+            self.assertEqual(json.loads(committed.read_text())["frames"]["1"],
+                             "original-sha")
+            orphan=root/".checkpoint.json.uncommitted"
+            orphan.write_bytes(b'{"frames": incomplete')
+            _store_state(committed,{"schema":1,"frames":{"1":"original-sha",
+                                                       "2":"new-sha"}})
+            self.assertFalse(orphan.exists())
+            self.assertEqual(json.loads(committed.read_text())["frames"],
+                             {"1":"original-sha","2":"new-sha"})
+            orphan.symlink_to(committed)
+            with self.assertRaisesRegex(ValueError,"journal entry"):
+                _store_state(committed,{"schema":1,"frames":{}})
+            self.assertEqual(json.loads(committed.read_text())["frames"]["1"],
+                             "original-sha")
+
     def test_invalid_absolute_blender_frame_ranges_before_executable_import(self):
         with tempfile.TemporaryDirectory() as td:
             root=Path(td)
