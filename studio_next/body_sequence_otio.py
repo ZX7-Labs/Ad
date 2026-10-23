@@ -171,8 +171,15 @@ def import_verified_sequence_otio(file_path,workspace,vault_root):
                     _whole_frames(sound.source_range.duration,fps,"silence duration")!=frames):
                 raise ValueError("Silent shot audio length drifted")
         originals.append(original)
+    # Native OTIO AnyDictionary must be normalized at the boundary; the
+    # existing physical source/geometry validator intentionally requires an
+    # ordinary strict Python JSON document.
+    try:
+        pixels=dict(meta["frame_size"])
+    except (TypeError,ValueError,KeyError) as exc:
+        raise ValueError("Malformed exact original picture geometry") from exc
     plan={"frame_rate":{"numerator":fps.numerator,"denominator":fps.denominator},
-        "frame_size":meta["frame_size"],"clips":originals}
+        "frame_size":pixels,"clips":originals}
     validated=plan_verified_sequence(plan,root,vault_root)
     if sha256_file(source)!=original_hash:
         raise ValueError("Original editable NLE file changed while checking actual media")
