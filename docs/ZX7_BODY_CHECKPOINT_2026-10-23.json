@@ -3,7 +3,7 @@
   "date": "2026-10-23",
   "project": "ZX7 Studio / BODY",
   "canonical_branch": "zx7-body/mobile-operator-20261021",
-  "canonical_head": "52215f112ce4de116e8c10062e654720ebc9749d",
+  "canonical_head": "e054bec263956a8cee800aef26bc9e84fdf7cc43",
   "draft_pr": "https://github.com/oyzitjfzj/Ad/pull/3",
   "main_untouched": true,
   "original_art_and_voices_unchanged": true,
@@ -19,11 +19,30 @@
     "security_last_green": "https://github.com/oyzitjfzj/Ad/actions/runs/39909436923",
     "real_physical_model_to_movie": "https://github.com/oyzitjfzj/Ad/actions/runs/39909461654",
     "real_physical_model_to_movie_tests": 26,
-    "original_cinematic_short": "https://github.com/oyzitjfzj/Ad/actions/runs/39909061035",
-    "original_cinematic_artifact": "https://github.com/oyzitjfzj/Ad/actions/runs/39909061035/artifacts/12482216558",
-    "original_cinematic_mp4_sha256": "5fb04c70b6126ca495c45f8b338b5aa10e4b29c7f234b6f1c26a1d2a42777575",
+    "original_cinematic_short": "https://github.com/oyzitjfzj/Ad/actions/runs/39909749426",
+    "original_cinematic_artifact": "https://github.com/oyzitjfzj/Ad/actions/runs/39909749426/artifacts/12482506577",
+    "original_cinematic_mp4_sha256": "7e6a57a2d037a476c243202acaa27d5e239b7c7a26bab60bc93aafc84f81c733",
     "original_cinematic_duration_seconds": 11,
-    "independent_human_creative_review": false
+    "independent_human_creative_review": false,
+    "native_model_contract_full_integration": "https://github.com/oyzitjfzj/Ad/actions/runs/39909436889",
+    "native_model_contract_full_integration_conclusion": "success",
+    "original_cinematic_video_properties": {
+      "codec": "H.264",
+      "width": 640,
+      "height": 360,
+      "fps": 24,
+      "duration_seconds": 11,
+      "audio_codec": "AAC",
+      "channels": 2,
+      "sample_rate": 48000,
+      "full_decoder_local_recheck": true
+    },
+    "original_film_graph_stages_reused": [
+      "film",
+      "custody",
+      "decode"
+    ],
+    "real_model_to_physical_mp4_job_test_passed": true
   },
   "branch_differences": [
     {
@@ -53,6 +72,6 @@
     "secure persistent remote HTTPS Android host, real distributed workers and large-scale crash/restart",
     "full professional acceptance on several diverse complete creative films and original music"
   ],
-  "final_showcase_condition": "The original proof video is a bounded real technical validation sample, NOT the final premium film or full BODY completion",
+  "final_showcase_condition": "This original 11-second animated film is proof of the actual BODY editing/audio engine and model-facing execution path, not a final cinematic creative-quality award or full BODY release.",
   "next_authorized_engineering_action": "Independently prove cross-track non-destructive rational edit graph and portable OTIO loss audit, then scene-linear OCIO VFX integration. Keep no automatic merge and verify exact matching full native run first."
 }
