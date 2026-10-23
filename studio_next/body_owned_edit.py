@@ -19,6 +19,7 @@ from pathlib import Path
 from .edit_timeline import validate_edit, edit_ffmpeg_command, probe_media, _path_within
 from .media_vault import MediaVault, sha256_file
 from .production_qc import full_decode_inspection
+from .composite_mix import _decoded_source_duration
 
 
 def validate_owned_edit(plan, workspace, vault_root):
@@ -112,6 +113,18 @@ def render_verified_owned_edit(plan_file, workspace, vault_root, output):
                 clean,plan,root,vault_root,Path(directory))
             sources=[probe_media(_path_within(root,c["source"],exists=True))
                      for c in frozen["clips"]]
+            # A container or existence-of-audio flag does not prove that
+            # recorded dialogue spans its full picture. Reject impossible
+            # "preserve original sound" promises before invoking FFmpeg apad.
+            for authored in frozen["clips"]:
+                if authored["audio"]=="preserve_source":
+                    origin=_path_within(root,authored["source"],exists=True)
+                    picture_seconds=_decoded_source_duration(origin,"video")
+                    sound_seconds=_decoded_source_duration(origin,"audio")
+                    if sound_seconds+.015<picture_seconds:
+                        raise ValueError(
+                            "Original recorded soundtrack ends before the picture; "
+                            "cannot pretend missing sound was preserved")
             if sha256_file(plan_file)!=before or any(
                     sha256_file(path)!=digest for path,digest in originals.items()):
                 raise ValueError("Original source or plan changed before the actual encoder")

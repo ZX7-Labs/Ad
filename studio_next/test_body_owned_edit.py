@@ -190,6 +190,32 @@ class TrueOwnerAttestedGenericEditorTests(unittest.TestCase):
         self.assertTrue(did)
         self.assertFalse((self.root/"blocked-plan.mp4").exists())
 
+    def test_original_video_longer_than_recorded_sound_never_claims_preservation(self):
+        muted=self.root/"long-camera-short-voice.mp4"
+        actual=subprocess.run(["ffmpeg","-hide_banner","-loglevel","error",
+            "-nostdin","-y",
+            "-f","lavfi","-i","color=c=purple:s=160x90:r=24:d=2",
+            "-f","lavfi","-i","sine=frequency=480:sample_rate=48000:duration=1",
+            "-c:v","libx264","-pix_fmt","yuv420p","-c:a","aac",
+            "-b:a","128k",str(muted)],capture_output=True,text=True,timeout=55)
+        self.assertEqual(actual.returncode,0,actual.stderr)
+        proof=MediaVault(self.root/"vault").ingest(
+            muted,mime="video/mp4",rights="owner_supplied",
+            source_type="owner_upload",source_id="incomplete-camera-microphone",
+            evidence="Two seconds of physical picture, one recorded second",
+            owner_or_generator="owner")
+        one=copy.deepcopy(self.plan)
+        one["clips"]=[{"id":"incomplete-recorded-scene","source":muted.name,
+                       "rights":"owner_supplied","audio":"preserve_source",
+                       "asset_id":proof["asset_id"],
+                       "attestation_id":proof["attestation_id"]}]
+        self.plan_file.write_text(json.dumps(one))
+        output=self.root/"must-not-invent-dialogue.mp4"
+        with self.assertRaisesRegex(ValueError,"soundtrack ends before the picture"):
+            render_verified_owned_edit(self.plan_file,self.root,self.root/"vault",output)
+        self.assertFalse(output.exists())
+        self.assertFalse(list(self.root.glob(".zx7-owned-sources-*")))
+
     def test_real_competing_master_cannot_be_overwritten_or_deleted_at_publication(self):
         import os
         from studio_next import body_owned_edit
