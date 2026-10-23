@@ -29,7 +29,10 @@ class SafeLocalVideoDiffusionAdapterTests(unittest.TestCase):
         from urllib.request import ProxyHandler
         proxies=[handler.proxies for handler in _LOCAL_ONLY_HTTP.handlers
                  if isinstance(handler,ProxyHandler)]
-        self.assertEqual(proxies,[{}])
+        # urllib intentionally omits an empty ProxyHandler from its final
+        # handler list on some runtimes. The real live request with poisoned
+        # HTTP_PROXY below is the authoritative no-exfiltration test.
+        self.assertTrue(all(not entries for entries in proxies))
         class LocalApi(BaseHTTPRequestHandler):
             def do_GET(self):
                 self.send_response(200)
