@@ -11,9 +11,9 @@ from studio_next.body_signal import BodyAuthority,LiveBodySignal,BodyCommandReje
 def authored_film():
     return {"project":{"creative_intent":"Independent original cinema, no aesthetic presets"},
        "shots":[{"id":"shot-original","purpose":"One self-directed source inspection"}],
-       "tool_graph":[{"id":"inspect","tool_id":"body.inspect",
+       "tool_graph":[{"id":"inspect","tool_id":"body.resolve_asset",
            "purpose":"Read actual original media properties",
-           "inputs":{"source":"original-input.mp4"},"depends_on":[]}]}
+           "inputs":{"asset_id":"0000000000000000000000000000000000000000000000000000000000000000","attestation_id":"owner-has-not-provided"},"depends_on":[]}]}
 
 
 class OneBrainConnectedBodyRegression(unittest.TestCase):
@@ -27,9 +27,9 @@ class OneBrainConnectedBodyRegression(unittest.TestCase):
                 abilities=readonly.discover("director-a",limit=1)
                 self.assertEqual(len(abilities["affordances"]),1)
                 self.assertNotIn("input_schema",str(abilities))
-                view=readonly.describe("director-a","body.inspect")
+                view=readonly.describe("director-a","body.resolve_asset")
                 self.assertEqual(view["status"],"ready_to_preflight")
-                self.assertIn("source",view["input_schema"]["required"])
+                self.assertIn("asset_id",view["input_schema"]["required"])
                 with self.assertRaises(PermissionError):
                     readonly.describe("director-a","body.render_edit_owned")
                 with self.assertRaises(PermissionError):
