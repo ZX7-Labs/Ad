@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from studio_next.body_archive import create_body_archive,restore_body_archive
 from studio_next.body_asset_links import relink_verified_otio
@@ -143,6 +145,48 @@ class VerifiedProfessionalRelinkTests(unittest.TestCase):
         with self.assertRaises(FileExistsError):
             self.run_relink()
         self.assertEqual(sha256_file(self.relinked),previous)
+
+    def test_tampered_original_otio_at_native_relink_publish_is_not_accepted(self):
+        from studio_next import body_asset_links as links
+        writer=links.otio.adapters.write_to_file
+        mutated=False
+        def adversarial_artist_write(timeline,destination,*args,**kwargs):
+            nonlocal mutated
+            result=writer(timeline,destination,*args,**kwargs)
+            if str(destination).endswith(".otio") and not mutated:
+                # Changes AFTER native adapter emitted a verified new edit,
+                # BEFORE its proposed publication is accepted.
+                self.source.write_bytes(self.source.read_bytes()+b"untrusted-change")
+                mutated=True
+            return result
+        with patch.object(links.otio.adapters,"write_to_file",
+                          side_effect=adversarial_artist_write):
+            with self.assertRaisesRegex(RuntimeError,"changed during relocation"):
+                self.run_relink()
+        self.assertTrue(mutated)
+        self.assertFalse(self.relinked.exists())
+
+    def test_competing_relinked_edit_is_preserved_on_last_moment_race(self):
+        from studio_next import body_asset_links as links
+        expected=self.new/"independent-approved-project.otio"
+        self.run_relink()
+        shutil.copyfile(self.relinked,expected)
+        wanted=sha256_file(expected)
+        self.relinked.unlink()
+        native_link=os.link
+        raced=False
+        def another_operator_wins(private,public,*args,**kwargs):
+            nonlocal raced
+            if Path(public)==self.relinked:
+                shutil.copyfile(expected,self.relinked)
+                raced=True
+            return native_link(private,public,*args,**kwargs)
+        with patch.object(links.os,"link",side_effect=another_operator_wins):
+            with self.assertRaises(FileExistsError):
+                self.run_relink()
+        self.assertTrue(raced)
+        self.assertEqual(sha256_file(self.relinked),wanted)
+        self.assertEqual(sha256_file(self.source),self.sha_before)
 
     def test_no_verified_relocation_receipt_means_no_external_rebind(self):
         (self.new/".zx7-relocation-report.json").unlink()
