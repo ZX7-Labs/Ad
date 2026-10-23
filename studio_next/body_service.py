@@ -158,7 +158,6 @@ class LocalBodyCoordinator:
             if final.exists():
                 raise FileExistsError("Original imported media is immutable; never overwrite")
             stage=folder/(".zx7-import-"+uuid.uuid4().hex+".tmp")
-            published=False
             try:
                 with stage.open("xb") as dest:
                     remaining=bytes_expected
@@ -175,16 +174,15 @@ class LocalBodyCoordinator:
                     source_type="owner_upload",source_id=source_id,
                     evidence=rights_evidence,owner_or_generator="authenticated_local_owner")
                 os.link(stage,final)
-                published=True
                 return {"source":filename,"asset_id":attested["asset_id"],
                         "attestation_id":attested["attestation_id"],
                         "mime":mime,"bytes":bytes_expected,
                         "verified_real_media_bytes":True,
                         "rights_claim":"Owner-attested; no independent legal ownership certification"}
-            except BaseException:
-                if published:final.unlink(missing_ok=True)
-                raise
             finally:
+                # Original uploads are immutable once exclusively linked.
+                # Never unlink an independently accepted media file after
+                # another service/editor wins a publication race.
                 stage.unlink(missing_ok=True)
 
     def submit(self,film_ir,*,workspace_id,job_id=None):
