@@ -254,7 +254,6 @@ def _commit_actual_body_output(final_path,render):
         raise FileExistsError("Cannot overwrite original media output")
     stage=final_path.with_name(
         ".zx7-uncommitted-"+uuid.uuid4().hex+final_path.suffix)
-    published=False
     try:
         render(stage)
         preliminary=_witness(stage)
@@ -262,14 +261,14 @@ def _commit_actual_body_output(final_path,render):
             raise RuntimeError("Staged creative media failed real decoder validation")
         prepare_publication(final_path,stage,preliminary)
         os.link(stage,final_path)
-        published=True
+        # A journaled, physically verified film stays accepted even if the
+        # final directory fsync reports a late error. Never unlink a public
+        # destination that could have become another writer's approved movie.
         sync_published_file(final_path)
         return _witness(final_path)
-    except BaseException:
-        if published:
-            final_path.unlink(missing_ok=True)
-        raise
     finally:
+        # Only our private encoded staging file is ours to remove. A previous
+        # hardlink publication has a durable receipt and remains recoverable.
         stage.unlink(missing_ok=True)
 
 
