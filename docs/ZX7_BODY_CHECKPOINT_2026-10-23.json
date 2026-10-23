@@ -3,7 +3,7 @@
   "date": "2026-10-23",
   "project": "ZX7 Studio / BODY",
   "canonical_branch": "zx7-body/mobile-operator-20261021",
-  "canonical_head": "e054bec263956a8cee800aef26bc9e84fdf7cc43",
+  "canonical_head": "643e741cd1d3f561701c09e92eab25da300a6253",
   "draft_pr": "https://github.com/oyzitjfzj/Ad/pull/3",
   "main_untouched": true,
   "original_art_and_voices_unchanged": true,
@@ -73,5 +73,56 @@
     "full professional acceptance on several diverse complete creative films and original music"
   ],
   "final_showcase_condition": "This original 11-second animated film is proof of the actual BODY editing/audio engine and model-facing execution path, not a final cinematic creative-quality award or full BODY release.",
-  "next_authorized_engineering_action": "Independently prove cross-track non-destructive rational edit graph and portable OTIO loss audit, then scene-linear OCIO VFX integration. Keep no automatic merge and verify exact matching full native run first."
+  "next_authorized_engineering_action": "Independently prove cross-track non-destructive rational edit graph and portable OTIO loss audit, then scene-linear OCIO VFX integration. Keep no automatic merge and verify exact matching full native run first.",
+  "film_authorship_truth": {
+    "source": "ZX7 Studio 11-second 2026-10-23 original film",
+    "creative_idea_and_authoring": "Assistant wrote the deterministic Python creative/source-generation and story/typography/music instructions",
+    "body_role": "Real registered BODY executed original image+audio assembly, FFmpeg encoded and decoded movie, SHA/custody, graph checkpoint reuse",
+    "independent_creative_brain_generated_the_film": false,
+    "model_control_adapter_functionality_proven": true,
+    "model_autonomously_decided_end_to_end_storyboard": false,
+    "claim_of_elite_professional_artistic_quality": false,
+    "human_independent_critique_performed": false,
+    "owner_can_replace_script_with_any_independent_model_without_more_engineering": false
+  },
+  "editorial_interchange": {
+    "scope": "Strict original BT.709 exact-frame single picture track with synchronized original audio or intentional silence; reversible edits in actual Academy OpenTimelineIO .otio",
+    "live_canonical_body_tools": [
+      "body.otio_owned_export",
+      "body.otio_owned_import"
+    ],
+    "actual_codec_acceptance": "https://github.com/oyzitjfzj/Ad/actions/runs/39915372289",
+    "physical_cases": 8,
+    "all_cases_real_codec_and_otio": true,
+    "all_cases_passed": true,
+    "strict_loss_refusal": [
+      "unverified/relinked media",
+      "unattested original source",
+      "audio removed, muted, shifted, truncated",
+      "fractional selected frames",
+      "third-party timewarps",
+      "unrepresented effects",
+      "disabled items",
+      "creative markers",
+      "foreign timeline timecode",
+      "unknown NLE tracks or transitions"
+    ],
+    "whole_creative_NLE_certified": false
+  },
+  "verify_all_branches": {
+    "count": 7,
+    "branch_graphs_and_all_tracked_file_hashes_compared": true,
+    "all_file_contents_manually_reviewed": false,
+    "canonical_tracked_files_at_2026_10_23_OTIO_entry": 322,
+    "most_important_noncanonical_unique_files": [
+      "studio_next/media_body.py",
+      "studio_next/media_recovery.py",
+      "studio_next/test_media_body.py",
+      "studio_next/test_media_recovery.py",
+      "docs/BODY_RECOVERY_CHECKPOINT_2026-10-21.md",
+      "README.md"
+    ],
+    "unique_old_alternative_sources_not_automatically_merged": true,
+    "current_native_ci_on_same_code": "https://github.com/oyzitjfzj/Ad/actions/runs/39915372266"
+  }
 }
