@@ -131,7 +131,9 @@ def render_aces2_scene_movie(plan_file,workspace,vault_root,output):
         cmd=["ffmpeg","-hide_banner","-loglevel","error","-nostdin","-n",
              "-f","rawvideo","-pixel_format","rgb48le",
              "-video_size",f"{width}x{height}","-framerate",str(fps),
-             "-i",str(rgb_path),"-an","-c:v","prores_ks","-profile:v","3",
+             "-i",str(rgb_path),"-an",
+             "-vf","scale=in_range=full:out_range=limited:out_color_matrix=bt709,format=yuv422p10le",
+             "-c:v","prores_ks","-profile:v","3",
              "-pix_fmt","yuv422p10le",
              "-color_primaries","bt709","-color_trc","iec61966-2-1",
              "-colorspace","bt709","-movflags","+write_colr",str(movie)]
