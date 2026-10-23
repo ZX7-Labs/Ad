@@ -160,6 +160,20 @@ class MediaVaultProductionTests(unittest.TestCase):
             with self.assertRaisesRegex(MediaCustodyError,"altered"):
                 vault.inspect(ref["asset_id"])
 
+    def test_magic_only_exr_does_not_acquire_original_media_rights(self):
+        with tempfile.TemporaryDirectory() as root:
+            workspace=Path(root)
+            fake=workspace/"claimed-original.exr"
+            fake.write_bytes(bytes((0x76,0x2f,0x31,0x01))+b"FAKE PIXELS"*90)
+            vault=MediaVault(workspace/"vault")
+            with self.assertRaises(MediaCustodyError):
+                vault.ingest(fake,mime="image/x-exr",
+                    rights="owner_supplied",source_type="owner_upload",
+                    source_id="source-owner",
+                    evidence="Unverified claimed HDR pixels",
+                    owner_or_generator="owner")
+            self.assertFalse(list(vault.objects.rglob("*")))
+
     def test_forged_exr_zip_cannot_acquire_native_generated_rights(self):
         import zipfile
         with tempfile.TemporaryDirectory() as root:
