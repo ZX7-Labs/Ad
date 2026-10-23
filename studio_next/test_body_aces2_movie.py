@@ -81,6 +81,39 @@ class ActualNativeSceneToProRes(unittest.TestCase):
         self.assertEqual(streams[0]["nb_read_frames"],"2")
         self.assertFalse(list(self.root.glob(".zx7-aces2-movie-*")))
 
+    def test_native_aces2_movie_enters_real_generated_license_and_resumes(self):
+        from studio_next.body_integration import run_body_project
+        graph={"project":{"creative_intent":
+                     "Actual 32f Blender scene graded to independent SDR MOV"},
+               "assets":[],
+               "shots":[{"id":"scene","purpose":"Physically color manage complete CG shot",
+                         "duration_seconds":2/12}],
+               "tool_graph":[
+                   {"id":"movie","tool_id":"body.aces2_movie",
+                    "purpose":"Original every-frame ACES2 scene conversion",
+                    "inputs":{"plan":self.planfile.name,
+                              "out":"full-director-ACES2.mov"},
+                    "depends_on":[]},
+                   {"id":"rights","tool_id":"body.asset_vault",
+                    "purpose":"Custody of actual decoded original color-managed MOV",
+                    "inputs":{"source_witness":{"$node_output":"movie"}},
+                    "depends_on":["movie"]}]}
+        first=run_body_project(graph,self.root)
+        self.assertEqual(first["status"],"all_tool_results_verified",first)
+        self.assertEqual(first["completed"],["movie","rights"])
+        result=self.root/"full-director-ACES2.mov"
+        digest=sha256_file(result)
+        asset=MediaVault(self.root/"vault").inspect(digest)
+        self.assertEqual(asset["mime"],"video/quicktime")
+        self.assertTrue(any(x["rights"]=="generated_original" and
+                            x["source_type"]=="trusted_renderer"
+                            for x in asset["rights_attestations"]))
+        second=run_body_project(graph,self.root)
+        self.assertEqual(second["status"],"all_tool_results_verified",second)
+        self.assertEqual(second["reused"],["movie","rights"])
+        self.assertEqual(sha256_file(result),digest)
+        self.assertFalse(second["video_proven"])
+
     def test_production_movie_does_not_allow_swapped_rights_or_source_primaries(self):
         self.plan["source_color_space"]="ACEScg (unproven source)"
         self.planfile.write_text(json.dumps(self.plan))
