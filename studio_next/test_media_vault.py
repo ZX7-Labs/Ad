@@ -160,6 +160,50 @@ class MediaVaultProductionTests(unittest.TestCase):
             with self.assertRaisesRegex(MediaCustodyError,"altered"):
                 vault.inspect(ref["asset_id"])
 
+    def test_real_glb_json_chunk_and_complete_native_length_are_required(self):
+        import json
+        import struct
+        def package(scene,*,version=2,append=b""):
+            body=json.dumps(scene,separators=(",",":")).encode("utf-8")
+            body+=b" "*((-len(body))%4)
+            chunk=struct.pack("<I4s",len(body),b"JSON")+body
+            return struct.pack("<4sII",b"glTF",version,12+len(chunk))+chunk+append
+        film={"asset":{"version":"2.0"},"scenes":[{"nodes":[0]}],
+              "nodes":[{"camera":0}],
+              "cameras":[{"type":"perspective","perspective":{
+                  "yfov":0.9,"znear":0.01}}]}
+        with tempfile.TemporaryDirectory() as home:
+            root=Path(home)
+            source=root/"owner-camera.glb"
+            good=package(film)
+            source.write_bytes(good)
+            store=MediaVault(root/"vault")
+            receipt=store.ingest(source,mime="model/gltf-binary",
+                rights="owner_supplied",source_type="owner_upload",
+                source_id="owner-camera-3d",
+                evidence="Real glTF version two binary scene topology",
+                owner_or_generator="source-owner")
+            self.assertTrue(store.inspect(receipt["asset_id"],
+                          attestation_id=receipt["attestation_id"]))
+            for bad in (
+                    b"glTF"+b"\\0"*8,
+                    package(film,version=1),
+                    good+b"HIDDEN-WRONG-BYTES",
+                    good[:-3],
+                    package({"asset":{"version":"2.0"}}),
+                    package(film,append=b"FAKE")
+                    ):
+                with self.subTest(size=len(bad)):
+                    source.write_bytes(bad)
+                    with self.assertRaises(MediaCustodyError):
+                        store.ingest(source,mime="model/gltf-binary",
+                            rights="owner_supplied",source_type="owner_upload",
+                            source_id="forged-scene",
+                            evidence="Magic data alone lacks valid 3D frames",
+                            owner_or_generator="source-owner")
+            self.assertEqual(len([x for x in store.objects.rglob("*")
+                         if x.is_file()]),1)
+
     def test_magic_only_exr_does_not_acquire_original_media_rights(self):
         with tempfile.TemporaryDirectory() as root:
             workspace=Path(root)
