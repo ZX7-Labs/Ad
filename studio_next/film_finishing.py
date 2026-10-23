@@ -11,11 +11,13 @@ import json
 import math
 import os
 import subprocess
+import tempfile
 from pathlib import Path
 
 from .media_vault import MediaVault,sha256_file
 from .delivery_audit import _probe_details
-from .composite_mix import _exact_media
+from .composite_mix import _exact_media,sealed_attested_original
+from .production_qc import full_decode_inspection
 
 
 def _float(value,kind,minimum,maximum):
@@ -74,12 +76,26 @@ def build_finishing_filters(plan,*,has_audio):
 
 
 def finish_authorized_movie(spec_file,workspace,vault_root,output,*,runner=None,probe=None):
-    """Write original master atomically; demonstrate actual media separately."""
-    source=json.loads(Path(spec_file).read_text(encoding="utf-8"))
+    """Actual color and audio finisher using only sealed owner-source input.
+
+    Model-chosen operations remain explicit typed data, never shell commands.
+    Production-level technical validation requires real codecs, full picture
+    and audio decoding, immutable original source and collision-safe master.
+    """
+    root=Path(workspace).resolve()
+    spec_file=Path(spec_file).resolve()
+    destination=Path(output).resolve()
+    if (not spec_file.is_file() or not spec_file.is_relative_to(root)
+            or destination.suffix.lower()!=".mp4"
+            or not destination.is_relative_to(root) or destination.exists()):
+        raise ValueError("Finishing needs an existing owner edit and new workspace MP4")
+    plan_sha=sha256_file(spec_file)
+    source=json.loads(spec_file.read_text(encoding="utf-8"))
+    if sha256_file(spec_file)!=plan_sha:
+        raise ValueError("Original finishing plan changed while being read")
     if not isinstance(source,dict) or set(source)!={"media","ops"}:
         raise ValueError("Director's chosen master footage and finishing ops required")
     vault=MediaVault(vault_root)
-    root=Path(workspace).resolve()
     media=source["media"]
     if not isinstance(media,dict) or set(media)!={"source","asset_id","attestation_id"}:
         raise ValueError("No authenticated original movie asset")
@@ -87,51 +103,66 @@ def finish_authorized_movie(spec_file,workspace,vault_root,output,*,runner=None,
     details=(probe or _probe_details)(input_file)
     filters,audio=build_finishing_filters(source["ops"],
                                          has_audio=details["audio_stream_present"])
-    # Zero finishing operations are a legitimate artistic decision: the
-    # original edit is preserved verbatim rather than needlessly re-encoding.
-    dest=Path(output).resolve()
-    if dest.exists() or dest.suffix.lower()!=".mp4":
-        raise ValueError("Original accepted movie cannot be overwritten")
     if not filters and not audio:
         raise ValueError("No finishing chosen; keep the original master without a duplicate")
-    dest.parent.mkdir(parents=True,exist_ok=True)
-    temporary=dest.with_name(dest.stem+".uncommitted.mp4")
-    if temporary.exists():
-        raise FileExistsError("Unreconciled encoder output must be inspected before retry")
-    command=["ffmpeg","-hide_banner","-loglevel","error","-nostdin",
-             "-n","-i",str(input_file)]
-    if filters:
-        command+=["-vf",",".join(filters)]
-    if audio:
-        command+=["-af",",".join(audio)]
-    command+=["-map","0:v:0"]
-    if details["audio_stream_present"]:
-        command+=["-map","0:a:0","-c:a","aac","-b:a","192k"]
-    else:
-        command+=["-an"]
-    command+=["-c:v","libx264","-crf","17","-pix_fmt","yuv420p",
-              "-movflags","+faststart",str(temporary)]
-    try:
-        (runner or subprocess.run)(command,check=True,timeout=3600)
-        if not temporary.is_file() or temporary.stat().st_size<100:
+    destination.parent.mkdir(parents=True,exist_ok=True)
+    snapshots={}
+    with tempfile.TemporaryDirectory(prefix=".zx7-owned-sources-",dir=root) as working:
+        private=Path(working)
+        frozen=sealed_attested_original(vault,media["asset_id"],
+                                         media["attestation_id"],private,snapshots)
+        if sha256_file(input_file)!=media["asset_id"] or sha256_file(spec_file)!=plan_sha:
+            raise ValueError("Original edit or media changed before the finishing decoder")
+        encoded=private/"finished-original-master.mp4"
+        cmd=["ffmpeg","-hide_banner","-loglevel","error","-nostdin",
+             "-n","-i",str(frozen)]
+        if filters:
+            cmd+=["-vf",",".join(filters)]
+        if audio:
+            cmd+=["-af",",".join(audio)]
+        cmd+=["-map","0:v:0"]
+        if details["audio_stream_present"]:
+            cmd+=["-map","0:a:0","-c:a","aac","-b:a","192k"]
+        else:
+            cmd+=["-an"]
+        cmd+=["-c:v","libx264","-crf","17","-pix_fmt","yuv420p",
+              "-movflags","+faststart",str(encoded)]
+        (runner or subprocess.run)(cmd,check=True,timeout=3600)
+        if not encoded.is_file() or encoded.stat().st_size<100:
             raise RuntimeError("Physical film master absent after finishing")
-        rendered=(probe or _probe_details)(temporary)
+        rendered=(probe or _probe_details)(encoded)
         if (rendered["width"],rendered["height"])!=(
                  details["width"],details["height"]) or (
-                 abs(rendered["duration_seconds"]-details["duration_seconds"])>
-                    .13) or (
-                 rendered["audio_stream_present"]!=details["audio_stream_present"]):
-            raise RuntimeError("Real film quality pass silently changed original picture duration, size or soundtrack")
-        os.replace(temporary,dest)
-        return {"path":str(dest),"sha256":sha256_file(dest),
-                "bytes":dest.stat().st_size,
-                "duration_seconds":rendered["duration_seconds"],
-                "width":rendered["width"],"height":rendered["height"],
-                "audio_present":rendered["audio_stream_present"],
-                "video_operations":len(filters),"audio_operations":len(audio),
-                "actual_encoded_movie_created":True,
-                "human_visual_quality_certified":False,
-                "human_listening_approved":False}
-    except BaseException:
-        temporary.unlink(missing_ok=True)
-        raise
+                 abs(rendered["duration_seconds"]-details["duration_seconds"])>.13
+                or rendered["audio_stream_present"]!=details["audio_stream_present"]):
+            raise RuntimeError("Film finishing silently changed picture timing or soundtrack")
+        real_codec_proof=runner is None and probe is None
+        if real_codec_proof:
+            decoded=full_decode_inspection(encoded,expected={
+                "width":details["width"],"height":details["height"],
+                "duration_seconds":details["duration_seconds"],
+                "require_audio":details["audio_stream_present"]})
+            if not decoded["technical_delivery_verified"] or not decoded[
+                    "full_picture_and_sound_decoder_completed"]:
+                raise RuntimeError("Finished original master failed whole picture/audio decoder")
+        if sha256_file(input_file)!=media["asset_id"] or (
+                sha256_file(frozen)!=media["asset_id"]) or (
+                sha256_file(spec_file)!=plan_sha):
+            raise ValueError("Original owner camera, soundtrack or finishing plan changed during processing")
+        vault.inspect(media["asset_id"],attestation_id=media["attestation_id"])
+        with encoded.open("rb") as ready:
+            os.fsync(ready.fileno())
+        os.link(encoded,destination)
+    return {"path":str(destination),"sha256":sha256_file(destination),
+            "bytes":destination.stat().st_size,
+            "duration_seconds":rendered["duration_seconds"],
+            "width":rendered["width"],"height":rendered["height"],
+            "audio_present":rendered["audio_stream_present"],
+            "video_operations":len(filters),"audio_operations":len(audio),
+            "actual_encoded_movie_created":real_codec_proof,
+            "sealed_original_cas_during_decode":True,
+            "full_picture_and_sound_decoder_completed":real_codec_proof,
+            "trusted_real_decoder_verified":real_codec_proof,
+            "runner_or_probe_mocked":not real_codec_proof,
+            "human_visual_quality_certified":False,
+            "human_listening_approved":False}

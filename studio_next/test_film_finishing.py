@@ -60,6 +60,88 @@ class IndependentFilmFinishingTests(unittest.TestCase):
             self.assertEqual((observed["width"],observed["height"]),(320,192))
             self.assertLess(abs(observed["duration_seconds"]-2),.13)
 
+    @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"),
+                         "Physical original source+sound encoders required")
+    def test_color_and_sound_finisher_consumes_only_sealed_original_source_even_if_checkout_is_swapped(self):
+        from studio_next.media_vault import sha256_file
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as root:
+            base=Path(root)
+            camera=base/"owner-mutable-camera.mp4"
+            subprocess.run(["ffmpeg","-hide_banner","-loglevel","error","-nostdin","-y",
+                "-f","lavfi","-i","testsrc2=size=160x90:rate=24:duration=1.5",
+                "-f","lavfi","-i","sine=frequency=500:sample_rate=48000:duration=1.5",
+                "-c:v","libx264","-pix_fmt","yuv420p","-c:a","aac","-shortest",
+                str(camera)],check=True,capture_output=True,timeout=50)
+            original=camera.read_bytes()
+            vault=MediaVault(base/"vault")
+            identity=vault.ingest(camera,mime="video/mp4",rights="owner_supplied",
+                source_type="owner_upload",source_id="owner-finisher",
+                evidence="Real original captured camera picture and soundtrack",
+                owner_or_generator="owner")
+            plan={"media":{"source":camera.name,"asset_id":identity["asset_id"],
+                "attestation_id":identity["attestation_id"]},
+                "ops":{"video_ops":[{"kind":"color_eq","brightness":.01,
+                      "contrast":1.15,"saturation":1.1,"gamma":1.02}],
+                      "audio_ops":[{"kind":"gain","db":-2.0}]}}
+            path=base/"artist-finishing.json";path.write_text(json.dumps(plan))
+            output=base/"original-verified-finisher.mp4"
+            actual=subprocess.run
+            selected=[]
+            def race(argv,**kwargs):
+                if argv and argv[0]=="ffmpeg" and "-vf" in argv:
+                    source=Path(argv[argv.index("-i")+1])
+                    self.assertIn(".zx7-owned-sources-",str(source))
+                    self.assertEqual(sha256_file(source),identity["asset_id"])
+                    self.assertFalse(source.stat().st_mode & 0o222)
+                    selected.append(source)
+                    camera.write_bytes(b"attacker's replacement while the actual encoder is decoding")
+                    try:return actual(argv,**kwargs)
+                    finally:camera.write_bytes(original)
+                return actual(argv,**kwargs)
+            with patch("studio_next.film_finishing.subprocess.run",side_effect=race):
+                result=finish_authorized_movie(path,base,base/"vault",output)
+            self.assertTrue(result["actual_encoded_movie_created"])
+            self.assertTrue(result["full_picture_and_sound_decoder_completed"])
+            self.assertTrue(result["sealed_original_cas_during_decode"])
+            self.assertEqual(sha256_file(camera),identity["asset_id"])
+            self.assertEqual(len(selected),1)
+            self.assertFalse(selected[0].exists())
+            self.assertFalse(list(base.glob(".zx7-owned-sources-*")))
+
+    @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"),
+                         "Physical licensed camera encoder required")
+    def test_another_editor_accepted_master_is_not_deleted_on_finishing_collision(self):
+        with tempfile.TemporaryDirectory() as root:
+            base=Path(root)
+            camera=base/"owner-camera.mp4"
+            subprocess.run(["ffmpeg","-hide_banner","-loglevel","error","-nostdin","-y",
+                "-f","lavfi","-i","color=c=blue:s=160x90:r=24:d=1",
+                "-f","lavfi","-i","sine=frequency=400:sample_rate=48000:duration=1",
+                "-c:v","libx264","-pix_fmt","yuv420p","-c:a","aac","-shortest",
+                str(camera)],check=True,capture_output=True,timeout=60)
+            vault=MediaVault(base/"vault")
+            receipt=vault.ingest(camera,mime="video/mp4",rights="owner_supplied",
+                source_type="owner_upload",source_id="original-camera",
+                evidence="Real owner camera and sound",owner_or_generator="owner")
+            job={"media":{"source":camera.name,"asset_id":receipt["asset_id"],
+                 "attestation_id":receipt["attestation_id"]},
+                 "ops":{"video_ops":[{"kind":"sharpen","strength":.2}],"audio_ops":[]}}
+            instruction=base/"finish.json";instruction.write_text(json.dumps(job))
+            dest=base/"owner-approved-grade.mp4"
+            protected=b"PRIVATE-APPROVED-FILM-MUST-NOT-BE-DESTROYED"
+            real=subprocess.run
+            def collision(cmd,**kwargs):
+                result=real(cmd,**kwargs)
+                if cmd and cmd[0]=="ffmpeg" and "-vf" in cmd:
+                    dest.write_bytes(protected)
+                return result
+            with patch("studio_next.film_finishing.subprocess.run",side_effect=collision):
+                with self.assertRaises(FileExistsError):
+                    finish_authorized_movie(instruction,base,base/"vault",dest)
+            self.assertEqual(dest.read_bytes(),protected)
+            self.assertFalse(list(base.glob(".zx7-owned-sources-*")))
+
     def test_real_source_is_a_verified_media_vault_object(self):
         with tempfile.TemporaryDirectory() as root:
             p=Path(root)/"original.mp4"
@@ -87,7 +169,9 @@ class IndependentFilmFinishingTests(unittest.TestCase):
                 Path(cmd[-1]).write_bytes(b"test encoded output"*100)
             result=finish_authorized_movie(f,root,Path(root)/"vault",result_path,
                                           runner=fake_runner,probe=fake_probe)
-            self.assertTrue(result["actual_encoded_movie_created"])
+            self.assertFalse(result["actual_encoded_movie_created"])
+            self.assertFalse(result["full_picture_and_sound_decoder_completed"])
+            self.assertTrue(result["runner_or_probe_mocked"])
             self.assertTrue(result_path.exists())
 
 if __name__=="__main__":
