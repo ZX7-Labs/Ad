@@ -245,8 +245,18 @@ class MediaVault:
         dest=Path(destination)
         if dest.exists():raise MediaCustodyError("Never overwrite earlier creative work")
         dest.parent.mkdir(parents=True,exist_ok=True)
-        shutil.copyfile(record["path"],dest)
-        if sha256_file(dest)!=digest:
-            dest.unlink(missing_ok=True)
-            raise MediaCustodyError("Copied creative media differs from immutable source")
+        fd,stage=tempfile.mkstemp(prefix=".zx7-vault-checkout-",
+                                  dir=dest.parent)
+        try:
+            with os.fdopen(fd,"wb") as out,Path(record["path"]).open("rb") as src:
+                shutil.copyfileobj(src,out,1024*1024)
+                out.flush()
+                os.fsync(out.fileno())
+            if sha256_file(stage)!=digest:
+                raise MediaCustodyError(
+                    "Copied creative media differs from immutable source")
+            self.inspect(digest,attestation_id=attestation_id)
+            os.link(stage,dest)
+        finally:
+            Path(stage).unlink(missing_ok=True)
         return record
