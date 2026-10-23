@@ -21,6 +21,8 @@ _SOURCE_FIELDS={
     "body.sequence_cuts":("plan",),
     "body.timeline_revision":("plan","operation"),
     "body.otio":("edit",),
+    "body.otio_owned_export":("plan",),
+    "body.otio_owned_import":("edit",),
     "body.vector_png":("source_svg",),
     "body.film_thumbnail":("source_film",),
     "body.asset_vault":("source",),
@@ -128,8 +130,18 @@ def fingerprint_physical_inputs(tool_id,inputs,workspace):
                 if tool_id=="body.render_edit_owned":
                     from .body_owned_edit import validate_owned_edit
                     validate_owned_edit(document,root,root/"vault")
+                if tool_id=="body.otio_owned_export":
+                    from .body_sequence_cuts import plan_verified_sequence
+                    plan_verified_sequence(document,root,root/"vault")
                 if tool_id=="body.motion2d":
                     _authored_typefaces(document,selected_fonts)
+        elif p.suffix==".otio" and tool_id=="body.otio_owned_import":
+            from .body_sequence_otio import import_verified_sequence_otio
+            imported=import_verified_sequence_otio(p,root,root/"vault")
+            for shot in imported["plan"]["clips"]:
+                custody=MediaVault(root/"vault").inspect(
+                    shot["asset_id"],attestation_id=shot["attestation_id"])
+                found.add(Path(custody["path"]).resolve())
         elif p.is_dir():
             for child in p.rglob("*"):
                 if child.is_symlink():

@@ -68,6 +68,30 @@ class OwnedOriginalOTIOContract(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.export()
 
+    def test_independent_registered_body_can_export_and_import_actual_rights_checked_cut(self):
+        from studio_next.body_integration import body_catalog,validate_witness
+        from studio_next.body_materials import fingerprint_physical_inputs
+        catalog=body_catalog(self.root)
+        self.assertEqual({p["id"]:p["status"] for p in catalog.discover()}[
+            "body.otio_owned_export"],"installed")
+        exported=catalog.invoke("body.otio_owned_export",{
+            "plan":"original.json","out":"registered-original.otio"},
+            allowed_access={"write"})
+        self.assertTrue(validate_witness("body.otio_owned_export",exported))
+        self.assertTrue(exported["original_audio_kept_synchronized"])
+        inputs=fingerprint_physical_inputs("body.otio_owned_import",{
+            "edit":"registered-original.otio","out":"imported-cut.json"},self.root)
+        self.assertGreaterEqual(len(inputs),3)
+        result=catalog.invoke("body.otio_owned_import",{
+            "edit":"registered-original.otio","out":"imported-cut.json"},
+            allowed_access={"write"})
+        self.assertTrue(result["industry_otio_edit_preserved_without_silent_drop"])
+        self.assertEqual(json.loads((self.root/"imported-cut.json").read_text()),self.plan)
+        with self.assertRaises(FileExistsError):
+            catalog.invoke("body.otio_owned_import",{
+                "edit":"registered-original.otio","out":"imported-cut.json"},
+                allowed_access={"write"})
+
     def test_native_nle_reorder_preserves_audio_and_source_attestations(self):
         self.export()
         timeline=self.otio.adapters.read_from_file(str(self.timeline))

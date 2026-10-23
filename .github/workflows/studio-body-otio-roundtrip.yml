@@ -33,7 +33,7 @@ jobs:
           set -euo pipefail
           mkdir -p output/otio-audit
           python -m unittest studio_next.test_body_sequence_otio -v 2>&1 | tee output/otio-audit/native-editable-roundtrip.log
-          grep -E '^Ran 5 tests in ' output/otio-audit/native-editable-roundtrip.log
+          grep -E '^Ran 6 tests in ' output/otio-audit/native-editable-roundtrip.log
           grep -E '^[[:space:]]*OK[[:space:]]*' output/otio-audit/native-editable-roundtrip.log
           if grep -E 'skipped|SKIP' output/otio-audit/native-editable-roundtrip.log; then
             echo 'Original video/audio source or professional OTIO dependency was skipped' >&2

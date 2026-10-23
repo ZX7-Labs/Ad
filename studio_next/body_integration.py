@@ -24,6 +24,7 @@ from .contracts import ToolSpec
 from .registry import ToolCatalog
 from .edit_timeline import render_edit,_path_within
 from .editorial_interchange import export_editable_timeline
+from .body_sequence_otio import export_verified_sequence_otio,import_verified_sequence_otio
 from .creative_asset_ops import rasterize_original_svg,extract_director_selected_frame
 from .native_body_engines import render_original_blender,render_original_motion
 from .delivery_audit import audit_delivered_movie,_probe_details
@@ -135,6 +136,8 @@ def _trusted_body_revision(tool_id):
         "body.sequence_cuts":["body_sequence_cuts.py","precision_retime.py","media_vault.py","body_color_pipeline.py"],
         "body.timeline_revision":["body_timeline_revision.py","body_sequence_cuts.py","precision_retime.py","media_vault.py","body_color_pipeline.py"],
         "body.otio":["editorial_interchange.py"],
+        "body.otio_owned_export":["body_sequence_otio.py","body_sequence_cuts.py","media_vault.py"],
+        "body.otio_owned_import":["body_sequence_otio.py","body_sequence_cuts.py","media_vault.py"],
         "body.vector_png":["creative_asset_ops.py"],
         "body.film_thumbnail":["creative_asset_ops.py","delivery_audit.py"],
         "body.asset_vault":["media_vault.py"],
@@ -163,6 +166,8 @@ def _trusted_body_revision(tool_id):
         "body.sequence_cuts":["ffmpeg","ffprobe"],
         "body.timeline_revision":["ffmpeg","ffprobe"],
         "body.otio":[],
+        "body.otio_owned_export":["ffmpeg","ffprobe"],
+        "body.otio_owned_import":["ffmpeg","ffprobe"],
         "body.vector_png":["inkscape"],
         "body.film_thumbnail":["ffmpeg","ffprobe"],
         "body.asset_vault":[],
@@ -200,6 +205,8 @@ def _trusted_body_revision(tool_id):
               "size":stat.st_size,"mtime_ns":stat.st_mtime_ns},sort_keys=True).encode())
     runtime_libraries={"body.motion2d":("numpy","Pillow","fonttools","supertonic"),
                        "body.otio":("opentimelineio",),
+                       "body.otio_owned_export":("opentimelineio",),
+                       "body.otio_owned_import":("opentimelineio",),
                        "body.review":("Pillow",),
                        "body.review_data":("Pillow",),
                        "body.review_frame":("Pillow",),
@@ -364,6 +371,48 @@ def body_catalog(workspace,*,vault_root=None):
         output=_body_output(root,inputs["out"],allowed=(".otio",))
         return _commit_actual_body_output(
             output,lambda staged:export_editable_timeline(original,root,staged))
+
+    def export_strict_cut(inputs):
+        plan=_path_within(root,inputs["plan"],exists=True)
+        out=_body_output(root,inputs["out"],allowed=(".otio",))
+        # The original path is an immutable artist plan. The physical OTIO
+        # exporter itself proves every camera source, its license, and the
+        # synchronized original audio in the actual native roundtrip.
+        receipt=_commit_actual_body_output(out,lambda stage:
+            export_verified_sequence_otio(plan,root,vault.root,stage))
+        decoded=import_verified_sequence_otio(out,root,vault.root)
+        authored=json.loads(plan.read_text(encoding="utf-8"))
+        if (decoded["source_plan_sha256"]!=sha256_file(plan) or
+                len(decoded["plan"]["clips"])!=len(authored["clips"])):
+            raise ValueError("Recovered OTIO does not match director-owned edit")
+        return {**receipt,
+            "verified_original_frames":decoded["frame_count"],
+            "original_audio_kept_synchronized":True,
+            "full_nle_creative_quality_approved":False}
+
+    def import_strict_cut(inputs):
+        edit=_path_within(root,inputs["edit"],exists=True)
+        out=_body_output(root,inputs["out"],allowed=(".json",))
+        imported=import_verified_sequence_otio(edit,root,vault.root)
+        contents=(json.dumps(imported["plan"],sort_keys=True,
+                  ensure_ascii=False,separators=(",",":"))+"\n").encode("utf-8")
+        if out.exists():raise FileExistsError("Original approved director edit cannot be overwritten")
+        temp=out.with_name(".zx7-otio-import-"+uuid.uuid4().hex+".json")
+        try:
+            with temp.open("xb") as dst:
+                dst.write(contents)
+                dst.flush()
+                os.fsync(dst.fileno())
+            if sha256_file(temp)!=hashlib.sha256(contents).hexdigest():
+                raise ValueError("Original industry edit changed while publishing")
+            os.link(temp,out)
+        finally:
+            temp.unlink(missing_ok=True)
+        return {"path":str(out),"sha256":sha256_file(out),
+                "bytes":len(contents),"verified_original_frames":imported["frame_count"],
+                "synchronous_sound_source_verified":True,
+                "industry_otio_edit_preserved_without_silent_drop":True,
+                "creative_quality_approved":False}
 
     def vector_art(inputs):
         original=_path_within(root,inputs["source_svg"],exists=True)
@@ -621,8 +670,15 @@ def body_catalog(workspace,*,vault_root=None):
     try:import opentimelineio
     except ImportError:otio_ready=False
     else:otio_ready=True
-    add("body.otio","editable edit interchange","Real Academy Software Foundation OpenTimelineIO",
+    add("body.otio","legacy editable edit interchange (unattested source labels)",
+        "OpenTimelineIO technical interchange; source license labels are NOT independent custody proof",
         "write",bool(otio_ready and shutil.which("ffprobe")),["edit","out"],export_edit)
+    add("body.otio_owned_export","exact-frame source-attested audiovisual OTIO export",
+        "Original licensed CFR BT.709 picture and independently synchronized sound, real native OTIO roundtrip verified",
+        "write",bool(otio_ready and video_io),["plan","out"],export_strict_cut)
+    add("body.otio_owned_import","physically verified original audiovisual OTIO revision import",
+        "Strict professional edited OTIO into immutable new JSON director-cut plan; rejects lost/relinked audio/rights",
+        "write",bool(otio_ready and video_io),["edit","out"],import_strict_cut)
     add("body.vector_png","original vector art and thumbnail","Inkscape headless real vector to PNG",
         "write",bool(shutil.which("inkscape") and png_decoder),["source_svg","out","width","height"],vector_art)
     add("body.film_thumbnail","original movie frame artwork","FFmpeg decode actual selected frame",

@@ -184,6 +184,7 @@ def import_verified_sequence_otio(file_path,workspace,vault_root):
     if sha256_file(source)!=original_hash:
         raise ValueError("Original editable NLE file changed while checking actual media")
     return {"plan":plan,"frame_count":validated["frames"],
+            "source_plan_sha256":meta["source_plan_sha256"],
             "original_sources_physically_verified":len(validated["originals"]),
             "original_footage_modified":False,
             "all_audio_positions_and_sources_matched":True,
