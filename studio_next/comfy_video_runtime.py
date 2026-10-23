@@ -176,6 +176,9 @@ def render_actual_generated_scene(job,scene_folder,*,deployment_root="models/cre
         pid=renderer.create(graph)
         stage.save("comfy_prompt",identity,{"prompt_id":pid})
     filename,bytes_=renderer.wait(pid,meta["output_node"])
+    # Also validate results from injected/operator-provided ComfyUI clients;
+    # only the default HTTP adapter previously checked the returned path.
+    filename=_safe_local_filename(filename)
     folder=Path(scene_folder)
     folder.mkdir(parents=True,exist_ok=True)
     path=folder/filename
