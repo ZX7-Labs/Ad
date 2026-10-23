@@ -1,0 +1,58 @@
+{
+  "schema": 2,
+  "date": "2026-10-23",
+  "project": "ZX7 Studio / BODY",
+  "canonical_branch": "zx7-body/mobile-operator-20261021",
+  "canonical_head": "52215f112ce4de116e8c10062e654720ebc9749d",
+  "draft_pr": "https://github.com/oyzitjfzj/Ad/pull/3",
+  "main_untouched": true,
+  "original_art_and_voices_unchanged": true,
+  "not_production_complete": true,
+  "completed_integration": [
+    "Inspected all seven branches: ancestral research branches retained, independent live-signal contract consolidated into canonical host-scoped BodySignal adapter",
+    "Legacy alternate multitrack still-photo overlay reconciled into actual rights-verified compositor as source_kind=still_image; parallel unverified legacy producer not merged",
+    "Host authority isolates workspace, typed discovery and source preflight, direct authorized submit/retry and factual observation; cross-workspace access denied",
+    "Actual original film with seven recorded/licensed graphic layers and independently synthesized stereo sound generated through registered BODY compositor DAG, physically decoded, SHA-verified and graph reused"
+  ],
+  "evidence": {
+    "native_all_modules_prior_to_final_nerve": "https://github.com/oyzitjfzj/Ad/actions/runs/39908010516",
+    "security_last_green": "https://github.com/oyzitjfzj/Ad/actions/runs/39909436923",
+    "real_physical_model_to_movie": "https://github.com/oyzitjfzj/Ad/actions/runs/39909461654",
+    "real_physical_model_to_movie_tests": 26,
+    "original_cinematic_short": "https://github.com/oyzitjfzj/Ad/actions/runs/39909061035",
+    "original_cinematic_artifact": "https://github.com/oyzitjfzj/Ad/actions/runs/39909061035/artifacts/12482216558",
+    "original_cinematic_mp4_sha256": "5fb04c70b6126ca495c45f8b338b5aa10e4b29c7f234b6f1c26a1d2a42777575",
+    "original_cinematic_duration_seconds": 11,
+    "independent_human_creative_review": false
+  },
+  "branch_differences": [
+    {
+      "branch": "zx7-body/live-signal-contract-20261021",
+      "status": "reconciled host-scoped semantic subset on canonical code; old implementation preserved"
+    },
+    {
+      "branch": "zx7-body/real-multitrack-renderer",
+      "status": "alternate multi-layer still-image semantics reconciled; distinct media_body.py and sidecar recovery not merged because weaker custody and separate unverifed equivalence"
+    },
+    {
+      "branch": "zx7-specialist-free-stack-20261020",
+      "status": "PR #3 base; original creative work protected"
+    }
+  ],
+  "release_gates": {
+    "complete": 0,
+    "total": 12,
+    "partial_foundations": 10,
+    "primarily_blocked": 2
+  },
+  "major_remaining": [
+    "complete professional NLE: nested edit graphs, sample-accurate sound revisions, physical masks/transitions",
+    "end-to-end OCIO/ACES scene-linear HDR color management and advanced VFX with independently verified pixels",
+    "real right-cleared source generation on verified installed GPU and licensed weights; no fake live-action",
+    "semantic visual/audio film observation→creative revisions with actual independent human critique",
+    "secure persistent remote HTTPS Android host, real distributed workers and large-scale crash/restart",
+    "full professional acceptance on several diverse complete creative films and original music"
+  ],
+  "final_showcase_condition": "The original proof video is a bounded real technical validation sample, NOT the final premium film or full BODY completion",
+  "next_authorized_engineering_action": "Independently prove cross-track non-destructive rational edit graph and portable OTIO loss audit, then scene-linear OCIO VFX integration. Keep no automatic merge and verify exact matching full native run first."
+}
