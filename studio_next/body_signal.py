@@ -113,12 +113,24 @@ class LiveBodySignal:
         workspace_id=arguments["workspace_id"]
         workspace=self._workspace(workspace_id)
         tool_id=arguments["tool_id"]
-        detail=self._surface(workspace_id).describe(
+        surface=self._surface(workspace_id)
+        detail=surface.describe(
             tool_id,allowed_access=self._authority.tool_access)
-        if detail["status"]!="ready_to_preflight" or not tool_id.startswith("body."):
+        if not tool_id.startswith("body."):
             raise BodyCommandRejected(
-                "Model cannot author a plan for an uninstalled or untrusted tool")
-        required=detail["input_schema"]["required"]
+                "Model can only author plans for recognized native BODY instruments")
+        # Preparing immutable artistic intentions is safe while a renderer is
+        # offline. Only the real registered code schema may be consulted.
+        # NEVER describe or execute an unavailable tool as installed.
+        schema=detail["input_schema"]
+        if schema is None:
+            matches=[row for row in surface.catalog.discover()
+                     if row["id"]==tool_id and
+                     row["access"] in self._authority.tool_access]
+            if len(matches)!=1:
+                raise BodyCommandRejected("Missing installed-body plan contract")
+            schema=matches[0]["schema"]
+        required=schema["required"]
         permitted=("plan","edit","scene_json","original_film_ir","video_job")
         document_fields=[name for name in required if name in permitted]
         if len(document_fields)!=1:
@@ -174,6 +186,7 @@ class LiveBodySignal:
             "path":"brain-authored/"+target.name,
             "sha256":digest,"bytes":len(raw),
             "immutable_editor_document_published":True,
+            "tool_ready_to_execute_now":detail["status"]=="ready_to_preflight",
             "source_legal_rights_certified":False,
             "film_physically_rendered":False,
             "independent_artistic_quality_approved":False}
