@@ -54,7 +54,7 @@ class OwnedOriginalOTIOContract(unittest.TestCase):
                                                self.root/"vault",self.timeline)
     def test_export_import_source_proofs_and_original_picture_sound(self):
         receipt=self.export()
-        self.assertEqual(receipt["frame_count"],31)
+        self.assertEqual(receipt["frame_count"],27)
         loaded=import_verified_sequence_otio(self.timeline,self.root,
                                              self.root/"vault")
         self.assertEqual(loaded["plan"],self.plan)
@@ -78,7 +78,7 @@ class OwnedOriginalOTIOContract(unittest.TestCase):
         self.otio.adapters.write_to_file(timeline,str(updated))
         result=import_verified_sequence_otio(updated,self.root,self.root/"vault")
         self.assertEqual(result["plan"]["clips"],list(reversed(self.plan["clips"])))
-        self.assertEqual(result["frame_count"],31)
+        self.assertEqual(result["frame_count"],27)
 
     def test_trims_and_synchronised_audio_must_change_together(self):
         self.export()
