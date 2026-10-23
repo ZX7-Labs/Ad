@@ -48,7 +48,7 @@ class MediaVaultProductionTests(unittest.TestCase):
                     raced=True
                 return native(stage,dest,*args,**kwargs)
             with patch.object(media_vault.os,"link",side_effect=competing_writer):
-                with self.assertRaises(FileExistsError):
+                with self.assertRaises(MediaCustodyError):
                     store.ingest(input,mime="application/octet-stream",
                         rights="owner_supplied",source_type="owner_upload",
                         source_id="owned-clip-a",evidence="Owner recorded this",
