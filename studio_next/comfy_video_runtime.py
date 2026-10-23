@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import tempfile
 import re
 import shutil
 import subprocess
@@ -23,6 +25,7 @@ from urllib.request import Request,urlopen
 
 from .generative_video_providers import safe_local_api,discover_local_generators
 from .stage_checkpoint import DurableStageStore
+from .media_vault import sha256_file
 
 _APPROVED_FIELDS=("prompt","negative_prompt","width","height","frames","fps","seed")
 _NAME=re.compile(r"^[A-Za-z0-9_.-]{1,180}$")
@@ -176,16 +179,44 @@ def render_actual_generated_scene(job,scene_folder,*,deployment_root="models/cre
     folder=Path(scene_folder)
     folder.mkdir(parents=True,exist_ok=True)
     path=folder/filename
-    path.write_bytes(bytes_)
-    # ffprobe prevents arbitrary/non-video response from becoming "produced".
-    if probe is None:
-        from .edit_timeline import probe_media
-        probe=probe_media
-    actual=probe(path)
-    if not isinstance(actual,dict) or actual.get("seconds",0)<=0:
-        path.unlink(missing_ok=True)
-        raise RuntimeError("Received binary is not a physically decodable motion-picture")
-    return {"clip":path,"fps":job["fps"],"seconds":actual["seconds"],
-            "sha256":hashlib.sha256(bytes_).hexdigest(),
-            "audio":bool(actual.get("audio")),"workflow_sha256":workflow_sha,
+    if path.exists() or path.is_symlink():
+        raise FileExistsError("Never replace a director-accepted original AI video")
+    # A remote local GPU adapter is still an UNTRUSTED byte producer. Its
+    # declared output name is not proof of real frames, original duration or
+    # authorization to replace anyone's accepted film.
+    with tempfile.TemporaryDirectory(prefix=".zx7-comfy-stage-",dir=folder) as private:
+        stage_path=Path(private)/filename
+        with stage_path.open("xb") as destination:
+            destination.write(bytes_)
+            destination.flush()
+            os.fsync(destination.fileno())
+        if probe is None:
+            from .edit_timeline import probe_media
+            probe=probe_media
+        actual=probe(stage_path)
+        if not isinstance(actual,dict) or actual.get("seconds",0)<=0:
+            raise RuntimeError(
+                "Generated video lacks independently decodable picture duration")
+        from .production_qc import full_decode_inspection
+        report=full_decode_inspection(stage_path,expected={
+            "width":job["width"],"height":job["height"],
+            "duration_seconds":job["frames"]/job["fps"],
+            "require_audio":False})
+        if (not report["technical_delivery_verified"] or
+                not report["full_picture_and_sound_decoder_completed"]):
+            raise ValueError("Local GPU source failed complete actual picture/audio decode and declared film geometry")
+        digest=hashlib.sha256(bytes_).hexdigest()
+        if sha256_file(stage_path)!=digest:
+            raise ValueError("Original returned GPU video bytes changed during decode")
+        with stage_path.open("rb") as completed:
+            os.fsync(completed.fileno())
+        # This is a same-filesystem exclusive publish, not overwrite of an
+        # unverified or competing model/video editor output.
+        os.link(stage_path,path)
+    return {"clip":path,"fps":job["fps"],"seconds":report["duration_seconds"],
+            "sha256":digest,"audio":bool(report["audio_present"]),
+            "workflow_sha256":workflow_sha,
+            "full_original_video_and_sound_decoded":True,
+            "human_cinematic_performance_approved":False,
             "generated_with_actual_self_hosted_model":True}
+
