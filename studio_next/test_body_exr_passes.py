@@ -106,6 +106,19 @@ class Real32FloatMultiPassVfx(unittest.TestCase):
                 frame=root/"actual-original-frame.exr"
                 frame.write_bytes(z.read("frames/frame_0001.exr"))
             physical=inspect_real_exr_frame(frame)
+            # One actual 32f Blender source passes independent rights-checked
+            # native standalone EXR decoding, not merely magic-header checks.
+            from studio_next.media_vault import MediaVault
+            vault=MediaVault(root/"standalone-original-exr-vault")
+            admitted=vault.ingest(frame,mime="image/x-exr",
+                rights="owner_supplied",source_type="owner_upload",
+                source_id="actual-original-exr-frame",
+                evidence="Independent complete actual Cycles EXR decoded by native lib",
+                owner_or_generator="original-source-owner")
+            inspected=vault.inspect(
+                admitted["asset_id"],attestation_id=admitted["attestation_id"])
+            self.assertEqual(inspected["mime"],"image/x-exr")
+            self.assertEqual(sha256_file(inspected["path"]),sha256_file(frame))
             self.assertEqual(physical["decoded_float_precision_bits"],32)
             names=physical["actual_channel_names"]
             self.assertTrue(any(name.endswith("Depth.Z") for name in names))
