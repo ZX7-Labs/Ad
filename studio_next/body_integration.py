@@ -805,6 +805,7 @@ def _require_authentic_generated_media_lineage(film_ir):
     # which themselves require MediaVault source custody may be archived.
     trusted_producers={"body.blender3d","body.motion2d",
                        "body.exr_passes","body.exr_checkpoint",
+                       "body.aces2_movie",
                        "body.render_edit_owned",
                        "body.composite_mix","body.film_finish"}
     for node in graph:
