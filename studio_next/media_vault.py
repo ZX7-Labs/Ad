@@ -193,7 +193,14 @@ class MediaVault:
                     shutil.copyfileobj(stream,handle,1024*1024)
                     handle.flush();os.fsync(handle.fileno())
                 if sha256_file(tmp)!=digest:raise MediaCustodyError("Source changed while ingesting")
-                os.link(tmp,dest)
+                try:
+                    os.link(tmp,dest)
+                except FileExistsError:
+                    # Two independent producers can race to publish IDENTICAL
+                    # CAS bytes; an unrelated winner is not trusted.
+                    if dest.is_symlink() or not dest.is_file() or sha256_file(dest)!=digest:
+                        raise MediaCustodyError(
+                            "Another publisher placed different bytes in immutable MediaVault")
             finally:
                 if os.path.exists(tmp):os.unlink(tmp)
         elif sha256_file(dest)!=digest:
