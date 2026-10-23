@@ -166,6 +166,45 @@ class Real32FloatMultiPassVfx(unittest.TestCase):
                      encoding="utf-8")
 
 
+    def test_real_blender_consumes_sealed_scene_when_artist_checkout_is_temporarily_swapped(self):
+        from unittest.mock import patch
+        from studio_next import body_exr_passes
+        with tempfile.TemporaryDirectory() as workspace:
+            root=Path(workspace)
+            scene,_=self.scene(root)
+            pristine=scene.read_bytes()
+            digest=sha256_file(scene)
+            hostile=json.loads(pristine)
+            hostile["world"]["strength"]=hostile["world"]["strength"]*1.9
+            substituted=json.dumps(hostile).encode("utf-8")
+            real_run=body_exr_passes.subprocess.run
+            consumed=[]
+            def native_blender(command,*args,**kwargs):
+                if (isinstance(command,list) and command[0]=="blender" and
+                        "--scene" in command):
+                    selected=Path(command[command.index("--scene")+1])
+                    self.assertNotEqual(selected.resolve(),scene.resolve())
+                    self.assertIn(".zx7-original-exr-render-",str(selected))
+                    self.assertEqual(sha256_file(selected),digest)
+                    self.assertFalse(selected.stat().st_mode & 0o222)
+                    consumed.append(selected)
+                    scene.write_bytes(substituted)
+                    try:
+                        return real_run(command,*args,**kwargs)
+                    finally:
+                        scene.write_bytes(pristine)
+                return real_run(command,*args,**kwargs)
+            output=root/"original-sealed-camera.zip"
+            with patch.object(body_exr_passes.subprocess,"run",
+                              side_effect=native_blender):
+                result=render_original_exr_passes(scene,root,output)
+            self.assertEqual(result["original_scene_sha256"],digest)
+            self.assertEqual(sha256_file(scene),digest)
+            self.assertEqual(len(consumed),1)
+            self.assertFalse(consumed[0].exists())
+            self.assertTrue(verify_exr_bundle(output)["original_exr_passes_real"])
+            self.assertFalse(list(root.glob(".zx7-original-exr-render-*")))
+
     def test_real_exr_competing_master_is_not_overwritten_or_deleted(self):
         from unittest.mock import patch
         from studio_next import body_exr_passes
