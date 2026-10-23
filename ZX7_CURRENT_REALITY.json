@@ -145,17 +145,20 @@
   "canonical_2026_10_23_body_status": {
     "source_of_truth": "docs/ZX7_BODY_CHECKPOINT_2026-10-23.json",
     "canonical_branch": "zx7-body/mobile-operator-20261021",
-    "last_verified_source_commit": "f5ef1be25656b64a136c183f3e5a575a7adb182a",
-    "latest_real_native_evidence": "https://github.com/oyzitjfzj/Ad/actions/runs/39970317860",
-    "installed_native_suite_total": 544,
-    "installed_native_suite_passed": 543,
-    "browser_only_skipped_here": 1,
-    "repo_source_inventory": "https://github.com/oyzitjfzj/Ad/actions/runs/39969523313",
-    "static_source_risk_candidates": 379,
-    "actual_premium_body_production_ready": false,
-    "actual_independent_artistic_film_and_human_signoff": false,
-    "release_gate_count_completed": 0,
-    "release_gate_count_total": 12,
-    "caveat": "Historical 21 October branch/recovery facts below remain historical; never interpret them as current canonical release readiness."
+    "most_recent_accepted_native_code_sha": "aa02050c6e41dcba017aaa45bf86d4cfee4279c0",
+    "last_verified_real_native_run": "https://github.com/oyzitjfzj/Ad/actions/runs/40017123856",
+    "native_test_cases_run": 565,
+    "native_passed": 564,
+    "native_skipped_browser_only": 1,
+    "audited_all_git_tracked_source": "https://github.com/oyzitjfzj/Ad/actions/runs/40017121813",
+    "true_model_generated_end_to_end_premium_film_proven": false,
+    "local_gpu_human_video_inference_proven": false,
+    "original_owner_material_retained": true,
+    "production_release_approved": false,
+    "professional_release_gates_complete": 0,
+    "professional_release_gates_total": 12,
+    "last_decoded_real_renderer_work": "original Blender scene -> EXR32 passes -> ACES2 ProRes10 and layered matte + stereo sound film; native CPU motion-compensated slow-motion",
+    "no_confusion_with_11_second_demo": "Earlier 11-second film used script-authored creative directions, NOT independently run AI creative Brain",
+    "notes": "A CI-passing collection of actual machine capabilities is not certification of world-leading independent creative cinema."
   }
 }

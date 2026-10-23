@@ -3,7 +3,7 @@
   "date": "2026-10-23",
   "project": "ZX7 Studio / BODY",
   "canonical_branch": "zx7-body/mobile-operator-20261021",
-  "canonical_head": "f5ef1be25656b64a136c183f3e5a575a7adb182a",
+  "canonical_head": "aa02050c6e41dcba017aaa45bf86d4cfee4279c0",
   "draft_pr": "https://github.com/oyzitjfzj/Ad/pull/3",
   "main_untouched": true,
   "original_art_and_voices_unchanged": true,
@@ -58,27 +58,29 @@
     "independent_model_inference_actually_triggered": false,
     "full_native_after_source_custody_hardening": "https://github.com/oyzitjfzj/Ad/actions/runs/39928192941",
     "full_native_after_source_custody_hardening_conclusion": "success",
-    "latest_verified_integrated_native": "https://github.com/oyzitjfzj/Ad/actions/runs/39970317860",
+    "latest_verified_integrated_native": "https://github.com/oyzitjfzj/Ad/actions/runs/40017123856",
     "latest_verified_integrated_native_outcome": {
-      "source_commit": "f5ef1be25656b64a136c183f3e5a575a7adb182a",
-      "workflow_run": 39970317860,
-      "result": "success",
-      "test_cases_ran": 544,
-      "passed": 543,
+      "source_commit": "aa02050c6e41dcba017aaa45bf86d4cfee4279c0",
+      "workflow_run": 40017123856,
+      "conclusion": "success",
+      "ran": 565,
+      "passed": 564,
       "skipped": 1,
-      "actually_passed_original_linear_exr_to_aces2_prores": true,
-      "actually_passed_native_otio_source_mutation_race": true,
-      "actual_encoded_comfy_adapter_with_simulated_gpu_transport": true,
-      "actual_gpu_model_inference_or_actor_generation_proven": false,
-      "physically_passed_no_redirect_local_model_http": true,
-      "full_professional_production_release_approved": false,
-      "independent_human_editor_creative_quality_approved": false
+      "full_source_rights_technical_release_proven": false,
+      "local_original_3d_32f_openexr_to_aces2_10bit_prores_real": true,
+      "brain_signal_authored_multilayer_cut_full_video_audio_decoded": true,
+      "owner_licensed_temporal_mask_and_stereo_balance_physically_measured": true,
+      "motion_compensated_cpu_optical_flow_and_audio_physical_decoded": true,
+      "exact_pixel_mask_and_independent_model_video_artistic_judgment": false,
+      "actual_independent_creative_brain_model_inference": false,
+      "artist_and_human_quality_release_certified": false,
+      "all_12_professional_gates_complete": false
     },
     "current_matching_native_actual_source_security": "https://github.com/oyzitjfzj/Ad/actions/runs/39970317953",
     "current_matching_native_actual_source_security_cases": 37,
     "current_matching_browser": "https://github.com/oyzitjfzj/Ad/actions/runs/39928192825",
-    "current_matching_mobile_security": "https://github.com/oyzitjfzj/Ad/actions/runs/39970317878",
-    "current_full_git_repo_source_audit": "https://github.com/oyzitjfzj/Ad/actions/runs/39969523313",
+    "current_matching_mobile_security": "https://github.com/oyzitjfzj/Ad/actions/runs/40017121922",
+    "current_full_git_repo_source_audit": "https://github.com/oyzitjfzj/Ad/actions/runs/40017121813",
     "current_full_git_repo_source_audit_observations": {
       "tracked_files": 332,
       "parsed_python_files": 204,
@@ -193,7 +195,7 @@
     "shared_source_implementation_changes_invalidate_all_consumers_including_OTIO": true
   },
   "current_engineering_increment": {
-    "source_code_commit": "f5ef1be25656b64a136c183f3e5a575a7adb182a",
+    "source_code_commit": "aa02050c6e41dcba017aaa45bf86d4cfee4279c0",
     "source_history": [
       "8f1f596a508cc556555c44bd9e800829cb1bc722",
       "a95cada2dff739c18f17854a587db95574b683ef",
@@ -307,8 +309,8 @@
       "No persistent GPU-original human scene generation or production distributed render farm is proven",
       "A complete independent creative Brain connected for full director revision loops and released film quality is not proven"
     ],
-    "last_full_native_proof": "https://github.com/oyzitjfzj/Ad/actions/runs/39970317860",
-    "latest_actual_native_test_counts": "544 total, 543 passed, one separately exercised Chromium browser acceptance skipped in this job",
+    "last_full_native_proof": "https://github.com/oyzitjfzj/Ad/actions/runs/40017123856",
+    "latest_actual_native_test_counts": "565 total, 564 passed, one separately covered browser-only test skipped in this native suite",
     "source_custody_risk_work": [
       "Sealed exact native Blender EXR owner scene to prevent transient source substitution during Cycles",
       "Whole archive restore uses Linux atomic no-replace directory rename and backup uses exclusive tar creation with loser-safe cleanup",
@@ -322,6 +324,24 @@
     "unresolved_total_release_gates": 12,
     "production_readiness": false,
     "premium_independent_director_film_complete": false,
-    "do_not_merge_into_main_until_accepted": true
+    "do_not_merge_into_main_until_accepted": true,
+    "optical_flow_technical_progress": {
+      "native_cpu_motion_interpolation": "installed and physical real picture+audio decoded",
+      "authored_original_film_ir": "Model-neutral BODY command can publish immutable rights-needing JSON plan",
+      "true_ai_creative_inference_generated_original_complete_film": false
+    },
+    "verified_media_matte_and_sound_work": [
+      "Artist-defined moving/still grayscale matte multiplies actual original RGBA alpha; masked frames full native decode",
+      "Licensed original soundtrack stereo balance independently measured from decoded PCM",
+      "Two independent producer jobs cannot replace another editor's accepted composite",
+      "Standalone glTF binary scene validates real JSON and all bounded native BIN buffer views; EXR and TrueType validate real pixels/glyphs"
+    ],
+    "security_and_host_increments": [
+      "Linux persistent user systemd service unit created exclusively and rejects symlink substitution; activation remains owner-controlled",
+      "Local ComfyUI HTTP GET/POST refuses redirects and ambient proxy usage",
+      "Creative model source checkpoints reject directory escapes, symlinked stages, fixed temp collisions and forged stage manifest identity"
+    ],
+    "release_ready": false,
+    "confidence": "Real native tool operation and repeatable CI, not independently approved artistic or production release"
   }
 }
