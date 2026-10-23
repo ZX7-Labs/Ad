@@ -19,7 +19,8 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from .composite_mix import _exact_media
+from .composite_mix import _exact_media,sealed_attested_original
+from .production_qc import full_decode_inspection
 from .media_vault import MediaVault,sha256_file
 from .delivery_audit import _probe_details
 
@@ -132,31 +133,54 @@ def validate_color_job(job,workspace,vault_root):
 
 
 def render_verified_color_job(plan_file,workspace,vault_root,output):
-    """Execute only encoded SDR transform, with original AAC/PCM soundtrack."""
+    """Render only explicitly licensed display-referred SDR LUT to new movie.
+
+    The original picture and sound are frozen from verified CAS, the separately
+    licensed CUBE is copied into the same private render sandbox, and final
+    destination is hardlink-published only after whole-media decoding.
+    """
     root=Path(workspace).resolve()
-    spec=json.loads(Path(plan_file).read_text(encoding="utf-8"))
-    proof=validate_color_job(spec,root,vault_root)
+    source=Path(plan_file).resolve()
     destination=Path(output).resolve()
+    if not source.is_file() or not source.is_relative_to(root):
+        raise ValueError("Original creative LUT direction must be an owned workspace document")
+    spec_sha=sha256_file(source)
+    spec=json.loads(source.read_text(encoding="utf-8"))
+    if sha256_file(source)!=spec_sha:
+        raise ValueError("Art-directed color instructions changed during initial read")
+    proof=validate_color_job(spec,root,vault_root)
     if not destination.is_relative_to(root) or destination.exists():
         raise ValueError("Do not overwrite original accepted color work or escape workspace")
-    ext=".mp4" if proof["profile"]=="h264_8bit_sdr" else ".mov"
-    if destination.suffix.lower()!=ext:
+    extension=".mp4" if proof["profile"]=="h264_8bit_sdr" else ".mov"
+    if destination.suffix.lower()!=extension:
         raise ValueError("Color master container differs from chosen delivery profile")
     original=_probe_details(proof["movie"])
     destination.parent.mkdir(parents=True,exist_ok=True)
-    # Actual .cube extension needed by FFmpeg; contents are from immutable
-    # previously authorized CAS. Scratch location is chosen independently,
-    # while FFmpeg sees only the constant safe string lookup.cube.
-    with tempfile.TemporaryDirectory(prefix="zx7-legal-lut-") as tmp:
-        cwd=Path(tmp)
-        (cwd/"lookup.cube").write_bytes(proof["cube_bytes"])
-        if sha256_file(cwd/"lookup.cube")!=proof["cube_sha256"]:
-            raise ValueError("Color-transform bytes changed during preparation")
+    vault=MediaVault(vault_root)
+    with tempfile.TemporaryDirectory(prefix=".zx7-owned-sources-",dir=root) as working:
+        private=Path(working)
+        copies={}
+        frozen=sealed_attested_original(vault,spec["media"]["asset_id"],
+            spec["media"]["attestation_id"],private,copies)
+        # The CUBE is separately rights-attested data: never allow its
+        # arbitrary lines to replace the fixed allowlisted FFmpeg filter ABI.
+        lut=private/"lookup.cube"
+        with lut.open("xb") as file:
+            file.write(proof["cube_bytes"])
+            file.flush()
+            os.fsync(file.fileno())
+        if sha256_file(lut)!=proof["cube_sha256"]:
+            raise ValueError("Artist original color LUT changed while sealing")
+        os.chmod(lut,0o400)
+        if (sha256_file(proof["movie"])!=proof["movie_sha256"]
+                or sha256_file(source)!=spec_sha):
+            raise ValueError("Original owner movie or color direction changed before encoder")
+        encoded=private/("original-graded-master"+extension)
         cmd=["ffmpeg","-hide_banner","-loglevel","error","-nostdin","-n",
-             "-i",str(proof["movie"]),
-             "-vf","lut3d=file=lookup.cube:interp="+proof["interp"]+
-                   ",setparams=range=tv:color_primaries=bt709:color_trc=bt709:colorspace=bt709",
-             "-map","0:v:0"]
+            "-i",str(frozen),
+            "-vf","lut3d=file=lookup.cube:interp="+proof["interp"]+
+                  ",setparams=range=tv:color_primaries=bt709:color_trc=bt709:colorspace=bt709",
+            "-map","0:v:0"]
         if original["audio_stream_present"]:
             cmd.extend(["-map","0:a:0"])
         if proof["profile"]=="h264_8bit_sdr":
@@ -167,35 +191,50 @@ def render_verified_color_job(plan_file,workspace,vault_root,output):
                         "-pix_fmt","yuv422p10le",
                         "-c:a","pcm_s24le","-movflags","+write_colr"])
         cmd.extend(["-color_primaries","bt709","-color_trc","bt709",
-                    "-colorspace","bt709",str(destination)])
-        try:
-            completed=subprocess.run(cmd,cwd=cwd,capture_output=True,
-                                     text=True,timeout=7200,check=False)
-            if completed.returncode!=0:
-                raise RuntimeError("Real local color transform failed: "+
-                                   completed.stderr[-1400:])
-            physical=_probe_details(destination)
-            if not physical["width"]==original["width"] or (
-                    physical["height"]!=original["height"] or
-                    physical["audio_stream_present"]!=original["audio_stream_present"] or
-                    abs(physical["duration_seconds"]-original["duration_seconds"])>.14):
-                raise ValueError("Original film color stage changed scene timing, size or original sound")
-            _actual_bt709_source(destination)
-            if (sha256_file(proof["movie"])!=proof["movie_sha256"] or
-                sha256_file(proof["cube"])!=proof["cube_sha256"]):
-                raise ValueError("Source movie or original LUT changed during real grade")
-            return {"path":str(destination),"sha256":sha256_file(destination),
-                    "bytes":destination.stat().st_size,
-                    "duration_seconds":physical["duration_seconds"],
-                    "audio_present":physical["audio_stream_present"],
-                    "color_pipeline":"verified_display_referred_bt709_lut",
-                    "source_movie_sha256":proof["movie_sha256"],
-                    "original_cube_sha256":proof["cube_sha256"],
-                    "interpolation":proof["interp"],
-                    "output_profile":proof["profile"],
-                    "actually_verified_color_space":"bt709",
-                    "claimed_aces_hdr_or_scene_linear":False,
-                    "creative_quality_approved":False}
-        except BaseException:
-            destination.unlink(missing_ok=True)
-            raise
+                    "-colorspace","bt709",str(encoded)])
+        completed=subprocess.run(cmd,cwd=private,capture_output=True,
+                                 text=True,timeout=7200,check=False)
+        if completed.returncode!=0:
+            raise RuntimeError("Real original SDR color transform failed: "+
+                               completed.stderr[-1400:])
+        physical=_probe_details(encoded)
+        if (physical["width"]!=original["width"] or
+                physical["height"]!=original["height"] or
+                physical["audio_stream_present"]!=original["audio_stream_present"] or
+                abs(physical["duration_seconds"]-original["duration_seconds"])>.14):
+            raise ValueError("Original real film grade changed picture geometry, runtime or soundtrack")
+        _actual_bt709_source(encoded)
+        qa=full_decode_inspection(encoded,expected={
+            "width":original["width"],"height":original["height"],
+            "duration_seconds":original["duration_seconds"],
+            "require_audio":original["audio_stream_present"]})
+        if not qa["technical_delivery_verified"] or not qa[
+                "full_picture_and_sound_decoder_completed"]:
+            raise RuntimeError("Graded original media failed entire picture/audio decode")
+        if (sha256_file(proof["movie"])!=proof["movie_sha256"] or
+                sha256_file(proof["cube"])!=proof["cube_sha256"] or
+                sha256_file(lut)!=proof["cube_sha256"] or
+                sha256_file(frozen)!=proof["movie_sha256"] or
+                sha256_file(source)!=spec_sha):
+            raise ValueError("Licensed original camera, transform or owner plan changed mid grade")
+        vault.inspect(spec["media"]["asset_id"],
+                      attestation_id=spec["media"]["attestation_id"])
+        cube=spec["color_transform"]["cube"]
+        vault.inspect(cube["asset_id"],attestation_id=cube["attestation_id"])
+        with encoded.open("rb") as movie:
+            os.fsync(movie.fileno())
+        os.link(encoded,destination)
+    return {"path":str(destination),"sha256":sha256_file(destination),
+            "bytes":destination.stat().st_size,
+            "duration_seconds":physical["duration_seconds"],
+            "audio_present":physical["audio_stream_present"],
+            "color_pipeline":"verified_display_referred_bt709_lut",
+            "source_movie_sha256":proof["movie_sha256"],
+            "original_cube_sha256":proof["cube_sha256"],
+            "interpolation":proof["interp"],
+            "output_profile":proof["profile"],
+            "actually_verified_color_space":"bt709",
+            "sealed_original_cas_and_original_cube_during_decode":True,
+            "full_picture_and_sound_decoder_completed":True,
+            "claimed_aces_hdr_or_scene_linear":False,
+            "creative_quality_approved":False}

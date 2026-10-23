@@ -143,6 +143,61 @@ class PhysicalFilmColorLutTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             render_verified_color_job(self.planfile,self.root,self.root/"vault",new)
 
+    def test_actual_lut_grade_decodes_frozen_cas_while_mutable_original_is_swapped(self):
+        from unittest.mock import patch
+        self.plan["media"]["source"]=self.camera.name
+        self.save()
+        owner_original=self.camera.read_bytes()
+        previous=self.root/"actual-owner-color-secure.mp4"
+        actual_run=subprocess.run
+        inputs=[]
+        def source_swap(argv,**kwargs):
+            if argv and argv[0]=="ffmpeg" and any(
+                   "lut3d=file=lookup.cube" in a for a in argv):
+                src=Path(argv[argv.index("-i")+1])
+                self.assertIn(".zx7-owned-sources-",str(src))
+                self.assertFalse(src.stat().st_mode & 0o222)
+                self.assertEqual(sha256_file(src),self.camera_proof["asset_id"])
+                private=Path(kwargs["cwd"])
+                lut=private/"lookup.cube"
+                self.assertEqual(sha256_file(lut),self.cube_proof["asset_id"])
+                inputs.extend((src,lut))
+                self.camera.write_bytes(b"attacker supplies a different shot during real LUT transform")
+                try:return actual_run(argv,**kwargs)
+                finally:self.camera.write_bytes(owner_original)
+            return actual_run(argv,**kwargs)
+        with patch("studio_next.body_color_pipeline.subprocess.run",side_effect=source_swap):
+            proof=render_verified_color_job(self.planfile,self.root,
+                                              self.root/"vault",previous)
+        self.assertTrue(proof["full_picture_and_sound_decoder_completed"])
+        self.assertTrue(proof["sealed_original_cas_and_original_cube_during_decode"])
+        self.assertTrue(proof["audio_present"])
+        self.assertEqual(sha256_file(self.camera),self.camera_proof["asset_id"])
+        self.assertEqual(len(inputs),2)
+        self.assertTrue(all(not src.exists() for src in inputs))
+        self.assertFalse(list(self.root.glob(".zx7-owned-sources-*")))
+        red,green,blue=self._pixel(previous)
+        self.assertGreater(green,red+80)
+
+    def test_lut_grade_cannot_destroy_already_published_concurrent_artist_master(self):
+        from unittest.mock import patch
+        published=self.root/"another-artists-approved-film.mp4"
+        approved=b"APPROVED-CINEMATIC-SOURCE-DO-NOT-DESTROY"
+        real=subprocess.run
+        def competing_artist(argv,**kwargs):
+            completed=real(argv,**kwargs)
+            if argv and argv[0]=="ffmpeg" and any(
+                  "lut3d=file=lookup.cube" in a for a in argv):
+                published.write_bytes(approved)
+            return completed
+        with patch("studio_next.body_color_pipeline.subprocess.run",
+                   side_effect=competing_artist):
+            with self.assertRaises(FileExistsError):
+                render_verified_color_job(self.planfile,self.root,
+                                          self.root/"vault",published)
+        self.assertEqual(published.read_bytes(),approved)
+        self.assertFalse(list(self.root.glob(".zx7-owned-sources-*")))
+
     def test_rec709_10bit_real_prores_mezzanine_profile(self):
         allowed=subprocess.run(["ffmpeg","-hide_banner","-encoders"],
             capture_output=True,text=True,timeout=20)
