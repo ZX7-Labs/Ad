@@ -1,0 +1,30 @@
+name: ZX7 All Tracked Source Inventory
+on:
+  push:
+    branches:
+      - zx7-body/mobile-operator-20261021
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  full-tree-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install only the open YAML parser needed for source audit
+        run: python -m pip install 'PyYAML>=6,<7'
+      - name: Parse and SHA256 every actual tracked original source
+        run: python scripts/repo_audit.py --out output/repo-audit/all-tracked-files.json
+      - name: Preserve complete source and format verification inventory
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zx7-complete-git-file-inventory
+          path: output/repo-audit/
+          retention-days: 14
