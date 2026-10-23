@@ -104,6 +104,43 @@ class OwnedOriginalOTIOContract(unittest.TestCase):
         self.assertEqual(result["plan"]["clips"],list(reversed(self.plan["clips"])))
         self.assertEqual(result["frame_count"],27)
 
+    def test_professionally_reordered_otio_becomes_real_27_frame_original_movie(self):
+        from studio_next.body_sequence_cuts import render_verified_sequence
+        from studio_next.media_vault import sha256_file
+        from studio_next.precision_retime import _source_timebase
+        self.export()
+        original_videos=[self.root/f"actual-take-{i}.mp4" for i in range(2)]
+        originals=[sha256_file(p) for p in original_videos]
+        editable=self.otio.adapters.read_from_file(str(self.timeline))
+        for track in (editable.video_tracks()[0],editable.audio_tracks()[0]):
+            before=track[0].deepcopy()
+            after=track[1].deepcopy()
+            track.clear()
+            track.append(after)
+            track.append(before)
+        edited=self.root/"director-reordered-original.otio"
+        self.otio.adapters.write_to_file(editable,str(edited))
+        actual=import_verified_sequence_otio(edited,self.root,self.root/"vault")
+        self.assertEqual(actual["frame_count"],27)
+        cut=self.root/"director-reordered-owned-cut.json"
+        cut.write_text(json.dumps(actual["plan"]),encoding="utf-8")
+        movie=self.root/"real-physical-editor-roundtrip.mp4"
+        proof=render_verified_sequence(cut,self.root,self.root/"vault",movie)
+        self.assertEqual(proof["physical_original_frames_delivered"],27)
+        self.assertEqual(_source_timebase(movie)[1],27)
+        for at,dominant,subordinate in ((.2,2,0),(.78,0,2)):
+            frame=subprocess.run(["ffmpeg","-hide_banner","-loglevel","error",
+                "-ss",str(at),"-i",str(movie),"-frames:v","1",
+                "-pix_fmt","rgb24","-f","rawvideo","pipe:1"],
+                capture_output=True,timeout=30,check=True).stdout
+            rgb=frame[(45*160+80)*3:(45*160+80)*3+3]
+            self.assertGreater(rgb[dominant],rgb[subordinate]+90)
+        full=subprocess.run(["ffmpeg","-hide_banner","-loglevel","error","-xerror",
+              "-i",str(movie),"-map","0:v:0","-map","0:a:0",
+              "-f","null","-"],capture_output=True,timeout=40)
+        self.assertEqual(full.returncode,0,full.stderr)
+        self.assertEqual([sha256_file(p) for p in original_videos],originals)
+
     def test_trims_and_synchronised_audio_must_change_together(self):
         self.export()
         timeline=self.otio.adapters.read_from_file(str(self.timeline))
