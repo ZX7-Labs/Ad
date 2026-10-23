@@ -121,6 +121,33 @@ class PhysicalBodySnapshotTests(unittest.TestCase):
             self.assertEqual(permitted["files"],1)
             self.assertTrue(permitted["sha256"])
 
+    def test_second_backup_worker_must_not_delete_rivals_uncommitted_backup(self):
+        from studio_next import body_archive
+        with tempfile.TemporaryDirectory() as place:
+            root=Path(place)
+            project=root/"owner-workspace"
+            project.mkdir()
+            (project/"director.json").write_text('{"scene":"authored"}')
+            proposed=root/"safe-backup.tar.gz"
+            stage=root/".safe-backup.tar.gz.uncommitted"
+            competing=b"OTHER-OPERATOR-PHYSICAL-SNAPSHOT"*20
+            native_open=tarfile.open
+            raced=False
+            def simultaneous_archive_open(name,mode,*args,**kwargs):
+                nonlocal raced
+                if Path(name)==stage:
+                    self.assertEqual(mode,"x:gz")
+                    stage.write_bytes(competing)
+                    raced=True
+                return native_open(name,mode,*args,**kwargs)
+            with patch.object(body_archive.tarfile,"open",
+                              side_effect=simultaneous_archive_open):
+                with self.assertRaises(FileExistsError):
+                    create_body_archive(project,proposed)
+            self.assertTrue(raced)
+            self.assertEqual(stage.read_bytes(),competing)
+            self.assertFalse(proposed.exists())
+
     def test_simultaneous_approved_archive_is_not_replaced_by_snapshot(self):
         from studio_next import body_archive
         with tempfile.TemporaryDirectory() as p:
