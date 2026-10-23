@@ -154,6 +154,8 @@ class MediaVault:
             db.execute("CREATE INDEX IF NOT EXISTS attested_digest ON attestations(digest)")
 
     def _connect(self):
+        if self.db.is_symlink():
+            raise MediaCustodyError("Original source custody DB was replaced by a link")
         db=connect_durable_database(self.db)
         db.execute("PRAGMA foreign_keys=ON")
         return db
@@ -161,7 +163,10 @@ class MediaVault:
     def _loc(self,digest):
         if not isinstance(digest,str) or not _DIGEST.fullmatch(digest):
             raise MediaCustodyError("Unsafe media content digest")
-        return self.objects/digest[:2]/digest
+        parent=self.objects/digest[:2]
+        if self.objects.is_symlink() or parent.is_symlink():
+            raise MediaCustodyError("Media address escapes original content vault by symlink")
+        return parent/digest
 
     def ingest(self,source,*,mime,rights,source_type,source_id,evidence,
                owner_or_generator):
