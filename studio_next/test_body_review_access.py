@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import os
 import shutil
 import subprocess
 import tempfile
@@ -81,6 +82,32 @@ class PhysicalReviewReadbackTests(unittest.TestCase):
             catalog.invoke("body.review_frame",{**args,"frame_index":99,
                  "out":"nonexistent.png"},allowed_access={"read","write"})
         self.assertFalse((self.root/"nonexistent.png").exists())
+
+    def test_competing_review_frame_is_never_overwritten_or_deleted(self):
+        original=self.root/"first-artist-verified.png"
+        extract_verified_review_frame(self.bundle,self.proof["sha256"],
+                                      self.root,1,original)
+        expected=sha256_file(original)
+        output=self.root/"second-director-race.png"
+        linker=os.link
+        raced=False
+        from studio_next import body_review_access
+        def first_editor_wins(stage,destination,*args,**kwargs):
+            nonlocal raced
+            if Path(destination)==output:
+                self.assertIn(".zx7-review-frame-",str(stage))
+                shutil.copyfile(original,output)
+                raced=True
+            return linker(stage,destination,*args,**kwargs)
+        with patch.object(body_review_access.os,"link",side_effect=first_editor_wins):
+            with self.assertRaises(FileExistsError):
+                extract_verified_review_frame(self.bundle,self.proof["sha256"],
+                                              self.root,2,output)
+        self.assertTrue(raced)
+        self.assertEqual(sha256_file(output),expected)
+        from studio_next.media_vault import verify_media_container
+        verify_media_container(output,"image/png")
+        self.assertFalse(list(self.root.glob(".zx7-review-frame-*")))
 
     def test_stale_review_digest_or_malicious_archive_does_not_expose_pixels(self):
         good={"bundle":self.bundle.name,"bundle_sha256":self.proof["sha256"]}
