@@ -100,6 +100,8 @@ class TrustedCreativeBodyToolTests(unittest.TestCase):
                         _commit_actual_body_output(target,successful)
             self.assertEqual(target.read_bytes(),b"physically rendered bytes"*50)
 
+    @unittest.skipUnless(importlib.util.find_spec("PIL") or shutil.which("ffmpeg"),
+                         "Requires a genuine decoded image backend")
     def test_late_directory_sync_error_preserves_already_published_original(self):
         # A backend or another editor might have accepted the final file
         # before the filesystem reported a late directory fsync failure.
