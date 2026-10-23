@@ -183,7 +183,7 @@ def validate_composition(plan,workspace,vault):
                        "start","source_in","duration","x","y","width","height","opacity"}
                       if kind=="video" else
                       {"id","source","asset_id","attestation_id","start","source_in","duration","gain_db"})
-            supported=required|({"motion","fade_in_seconds","fade_out_seconds","chroma_key","source_kind"}
+            supported=required|({"motion","fade_in_seconds","fade_out_seconds","chroma_key","source_kind","matte"}
                                 if kind=="video" else {"gain_keyframes"})
             if not required.issubset(layer) or not set(layer).issubset(supported):
                 raise ValueError("Director-specified "+kind+" layer is incomplete or uses untrusted effects")
@@ -197,6 +197,33 @@ def validate_composition(plan,workspace,vault):
             if start+duration>seconds+1/canvas["fps"]:
                 raise ValueError("Layer exceeds editor-authored total duration")
             file=_exact_media(layer,vault,root,need=kind)
+            matte_file=None
+            if kind=="video" and "matte" in layer:
+                matte=layer["matte"]
+                if (not isinstance(matte,dict) or set(matte)!={
+                        "source","asset_id","attestation_id","source_kind",
+                        "source_in","invert"} or type(matte["invert"]) is not bool):
+                    raise ValueError("Author-painted source matte needs exact rights and technical scope")
+                if matte["source_kind"] not in ("still_image","video"):
+                    raise ValueError("Uninstalled creative roto matte source kind")
+                mask_time=_positive(matte["source_in"],"physical matte start",allow_zero=True)
+                matte_file=_exact_media(matte,vault,root,need="original matte")
+                matte_mime=vault.inspect(matte["asset_id"],
+                    attestation_id=matte["attestation_id"])["mime"]
+                if matte["source_kind"]=="still_image":
+                    if matte_mime not in ("image/png","image/jpeg","image/webp"):
+                        raise ValueError("Only decoded attested matte pictures accepted")
+                    if mask_time!=0:
+                        raise ValueError("A frozen 2D matte has no video trim clock")
+                else:
+                    if matte_mime not in ("video/mp4","video/quicktime","video/webm"):
+                        raise ValueError("A moving roto matte requires actual licensed video")
+                    mask_clock=(matte_file,"video")
+                    if mask_clock not in real_source_lengths:
+                        real_source_lengths[mask_clock]=_decoded_source_duration(
+                            matte_file,"video")
+                    if mask_time+duration>real_source_lengths[mask_clock]+0.015:
+                        raise ValueError("Roto matte exceeds actual decoded source video duration")
             still=kind=="video" and layer.get("source_kind")=="still_image"
             if kind=="video" and layer.get("source_kind","video") not in ("video","still_image"):
                 raise ValueError("Unknown source media kind; cannot invent a renderer")
@@ -278,6 +305,7 @@ def validate_composition(plan,workspace,vault):
                         raise ValueError("Audio envelope contains out-of-range or unordered points")
                     previous=at
             inputs.append({"kind":kind,"layer":layer,"file":file,
+                           "matte_file":matte_file,
                            "start":start,"source_in":source_in,"duration":duration})
     return inputs
 
@@ -290,14 +318,25 @@ def actual_composite_command(plan,workspace,vault,out):
     base="bg"
     args=["ffmpeg","-hide_banner","-loglevel","error","-nostdin","-y"]
     music=[]
+    native_input_index=0
     for index,row in enumerate(inputs):
         layer=row["layer"]
+        source_index=native_input_index
         if row["kind"]=="video" and layer.get("source_kind")=="still_image":
             args.extend(["-loop","1","-framerate",str(fps)])
         args.extend(["-i",str(row["file"])])
+        native_input_index+=1
+        matte_index=None
+        if row["matte_file"] is not None:
+            matte_index=native_input_index
+            matte=layer["matte"]
+            if matte["source_kind"]=="still_image":
+                args.extend(["-loop","1","-framerate",str(fps)])
+            args.extend(["-i",str(row["matte_file"])])
+            native_input_index+=1
         start=row["start"];source_in=row["source_in"];duration=row["duration"]
         if row["kind"]=="video":
-            visual=(f"[{index}:v:0]trim=start={source_in}:duration={duration},"
+            visual=(f"[{source_index}:v:0]trim=start={source_in}:duration={duration},"
                 f"setpts=PTS-STARTPTS,scale={layer['width']}:{layer['height']}:flags=lanczos,"
                 f"fps={fps},format=rgba")
             if "chroma_key" in layer:
@@ -312,7 +351,28 @@ def actual_composite_command(plan,workspace,vault,out):
                 outgoing_start=duration-float(layer["fade_out_seconds"])
                 visual+=(f",fade=t=out:st={outgoing_start}:"
                          f"d={layer['fade_out_seconds']}:alpha=1")
-            filters.append(visual+f",setpts=PTS+{start}/TB[v{index}]")
+            if matte_index is not None:
+                # A rights-checked luma matte multiplies, rather than
+                # replaces, the original RGBA/chroma-key/fade alpha. Thus a
+                # transparent logo never becomes opaque through its mask.
+                matte=layer["matte"]
+                filters.append(visual+f"[original{index}]")
+                mask=(f"[{matte_index}:v:0]trim=start={matte['source_in']}:"
+                      f"duration={duration},setpts=PTS-STARTPTS,"
+                      f"scale={layer['width']}:{layer['height']}:flags=bilinear,"
+                      f"fps={fps},format=gray")
+                if matte["invert"]:
+                    mask+=",negate"
+                filters.append(mask+f"[mask{index}]")
+                filters.extend([
+                    f"[original{index}]split[pixels{index}][withalpha{index}]",
+                    f"[withalpha{index}]alphaextract[alpha{index}]",
+                    f"[alpha{index}][mask{index}]blend=all_mode=multiply[maskedalpha{index}]",
+                    f"[pixels{index}][maskedalpha{index}]alphamerge[masked{index}]"
+                ])
+                filters.append(f"[masked{index}]setpts=PTS+{start}/TB[v{index}]")
+            else:
+                filters.append(visual+f",setpts=PTS+{start}/TB[v{index}]")
             output=f"stack{index}"
             posx=_motion_expression(layer,"x")
             posy=_motion_expression(layer,"y")
@@ -328,7 +388,7 @@ def actual_composite_command(plan,workspace,vault,out):
             base=output
         else:
             lag=round(start*1000)
-            effects=(f"[{index}:a:0]atrim=start={source_in}:duration={duration},"
+            effects=(f"[{source_index}:a:0]atrim=start={source_in}:duration={duration},"
                 "asetpts=PTS-STARTPTS,aresample=48000,"
                 f"aformat=channel_layouts=stereo,volume={layer['gain_db']}dB")
             envelope=_gain_automation_expression(layer)
@@ -420,6 +480,15 @@ def _freeze_composition_sources(plan,root,vault,private):
             frozen=sealed_attested_original(
                 vault,identity,attestation,private,sealed)
             layer["source"]=str(frozen.relative_to(root))
+            if kind=="video" and "matte" in layer:
+                original_matte=original_layer["matte"]
+                original_mask=_exact_media(original_matte,vault,root,
+                                           need="original matte")
+                preserved[str(original_mask)]=original_matte["asset_id"]
+                pinned_mask=sealed_attested_original(
+                    vault,original_matte["asset_id"],
+                    original_matte["attestation_id"],private,sealed)
+                layer["matte"]["source"]=str(pinned_mask.relative_to(root))
     validate_composition(clone,root,vault)
     return clone,preserved,sealed
 
@@ -472,6 +541,10 @@ def render_composition(plan_json,workspace,vault_root,out,*,runner=None,probe=No
                 for layer in plan[kind]:
                     vault.inspect(layer["asset_id"],
                                   attestation_id=layer["attestation_id"])
+                    if kind=="video" and "matte" in layer:
+                        matte=layer["matte"]
+                        vault.inspect(matte["asset_id"],
+                                      attestation_id=matte["attestation_id"])
             # Hardlink rejects any concurrent creator's approved result; an
             # os.replace() could silently overwrite an already accepted movie.
             with temporary.open("rb") as movie:

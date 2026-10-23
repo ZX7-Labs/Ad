@@ -194,6 +194,77 @@ class LayeredProductionCompositingTests(unittest.TestCase):
             self.assertGreater(max(raw),60)
             self.assertTrue((Path(root)/"real-still-editor.mp4").is_file())
 
+    def test_actual_owned_roto_matte_multiplies_original_transparency(self):
+        try:
+            from PIL import Image
+        except ImportError:
+            self.skipTest("Native decoded RGBA artwork required")
+        with tempfile.TemporaryDirectory() as home:
+            root=Path(home)
+            plan,file,vault=self.fixture(root)
+            original=root/"human-authored-transparent.png"
+            graphic=Image.new("RGBA",(64,64),(255,0,0,255))
+            for y in range(16):
+                for x in range(64):
+                    graphic.putpixel((x,y),(255,0,0,0))
+            graphic.save(original)
+            mask_path=root/"owner-painted-matte.png"
+            matte_png=Image.new("L",(64,64),0)
+            for y in range(64):
+                for x in range(32):
+                    matte_png.putpixel((x,y),255)
+            matte_png.save(mask_path)
+            front=vault.ingest(original,mime="image/png",rights="owner_supplied",
+                source_type="owner_upload",source_id="original-transparent-png",
+                evidence="Direct source owner authored visible red artwork",
+                owner_or_generator="creator")
+            matte=vault.ingest(mask_path,mime="image/png",rights="owner_supplied",
+                source_type="owner_upload",source_id="human-roto-original",
+                evidence="Source owner painted pixel-exact original alpha mask",
+                owner_or_generator="creator")
+            mask={"source":mask_path.name,"asset_id":matte["asset_id"],
+                  "attestation_id":matte["attestation_id"],
+                  "source_kind":"still_image","source_in":0,"invert":False}
+            plan["canvas"]={"width":64,"height":64,"fps":12,"duration":1,
+                             "background":"#0000FF"}
+            plan["video_layers"]=[{
+                "id":"owner-visible-matte","source":original.name,
+                "asset_id":front["asset_id"],"attestation_id":front["attestation_id"],
+                "source_kind":"still_image","start":0,"source_in":0,
+                "duration":1,"x":0,"y":0,"width":64,"height":64,
+                "opacity":1,"matte":mask}]
+            plan["audio_tracks"]=[]
+            source_before=(original.read_bytes(),mask_path.read_bytes())
+            cmd=actual_composite_command(plan,root,vault,root/"rights-matte.mp4")
+            self.assertIn("blend=all_mode=multiply",cmd[cmd.index("-filter_complex")+1])
+            file.write_text(json.dumps(plan))
+            output=root/"real-original-layer-mask.mp4"
+            rendered=render_composition(file,root,root/"vault",output)
+            self.assertTrue(rendered["verified_physically"])
+            pixels=subprocess.check_output([
+                "ffmpeg","-hide_banner","-loglevel","error","-nostdin",
+                "-i",str(output),"-frames:v","1","-f","rawvideo",
+                "-pix_fmt","rgb24","-"],timeout=45)
+            def pixel(x,y):
+                i=(y*64+x)*3
+                return tuple(pixels[i:i+3])
+            upper_left=pixel(10,10)
+            lower_left=pixel(10,25)
+            lower_right=pixel(50,25)
+            self.assertGreater(upper_left[2],180)  # original transparent stays transparent
+            self.assertGreater(lower_left[0],180)  # painted matte keeps original red
+            self.assertGreater(lower_right[2],180) # black matte reveals blue background
+            self.assertEqual(source_before,(original.read_bytes(),mask_path.read_bytes()))
+            self.assertFalse(list(root.glob(".zx7-owned-sources-*")))
+            tampered=json.loads(file.read_text())
+            tampered["video_layers"][0]["matte"]["asset_id"]="0"*64
+            with self.assertRaises(Exception):
+                actual_composite_command(tampered,root,vault,root/"rejected.mp4")
+            not_video=json.loads(file.read_text())
+            not_video["video_layers"][0]["matte"]["source_in"]=.25
+            with self.assertRaisesRegex(ValueError,"no video trim clock"):
+                actual_composite_command(not_video,root,vault,root/"rejected.mp4")
+
     def test_real_layer_source_duration_boundaries_before_render(self):
         with tempfile.TemporaryDirectory() as root:
             plan,_,vault=self.fixture(root)
