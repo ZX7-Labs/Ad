@@ -201,10 +201,14 @@ def render_actual_generated_scene(job,scene_folder,*,deployment_root="models/cre
             raise RuntimeError(
                 "Generated video lacks independently decodable picture duration")
         from .production_qc import full_decode_inspection
-        report=full_decode_inspection(stage_path,expected={
-            "width":job["width"],"height":job["height"],
-            "duration_seconds":job["frames"]/job["fps"],
-            "require_audio":False})
+        try:
+            report=full_decode_inspection(stage_path,expected={
+                "width":job["width"],"height":job["height"],
+                "duration_seconds":job["frames"]/job["fps"],
+                "require_audio":False})
+        except (OSError,ValueError,subprocess.SubprocessError) as exc:
+            raise ValueError(
+                "Returned model video failed independently decoded physical film verification") from exc
         if (not report["technical_delivery_verified"] or
                 not report["full_picture_and_sound_decoder_completed"]):
             raise ValueError("Local GPU source failed complete actual picture/audio decode and declared film geometry")
