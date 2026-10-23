@@ -133,6 +133,12 @@ def verify_media_container(path,mime):
             raise MediaCustodyError("Claimed audio does not contain a decodable stream") from exc
         if not any(x.get("codec_type")=="audio" for x in data.get("streams",[])):
             raise MediaCustodyError("No original decoded source sound")
+        decoded=subprocess.run([
+            "ffmpeg","-hide_banner","-loglevel","error","-nostdin",
+            "-xerror","-i",str(path),"-map","0:a:0",
+            "-f","null","-"],capture_output=True,timeout=3600,check=False)
+        if decoded.returncode!=0:
+            raise MediaCustodyError("Original compressed sound failed full decoder")
     elif mime.startswith("image/"):
         try:
             from PIL import Image
