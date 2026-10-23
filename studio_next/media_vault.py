@@ -137,6 +137,8 @@ class MediaVault:
         self.root=Path(root).resolve()
         self.objects=self.root/"objects"
         self.db=self.root/"assets.sqlite3"
+        if self.objects.is_symlink() or self.db.is_symlink():
+            raise MediaCustodyError("Source vault cannot use an external linked object or database")
         self.objects.mkdir(parents=True,exist_ok=True)
         with self._connect() as db:
             db.execute("""CREATE TABLE IF NOT EXISTS blobs(
