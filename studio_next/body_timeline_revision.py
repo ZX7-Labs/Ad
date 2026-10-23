@@ -172,6 +172,40 @@ def render_editorial_revision(plan_file, operation_file, workspace, vault_root, 
     after = plan_verified_sequence(revised,root,vault_root)
     revision_bytes = _canonical(revised)
     revision_sha = hashlib.sha256(revision_bytes).hexdigest()
+
+    # Store the reproducible EDIT DECISION before publishing the film. This
+    # content-addressed plan does not claim that rendering has succeeded.
+    directory = root/".zx7-timeline-revisions"
+    if directory.is_symlink():
+        raise ValueError("Linked revision storage is not trusted")
+    directory.mkdir(parents=True,exist_ok=True)
+    revision = directory/(revision_sha+".json")
+    if revision.exists():
+        if revision.is_symlink() or revision.read_bytes() != revision_bytes:
+            raise ValueError("Existing immutable timeline revision was modified")
+    else:
+        try:
+            fd = os.open(revision,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
+        except FileExistsError:
+            if revision.is_symlink() or revision.read_bytes() != revision_bytes:
+                raise ValueError("Conflicting simultaneous director revision")
+        else:
+            with os.fdopen(fd,"wb") as handle:
+                handle.write(revision_bytes)
+                handle.flush()
+                os.fsync(handle.fileno())
+
+    def verify_editor_decision_before_publication():
+        # Called immediately before the low-level verified renderer's
+        # exclusive os.link publication, AFTER full picture/audio decode.
+        if sha256_file(original) != old_hash or sha256_file(instruction) != command_hash:
+            raise ValueError("Director plan or editorial decisions changed during render")
+        if any(sha256_file(path)!=digest for path,digest in physical["originals"].items()):
+            raise ValueError("Original media bytes changed while revising")
+        if (directory.is_symlink() or revision.is_symlink() or
+                not revision.is_file() or revision.read_bytes()!=revision_bytes):
+            raise ValueError("Immutable timeline revision changed before film publication")
+
     transient = None
     try:
         with tempfile.NamedTemporaryFile("wb", dir=root, prefix=".zx7-nle-",
@@ -180,41 +214,18 @@ def render_editorial_revision(plan_file, operation_file, workspace, vault_root, 
             handle.write(revision_bytes)
             handle.flush()
             os.fsync(handle.fileno())
-        result = render_verified_sequence(transient,root,vault_root,movie)
-        if sha256_file(original) != old_hash or sha256_file(instruction) != command_hash:
-            raise ValueError("Director plan or editorial decisions changed during render")
-        if any(sha256_file(path)!=digest for path,digest in physical["originals"].items()):
-            raise ValueError("Original media bytes changed while revising")
-        directory = root/".zx7-timeline-revisions"
-        if directory.is_symlink():
-            raise ValueError("Linked revision storage is not trusted")
-        directory.mkdir(parents=True,exist_ok=True)
-        revision = directory/(revision_sha+".json")
-        if revision.exists():
-            if revision.is_symlink() or revision.read_bytes() != revision_bytes:
-                raise ValueError("Existing immutable timeline revision was modified")
-        else:
-            try:
-                fd = os.open(revision,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
-            except FileExistsError:
-                if revision.is_symlink() or revision.read_bytes()!=revision_bytes:
-                    raise ValueError("Conflicting simultaneous director revision")
-            else:
-                with os.fdopen(fd,"wb") as handle:
-                    handle.write(revision_bytes)
-                    handle.flush()
-                    os.fsync(handle.fileno())
-        if revision.read_bytes()!=revision_bytes:
-            raise ValueError("Director revision archive differs from encoded frames")
+        verify_editor_decision_before_publication()
+        result = render_verified_sequence(
+            transient,root,vault_root,movie,
+            pre_publish_guard=verify_editor_decision_before_publication)
         return {**result,"revision_plan":str(revision.relative_to(root)),
                 "revision_plan_sha256":revision_sha,
                 "prior_plan_sha256":old_hash,
                 "director_operation_sha256":command_hash,
                 "operations":steps,
                 "reversible_original_media":True}
-    except BaseException:
-        movie.unlink(missing_ok=True)
-        raise
     finally:
+        # Only clean our private temp source: never remove another producer's
+        # approved movie if we lose an atomic destination publication race.
         if transient is not None:
             transient.unlink(missing_ok=True)

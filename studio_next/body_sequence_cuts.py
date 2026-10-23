@@ -133,7 +133,7 @@ def verified_sequence_command(evaluated,output):
     return cmd
 
 
-def render_verified_sequence(plan_file,workspace,vault_root,output):
+def render_verified_sequence(plan_file,workspace,vault_root,output,*,pre_publish_guard=None):
     """Write a new real video from exact original picture/sound CAS, never mutable checkout.
 
     The exact director edit, all signed custody, normalized frame clock,
@@ -141,6 +141,8 @@ def render_verified_sequence(plan_file,workspace,vault_root,output):
     required before an accepted result. Any exception removes private bytes,
     never someone else's already approved output.
     """
+    if pre_publish_guard is not None and not callable(pre_publish_guard):
+        raise TypeError("Only a trusted final publication guard is accepted")
     root=Path(workspace).resolve()
     document=Path(plan_file).resolve()
     destination=Path(output).resolve()
@@ -200,6 +202,10 @@ def render_verified_sequence(plan_file,workspace,vault_root,output):
             raise ValueError("Director's exact timeline changed during physical frame cut")
         with encoded.open("rb") as ready:
             os.fsync(ready.fileno())
+        # Trusted higher-level editors may recheck immutable plans and author
+        # decisions AFTER full decode, immediately before exclusive publication.
+        if pre_publish_guard is not None:
+            pre_publish_guard()
         # Hard-link is a same-filesystem exclusive publication: refuse
         # another producer's finished film instead of silently replacing it.
         os.link(encoded,destination)

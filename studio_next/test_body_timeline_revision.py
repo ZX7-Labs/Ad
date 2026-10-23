@@ -177,21 +177,79 @@ class OwnedFilmRevisionProof(unittest.TestCase):
 
     def test_changed_original_editor_instructions_during_real_render_refused(self):
         from unittest.mock import patch
-        real_render=render_editorial_revision.__globals__["render_verified_sequence"]
+        real_run=subprocess.run
         mutated=False
-        def tamper(*args,**kwargs):
+        def tamper_during_encoder(command,*args,**kwargs):
             nonlocal mutated
-            result=real_render(*args,**kwargs)
-            self.operationfile.write_text('{"operations":[{"kind":"slip","clip":0,"delta":1}]}')
-            mutated=True
-            return result
-        with patch("studio_next.body_timeline_revision.render_verified_sequence",
-                   side_effect=tamper):
+            outcome=real_run(command,*args,**kwargs)
+            if (not mutated and isinstance(command,list) and
+                    command[0]=="ffmpeg" and outcome.returncode==0 and
+                    any(str(x).endswith("native-original-edited.mp4")
+                        for x in command)):
+                # Modify authored plan after actual codec completed, before
+                # the trusted native film publisher checks final custody.
+                self.operationfile.write_text(
+                    '{"operations":[{"kind":"slip","clip":0,"delta":1}]}')
+                mutated=True
+            return outcome
+        with patch("studio_next.body_sequence_cuts.subprocess.run",
+                   side_effect=tamper_during_encoder):
             with self.assertRaisesRegex(ValueError,"changed during render"):
                 render_editorial_revision(self.planfile,self.operationfile,self.root,
                     self.root/"vault",self.root/"must-never-publish.mp4")
         self.assertTrue(mutated)
         self.assertFalse((self.root/"must-never-publish.mp4").exists())
+
+    def test_rival_master_survives_actual_codec_publication_collision(self):
+        from unittest.mock import patch
+        import os
+        accepted=self.root/"rival-won.mp4"
+        competitor=self.root/"source1.mp4"
+        competitor_sha=sha256_file(competitor)
+        real_link=os.link
+        collided=False
+        def another_editor_publishes_first(source,destination,*args,**kwargs):
+            nonlocal collided
+            if Path(destination)==accepted:
+                shutil.copyfile(competitor,accepted)
+                collided=True
+            return real_link(source,destination,*args,**kwargs)
+        with patch("studio_next.body_sequence_cuts.os.link",
+                   side_effect=another_editor_publishes_first):
+            with self.assertRaises(FileExistsError):
+                render_editorial_revision(self.planfile,self.operationfile,self.root,
+                                           self.root/"vault",accepted)
+        self.assertTrue(collided)
+        self.assertEqual(sha256_file(accepted),competitor_sha)
+        probe=subprocess.run(["ffmpeg","-hide_banner","-loglevel","error",
+                              "-xerror","-i",str(accepted),"-map","0:v:0",
+                              "-map","0:a:0","-f","null","-"],
+                             capture_output=True,timeout=45)
+        self.assertEqual(probe.returncode,0,probe.stderr)
+
+    def test_immutable_revision_tamper_before_last_publish_refused(self):
+        from unittest.mock import patch
+        real_run=subprocess.run
+        changed=False
+        def corrupt_revision_after_codec(command,*args,**kwargs):
+            nonlocal changed
+            outcome=real_run(command,*args,**kwargs)
+            if (not changed and isinstance(command,list) and
+                    command[0]=="ffmpeg" and outcome.returncode==0 and
+                    any(str(x).endswith("native-original-edited.mp4")
+                        for x in command)):
+                archives=list((self.root/".zx7-timeline-revisions").glob("*.json"))
+                self.assertEqual(len(archives),1)
+                archives[0].write_text('{"unauthorized":"change"}')
+                changed=True
+            return outcome
+        with patch("studio_next.body_sequence_cuts.subprocess.run",
+                   side_effect=corrupt_revision_after_codec):
+            with self.assertRaisesRegex(ValueError,"revision changed before film publication"):
+                render_editorial_revision(self.planfile,self.operationfile,self.root,
+                                           self.root/"vault",self.root/"no-bad-master.mp4")
+        self.assertTrue(changed)
+        self.assertFalse((self.root/"no-bad-master.mp4").exists())
 
     def test_existing_revision_is_immutable_even_if_actor_changes_hidden_json(self):
         result=render_editorial_revision(self.planfile,self.operationfile,self.root,
