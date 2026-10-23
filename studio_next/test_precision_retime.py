@@ -114,6 +114,34 @@ class PhysicalRetimeTests(unittest.TestCase):
             "-i",str(self.root/"newly-edited.mp4"),"-map","0:v:0",
             "-map","0:a:0","-f","null","-"],check=True,timeout=60)
 
+    def test_actual_motion_compensated_slow_motion_uses_native_flow_and_real_sound(self):
+        installed=subprocess.run(["ffmpeg","-hide_banner","-filters"],
+            capture_output=True,text=True,timeout=15,check=True)
+        if not any(line.split()[1:2]==["minterpolate"]
+                   for line in installed.stdout.splitlines()):
+            self.skipTest("No actual FFmpeg minterpolate host capability")
+        self.plan["interpolation"]="motion_compensated"
+        self.save()
+        checked=plan_retime(self.plan,self.root,self.root/"vault")
+        self.assertEqual(checked["interpolation"],"motion_compensated")
+        graph=retime_command(checked,self.root/"native-flow.mp4")
+        self.assertIn("minterpolate=fps=24/1:mi_mode=mci",
+                      graph[graph.index("-filter_complex")+1])
+        destination=self.root/"owner-motion-interpolation.mp4"
+        native=render_retime(self.plan_file,self.root,self.root/"vault",destination)
+        self.assertTrue(native["verified_physically"])
+        self.assertTrue(native["native_motion_compensated_interpolation_physically_proven"])
+        self.assertAlmostEqual(native["duration_seconds"],2.5,delta=.14)
+        movie=_probe_details(destination)
+        self.assertEqual((movie["width"],movie["height"]),(160,90))
+        self.assertTrue(movie["audio_stream_present"])
+        self.assertFalse(native["optical_flow_is_not_independent_artistic_approval"] is False)
+        for forged in (None,True,"unverified_ai","frame_interpolation_gpu",42):
+            self.plan["interpolation"]=forged
+            with self.subTest(value=forged):
+                with self.assertRaisesRegex(ValueError,"frame-repeat or optical-flow"):
+                    plan_retime(self.plan,self.root,self.root/"vault")
+
     def test_body_registry_exposes_real_registered_operation_and_source_material(self):
         tools={x["id"]:x for x in body_catalog(self.root).discover()}
         self.assertEqual(tools["body.retime"]["status"],"installed")

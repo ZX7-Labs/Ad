@@ -123,9 +123,23 @@ def _source_timebase(path):
 
 
 def plan_retime(plan,root,vault_root,*,probe=None):
-    if not isinstance(plan,dict) or set(plan)!={"source","asset_id","attestation_id",
-                                                "source_fps","segments","audio"}:
+    required={"source","asset_id","attestation_id",
+              "source_fps","segments","audio"}
+    if (not isinstance(plan,dict) or not required.issubset(plan)
+            or set(plan)-required-{"interpolation"}):
         raise ValueError("Retime needs explicit owned source, exact frame rate, segments and audio")
+    interpolation=plan.get("interpolation","frame_repeat")
+    if interpolation not in ("frame_repeat","motion_compensated") or type(interpolation) is not str:
+        raise ValueError("Only a typed original frame-repeat or optical-flow retime is allowed")
+    if interpolation=="motion_compensated":
+        try:
+            filters=subprocess.run(["ffmpeg","-hide_banner","-filters"],
+                capture_output=True,text=True,timeout=20,check=True)
+        except (OSError,subprocess.SubprocessError) as exc:
+            raise ValueError("Native host lacks a measurable optical-flow renderer") from exc
+        if not any(line.split()[1:2]==["minterpolate"]
+                   for line in filters.stdout.splitlines()):
+            raise ValueError("Local FFmpeg has no installed motion-compensated interpolator")
     if not isinstance(plan["asset_id"],str) or not isinstance(plan["attestation_id"],str):
         raise ValueError("Retime requires immutable media custody identity")
     vault=MediaVault(vault_root)
@@ -200,6 +214,7 @@ def plan_retime(plan,root,vault_root,*,probe=None):
                    for item in allparts):
                 raise ValueError("Time warp exceeds actual original recorded-audio stream")
     return {"source":source,"fps":fps,"audio":audio,"parts":allparts,
+            "interpolation":interpolation,
             "expected_seconds":float(expected),"source_fps":rate,
             "width":meta["width"],"height":meta["height"]}
 
@@ -214,9 +229,17 @@ def retime_command(validated,output):
     for i,seg in enumerate(parts):
         speed=seg["speed"];factor=f"{speed.denominator}/{speed.numerator}"
         # trim by *decoded frame indices*, not packet timestamps.
+        interpolator=(
+            f"minterpolate=fps={fq}:mi_mode=mci:mc_mode=obmc:me_mode=bidir"
+            if p.get("interpolation","frame_repeat")=="motion_compensated"
+            else f"fps={fq}")
+        # Motion-compensated interpolation is a REAL installed CPU filter.
+        # The owner still selects every shot and exact rational speed;
+        # optical flow is not a claim of artist-approved restoration.
         expressions.append(
             f"[0:v]trim=start_frame={seg['first']}:end_frame={seg['end']},"
-            f"setpts=(PTS-STARTPTS)*({factor}),fps={fq},format=yuv420p[v{i}]")
+            f"setpts=(PTS-STARTPTS)*({factor}),{interpolator},"
+            f"format=yuv420p[v{i}]")
         if with_sound:
             start=float(Fraction(seg["first"],1)/fps)
             end=float(Fraction(seg["end"],1)/fps)
@@ -306,6 +329,11 @@ def render_retime(plan_path,workspace,vault_root,output,*,runner=None,probe=None
             "audio_present":True,
             "intended_duration_seconds":checked["expected_seconds"],
             "retime_operations":len(checked["parts"]),
+            "native_motion_compensated_interpolation_requested":
+                checked["interpolation"]=="motion_compensated",
+            "native_motion_compensated_interpolation_physically_proven":
+                checked["interpolation"]=="motion_compensated" and verified,
+            "optical_flow_is_not_independent_artistic_approval":True,
             "no_creative_defaults":True,
             "sealed_original_cas_during_decode":True,
             "full_picture_and_sound_decoder_completed":verified,
