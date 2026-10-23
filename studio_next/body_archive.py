@@ -26,6 +26,12 @@ from .body_portability import prepare_relocated_workspace
 
 _MANIFEST="__zx7_body_snapshot_manifest__.json"
 _MAGIC="ZX7-BODY-REAL-MEDIA-V1"
+# Private staging directories never become supposedly approved project media.
+_PRIVATE_RENDER_PREFIXES=(
+    ".zx7-owned-sources-",
+    ".zx7-media-review-",
+    ".zx7-original-exr-render-",
+)
 
 
 def _name(path):
@@ -34,7 +40,7 @@ def _name(path):
         raise ValueError("Untrusted archive path cannot leave film workspace")
     if path==_MANIFEST:
         raise ValueError("Original media cannot shadow production manifest")
-    if any(component.startswith(".zx7-owned-sources-")
+    if any(component.startswith(_PRIVATE_RENDER_PREFIXES)
            for component in path.split("/")):
         raise ValueError("Transient sealed cinema sources cannot become project backups")
     return path
@@ -69,7 +75,7 @@ def create_body_archive(workspace,archive):
         copies={}
         sources=[]
         for path in sorted(root.rglob("*")):
-            if any(piece.startswith(".zx7-owned-sources-")
+            if any(piece.startswith(_PRIVATE_RENDER_PREFIXES)
                    for piece in path.relative_to(root).parts):
                 raise ValueError("Cannot archive private in-flight original media snapshots")
             if path.is_symlink():

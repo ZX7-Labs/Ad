@@ -95,6 +95,27 @@ class PhysicalBodySnapshotTests(unittest.TestCase):
                     expected_sha256=hashlib.sha256(raw.read_bytes()).hexdigest())
             self.assertFalse(source.exists())
 
+    def test_live_review_and_exr_render_staging_cannot_leak_into_backup(self):
+        import shutil
+        with tempfile.TemporaryDirectory() as sandbox:
+            root=Path(sandbox)
+            project=root/"original-cinema"
+            project.mkdir()
+            (project/"source.json").write_text('{"real":"director"}')
+            for prefix in (".zx7-media-review-", ".zx7-original-exr-render-"):
+                with self.subTest(prefix=prefix):
+                    private=project/(prefix+"frozen-work")
+                    private.mkdir()
+                    (private/"actual-unapproved-media.bin").write_bytes(b"temporary material")
+                    target=root/"backup.tar.gz"
+                    with self.assertRaisesRegex(ValueError,"in-flight original media"):
+                        create_body_archive(project,target)
+                    self.assertFalse(target.exists())
+                    shutil.rmtree(private)
+            permitted=create_body_archive(project,root/"backup.tar.gz")
+            self.assertEqual(permitted["files"],1)
+            self.assertTrue(permitted["sha256"])
+
     def test_reject_nonempty_destination_and_archive_inside_workspace(self):
         with tempfile.TemporaryDirectory() as root:
             p=Path(root)
