@@ -151,6 +151,37 @@ class ActualResumableCyclesOriginalFrames(unittest.TestCase):
         with self.assertRaises(ValueError):
             render_resumable_exr_passes(self.source,self.root,self.output)
 
+    def test_actual_blender_decodes_private_unchanged_scene_during_working_source_swap(self):
+        original=self.source.read_bytes()
+        before=sha256_file(self.source)
+        altered=json.loads(original)
+        altered["world"]["strength"]=altered["world"]["strength"]*1.5
+        hostile=json.dumps(altered).encode("utf-8")
+        observed=[]
+        def swapped_working_scene(command,**options):
+            selected=Path(command[command.index("--scene")+1])
+            self.assertNotEqual(selected.resolve(),self.source.resolve())
+            self.assertIn(".zx7-scene-seal-",str(selected))
+            self.assertEqual(sha256_file(selected),before)
+            self.assertFalse(selected.stat().st_mode & 0o222)
+            observed.append(selected)
+            self.source.write_bytes(hostile)
+            try:
+                return subprocess.run(command,**options)
+            finally:
+                self.source.write_bytes(original)
+        completed=render_resumable_exr_passes(
+            self.source,self.root,self.output,
+            chunk_frames=2,runner=swapped_working_scene)
+        self.assertEqual(completed["newly_rendered_frame_count"],3)
+        self.assertEqual(completed["verified_frame_reuse_count"],0)
+        self.assertEqual(sha256_file(self.source),before)
+        self.assertEqual(verify_exr_bundle(self.output)["original_frame_count"],3)
+        self.assertEqual(len(observed),2)
+        self.assertTrue(all(not file.exists() for file in observed))
+        self.assertFalse(list((self.root/".zx7-frame-checkpoints").rglob(
+            ".zx7-scene-seal-*")))
+
     def test_corrupted_reused_vfx_frame_is_recomputed_not_falsely_accepted(self):
         self._fail_after_first_real_frame()
         frame=self._checkout()/"frames/frame_0001.exr"

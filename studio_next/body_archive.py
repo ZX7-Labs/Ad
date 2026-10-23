@@ -31,6 +31,7 @@ _PRIVATE_RENDER_PREFIXES=(
     ".zx7-owned-sources-",
     ".zx7-media-review-",
     ".zx7-original-exr-render-",
+    ".zx7-scene-seal-",
 )
 
 

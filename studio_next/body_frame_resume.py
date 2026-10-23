@@ -151,10 +151,27 @@ def render_resumable_exr_passes(scene_file,workspace,output,*,chunk_frames=1,
         raise ValueError("Untrusted VFX execution lock")
     flags=os.O_CREAT|os.O_RDWR|getattr(os,"O_CLOEXEC",0)|getattr(os,"O_NOFOLLOW",0)
     fd=os.open(lock_path,flags,0o600)
+    private_scene_dir=None
     try:
         try:fcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
         except BlockingIOError as exc:
             raise RuntimeError("Original VFX frames are already rendering in another worker") from exc
+
+        # Native Blender must never parse a mutable artist-working JSON file.
+        # Pin a private, read-only byte-exact original scene as a single native
+        # transaction input, even if a hostile worker temporarily swaps the
+        # visible scene and restores it before the final source hash check.
+        private_scene_dir=Path(tempfile.mkdtemp(
+            prefix=".zx7-scene-seal-",dir=checkout))
+        private_scene=private_scene_dir/"original-director-scene.json"
+        with source.open("rb") as original,private_scene.open("xb") as frozen:
+            shutil.copyfileobj(original,frozen,1024*1024)
+            frozen.flush()
+            os.fsync(frozen.fileno())
+        if (sha256_file(private_scene)!=start_source_hash or
+                sha256_file(source)!=start_source_hash):
+            raise ValueError("Artist scene changed before immutable Blender source sealing")
+        os.chmod(private_scene,0o400)
         state_path=checkout/"checkpoint.json"
         if state_path.is_symlink():
             raise ValueError("Untrusted checkpoint receipt link")
@@ -197,13 +214,15 @@ def render_resumable_exr_passes(scene_file,workspace,output,*,chunk_frames=1,
                 command=[executable,"--background","--factory-startup",
                          "--python-exit-code","1","--python",
                          str(Path(__file__).parent/"blender_scene.py"),"--",
-                         "--scene",str(source),"--out",scratch,
+                         "--scene",str(private_scene),"--out",scratch,
                          "--exr-passes","--frame-start",str(group[0]),
                          "--frame-end",str(group[-1])]
                 result=(runner or subprocess.run)(
                     command,check=True,timeout=7200,capture_output=True,text=True)
                 if getattr(result,"returncode",0) not in (0,None):
                     raise RuntimeError("Original frame renderer did not complete")
+                if sha256_file(private_scene)!=start_source_hash:
+                    raise ValueError("Original sealed native 3D scene changed during Blender render")
                 for index in group:
                     name=_original_frame(index)
                     made=Path(scratch)/name
@@ -221,7 +240,8 @@ def render_resumable_exr_passes(scene_file,workspace,output,*,chunk_frames=1,
                     _store_state(state_path,state)
                     rendered.append(index)
 
-        if sha256_file(source)!=start_source_hash or (
+        if (sha256_file(private_scene)!=start_source_hash or
+                sha256_file(source)!=start_source_hash or
                 _job_signature(source,executable)!=signature):
             raise ValueError("Artist scene or actual Blender version changed during live render")
 
@@ -287,5 +307,9 @@ def render_resumable_exr_passes(scene_file,workspace,output,*,chunk_frames=1,
                 "distributed_worker_execution_proven":False,
                 "human_artist_quality_approved":False}
     finally:
-        fcntl.flock(fd,fcntl.LOCK_UN)
-        os.close(fd)
+        try:
+            if private_scene_dir is not None:
+                shutil.rmtree(private_scene_dir)
+        finally:
+            fcntl.flock(fd,fcntl.LOCK_UN)
+            os.close(fd)
