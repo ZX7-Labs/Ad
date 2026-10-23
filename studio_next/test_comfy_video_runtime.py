@@ -143,6 +143,25 @@ class SafeLocalVideoDiffusionAdapterTests(unittest.TestCase):
                 self.assertEqual((concurrent/"filmed.mp4").read_bytes(),previous)
                 self.assertFalse(list(concurrent.glob(".zx7-comfy-stage-*")))
 
+    def test_untrusted_local_comfy_video_filename_never_escapes_owner_workspace(self):
+        class MaliciousLocalClient:
+            def create(self,graph):return "task-id"
+            def wait(self,task,node):return "../someone-elses-finished-film.mp4",b"bad"
+        with tempfile.TemporaryDirectory() as project:
+            root=Path(project)
+            with patch("studio_next.comfy_video_runtime._approved_graph",
+                       return_value=({"node":{"inputs":{}}},
+                                     {"output_node":"node"},"f"*64)),patch(
+                       "studio_next.comfy_video_runtime.discover_local_generators",
+                       return_value={"video_generation_options":[{
+                           "id":job()["model_id"],
+                           "ready_for_independent_execution_trial":True}]}):
+                with self.assertRaisesRegex(ValueError,"Untrusted ComfyUI"):
+                    render_actual_generated_scene(job(),root/"movies",
+                         comfy_endpoint="http://127.0.0.1:8188",
+                         client=MaliciousLocalClient())
+            self.assertFalse((root/"someone-elses-finished-film.mp4").exists())
+
     def test_gpu_weight_service_missing_prevents_fabricated_mp4(self):
         with tempfile.TemporaryDirectory() as root:
             with self.assertRaisesRegex(ValueError,"actual connected"):
