@@ -1,7 +1,10 @@
 import tempfile
+import os
+import shutil
 import subprocess
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 from studio_next.media_vault import MediaVault,MediaCustodyError
 
 
@@ -24,6 +27,67 @@ class MediaVaultProductionTests(unittest.TestCase):
             self.assertTrue(target.is_file())
             with self.assertRaises(MediaCustodyError):
                 restarted.checkout(ref["asset_id"],ref["attestation_id"],target)
+
+    def test_competing_immutable_vault_cas_is_not_overwritten(self):
+        from studio_next import media_vault
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d);input=root/"source.bin"
+            input.write_bytes(b"genuine-artist-bytes"*220)
+            store=MediaVault(root/"vault")
+            from studio_next.media_vault import sha256_file
+            digest=sha256_file(input)
+            target=store._loc(digest)
+            native=os.link
+            raced=False
+            def competing_writer(stage,dest,*args,**kwargs):
+                nonlocal raced
+                if Path(dest)==target:
+                    # A conflicting writer publishes physically wrong data at
+                    # the same CAS address. We must never overwrite that file.
+                    target.write_bytes(b"another-unapproved-blob"*90)
+                    raced=True
+                return native(stage,dest,*args,**kwargs)
+            with patch.object(media_vault.os,"link",side_effect=competing_writer):
+                with self.assertRaises(FileExistsError):
+                    store.ingest(input,mime="application/octet-stream",
+                        rights="owner_supplied",source_type="owner_upload",
+                        source_id="owned-clip-a",evidence="Owner recorded this",
+                        owner_or_generator="owner")
+            self.assertTrue(raced)
+            self.assertTrue(target.read_bytes().startswith(b"another-unapproved"))
+            with self.assertRaises(MediaCustodyError):
+                store.inspect(digest)
+
+    def test_rival_original_checkout_survives_no_replace_publication(self):
+        from studio_next import media_vault
+        from studio_next.media_vault import sha256_file
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d);original=root/"source.bin"
+            original.write_bytes(b"verified-owner-original"*170)
+            store=MediaVault(root/"vault")
+            receipt=store.ingest(original,mime="application/octet-stream",
+                rights="owner_supplied",source_type="owner_upload",
+                source_id="creator-clip",evidence="Real uploaded asset",
+                owner_or_generator="owner")
+            output=root/"colliding-original.bin"
+            other=root/"different-director-source.bin"
+            other.write_bytes(b"other-artist-original-footage"*155)
+            known=sha256_file(other)
+            native=os.link
+            raced=False
+            def competing_publication(stage,dest,*args,**kwargs):
+                nonlocal raced
+                if Path(dest)==output:
+                    self.assertIn(".zx7-vault-checkout-",str(stage))
+                    shutil.copyfile(other,output)
+                    raced=True
+                return native(stage,dest,*args,**kwargs)
+            with patch.object(media_vault.os,"link",side_effect=competing_publication):
+                with self.assertRaises(FileExistsError):
+                    store.checkout(receipt["asset_id"],receipt["attestation_id"],output)
+            self.assertTrue(raced)
+            self.assertEqual(sha256_file(output),known)
+            self.assertFalse(list(root.glob(".zx7-vault-checkout-*")))
 
     def test_real_content_hash_blocks_corrupted_asset(self):
         with tempfile.TemporaryDirectory() as root:
