@@ -4,6 +4,7 @@ on:
   push:
     branches: [zx7-body/mobile-operator-20261021]
     paths:
+      - "studio_next/**"
       - ".github/workflows/studio-body-release-proof.yml"
       - "pyproject.toml"
       - ".github/workflows/studio-body-mobile-full-proof.yml"
