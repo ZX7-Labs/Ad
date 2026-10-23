@@ -42,7 +42,7 @@
       "custody",
       "decode"
     ],
-    "real_model_to_physical_mp4_job_test_passed": true,
+    "real_model_to_physical_mp4_job_test_passed": false,
     "integrated_native_after_otio_import": "https://github.com/oyzitjfzj/Ad/actions/runs/39915372266",
     "integrated_native_after_otio_import_counts": {
       "total": 491,
@@ -51,7 +51,13 @@
       "reason": "Separate real Chromium browser acceptance suite",
       "workflow_success": true
     },
-    "fast_authenticated_security_after_otio": "https://github.com/oyzitjfzj/Ad/actions/runs/39915372238"
+    "fast_authenticated_security_after_otio": "https://github.com/oyzitjfzj/Ad/actions/runs/39915372238",
+    "actual_native_original_rights_codec_37_0skips": "https://github.com/oyzitjfzj/Ad/actions/runs/39927124699",
+    "actual_native_37_0skips_conclusion": "success",
+    "script_authored_film_ir_to_actual_body_movie_test_passed": true,
+    "independent_model_inference_actually_triggered": false,
+    "full_native_after_source_custody_hardening": "https://github.com/oyzitjfzj/Ad/actions/runs/39927124546",
+    "full_native_after_source_custody_hardening_conclusion": "pending_run_finished_verification"
   },
   "branch_differences": [
     {
@@ -82,7 +88,7 @@
     "full professional acceptance on several diverse complete creative films and original music"
   ],
   "final_showcase_condition": "This original 11-second animated film is proof of the actual BODY editing/audio engine and model-facing execution path, not a final cinematic creative-quality award or full BODY release.",
-  "next_authorized_engineering_action": "Independently prove cross-track non-destructive rational edit graph and portable OTIO loss audit, then scene-linear OCIO VFX integration. Keep no automatic merge and verify exact matching full native run first.",
+  "next_authorized_engineering_action": "Check full matching CI 39927124546, continue source custody and true professional NLE/VFX/scene-linear/genuine independent model interface, do not create final showcase or merge main before actual entire release acceptance.",
   "film_authorship_truth": {
     "source": "ZX7 Studio 11-second 2026-10-23 original film",
     "creative_idea_and_authoring": "Assistant wrote the deterministic Python creative/source-generation and story/typography/music instructions",
@@ -136,5 +142,20 @@
     "unique_old_alternative_sources_not_automatically_merged": true,
     "current_native_ci_on_same_code": "https://github.com/oyzitjfzj/Ad/actions/runs/39915372266"
   },
-  "production_reality": "Partial functionality has strong physical verification but 0/12 complete subsystem release gates; requested premium independently AI-directed film and real GPU/commercial professional body NOT yet achieved."
+  "production_reality": "Partial functionality has strong physical verification but 0/12 complete subsystem release gates; requested premium independently AI-directed film and real GPU/commercial professional body NOT yet achieved.",
+  "current_unmerged_source_custody_hardening": {
+    "coverage": [
+      "multicut picture and soundtrack",
+      "frame-rational speed and original recorded sound",
+      "display-referred BT709 original camera and licensed LUT",
+      "original audiovisual finishing",
+      "original true peak EBU128 source analysis"
+    ],
+    "shared_cas_seal": "studio_next/composite_mix.py::sealed_attested_original",
+    "native_decode_inputs_readonly_private_and_sha256_attested": true,
+    "original_editor_sources_never_overwritten": true,
+    "conflicting_accepted_masters_never_overwritten": true,
+    "actual_codec_swap_adversaries_37_zero_skips": true,
+    "whole_12_subsystem_gate_certified": false
+  }
 }
