@@ -191,7 +191,7 @@ class MediaVault:
                     shutil.copyfileobj(stream,handle,1024*1024)
                     handle.flush();os.fsync(handle.fileno())
                 if sha256_file(tmp)!=digest:raise MediaCustodyError("Source changed while ingesting")
-                os.replace(tmp,dest)
+                os.link(tmp,dest)
             finally:
                 if os.path.exists(tmp):os.unlink(tmp)
         elif sha256_file(dest)!=digest:
