@@ -133,13 +133,13 @@ def verify_media_container(path,mime):
                     if chunks==0:
                         if kind!=b"JSON" or not 4<=length<=8*1024*1024:
                             raise MediaCustodyError("GLB has no bounded native JSON scene")
-                        first_json=json.loads(scene.read(length).rstrip(b" \\t\\r\\n\\x00"))
+                        first_json=json.loads(scene.read(length).rstrip(bytes((32,9,13,10,0))))
                         if not isinstance(first_json,dict):
                             raise MediaCustodyError("GLB scene description is not JSON")
                     else:
-                        if kind==b"JSON" or (kind==b"BIN\\x00" and has_binary):
+                        if kind==b"JSON" or (kind==bytes((66,73,78,0)) and has_binary):
                             raise MediaCustodyError("GLB has duplicate scene or binary chunks")
-                        if kind==b"BIN\\x00":has_binary=True
+                        if kind==bytes((66,73,78,0)):has_binary=True
                         scene.seek(length,1)
                     visited+=length
                     chunks+=1
