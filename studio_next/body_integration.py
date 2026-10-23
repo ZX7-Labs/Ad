@@ -472,9 +472,22 @@ def body_catalog(workspace,*,vault_root=None):
     def temporal_all_frames(inputs):
         original=_path_within(root,inputs["plan"],exists=True)
         dest=_body_output(root,inputs["out"],allowed=(".json",))
-        return _commit_actual_body_output(dest,
+        receipt=_commit_actual_body_output(dest,
             lambda staged:observe_every_original_frame(
                 original,root,vault.root,staged))
+        actual=verify_full_temporal_evidence(dest)
+        # On a verified crash-recovery hit the renderer does not run again.
+        # Read the existing decoded source-bound evidence, never fabricate a
+        # model-visible sound/full-frame status from a stale Python variable.
+        return {**receipt,
+                "actual_full_movie_frame_count":
+                    actual["observed_original_picture_frames"],
+                "original_movie_sha256":actual["source_sha256"],
+                "original_sound_physically_measured":
+                    actual["original_sound_physically_measured"],
+                "original_sound_covers_entire_picture":
+                    actual["original_sound_covers_entire_picture"],
+                "creative_quality_certified":False}
 
     def aces_review_frame(inputs):
         plan=_path_within(root,inputs["plan"],exists=True)

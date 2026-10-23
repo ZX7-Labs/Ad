@@ -15,7 +15,8 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from .composite_mix import _exact_media, sealed_attested_original
+from .composite_mix import (
+    _exact_media, sealed_attested_original, _decoded_source_duration)
 from .delivery_audit import _probe_details
 from .body_observation import _snapshot_window
 from .media_vault import MediaVault, sha256_file
@@ -90,14 +91,30 @@ def verify_full_temporal_evidence(file):
     evidence=report.get("measured_soundtrack_dbfs")
     if type(has_sound) is not bool or has_sound!=(evidence is not None):
         raise ValueError("Full soundtrack observation is inconsistent")
-    if evidence is not None and (
-            not isinstance(evidence,dict) or
-            not 0<=evidence.get("start_seconds",-1)<
-              evidence.get("end_seconds",-1)):
-        raise ValueError("Original soundtrack is missing actual meter window")
+    picture_seconds=len(frames)*clock["denominator"]/clock["numerator"]
+    sound_duration=report.get("original_decoded_audio_stream_seconds")
+    sound_covers=report.get("original_sound_covers_entire_picture")
+    if type(sound_covers) is not bool:
+        raise ValueError("Native soundtrack full-coverage claim missing")
+    if has_sound:
+        if (type(sound_duration) not in (int,float) or
+                not math.isfinite(sound_duration) or sound_duration<=0 or
+                sound_covers!=(sound_duration+.015>=picture_seconds)):
+            raise ValueError("Original soundtrack length was not verified")
+        if (not isinstance(evidence,dict) or
+                type(evidence.get("start_seconds")) not in (int,float) or
+                type(evidence.get("end_seconds")) not in (int,float) or
+                not 0<=evidence["start_seconds"]<evidence["end_seconds"] or
+                evidence["end_seconds"]>min(picture_seconds,sound_duration)+.00001):
+            raise ValueError("Soundtrack measurement outlasts recorded physical sound")
+    elif sound_duration is not None or sound_covers:
+        raise ValueError("Silent original has fabricated soundtrack duration")
     return {"observed_original_picture_frames":len(frames),
             "source_sha256":report["original_movie_sha256"],
             "full_CFR_frame_evidence_valid":True,
+            "original_sound_physically_measured":has_sound,
+            "original_sound_covers_entire_picture":sound_covers,
+            "original_decoded_audio_stream_seconds":sound_duration,
             "human_artist_approval":False}
 
 
@@ -183,9 +200,16 @@ def observe_every_original_frame(plan_file, workspace, vault_root, destination):
         if not records or records[0]["previous_frame_mean_abs_luma_delta_8bit"] is not None:
             raise ValueError("Original full-frame evidence was not properly initialized")
         soundtrack=None
+        audio_duration=None
+        picture_duration=float(total_frames*rate.denominator/rate.numerator)
+        soundtrack_covers_picture=False
         if detail["audio_stream_present"]:
+            # A picture can contain fewer sound samples than video frames.
+            # Do not label silent tail frames as original "measured audio."
+            audio_duration=_decoded_source_duration(pinned,"audio")
+            soundtrack_covers_picture=(audio_duration+.015>=picture_duration)
             soundtrack=_snapshot_window(pinned,0.0,
-                float(total_frames*rate.denominator/rate.numerator))
+                min(picture_duration,audio_duration))
         if (sha256_file(pinned)!=original_sha or
                 sha256_file(original)!=original_sha or
                 sha256_file(document)!=before):
@@ -204,6 +228,8 @@ def observe_every_original_frame(plan_file, workspace, vault_root, destination):
             "preview_rgb_width":width,"preview_rgb_height":height,
             "complete_original_video_and_sound_decoded":True,
             "original_sound_present":detail["audio_stream_present"],
+            "original_decoded_audio_stream_seconds":audio_duration,
+            "original_sound_covers_entire_picture":soundtrack_covers_picture,
             "measured_soundtrack_dbfs":soundtrack,
             "frames":records,
             "frame_differences_are_not_optical_flow_or_meaning":True,
@@ -231,4 +257,5 @@ def observe_every_original_frame(plan_file, workspace, vault_root, destination):
             "original_movie_sha256":original_sha,
             "actual_full_movie_frame_count":total_frames,
             "original_sound_physically_measured":soundtrack is not None,
+            "original_sound_covers_entire_picture":soundtrack_covers_picture,
             "creative_quality_certified":False}

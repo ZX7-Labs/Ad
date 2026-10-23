@@ -62,6 +62,7 @@ class FullLicensedFilmTemporalSensor(unittest.TestCase):
                               allowed_access={"read","write"})
         self.assertTrue(validate_witness("body.temporal_evidence",result))
         self.assertTrue(result["original_sound_physically_measured"])
+        self.assertTrue(result["original_sound_covers_entire_picture"])
         self.assertEqual(result["actual_full_movie_frame_count"],24)
         report=json.loads((self.root/"measured-all-frames.json").read_text())
         self.assertEqual(report["picture_frames_observed"],24)
@@ -85,6 +86,47 @@ class FullLicensedFilmTemporalSensor(unittest.TestCase):
         report["frames"].pop(5)
         forged.write_text(json.dumps(report))
         with self.assertRaisesRegex(ValueError,"Incomplete whole-movie"):
+            verify_full_temporal_evidence(forged)
+
+    def test_short_real_soundtrack_is_never_described_as_full_movie_speech(self):
+        picture=self.root/"original-camera-outlasts-microphone.mp4"
+        p=subprocess.run(["ffmpeg","-hide_banner","-loglevel","error",
+            "-nostdin","-y",
+            "-f","lavfi","-i","color=c=purple:s=96x54:r=12:d=2",
+            "-f","lavfi","-i",
+            "sine=frequency=490:sample_rate=48000:duration=1",
+            "-c:v","libx264","-pix_fmt","yuv420p",
+            "-c:a","aac","-b:a","128k",str(picture)],
+            capture_output=True,text=True,timeout=60)
+        self.assertEqual(p.returncode,0,p.stderr)
+        from studio_next.body_temporal_evidence import verify_full_temporal_evidence
+        proof=self.vault.ingest(picture,mime="video/mp4",
+            rights="owner_supplied",source_type="owner_upload",
+            source_id="actual-incomplete-microphone",
+            evidence="Twenty-four decoded camera pictures but twelve recorded sound frames",
+            owner_or_generator="verified-owner")
+        plan={**self.plan,"media":{
+            "source":"zx7:sha256:"+proof["asset_id"],
+            "asset_id":proof["asset_id"],
+            "attestation_id":proof["attestation_id"]}}
+        self.planfile.write_text(json.dumps(plan))
+        out=self.root/"honest-audio-gap.json"
+        original=observe_every_original_frame(
+            self.planfile,self.root,self.root/"vault",out)
+        self.assertEqual(original["actual_full_movie_frame_count"],24)
+        self.assertTrue(original["original_sound_physically_measured"])
+        self.assertFalse(original["original_sound_covers_entire_picture"])
+        measured=verify_full_temporal_evidence(out)
+        self.assertFalse(measured["original_sound_covers_entire_picture"])
+        report=json.loads(out.read_text())
+        self.assertLess(report["original_decoded_audio_stream_seconds"],1.2)
+        self.assertGreater(report["original_decoded_audio_stream_seconds"],.9)
+        self.assertLess(report["measured_soundtrack_dbfs"]["end_seconds"],1.2)
+        self.assertFalse(report["creative_quality_or_continuity_certified"])
+        forged=self.root/"fabricated-original-voice.json"
+        report["original_sound_covers_entire_picture"]=True
+        forged.write_text(json.dumps(report))
+        with self.assertRaisesRegex(ValueError,"length was not verified"):
             verify_full_temporal_evidence(forged)
 
     def test_untrusted_attestation_and_unauthorized_shape_are_rejected(self):
