@@ -39,6 +39,7 @@ _SOURCE_FIELDS={
     "body.generate_video":("video_job",),
     "body.blender3d":("scene_json","assets_root"),
     "body.exr_passes":("scene_json","assets_root"),
+    "body.aces2_preview":("plan",),
     "body.exr_checkpoint":("scene_json",),
     "body.motion2d":("original_film_ir","voice_assets"),
 }
