@@ -33,7 +33,7 @@ class SafeLocalVideoDiffusionAdapterTests(unittest.TestCase):
                 self.end_headers()
             def do_POST(self):
                 observed.append(("POST",self.path))
-                self.send_response(307)
+                self.send_response(302)
                 self.send_header("Location",
                     "http://127.0.0.1:"+str(self.server.server_port)+"/unapproved")
                 self.end_headers()
