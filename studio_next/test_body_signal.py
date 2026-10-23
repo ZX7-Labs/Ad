@@ -236,6 +236,126 @@ class OneBrainConnectedBodyRegression(unittest.TestCase):
                      __import__("shutil").which("ffprobe"),
                      "Actual native video and sound required for model-facing physical loop")
 class RealConnectedBrainToOwnedCinemaTests(unittest.TestCase):
+    def test_authorized_brain_authors_multilayer_mask_sound_plan_and_body_makes_real_film(self):
+        # A stand-in test caller supplies artistic data; no AI inference is
+        # claimed. All media engines, pixels, source rights, temporal masking,
+        # soundtrack, physical decoding and durable render are real.
+        import importlib.util
+        import json
+        import subprocess
+        if importlib.util.find_spec("PIL") is None:
+            self.skipTest("A true native PNG pixel generator is required")
+        from PIL import Image
+        from studio_next.media_vault import MediaVault,sha256_file
+        from studio_next.production_qc import full_decode_inspection
+        with tempfile.TemporaryDirectory() as home:
+            body=LocalBodyCoordinator(home)
+            try:
+                root=body._workspace("original-director-project")
+                root.mkdir(parents=True,exist_ok=True)
+                vault=MediaVault(root/"vault")
+                red=root/"original-animated-graphic.png"
+                Image.new("RGBA",(64,64),(240,40,25,255)).save(red)
+                mask=root/"original-artist-alpha.png"
+                art=Image.new("L",(64,64),0)
+                for y in range(64):
+                    for x in range(30):
+                        art.putpixel((x,y),255)
+                art.save(mask)
+                track=root/"original-composer-note.wav"
+                rendered=subprocess.run(["ffmpeg","-hide_banner","-loglevel",
+                    "error","-nostdin","-y","-f","lavfi","-i",
+                    "sine=frequency=440:sample_rate=48000:duration=1",
+                    "-c:a","pcm_s16le",str(track)],
+                    capture_output=True,text=True,timeout=50)
+                self.assertEqual(rendered.returncode,0,rendered.stderr)
+                def attest(src,mime,ident):
+                    return vault.ingest(src,mime=mime,
+                        rights="owner_supplied",source_type="owner_upload",
+                        source_id=ident,evidence="Physical owner original verified source",
+                        owner_or_generator="authorized-original-artist")
+                image=attest(red,"image/png","real-original-red")
+                matte=attest(mask,"image/png","real-original-opacity")
+                sound=attest(track,"audio/wav","real-original-audio")
+                directives={
+                    "canvas":{"width":96,"height":64,"fps":12,"duration":1,
+                              "background":"#061B48"},
+                    "video_layers":[{
+                        "id":"artist-painted-layer","source":red.name,
+                        "asset_id":image["asset_id"],
+                        "attestation_id":image["attestation_id"],
+                        "source_kind":"still_image","start":0,"source_in":0,
+                        "duration":1,"x":14,"y":0,"width":64,"height":64,
+                        "opacity":1,
+                        "matte":{"source":mask.name,
+                                 "asset_id":matte["asset_id"],
+                                 "attestation_id":matte["attestation_id"],
+                                 "source_kind":"still_image","source_in":0,
+                                 "invert":False}}],
+                    "audio_tracks":[{
+                        "id":"director-left-score","source":track.name,
+                        "asset_id":sound["asset_id"],
+                        "attestation_id":sound["attestation_id"],
+                        "start":0,"source_in":0,"duration":1,
+                        "gain_db":-3,"stereo_balance":-1}]}
+                host=BodyAuthority(
+                    workspace_ids=frozenset({"original-director-project"}),
+                    operations=frozenset({"author_plan","submit"}),
+                    tool_access=frozenset({"read","write"}))
+                brain=LiveBodySignal(body,authority=host)
+                found=brain.describe("original-director-project",
+                                     "body.composite_mix")
+                self.assertEqual(found["status"],"ready_to_preflight")
+                written=brain.command("author_plan",{
+                    "workspace_id":"original-director-project",
+                    "tool_id":"body.composite_mix","document":directives})
+                self.assertTrue(written["tool_ready_to_execute_now"])
+                self.assertFalse(written["film_physically_rendered"])
+                path=written["path"]
+                review=brain.preflight("original-director-project",
+                    "body.composite_mix",
+                    {"plan":path,"out":"brain-physically-directed-film.mp4"})
+                self.assertEqual(review["readiness"],
+                                 "preflight_checked_not_executed")
+                project={
+                    "project":{"creative_intent":
+                        "Author-directed original graphic roto, music balance and visual timeline"},
+                    "shots":[{"id":"artist-shot","purpose":
+                        "Actual rights checked masked motion scene and original sound"}],
+                    "tool_graph":[{
+                        "id":"composite","tool_id":"body.composite_mix",
+                        "purpose":"Physically compose licensed image, mask and sound",
+                        "inputs":{"plan":path,
+                                  "out":"brain-physically-directed-film.mp4"},
+                        "depends_on":[]},{
+                        "id":"rights_archive","tool_id":"body.asset_vault",
+                        "purpose":"Preserve exact genuine renderer movie in durable source custody",
+                        "inputs":{"source_witness":{"$node_output":"composite"}},
+                        "depends_on":["composite"]}]}
+                job=brain.command("submit",{
+                    "workspace_id":"original-director-project",
+                    "film_ir":project})
+                observation=None
+                for _ in range(300):
+                    observation=brain.observe(job["job_id"])
+                    if observation["job_state"] in ("completed","blocked","failed"):
+                        break
+                    time.sleep(.04)
+                self.assertEqual(observation["job_state"],"completed",observation)
+                film=root/"brain-physically-directed-film.mp4"
+                proof=full_decode_inspection(film,expected={
+                    "width":96,"height":64,"require_audio":True})
+                self.assertTrue(proof["technical_delivery_verified"])
+                self.assertTrue(proof["full_picture_and_sound_decoder_completed"])
+                self.assertEqual(vault.inspect(sha256_file(film))["asset_id"],
+                                 sha256_file(film))
+                self.assertEqual(sha256_file(red),image["asset_id"])
+                self.assertEqual(sha256_file(mask),matte["asset_id"])
+                self.assertEqual(sha256_file(track),sound["asset_id"])
+                self.assertFalse(written["independent_artistic_quality_approved"])
+            finally:
+                body.close()
+
     def test_host_authorized_model_interface_executes_and_observes_actual_decoded_film(self):
         import json
         import subprocess
