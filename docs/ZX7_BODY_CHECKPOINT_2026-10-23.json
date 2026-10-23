@@ -56,8 +56,23 @@
     "actual_native_37_0skips_conclusion": "success",
     "script_authored_film_ir_to_actual_body_movie_test_passed": true,
     "independent_model_inference_actually_triggered": false,
-    "full_native_after_source_custody_hardening": "https://github.com/oyzitjfzj/Ad/actions/runs/39927124546",
-    "full_native_after_source_custody_hardening_conclusion": "pending_run_finished_verification"
+    "full_native_after_source_custody_hardening": "https://github.com/oyzitjfzj/Ad/actions/runs/39928192941",
+    "full_native_after_source_custody_hardening_conclusion": "success",
+    "latest_verified_integrated_native": "https://github.com/oyzitjfzj/Ad/actions/runs/39928192941",
+    "latest_verified_integrated_native_outcome": {
+      "status": "completed",
+      "conclusion": "success",
+      "cases_ran": 504,
+      "passed": 503,
+      "skipped": 1,
+      "skipped_reason": "real Chromium handled by separate browser workflow",
+      "source_commit": "132a813b36ac8db23edc51eb18508695e2b6d5c8",
+      "artifacts": "https://github.com/oyzitjfzj/Ad/actions/runs/39928192941/artifacts/12490642129"
+    },
+    "current_matching_native_actual_source_security": "https://github.com/oyzitjfzj/Ad/actions/runs/39928193050",
+    "current_matching_native_actual_source_security_cases": 37,
+    "current_matching_browser": "https://github.com/oyzitjfzj/Ad/actions/runs/39928192825",
+    "current_matching_mobile_security": "https://github.com/oyzitjfzj/Ad/actions/runs/39928192836"
   },
   "branch_differences": [
     {
@@ -88,7 +103,7 @@
     "full professional acceptance on several diverse complete creative films and original music"
   ],
   "final_showcase_condition": "This original 11-second animated film is proof of the actual BODY editing/audio engine and model-facing execution path, not a final cinematic creative-quality award or full BODY release.",
-  "next_authorized_engineering_action": "Check full matching CI 39927124546, continue source custody and true professional NLE/VFX/scene-linear/genuine independent model interface, do not create final showcase or merge main before actual entire release acceptance.",
+  "next_authorized_engineering_action": "Finish distinct professional editing/audio/media branch contract release gates, genuine autonomous model interface integration with real licensed model/hardware and independent creative review. Do not merge main until all 12 subsystem acceptance gates are independently proven and user-approved.",
   "film_authorship_truth": {
     "source": "ZX7 Studio 11-second 2026-10-23 original film",
     "creative_idea_and_authoring": "Assistant wrote the deterministic Python creative/source-generation and story/typography/music instructions",
@@ -156,6 +171,8 @@
     "original_editor_sources_never_overwritten": true,
     "conflicting_accepted_masters_never_overwritten": true,
     "actual_codec_swap_adversaries_37_zero_skips": true,
-    "whole_12_subsystem_gate_certified": false
+    "whole_12_subsystem_gate_certified": false,
+    "native_504_total_verified": true,
+    "shared_source_implementation_changes_invalidate_all_consumers_including_OTIO": true
   }
 }
