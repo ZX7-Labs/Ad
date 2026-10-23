@@ -58,6 +58,36 @@ class MediaVaultProductionTests(unittest.TestCase):
             with self.assertRaises(MediaCustodyError):
                 store.inspect(digest)
 
+    def test_simultaneous_identical_verified_blob_is_reused_not_damaged(self):
+        from studio_next import media_vault
+        from studio_next.media_vault import sha256_file
+        with tempfile.TemporaryDirectory() as home:
+            root=Path(home)
+            camera=root/"trusted-footage.bin"
+            camera.write_bytes(b"true-director-original-asset"*145)
+            store=MediaVault(root/"vault")
+            digest=sha256_file(camera)
+            location=store._loc(digest)
+            native_link=os.link
+            raced=False
+            def first_cas_writer_wins(stage,dest,*args,**kwargs):
+                nonlocal raced
+                if Path(dest)==location:
+                    shutil.copyfile(camera,location)
+                    raced=True
+                return native_link(stage,dest,*args,**kwargs)
+            with patch.object(media_vault.os,"link",side_effect=first_cas_writer_wins):
+                proof=store.ingest(camera,mime="application/octet-stream",
+                    rights="owner_supplied",source_type="owner_upload",
+                    source_id="actual-owner",evidence="Owner-supplied physical bytes",
+                    owner_or_generator="owner")
+            self.assertTrue(raced)
+            self.assertEqual(proof["asset_id"],digest)
+            self.assertEqual(sha256_file(location),digest)
+            self.assertTrue(store.inspect(
+                proof["asset_id"],attestation_id=proof["attestation_id"]))
+            self.assertFalse(list(location.parent.glob("."+digest[:10]+"-*")))
+
     def test_rival_original_checkout_survives_no_replace_publication(self):
         from studio_next import media_vault
         from studio_next.media_vault import sha256_file
