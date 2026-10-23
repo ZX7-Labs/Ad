@@ -9,13 +9,17 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import subprocess
+import tempfile
 from fractions import Fraction
 from pathlib import Path
 
 from .edit_timeline import _path_within
 from .media_vault import MediaVault, sha256_file
 from .delivery_audit import _probe_details
+from .composite_mix import sealed_attested_original,_decoded_source_duration
+from .production_qc import full_decode_inspection
 
 
 def _int(value, label):
@@ -182,6 +186,11 @@ def plan_retime(plan,root,vault_root,*,probe=None):
         allparts.append({"first":first,"end":end,"speed":speed,"duration":duration})
     if expected>24*3600:
         raise ValueError("Local retime stage exceeds its 24-hour output safety capacity")
+    if probe is None and audio=="preserve_source":
+        sound_capacity=_decoded_source_duration(source,"audio")
+        if any(float(Fraction(item["end"],1)/fps)>sound_capacity+.015
+               for item in allparts):
+            raise ValueError("Time warp exceeds actual original recorded-audio stream")
     # Verify real source timing and its decoded frame count, not a user claim.
     # Dependency injection here is used only for isolated tests.
     if probe is None:
@@ -231,33 +240,74 @@ def retime_command(validated,output):
 
 
 def render_retime(plan_path,workspace,vault_root,output,*,runner=None,probe=None):
-    plan_path=Path(plan_path)
+    """Real sealed-source variable-speed editor with atomic private output.
+
+    A model may choose rational speed and exact source frame selections, but
+    cannot supply executable FFmpeg expressions, make up missing original
+    soundtrack, or replace another director's accepted original movie.
+    """
+    root=Path(workspace).resolve()
+    plan_path=Path(plan_path).resolve()
+    destination=Path(output).resolve()
+    if (not plan_path.is_relative_to(root) or not plan_path.is_file() or
+            not destination.is_relative_to(root) or
+            destination.suffix.lower()!=".mp4" or destination.exists()):
+        raise ValueError("Owned retime needs existing original edit and fresh workspace MP4")
+    plan_sha=sha256_file(plan_path)
     data=json.loads(plan_path.read_text(encoding="utf-8"))
-    checked=plan_retime(data,workspace,vault_root,probe=probe)
-    destination=Path(output)
-    if destination.exists():
-        raise FileExistsError("Previously accepted physical media cannot be overwritten")
-    command=retime_command(checked,destination)
-    run=runner or subprocess.run
-    try:
+    if sha256_file(plan_path)!=plan_sha:
+        raise ValueError("Original retime plan changed while being read")
+    checked=plan_retime(data,root,vault_root,probe=probe)
+    original_path=Path(checked["source"])
+    original_identity=data["asset_id"]
+    original_attestation=data["attestation_id"]
+    destination.parent.mkdir(parents=True,exist_ok=True)
+    vault=MediaVault(vault_root)
+    with tempfile.TemporaryDirectory(prefix=".zx7-owned-sources-",dir=root) as working:
+        private=Path(working)
+        snapshots={}
+        frozen=sealed_attested_original(
+            vault,original_identity,original_attestation,private,snapshots)
+        original={**checked,"source":frozen}
+        if sha256_file(original_path)!=original_identity or sha256_file(plan_path)!=plan_sha:
+            raise ValueError("Artist's original footage or retime plan changed before encoding")
+        encoded=private/"original-speed-revision.mp4"
+        command=retime_command(original,encoded)
+        run=runner or subprocess.run
         result=run(command,capture_output=True,text=True,timeout=7200,check=False)
         if result.returncode!=0:
             raise RuntimeError("Physical retiming failed: "+str(result.stderr)[-1200:])
-        actual=_probe_details(destination)
-        # Limited by one encoded output frame plus the AAC encoder padding.
+        actual=(probe or _probe_details)(encoded)
         tolerance=max(.14,2.0/float(checked["fps"]))
         if abs(actual["duration_seconds"]-checked["expected_seconds"])>tolerance:
             raise RuntimeError("Encoded retimed timeline deviates from original measured edit")
         if not actual["audio_stream_present"]:
-            raise RuntimeError("Time-remapped production dropped its explicit sound track")
-        return {"path":str(destination.resolve()),"sha256":sha256_file(destination),
-                "bytes":destination.stat().st_size,
-                "duration_seconds":actual["duration_seconds"],
-                "width":actual["width"],"height":actual["height"],
-                "audio_present":True,
-                "intended_duration_seconds":checked["expected_seconds"],
-                "retime_operations":len(checked["parts"]),
-                "no_creative_defaults":True}
-    except BaseException:
-        destination.unlink(missing_ok=True)
-        raise
+            raise RuntimeError("Time-remapped production dropped its explicit soundtrack")
+        verified=runner is None and probe is None
+        if verified:
+            qa=full_decode_inspection(encoded,expected={
+                "width":checked["width"],"height":checked["height"],
+                "require_audio":True})
+            if not qa["technical_delivery_verified"] or not qa[
+                    "full_picture_and_sound_decoder_completed"]:
+                raise RuntimeError("Actual retimed picture or soundtrack failed entire media decode")
+        if (sha256_file(original_path)!=original_identity or
+                sha256_file(frozen)!=original_identity or
+                sha256_file(plan_path)!=plan_sha):
+            raise ValueError("Original source or creative decisions changed during physical retime")
+        vault.inspect(original_identity,attestation_id=original_attestation)
+        with encoded.open("rb") as movie:
+            os.fsync(movie.fileno())
+        os.link(encoded,destination)
+    return {"path":str(destination),"sha256":sha256_file(destination),
+            "bytes":destination.stat().st_size,
+            "duration_seconds":actual["duration_seconds"],
+            "width":actual["width"],"height":actual["height"],
+            "audio_present":True,
+            "intended_duration_seconds":checked["expected_seconds"],
+            "retime_operations":len(checked["parts"]),
+            "no_creative_defaults":True,
+            "sealed_original_cas_during_decode":True,
+            "full_picture_and_sound_decoder_completed":verified,
+            "verified_physically":verified,
+            "fake_runner_or_probe_injected":not verified}

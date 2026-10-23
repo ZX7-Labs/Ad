@@ -137,6 +137,73 @@ class PhysicalRetimeTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             plan_retime(self.plan,self.root,self.root/"vault")
 
+    def test_mutable_camera_checkout_swap_during_real_speed_render_keeps_original_frame_audio(self):
+        from studio_next.media_vault import sha256_file
+        original=self.src.read_bytes()
+        actual_run=subprocess.run
+        seen=[]
+        def malicious_swap(argv,**kwargs):
+            if argv and argv[0]=="ffmpeg" and "-filter_complex" in argv:
+                index=argv.index("-i")
+                protected=Path(argv[index+1])
+                self.assertIn(".zx7-owned-sources-",str(protected))
+                self.assertFalse(protected.stat().st_mode & 0o222)
+                self.assertEqual(sha256_file(protected),self.plan["asset_id"])
+                seen.append(protected)
+                self.src.write_bytes(b"untrusted replacement while real retime executes")
+                try:
+                    return actual_run(argv,**kwargs)
+                finally:
+                    self.src.write_bytes(original)
+            return actual_run(argv,**kwargs)
+        with patch("studio_next.precision_retime.subprocess.run",
+                   side_effect=malicious_swap):
+            receipt=render_retime(self.plan_file,self.root,self.root/"vault",
+                                  self.root/"actual-sealed-slow-fast.mp4")
+        self.assertEqual(len(seen),1)
+        self.assertFalse(seen[0].exists())
+        self.assertFalse(list(self.root.glob(".zx7-owned-sources-*")))
+        self.assertEqual(sha256_file(self.src),self.plan["asset_id"])
+        self.assertTrue(receipt["sealed_original_cas_during_decode"])
+        self.assertTrue(receipt["full_picture_and_sound_decoder_completed"])
+        self.assertAlmostEqual(receipt["duration_seconds"],2.5,delta=.14)
+
+    def test_concurrent_master_is_not_unlinked_by_losing_speed_editor(self):
+        master=self.root/"protected-original-director-speed.mp4"
+        protected=b"APPROVED-DIRECTOR-RESULT-DO-NOT-REPLACE"
+        actual_run=subprocess.run
+        def other_artist_wins(argv,**kwargs):
+            finished=actual_run(argv,**kwargs)
+            if argv and argv[0]=="ffmpeg" and "-filter_complex" in argv:
+                master.write_bytes(protected)
+            return finished
+        with patch("studio_next.precision_retime.subprocess.run",
+                   side_effect=other_artist_wins):
+            with self.assertRaises(FileExistsError):
+                render_retime(self.plan_file,self.root,self.root/"vault",master)
+        self.assertEqual(master.read_bytes(),protected)
+
+    def test_original_video_longer_than_original_audio_not_preserved_by_speed_map(self):
+        video=self.root/"two-second-picture-one-second-voice.mp4"
+        command=["ffmpeg","-hide_banner","-loglevel","error","-nostdin","-y",
+            "-f","lavfi","-i","testsrc2=size=160x90:rate=24:duration=2",
+            "-f","lavfi","-i",
+            "sine=frequency=600:sample_rate=48000:duration=1",
+            "-c:v","libx264","-pix_fmt","yuv420p","-c:a","aac",str(video)]
+        subprocess.run(command,check=True,capture_output=True,timeout=60)
+        proof=self.vault.ingest(video,mime="video/mp4",
+            rights="owner_supplied",source_type="owner_upload",
+            source_id="actual-picture-longer-than-narration",
+            evidence="Physical independent original picture/sound stream lengths",
+            owner_or_generator="owner")
+        self.plan.update(source=video.name,asset_id=proof["asset_id"],
+                         attestation_id=proof["attestation_id"])
+        with self.assertRaisesRegex(ValueError,"recorded-audio stream"):
+            plan_retime(self.plan,self.root,self.root/"vault")
+        self.plan["audio"]="intentional_silence"
+        validated=plan_retime(self.plan,self.root,self.root/"vault")
+        self.assertEqual(validated["expected_seconds"],2.5)
+
     def test_mutated_media_and_rights_proof_rejected_before_encoder(self):
         self.src.write_bytes(self.src.read_bytes()+b"owner footage changed")
         with self.assertRaises(ValueError):
