@@ -88,10 +88,20 @@ class LiveBodySignal:
 
     def discover(self,workspace_id,*,capability=None,cursor=None,limit=12,
                  include_unavailable=False):
-        return {"protocol":self.VERSION,**self._surface(workspace_id).discover(
+        catalog=self._surface(workspace_id).discover(
             capability=capability,cursor=cursor,limit=limit,
             include_unavailable=include_unavailable,
-            allowed_access=self._authority.tool_access)}
+            allowed_access=self._authority.tool_access)
+        signatures={
+            "author_plan":["workspace_id","tool_id","document"],
+            "submit":["workspace_id","film_ir"],
+            "pause":["job_id"],"cancel":["job_id"],
+            "resume":["job_id"],"retry":["job_id"]}
+        return {"protocol":self.VERSION,**catalog,
+                "host_authorized_commands":[
+                    {"action":action,"required_arguments":signatures[action]}
+                    for action in sorted(self._authority.operations)],
+                "author_plan_creates_unlicensed_data_not_a_rendered_movie":True}
 
     def describe(self,workspace_id,tool_id):
         return {"protocol":self.VERSION,**self._surface(workspace_id).describe(
