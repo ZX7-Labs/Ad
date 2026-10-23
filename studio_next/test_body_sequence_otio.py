@@ -181,6 +181,33 @@ class OwnedOriginalOTIOContract(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"unaligned"):
             import_verified_sequence_otio(bad,self.root,self.root/"vault")
 
+    def test_nontrivial_effects_timewarps_disabled_clips_and_artist_markers_never_disappear(self):
+        self.export()
+        film=self.otio.adapters.read_from_file(str(self.timeline))
+        original=film.video_tracks()[0][0]
+        original.effects.append(self.otio.schema.LinearTimeWarp(time_scalar=1.75))
+        altered=self.root/"unrepresented-timewarp.otio"
+        self.otio.adapters.write_to_file(film,str(altered))
+        with self.assertRaisesRegex(ValueError,"effects"):
+            import_verified_sequence_otio(altered,self.root,self.root/"vault")
+
+        film=self.otio.adapters.read_from_file(str(self.timeline))
+        film.audio_tracks()[0][0].enabled=False
+        altered=self.root/"muted-production-sound.otio"
+        self.otio.adapters.write_to_file(film,str(altered))
+        with self.assertRaisesRegex(ValueError,"Disabled"):
+            import_verified_sequence_otio(altered,self.root,self.root/"vault")
+
+        film=self.otio.adapters.read_from_file(str(self.timeline))
+        frame=self.otio.opentime.RationalTime(1,24)
+        film.video_tracks()[0][0].markers.append(self.otio.schema.Marker(
+             name="Director's edit note",
+             marked_range=self.otio.opentime.TimeRange(frame,frame)))
+        altered=self.root/"lost-creative-note.otio"
+        self.otio.adapters.write_to_file(film,str(altered))
+        with self.assertRaisesRegex(ValueError,"markers"):
+            import_verified_sequence_otio(altered,self.root,self.root/"vault")
+
     def test_unsupported_nle_transition_and_fractional_frame_refused(self):
         self.export()
         timeline=self.otio.adapters.read_from_file(str(self.timeline))

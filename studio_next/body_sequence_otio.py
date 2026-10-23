@@ -83,6 +83,22 @@ def _video_metadata(clip,index,plan):
         "audio":clip["audio"]}
 
 
+
+def _no_unrepresented_edit(component,label,*,allow_source_range=False):
+    """Fail closed, not silently flatten actual third-party NLE decisions."""
+    if getattr(component,"enabled",True) is False:
+        raise ValueError("Disabled original "+label+" would be dropped")
+    for key in ("effects","markers"):
+        values=getattr(component,key,None)
+        if values is not None and len(values):
+            raise ValueError("Unrepresented original "+label+" "+key+" cannot be silently discarded")
+    if not allow_source_range and getattr(component,"source_range",None) is not None:
+        raise ValueError("Unrepresented original "+label+" range crop")
+    metadata=getattr(component,"metadata",{})
+    if metadata and any(k!="zx7" for k in metadata):
+        raise ValueError("Unrepresented original "+label+" creative metadata would be lost")
+
+
 def import_verified_sequence_otio(file_path,workspace,vault_root):
     """Decode edited industry timeline into one new, physically checked plan.
 
@@ -97,6 +113,9 @@ def import_verified_sequence_otio(file_path,workspace,vault_root):
     timeline=otio.adapters.read_from_file(str(source))
     if not isinstance(timeline,otio.schema.Timeline):
         raise ValueError("An actual audiovisual OTIO Timeline is required")
+    if timeline.global_start_time is not None:
+        raise ValueError("Unrepresented original global timecode would be lost")
+    _no_unrepresented_edit(timeline.tracks,"film stack")
     meta=_required_metadata(timeline.metadata.get("zx7"),"timeline")
     if set(meta)!={"schema","frame_rate","frame_size","source_plan_sha256",
                    "source_media_originals_attested"}:
@@ -118,14 +137,27 @@ def import_verified_sequence_otio(file_path,workspace,vault_root):
             len(timeline.tracks)!=2 or not 1<=len(video[0])<=128
             or len(video[0])!=len(audio[0])):
         raise ValueError("Cannot silently drop other NLE tracks or unaligned sound")
+    _no_unrepresented_edit(video[0],"picture track")
+    _no_unrepresented_edit(audio[0],"sound track")
     originals=[]
+    seen_cut_ids=set()
     for i,(clip,sound) in enumerate(zip(video[0],audio[0])):
+        _no_unrepresented_edit(clip,"camera clip",allow_source_range=True)
+        _no_unrepresented_edit(sound,"recorded sound",allow_source_range=True)
         if not isinstance(clip,otio.schema.Clip):
             raise ValueError("Video effects, transitions and gaps need their own physical renderer")
         fields=_required_metadata(clip.metadata.get("zx7"),"original source")
         if set(fields)!={"schema","cut_id","source","asset_id",
                           "attestation_id","audio"}:
             raise ValueError("Malformed exact NLE original media provenance")
+        if (not isinstance(fields["cut_id"],str)
+                or fields["cut_id"] in seen_cut_ids
+                or not fields["cut_id"].startswith("cut-")
+                or not fields["cut_id"][4:].isdigit()):
+            raise ValueError("Duplicate or forged original editorial clip identity")
+        seen_cut_ids.add(fields["cut_id"])
+        if clip.name!=f"Original cut {int(fields['cut_id'][4:])+1}":
+            raise ValueError("Unrepresented renamed original editorial shot would be lost")
         if (not isinstance(fields["asset_id"],str)
                 or not isinstance(fields["attestation_id"],str)
                 or not isinstance(fields["source"],str)
@@ -152,6 +184,12 @@ def import_verified_sequence_otio(file_path,workspace,vault_root):
         if (corresponding.get("cut_id")!=fields["cut_id"] or
                 corresponding.get("asset_id")!=fields["asset_id"]):
             raise ValueError("Original sound is not attached to its picture cut")
+        if set(corresponding)!={"schema","cut_id","asset_id"}:
+            raise ValueError("Unrepresented sound edit metadata would be lost")
+        expected_sound_name=(f"Original sound {int(fields['cut_id'][4:])+1}"
+             if fields["audio"]=="preserve_source" else "")
+        if sound.name!=expected_sound_name:
+            raise ValueError("Unrepresented renamed original sound would be lost")
         expected_range=source_range
         if fields["audio"]=="preserve_source":
             if not isinstance(sound,otio.schema.Clip):
