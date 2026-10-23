@@ -8,6 +8,10 @@ filesystem, workspace, network, spending or native operation rights.
 """
 from __future__ import annotations
 
+import hashlib
+import json
+import os
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
@@ -17,7 +21,7 @@ from .body_integration import body_catalog
 from .body_sensory import sense_body_job
 from .film_ir import validate_film_ir
 
-_ACTIONS=frozenset({"submit","pause","cancel","resume","retry"})
+_ACTIONS=frozenset({"author_plan","submit","pause","cancel","resume","retry"})
 _ACCESS=frozenset({"read","write","network","paid"})
 # Legacy edit/OTIO accept owner-supplied textual rights labels without real
 # MediaVault custody. Retain them for explicit historical migration, never
@@ -50,8 +54,9 @@ class BodyAuthority:
             not isinstance(self.tool_access,frozenset) or
             not self.tool_access or not self.tool_access.issubset(_ACCESS)):
             raise ValueError("Only narrow host-issued BODY authority is valid")
-        if "submit" in self.operations and "write" not in self.tool_access:
-            raise ValueError("Submit requires host-issued write access")
+        if (("submit" in self.operations or "author_plan" in self.operations)
+                and "write" not in self.tool_access):
+            raise ValueError("Studio source creation requires host-issued write access")
 
 
 class LiveBodySignal:
@@ -96,6 +101,83 @@ class LiveBodySignal:
         return {"protocol":self.VERSION,**self._surface(workspace_id).preflight(
             tool_id,inputs,allowed_access=self._authority.tool_access)}
 
+    def _author_original_plan(self,arguments):
+        """Persist only a bounded JSON instrument plan in this owner workspace.
+
+        The model may AUTHOR composition/story/tool intent but cannot attach
+        rights, execute Python, choose an unregistered tool, overwrite artist
+        media, or silently claim the film has rendered. Subsequent preflight
+        and actual graph execution independently validate the typed document,
+        immutable source custody and native installed renderer.
+        """
+        workspace_id=arguments["workspace_id"]
+        workspace=self._workspace(workspace_id)
+        tool_id=arguments["tool_id"]
+        detail=self._surface(workspace_id).describe(
+            tool_id,allowed_access=self._authority.tool_access)
+        if detail["status"]!="ready_to_preflight" or not tool_id.startswith("body."):
+            raise BodyCommandRejected(
+                "Model cannot author a plan for an uninstalled or untrusted tool")
+        required=detail["input_schema"]["required"]
+        permitted=("plan","edit","scene_json","original_film_ir","video_job")
+        document_fields=[name for name in required if name in permitted]
+        if len(document_fields)!=1:
+            raise BodyCommandRejected(
+                "Installed BODY tool has no single supported JSON creative document")
+        document=arguments["document"]
+        if not isinstance(document,dict):
+            raise BodyCommandRejected("Creative technical tool plan must be a JSON object")
+        try:
+            raw=(json.dumps(document,allow_nan=False,ensure_ascii=False,
+                sort_keys=True,separators=(",",":"))+"\n").encode("utf-8")
+        except (TypeError,ValueError,OverflowError,RecursionError) as exc:
+            raise BodyCommandRejected("Original creative plan is not finite JSON") from exc
+        if not 2<=len(raw)<=262144:
+            raise BodyCommandRejected("Studio-authored original plan exceeds 256 KiB")
+        digest=hashlib.sha256(raw).hexdigest()
+        workspace.mkdir(parents=True,exist_ok=True)
+        directory=workspace/"brain-authored"
+        if directory.is_symlink():
+            raise PermissionError("Creative plan workspace is a symbolic link")
+        directory.mkdir(mode=0o700,exist_ok=True)
+        target=directory/(digest+".json")
+        if target.is_symlink():
+            raise PermissionError("A competing editor substituted the creative plan")
+        if target.is_file():
+            from .media_vault import sha256_file
+            if sha256_file(target)!=digest:
+                raise PermissionError("Previously published creative plan bytes changed")
+        else:
+            fd,stage=tempfile.mkstemp(prefix=".zx7-plan-",dir=directory)
+            try:
+                with os.fdopen(fd,"wb") as created:
+                    created.write(raw)
+                    created.flush()
+                    os.fsync(created.fileno())
+                try:
+                    os.link(stage,target)
+                except FileExistsError:
+                    from .media_vault import sha256_file
+                    if target.is_symlink() or sha256_file(target)!=digest:
+                        raise PermissionError(
+                            "Another writer published a conflicting creative plan")
+                folder_fd=os.open(directory,os.O_RDONLY|os.O_DIRECTORY)
+                try:os.fsync(folder_fd)
+                finally:os.close(folder_fd)
+            finally:
+                Path(stage).unlink(missing_ok=True)
+        return {
+            "protocol":self.VERSION,
+            "workspace_id":workspace_id,
+            "tool_id":tool_id,
+            "document_input_name":document_fields[0],
+            "path":"brain-authored/"+target.name,
+            "sha256":digest,"bytes":len(raw),
+            "immutable_editor_document_published":True,
+            "source_legal_rights_certified":False,
+            "film_physically_rendered":False,
+            "independent_artistic_quality_approved":False}
+
     def observe(self,job_id,*,include_artifacts=False,max_stages=16):
         if type(include_artifacts) is not bool:
             raise BodyCommandRejected("Artifact detail must be a boolean")
@@ -124,9 +206,13 @@ class LiveBodySignal:
             raise PermissionError("Host did not authorize this BODY mutation")
         if not isinstance(arguments,dict):
             raise BodyCommandRejected("Typed BODY command object required")
-        expected={"film_ir","workspace_id"} if action=="submit" else {"job_id"}
+        expected=({"film_ir","workspace_id"} if action=="submit" else
+                  {"workspace_id","tool_id","document"} if action=="author_plan"
+                  else {"job_id"})
         if set(arguments)!=expected:
             raise BodyCommandRejected("Unapproved BODY command argument fields")
+        if action=="author_plan":
+            return self._author_original_plan(arguments)
         if action=="submit":
             workspace_id=arguments["workspace_id"]
             self._workspace(workspace_id)

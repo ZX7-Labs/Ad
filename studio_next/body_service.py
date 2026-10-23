@@ -71,6 +71,8 @@ class LocalBodyCoordinator:
             self._instance_lock.close()
             raise RuntimeError("Original production workspace is already owned by another running body service") from exc
         self.projects=self.root/"projects"
+        if self.projects.is_symlink():
+            raise ValueError("Studio projects root cannot be linked to another owner")
         self.projects.mkdir(exist_ok=True)
         self.database=self.root/"body-jobs.sqlite3"
         self.executor=concurrent.futures.ThreadPoolExecutor(
@@ -130,8 +132,11 @@ class LocalBodyCoordinator:
     def _workspace(self,identity):
         if not isinstance(identity,str) or not _ID.fullmatch(identity):
             raise ValueError("Unsafe original project/workspace identity")
-        place=(self.projects/identity).resolve()
-        if not place.is_relative_to(self.projects):
+        requested=self.projects/identity
+        if requested.is_symlink():
+            raise ValueError("One owner workspace cannot alias another")
+        place=requested.resolve()
+        if not place.is_relative_to(self.projects) or place.name!=identity:
             raise ValueError("Original project cannot escape studio folder")
         return place
 

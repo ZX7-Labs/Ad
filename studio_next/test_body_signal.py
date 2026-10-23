@@ -1,4 +1,6 @@
 """Cross-branch unified brain-to-BODY interface, actual owner/job boundary."""
+import json
+import os
 import tempfile
 import time
 import unittest
@@ -42,6 +44,81 @@ class OneBrainConnectedBodyRegression(unittest.TestCase):
                       operations=frozenset({"submit"}),tool_access=frozenset({"read"}))
                 with self.assertRaises(TypeError):
                     LiveBodySignal(coordinator,authority={"all":"write"})
+            finally:
+                coordinator.close()
+
+    def test_creative_model_can_publish_immutable_typed_plan_without_exec_or_licensing(self):
+        with tempfile.TemporaryDirectory() as root:
+            coordinator=LocalBodyCoordinator(root,execute=lambda ir,w:{
+                "status":"blocked","errors":["physical film unavailable"]})
+            try:
+                access=BodyAuthority(
+                    workspace_ids=frozenset({"authorized-editor"}),
+                    operations=frozenset({"author_plan"}),
+                    tool_access=frozenset({"read","write"}))
+                author=LiveBodySignal(coordinator,authority=access)
+                document={"format":{"width":128,"height":96,"fps":12,
+                                     "framing":"fit","background":"#111111"},
+                          "clips":[],"story":"This is artist data, not approved footage"}
+                arguments={"workspace_id":"authorized-editor",
+                           "tool_id":"body.render_edit_owned",
+                           "document":document}
+                first=author.command("author_plan",arguments)
+                second=author.command("author_plan",arguments)
+                self.assertEqual(first["path"],second["path"])
+                self.assertEqual(first["sha256"],second["sha256"])
+                self.assertFalse(first["film_physically_rendered"])
+                self.assertFalse(first["source_legal_rights_certified"])
+                source=coordinator._workspace("authorized-editor")/first["path"]
+                self.assertTrue(source.is_file())
+                self.assertEqual(json.loads(source.read_text()),document)
+                self.assertEqual(len(list(source.parent.glob("*.json"))),1)
+                self.assertFalse(list(source.parent.glob(".zx7-plan-*")))
+                with self.assertRaises(PermissionError):
+                    author.command("author_plan",{**arguments,
+                        "workspace_id":"another-owner"})
+                with self.assertRaises(PermissionError):
+                    author.command("author_plan",{**arguments,
+                        "tool_id":"body.render_edit"})
+                with self.assertRaises(BodyCommandRejected):
+                    author.command("author_plan",{**arguments,
+                        "document":{"unbounded":"x"*262145}})
+                with self.assertRaises(BodyCommandRejected):
+                    author.command("author_plan",{**arguments,
+                        "document":{"invalid_float":float("nan")}})
+                with self.assertRaises(BodyCommandRejected):
+                    author.command("author_plan",{**arguments,
+                        "tool_id":"body.resolve_asset"})
+                source.write_text('{"tampered":"previous approved media"}')
+                with self.assertRaises(PermissionError):
+                    author.command("author_plan",arguments)
+                with self.assertRaises(PermissionError):
+                    author.command("submit",{
+                        "workspace_id":"authorized-editor","film_ir":authored_film()})
+            finally:
+                coordinator.close()
+
+    def test_cross_editor_symlink_cannot_author_into_another_owner_workspace(self):
+        with tempfile.TemporaryDirectory() as root:
+            coordinator=LocalBodyCoordinator(root,execute=lambda ir,w:{"status":"blocked"})
+            try:
+                other=coordinator._workspace("editor-b")
+                other.mkdir()
+                (other/"protected-film.txt").write_text("original owner B film")
+                (coordinator.projects/"editor-a").symlink_to(
+                    other,target_is_directory=True)
+                signal=LiveBodySignal(coordinator,authority=BodyAuthority(
+                    workspace_ids=frozenset({"editor-a"}),
+                    operations=frozenset({"author_plan"}),
+                    tool_access=frozenset({"read","write"})))
+                with self.assertRaisesRegex(ValueError,"alias"):
+                    signal.command("author_plan",{
+                        "workspace_id":"editor-a",
+                        "tool_id":"body.render_edit_owned",
+                        "document":{"original":"untrusted cross-owner overwrite"}})
+                self.assertFalse((other/"brain-authored").exists())
+                self.assertEqual((other/"protected-film.txt").read_text(),
+                                 "original owner B film")
             finally:
                 coordinator.close()
 
@@ -184,7 +261,6 @@ class RealConnectedBrainToOwnedCinemaTests(unittest.TestCase):
                       "rights":"owner_supplied","audio":"preserve_source",
                       "asset_id":custody["asset_id"],
                       "attestation_id":custody["attestation_id"]}]}
-                (workspace/"owner-cut.json").write_text(json.dumps(edit))
                 authored={"project":{"creative_intent":
                           "One model-authored original cinematic cut with real rights"},
                           "shots":[{"id":"actual-scene","purpose":
@@ -193,7 +269,7 @@ class RealConnectedBrainToOwnedCinemaTests(unittest.TestCase):
                           "tool_graph":[
                             {"id":"original-edit","tool_id":"body.render_edit_owned",
                              "purpose":"Physically cut only licensed original footage",
-                             "inputs":{"edit":"owner-cut.json",
+                             "inputs":{"edit":"awaiting-model-plan",
                                        "out":"accepted-model-film.mp4"},
                              "depends_on":[]},
                             {"id":"audited-original","tool_id":"body.asset_vault",
@@ -202,12 +278,19 @@ class RealConnectedBrainToOwnedCinemaTests(unittest.TestCase):
                              "depends_on":["original-edit"]}]}
                 host=BodyAuthority(workspace_ids=frozenset({"real-owner-film"}),
                     tool_access=frozenset({"read","write"}),
-                    operations=frozenset({"submit"}))
+                    operations=frozenset({"submit","author_plan"}))
                 model_interface=LiveBodySignal(service,authority=host)
+                plan_receipt=model_interface.command("author_plan",{
+                    "workspace_id":"real-owner-film",
+                    "tool_id":"body.render_edit_owned",
+                    "document":edit})
+                self.assertTrue(plan_receipt["immutable_editor_document_published"])
+                self.assertFalse(plan_receipt["film_physically_rendered"])
+                authored["tool_graph"][0]["inputs"]["edit"]=plan_receipt["path"]
                 chosen=model_interface.describe("real-owner-film","body.render_edit_owned")
                 self.assertEqual(chosen["status"],"ready_to_preflight")
                 preview=model_interface.preflight("real-owner-film",
-                    "body.render_edit_owned",{"edit":"owner-cut.json",
+                    "body.render_edit_owned",{"edit":plan_receipt["path"],
                                                "out":"accepted-model-film.mp4"})
                 self.assertEqual(preview["readiness"],"preflight_checked_not_executed")
                 self.assertFalse(preview["real_movie_rendered"])
