@@ -72,6 +72,7 @@ class RealOwnerACES2SceneColorProof(unittest.TestCase):
 
     def test_actual_installed_aces2_native_processor_colors_original_exr_pixel(self):
         from PIL import Image
+        import numpy as np
         from studio_next.body_materials import fingerprint_physical_inputs
         listed={c["id"]:c for c in body_catalog(self.root).discover()}
         self.assertEqual(listed["body.aces2_preview"]["status"],"installed")
@@ -90,8 +91,73 @@ class RealOwnerACES2SceneColorProof(unittest.TestCase):
             self.assertEqual(viewed.info["zx7_actual_view"],VIEW)
             self.assertEqual(viewed.info["zx7_original_archive_sha256"],
                              original_hash)
-            self.assertGreater(len(set(viewed.getdata())),5)
+            self.assertGreater(np.unique(
+                np.asarray(viewed).reshape(-1,3),axis=0).shape[0],5)
         self.assertEqual(sha256_file(self.exr),original_hash)
+
+    def test_full_native_film_graph_creates_real_exr_rights_then_aces2_display(self):
+        """Actual graph-produced licensed pixels, not a hand-authored license."""
+        from PIL import Image
+        from studio_next.body_integration import run_body_project
+        from studio_next.media_vault import sha256_file
+        source_before=sha256_file(self.scene)
+        ir={
+            "project":{"creative_intent":
+                       "Original physically rendered VFX shot color-managed for review"},
+            "shots":[{"id":"actual-cg-shot",
+                      "purpose":"Render protected 3D scene to linear RGBA and real passes",
+                      "duration_seconds":2/12}],
+            "assets":[],
+            "tool_graph":[
+                {"id":"native-exr","tool_id":"body.exr_passes",
+                 "purpose":"Actual Blender-generated 32float VFX multilayer original",
+                 "inputs":{"scene_json":self.scene.name,
+                           "out":"native-directed-exr.zip"},
+                 "depends_on":[]},
+                {"id":"licensed-exr","tool_id":"body.asset_vault",
+                 "purpose":"Bind original procedural scene to real BODY producer evidence",
+                 "inputs":{"source_witness":{"$node_output":"native-exr"}},
+                 "depends_on":["native-exr"]}
+            ]
+        }
+        first=run_body_project(ir,self.root)
+        self.assertEqual(first["status"],"all_tool_results_verified",first)
+        self.assertEqual(first["completed"],["native-exr","licensed-exr"])
+        produced=self.root/"native-directed-exr.zip"
+        digest=sha256_file(produced)
+        stored=self.vault.inspect(digest)
+        self.assertEqual(stored["mime"],"application/x-zx7-exr-bundle")
+        attestations=[x for x in stored["rights_attestations"]
+                      if x["rights"]=="generated_original"
+                      and x["source_type"]=="trusted_renderer"]
+        self.assertTrue(attestations)
+        plan={
+            "source":{"source":"zx7:sha256:"+digest,
+                      "asset_id":digest,
+                      "attestation_id":attestations[0]["attestation_id"]},
+            "frame_index":2,
+            "source_color_space":SOURCE_COLOR,
+            "alpha_association":"associated_scene_linear",
+            "scene_linear_background_rgb":[.025,.06,.11],
+            "display":DISPLAY,"view":VIEW
+        }
+        planfile=self.root/"actual-graph-ACES2.json"
+        planfile.write_text(json.dumps(plan))
+        viewed=body_catalog(self.root).invoke("body.aces2_preview",
+            {"plan":planfile.name,"out":"actual-graph-ACES2.png"},
+            allowed_access={"read","write"})
+        self.assertTrue(validate_witness("body.aces2_preview",viewed))
+        with Image.open(self.root/"actual-graph-ACES2.png") as image:
+            image.load()
+            self.assertEqual(image.mode,"RGB")
+            self.assertEqual(image.info["zx7_original_archive_sha256"],digest)
+            self.assertEqual(image.info["zx7_actual_view"],VIEW)
+        again=run_body_project(ir,self.root)
+        self.assertEqual(again["status"],"all_tool_results_verified",again)
+        self.assertEqual(again["reused"],["native-exr","licensed-exr"])
+        self.assertEqual(sha256_file(produced),digest)
+        self.assertEqual(sha256_file(self.scene),source_before)
+        self.assertFalse(list(self.root.glob(".zx7-aces2-*")))
 
     def test_wrong_input_color_rights_or_frame_are_refused_before_png(self):
         import copy
