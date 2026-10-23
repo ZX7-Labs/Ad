@@ -43,7 +43,8 @@ from .body_owned_edit import render_verified_owned_edit,validate_owned_edit
 from .production_qc import full_decode_inspection
 from .body_loudness import inspect_original_loudness
 from .body_observation import produce_review_bundle,verify_review_bundle
-from .body_temporal_evidence import observe_every_original_frame
+from .body_temporal_evidence import (
+    observe_every_original_frame,verify_full_temporal_evidence)
 from .body_review_access import read_verified_review,extract_verified_review_frame
 from .body_review_compare import compare_verified_revisions
 from .body_plugins import discover_enabled_body_plugins
@@ -83,6 +84,8 @@ def _witness(file):
         verify_exr_bundle(f)
     elif f.suffix.lower()==".zxreview":
         verify_review_bundle(f)
+    elif f.suffix.lower()==".json":
+        verify_full_temporal_evidence(f)
     return out
 
 
@@ -105,6 +108,11 @@ def _verify_witness(result):
         try:
             return bool(verify_review_bundle(p)["true_image_decoders_completed"])
         except (ValueError,RuntimeError,OSError,zipfile.BadZipFile):
+            return False
+    if p.suffix.lower()==".json":
+        try:
+            return bool(verify_full_temporal_evidence(p)["full_CFR_frame_evidence_valid"])
+        except (ValueError,TypeError,KeyError,OSError,RuntimeError):
             return False
     if p.suffix.lower()==".png":
         try:

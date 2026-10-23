@@ -24,6 +24,82 @@ from .production_qc import full_decode_inspection
 
 _MAX_FRAMES=5000
 _MAX_PIXEL_SAMPLES=10240
+_KIND="ZX7_SOURCE_BOUND_FULL_CFR_TEMPORAL_V1"
+
+
+def verify_full_temporal_evidence(file):
+    """Read back exact frame clock, numeric measurements and custody fields.
+
+    This cannot replay original media without its separate vault. The producer
+    proves the actual decoded picture/sound; this validator refuses mutated
+    or implausible durable output instead of accepting arbitrary JSON files.
+    """
+    path=Path(file)
+    if not path.is_file() or path.stat().st_size>8*1024*1024:
+        raise ValueError("Untrusted temporal review evidence size")
+    report=json.loads(path.read_text(encoding="utf-8"))
+    if (not isinstance(report,dict) or report.get("kind")!=_KIND
+            or report.get("schema")!=1
+            or report.get("complete_original_video_and_sound_decoded") is not True
+            or report.get("creative_quality_or_continuity_certified") is not False):
+        raise ValueError("Not a verified native whole-movie original observation")
+    import re
+    hex_digest=lambda x:isinstance(x,str) and re.fullmatch(r"[0-9a-f]{64}",x)
+    if not hex_digest(report.get("original_movie_sha256")) or not hex_digest(
+            report.get("director_review_plan_sha256")):
+        raise ValueError("Actual original source and review-plan fingerprints required")
+    if (not isinstance(report.get("source_rights_attestation_id"),str)
+            or not report["source_rights_attestation_id"]):
+        raise ValueError("Original reviewer has no source rights authority")
+    clock=report.get("video_frame_rate")
+    if (not isinstance(clock,dict) or
+            set(clock)!={"numerator","denominator"} or
+            any(type(clock[k]) is not int or clock[k]<=0 for k in clock)):
+        raise ValueError("Original frame observation timebase missing")
+    width,height=report.get("preview_rgb_width"),report.get("preview_rgb_height")
+    if (type(width) is not int or type(height) is not int or
+            not 8<=width<=160 or not 8<=height<=160 or
+            width*height>_MAX_PIXEL_SAMPLES):
+        raise ValueError("Unbounded original frame observation raster")
+    frames=report.get("frames")
+    if (not isinstance(frames,list) or not 1<=len(frames)<=_MAX_FRAMES
+            or report.get("picture_frames_observed")!=len(frames)):
+        raise ValueError("Incomplete whole-movie frame evidence")
+    for index,frame in enumerate(frames):
+        if (not isinstance(frame,dict) or set(frame)!={
+            "frame_index","time_seconds","mean_luma_8bit",
+            "previous_frame_mean_abs_luma_delta_8bit"} or
+                type(frame["frame_index"]) is not int or frame["frame_index"]!=index):
+            raise ValueError("Original actual frame index was dropped or duplicated")
+        time=frame["time_seconds"]
+        if (type(time) not in (int,float) or not math.isfinite(time) or
+                abs(time-index*clock["denominator"]/clock["numerator"])>0.00000006):
+            raise ValueError("Native source frame clock is inconsistent")
+        lum=frame["mean_luma_8bit"]
+        delta=frame["previous_frame_mean_abs_luma_delta_8bit"]
+        if (type(lum) not in (int,float) or not math.isfinite(lum) or
+                not 0<=lum<=255):
+            raise ValueError("False original frame light intensity")
+        if index==0:
+            if delta is not None:
+                raise ValueError("First frame has no preceding real source frame")
+        elif (type(delta) not in (int,float) or not math.isfinite(delta)
+                or not 0<=delta<=255):
+            raise ValueError("Actual native previous-frame difference missing")
+    has_sound=report.get("original_sound_present")
+    evidence=report.get("measured_soundtrack_dbfs")
+    if type(has_sound) is not bool or has_sound!=(evidence is not None):
+        raise ValueError("Full soundtrack observation is inconsistent")
+    if evidence is not None and (
+            not isinstance(evidence,dict) or
+            not 0<=evidence.get("start_seconds",-1)<
+              evidence.get("end_seconds",-1)):
+        raise ValueError("Original soundtrack is missing actual meter window")
+    return {"observed_original_picture_frames":len(frames),
+            "source_sha256":report["original_movie_sha256"],
+            "full_CFR_frame_evidence_valid":True,
+            "human_artist_approval":False}
+
 
 
 def observe_every_original_frame(plan_file, workspace, vault_root, destination):
@@ -120,7 +196,7 @@ def observe_every_original_frame(plan_file, workspace, vault_root, destination):
         vault.inspect(plan["media"]["asset_id"],
                       attestation_id=plan["media"]["attestation_id"])
         report={
-            "schema":1,"original_movie_sha256":original_sha,
+            "schema":1,"kind":_KIND,"original_movie_sha256":original_sha,
             "source_rights_attestation_id":plan["media"]["attestation_id"],
             "director_review_plan_sha256":before,
             "picture_frames_observed":total_frames,
@@ -141,6 +217,9 @@ def observe_every_original_frame(plan_file, workspace, vault_root, destination):
             fp.write(raw)
             fp.flush()
             os.fsync(fp.fileno())
+        verified=verify_full_temporal_evidence(staged)
+        if verified["observed_original_picture_frames"]!=total_frames:
+            raise ValueError("Full original frame count changed in measured receipt")
         if (sha256_file(original)!=original_sha or
                 sha256_file(document)!=before or sha256_file(pinned)!=original_sha):
             raise ValueError("Original source identity changed before sensory publication")

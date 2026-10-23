@@ -10,7 +10,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from studio_next.body_temporal_evidence import observe_every_original_frame
+from studio_next.body_temporal_evidence import (
+    observe_every_original_frame,verify_full_temporal_evidence)
 from studio_next.body_integration import body_catalog,validate_witness
 from studio_next.media_vault import MediaVault,sha256_file
 
@@ -77,6 +78,14 @@ class FullLicensedFilmTemporalSensor(unittest.TestCase):
         self.assertTrue(all(d<2 for d in diffs[1:12]))
         self.assertTrue(all(d<2 for d in diffs[13:]))
         self.assertEqual(sha256_file(self.movie),src_sha)
+        receipt=verify_full_temporal_evidence(
+            self.root/"measured-all-frames.json")
+        self.assertEqual(receipt["observed_original_picture_frames"],24)
+        forged=self.root/"forged-evidence.json"
+        report["frames"].pop(5)
+        forged.write_text(json.dumps(report))
+        with self.assertRaisesRegex(ValueError,"Incomplete whole-movie"):
+            verify_full_temporal_evidence(forged)
 
     def test_untrusted_attestation_and_unauthorized_shape_are_rejected(self):
         baseline=sha256_file(self.planfile)
