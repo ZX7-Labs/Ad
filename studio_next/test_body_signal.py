@@ -28,6 +28,7 @@ class OneBrainConnectedBodyRegression(unittest.TestCase):
                     workspace_ids=frozenset({"director-a"})))
                 abilities=readonly.discover("director-a",limit=1)
                 self.assertEqual(len(abilities["affordances"]),1)
+                self.assertEqual(abilities["host_authorized_commands"],[])
                 self.assertNotIn("input_schema",str(abilities))
                 view=readonly.describe("director-a","body.resolve_asset")
                 self.assertEqual(view["status"],"ready_to_preflight")
@@ -57,6 +58,11 @@ class OneBrainConnectedBodyRegression(unittest.TestCase):
                     operations=frozenset({"author_plan"}),
                     tool_access=frozenset({"read","write"}))
                 author=LiveBodySignal(coordinator,authority=access)
+                advertised=author.discover("authorized-editor")
+                self.assertEqual(advertised["host_authorized_commands"],[
+                    {"action":"author_plan","required_arguments":[
+                        "workspace_id","tool_id","document"]}])
+                self.assertFalse(advertised["complete_studio_certified"])
                 document={"format":{"width":128,"height":96,"fps":12,
                                      "framing":"fit","background":"#111111"},
                           "clips":[],"story":"This is artist data, not approved footage"}
