@@ -1,4 +1,7 @@
 import json
+import os
+import shutil
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -72,6 +75,73 @@ class SafeLocalVideoDiffusionAdapterTests(unittest.TestCase):
         self.assertEqual(name,"filmed.mp4")
         self.assertEqual(raw,b"real-video-result"*100)
         self.assertEqual(len(calls),3)
+
+    @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"),
+                         "Requires actual independent video decoder")
+    def test_gpu_adapter_receipt_requires_actual_full_decode_and_never_clobbers_movie(self):
+        # Mock the GPU availability and model API transport ONLY: video bytes
+        # below are real FFmpeg encoded media, not an AI-generated actor.
+        # The test proves strict codec and concurrent publication behavior;
+        # it must not be cited as proof of an installed diffusion model.
+        class FakeLocalRenderer:
+            def __init__(self,media):self.media=media
+            def create(self,graph):return "licensed-local-gpu-transport-test"
+            def wait(self,prompt_id,output_node):return "filmed.mp4",self.media
+        with tempfile.TemporaryDirectory() as workspace:
+            root=Path(workspace)
+            fixture=root/"physical-camera-fixture.mp4"
+            command=["ffmpeg","-hide_banner","-loglevel","error","-nostdin","-y",
+                "-f","lavfi","-i","testsrc2=size=96x64:rate=12:duration=1",
+                "-c:v","libx264","-pix_fmt","yuv420p",str(fixture)]
+            output=subprocess.run(command,capture_output=True,text=True,timeout=45)
+            self.assertEqual(output.returncode,0,output.stderr)
+            actual=job();actual.update({"width":96,"height":64,"frames":12,"fps":12})
+            graph={"valid-installed-workflow":{"inputs":{}}}
+            metadata={"output_node":"valid-installed-workflow"}
+            availability={"video_generation_options":[{"id":actual["model_id"],
+                            "ready_for_independent_execution_trial":True}]}
+            fake=FakeLocalRenderer(fixture.read_bytes())
+            with patch("studio_next.comfy_video_runtime._approved_graph",
+                       return_value=(graph,metadata,"a"*64)),patch(
+                       "studio_next.comfy_video_runtime.discover_local_generators",
+                       return_value=availability):
+                with patch("studio_next.comfy_video_runtime.os.link") as link:
+                    # Reject bogus bytes despite an injected optimistic
+                    # ffprobe stub; no public film is created.
+                    false=FakeLocalRenderer(b"fabricated-comfy-video-blob"*60)
+                    with self.assertRaises((ValueError,RuntimeError)):
+                        render_actual_generated_scene(actual,root/"fake",
+                            comfy_endpoint="http://127.0.0.1:8188",
+                            client=false,probe=lambda path:{"seconds":1})
+                    link.assert_not_called()
+                original=render_actual_generated_scene(actual,root/"true",
+                    comfy_endpoint="http://127.0.0.1:8188",client=fake)
+                accepted=Path(original["clip"])
+                self.assertTrue(original["full_original_video_and_sound_decoded"])
+                self.assertTrue(accepted.is_file())
+                previous=accepted.read_bytes()
+                with self.assertRaises(FileExistsError):
+                    render_actual_generated_scene(actual,root/"true",
+                        comfy_endpoint="http://127.0.0.1:8188",client=fake)
+                self.assertEqual(accepted.read_bytes(),previous)
+                self.assertFalse(list((root/"true").glob(".zx7-comfy-stage-*")))
+                import studio_next.comfy_video_runtime as runtime
+                original_link=os.link
+                first=False
+                concurrent=root/"collision"
+                def race(source,destination,*args,**kwargs):
+                    nonlocal first
+                    if Path(destination)==concurrent/"filmed.mp4":
+                        shutil.copyfile(fixture,destination)
+                        first=True
+                    return original_link(source,destination,*args,**kwargs)
+                with patch.object(runtime.os,"link",side_effect=race):
+                    with self.assertRaises(FileExistsError):
+                        render_actual_generated_scene(actual,concurrent,
+                            comfy_endpoint="http://127.0.0.1:8188",client=fake)
+                self.assertTrue(first)
+                self.assertEqual((concurrent/"filmed.mp4").read_bytes(),previous)
+                self.assertFalse(list(concurrent.glob(".zx7-comfy-stage-*")))
 
     def test_gpu_weight_service_missing_prevents_fabricated_mp4(self):
         with tempfile.TemporaryDirectory() as root:
