@@ -21,9 +21,10 @@ import subprocess
 import time
 from pathlib import Path
 from urllib.parse import urlencode
-from urllib.request import Request,urlopen
+from urllib.request import Request
 
-from .generative_video_providers import safe_local_api,discover_local_generators
+from .generative_video_providers import (
+    safe_local_api,discover_local_generators,open_verified_local_api)
 from .stage_checkpoint import DurableStageStore
 from .media_vault import sha256_file
 
@@ -105,7 +106,7 @@ class LocalComfyVideoClient:
         body=json.dumps(data,ensure_ascii=False).encode("utf-8") if data is not None else None
         req=Request(self.endpoint+path,data=body,method=method,
                     headers={"Content-Type":"application/json"})
-        with urlopen(req,timeout=120) as resp:
+        with open_verified_local_api(req,timeout=120) as resp:
             if binary:
                 payload=resp.read(256_000_001)
                 if len(payload)>256_000_000:
