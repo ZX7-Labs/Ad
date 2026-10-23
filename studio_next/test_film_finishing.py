@@ -4,6 +4,7 @@ import unittest
 import shutil
 import subprocess
 from pathlib import Path
+from unittest.mock import patch
 
 from studio_next.film_finishing import build_finishing_filters,finish_authorized_movie
 from studio_next.media_vault import MediaVault
