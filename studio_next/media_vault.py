@@ -109,6 +109,43 @@ def verify_media_container(path,mime):
             first=f.read(12)
         if len(first)!=12 or first[:4]!=b"glTF":
             raise MediaCustodyError("Claimed 3D GLB is not a real binary scene")
+    elif mime=="image/x-exr":
+        # Standalone, potentially owner-supplied scene-linear EXR must be
+        # physically decoded. A matching EXR magic prefix, filename or
+        # rights string is never evidence of usable pixels.
+        import importlib.util
+        if importlib.util.find_spec("OpenEXR") is None:
+            raise MediaCustodyError("Original OpenEXR decoder is not installed")
+        import OpenEXR
+        try:
+            with path.open("rb") as data:
+                if data.read(4)!=b"\\x76\\x2f\\x31\\x01":
+                    raise MediaCustodyError("Original image has no real OpenEXR magic")
+            with OpenEXR.File(str(path),separate_channels=True) as exr:
+                if not exr.parts:
+                    raise MediaCustodyError("Original EXR has no decoded native image part")
+                usable=False
+                for part in exr.parts:
+                    width,height=part.width(),part.height()
+                    if (not isinstance(width,int) or not isinstance(height,int)
+                            or not 1<=width<=32768 or not 1<=height<=32768
+                            or width*height>120000000):
+                        raise MediaCustodyError("Original EXR image dimensions are not bounded")
+                    if not part.channels:
+                        raise MediaCustodyError("Original EXR image has no physical channels")
+                    for channel in part.channels.values():
+                        pixels=channel.pixels
+                        if (pixels is None or pixels.shape[0]!=height
+                                or pixels.shape[1]!=width or
+                                str(pixels.dtype) not in ("float16","float32","uint32")):
+                            raise MediaCustodyError(
+                                "Original EXR channel has no decoded pixel plane")
+                        usable=True
+                if not usable:
+                    raise MediaCustodyError("Original EXR contains no actual pixels")
+        except (OSError,RuntimeError,ValueError,TypeError,IndexError) as exc:
+            raise MediaCustodyError(
+                "No fully decoded native OpenEXR original image") from exc
     elif mime=="application/x-zx7-exr-bundle":
         # Never grant trusted CG source rights to an arbitrary ZIP or opaque
         # binary. Real native OpenEXR re-decodes ALL physically rendered
