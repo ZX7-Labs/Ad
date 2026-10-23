@@ -111,8 +111,8 @@ def verify_media_container(path,mime):
         # binary structure, NOT artistic geometry, UVs, shader or render quality.
         import struct
         size=path.stat().st_size
-        if size<32:
-            raise MediaCustodyError("Original GLB has no complete scene")
+        if size<32 or size>2*1024*1024*1024:
+            raise MediaCustodyError("Original GLB has no bounded complete scene")
         try:
             with path.open("rb") as scene:
                 magic,version,declared=struct.unpack("<4sII",scene.read(12))
@@ -122,6 +122,7 @@ def verify_media_container(path,mime):
                 first_json=None
                 chunks=0
                 has_binary=False
+                binary_chunk_bytes=None
                 while visited<size:
                     header=scene.read(8)
                     if len(header)!=8:
@@ -139,7 +140,9 @@ def verify_media_container(path,mime):
                     else:
                         if kind==b"JSON" or (kind==bytes((66,73,78,0)) and has_binary):
                             raise MediaCustodyError("GLB has duplicate scene or binary chunks")
-                        if kind==bytes((66,73,78,0)):has_binary=True
+                        if kind==bytes((66,73,78,0)):
+                            has_binary=True
+                            binary_chunk_bytes=length
                         scene.seek(length,1)
                     visited+=length
                     chunks+=1
@@ -154,8 +157,38 @@ def verify_media_container(path,mime):
                         or not (first_json.get("meshes") or first_json.get("cameras"))):
                     raise MediaCustodyError(
                         "Original GLB lacks a real scene graph and authored geometry/camera")
-                if first_json.get("buffers") and not has_binary:
-                    raise MediaCustodyError("GLB describes missing required binary source")
+                buffers=first_json.get("buffers",[])
+                if not isinstance(buffers,list):
+                    raise MediaCustodyError("Original GLB has malformed buffer references")
+                if buffers:
+                    if len(buffers)!=1 or not has_binary:
+                        raise MediaCustodyError("GLB describes missing required binary source")
+                    buffer=buffers[0]
+                    if (not isinstance(buffer,dict) or
+                            type(buffer.get("byteLength")) is not int or
+                            buffer["byteLength"]<1 or
+                            "uri" in buffer or
+                            not buffer["byteLength"]<=binary_chunk_bytes<=
+                                 buffer["byteLength"]+3):
+                        raise MediaCustodyError(
+                            "Original GLB binary payload differs from its scene graph")
+                    for view in first_json.get("bufferViews",[]):
+                        if (not isinstance(view,dict)
+                                or view.get("buffer")!=0
+                                or type(view.get("byteLength")) is not int
+                                or type(view.get("byteOffset",0)) is not int
+                                or view["byteLength"]<1
+                                or view.get("byteOffset",0)<0
+                                or view.get("byteOffset",0)+view["byteLength"]>
+                                   buffer["byteLength"]):
+                            raise MediaCustodyError(
+                                "Original GLB geometry buffer view escapes physical bytes")
+                elif has_binary:
+                    raise MediaCustodyError(
+                        "Unreferenced or fake binary 3D payload in original GLB")
+                if first_json.get("meshes") and not buffers:
+                    raise MediaCustodyError(
+                        "Original GLB mesh has no complete geometry buffer")
         except (OSError,struct.error,UnicodeDecodeError,
                 json.JSONDecodeError,TypeError,AttributeError) as exc:
             raise MediaCustodyError("Original GLB failed full binary scene verification") from exc
