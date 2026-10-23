@@ -3,7 +3,7 @@
   "date": "2026-10-23",
   "project": "ZX7 Studio / BODY",
   "canonical_branch": "zx7-body/mobile-operator-20261021",
-  "canonical_head": "643e741cd1d3f561701c09e92eab25da300a6253",
+  "canonical_head": "33e8eb831ef09bd35dcd25c3a56cf0b4228856c0",
   "draft_pr": "https://github.com/oyzitjfzj/Ad/pull/3",
   "main_untouched": true,
   "original_art_and_voices_unchanged": true,
@@ -42,7 +42,16 @@
       "custody",
       "decode"
     ],
-    "real_model_to_physical_mp4_job_test_passed": true
+    "real_model_to_physical_mp4_job_test_passed": true,
+    "integrated_native_after_otio_import": "https://github.com/oyzitjfzj/Ad/actions/runs/39915372266",
+    "integrated_native_after_otio_import_counts": {
+      "total": 491,
+      "passed": 490,
+      "skipped": 1,
+      "reason": "Separate real Chromium browser acceptance suite",
+      "workflow_success": true
+    },
+    "fast_authenticated_security_after_otio": "https://github.com/oyzitjfzj/Ad/actions/runs/39915372238"
   },
   "branch_differences": [
     {
@@ -107,7 +116,9 @@
       "foreign timeline timecode",
       "unknown NLE tracks or transitions"
     ],
-    "whole_creative_NLE_certified": false
+    "whole_creative_NLE_certified": false,
+    "catalog_registered_and_graph_ready": true,
+    "professionally_reordered_cut_reencoded_as_real_27_frame_audio_visual_movie": true
   },
   "verify_all_branches": {
     "count": 7,
@@ -124,5 +135,6 @@
     ],
     "unique_old_alternative_sources_not_automatically_merged": true,
     "current_native_ci_on_same_code": "https://github.com/oyzitjfzj/Ad/actions/runs/39915372266"
-  }
+  },
+  "production_reality": "Partial functionality has strong physical verification but 0/12 complete subsystem release gates; requested premium independently AI-directed film and real GPU/commercial professional body NOT yet achieved."
 }
