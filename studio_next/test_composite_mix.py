@@ -145,6 +145,55 @@ class LayeredProductionCompositingTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,"untrusted"):
                 actual_composite_command(original,root,vault,Path(root)/"invalid.mp4")
 
+    def test_exact_attested_original_still_can_animate_over_sound_without_video_forgery(self):
+        from studio_next.media_vault import sha256_file
+        try:
+            from PIL import Image,ImageDraw
+        except ImportError:
+            self.skipTest("Actual decoded image pixels required")
+        with tempfile.TemporaryDirectory() as root:
+            plan,document,vault=self.fixture(root)
+            plan["canvas"].update(width=320,height=240,duration=2)
+            png=Path(root)/"owned-design.png"
+            canvas=Image.new("RGB",(128,96),(15,22,44))
+            painter=ImageDraw.Draw(canvas)
+            painter.polygon([(18,75),(64,12),(110,75)],fill=(245,199,70))
+            canvas.save(png)
+            proof=vault.ingest(png,mime="image/png",rights="owner_supplied",
+                source_type="owner_upload",source_id="actual-artist-still",
+                evidence="Actual original decoded graphical artwork",owner_or_generator="owner")
+            layer=dict(plan["video_layers"][0],
+                  source=png.name,asset_id=proof["asset_id"],
+                  attestation_id=proof["attestation_id"],
+                  source_kind="still_image",source_in=0,duration=1.5,
+                  motion=[{"at_seconds":0,"x":0,"y":20},
+                          {"at_seconds":1,"x":60,"y":30}])
+            plan["video_layers"]=[layer]
+            command=actual_composite_command(plan,root,vault,Path(root)/"proof.mp4")
+            self.assertIn("-loop",command)
+            self.assertIn("-framerate",command)
+            with self.assertRaisesRegex(ValueError,"source-time trim"):
+                actual_composite_command(
+                    {**plan,"video_layers":[{**layer,"source_in":.2}]},
+                    root,vault,Path(root)/"never.mp4")
+            with self.assertRaisesRegex(ValueError,"decoded, rights-attested image"):
+                actual_composite_command(
+                    {**plan,"video_layers":[{**layer,"source":"narration.wav",
+                      "asset_id":plan["audio_tracks"][0]["asset_id"],
+                      "attestation_id":plan["audio_tracks"][0]["attestation_id"]}]},
+                    root,vault,Path(root)/"never.mp4")
+            document.write_text(json.dumps(plan))
+            result=render_composition(document,root,Path(root)/"vault",
+                                      Path(root)/"real-still-editor.mp4")
+            self.assertTrue(result["verified_physically"])
+            self.assertTrue(result["full_picture_and_sound_decoder_completed"])
+            self.assertEqual(sha256_file(png),proof["asset_id"])
+            raw=subprocess.check_output(["ffmpeg","-hide_banner","-loglevel","error",
+                "-ss","0.8","-i",str(Path(root)/"real-still-editor.mp4"),
+                "-frames:v","1","-f","rawvideo","-pix_fmt","rgb24","-"],timeout=30)
+            self.assertGreater(max(raw),60)
+            self.assertTrue((Path(root)/"real-still-editor.mp4").is_file())
+
     def test_real_layer_source_duration_boundaries_before_render(self):
         with tempfile.TemporaryDirectory() as root:
             plan,_,vault=self.fixture(root)

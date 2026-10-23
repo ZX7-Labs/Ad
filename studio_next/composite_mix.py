@@ -183,7 +183,7 @@ def validate_composition(plan,workspace,vault):
                        "start","source_in","duration","x","y","width","height","opacity"}
                       if kind=="video" else
                       {"id","source","asset_id","attestation_id","start","source_in","duration","gain_db"})
-            supported=required|({"motion","fade_in_seconds","fade_out_seconds","chroma_key"}
+            supported=required|({"motion","fade_in_seconds","fade_out_seconds","chroma_key","source_kind"}
                                 if kind=="video" else {"gain_keyframes"})
             if not required.issubset(layer) or not set(layer).issubset(supported):
                 raise ValueError("Director-specified "+kind+" layer is incomplete or uses untrusted effects")
@@ -197,11 +197,26 @@ def validate_composition(plan,workspace,vault):
             if start+duration>seconds+1/canvas["fps"]:
                 raise ValueError("Layer exceeds editor-authored total duration")
             file=_exact_media(layer,vault,root,need=kind)
-            clock=(file,kind)
-            if clock not in real_source_lengths:
-                real_source_lengths[clock]=_decoded_source_duration(file,kind)
-            if source_in+duration>real_source_lengths[clock]+0.015:
-                raise ValueError("Original source trim exceeds physically decoded footage or sound")
+            still=kind=="video" and layer.get("source_kind")=="still_image"
+            if kind=="video" and layer.get("source_kind","video") not in ("video","still_image"):
+                raise ValueError("Unknown source media kind; cannot invent a renderer")
+            mime=vault.inspect(layer["asset_id"],
+                attestation_id=layer["attestation_id"])["mime"]
+            if still:
+                if mime not in ("image/png","image/jpeg","image/webp"):
+                    raise ValueError("Still-image layer must have a decoded, rights-attested image")
+                if source_in!=0:
+                    raise ValueError("Still-image layers have no physical source-time trim")
+                if contract is not None:
+                    raise ValueError("Unprofiled still images cannot claim certified BT.709 conversion")
+            else:
+                if mime.startswith("image/"):
+                    raise ValueError("Image requires explicit original still-image source kind")
+                clock=(file,kind)
+                if clock not in real_source_lengths:
+                    real_source_lengths[clock]=_decoded_source_duration(file,kind)
+                if source_in+duration>real_source_lengths[clock]+0.015:
+                    raise ValueError("Original source trim exceeds physically decoded footage or sound")
             if kind=="video" and contract is not None:
                 # This is not a silent metadata label. Every incoming
                 # picture must physically carry the declared SDR VUI, or
@@ -276,8 +291,10 @@ def actual_composite_command(plan,workspace,vault,out):
     args=["ffmpeg","-hide_banner","-loglevel","error","-nostdin","-y"]
     music=[]
     for index,row in enumerate(inputs):
-        args.extend(["-i",str(row["file"])])
         layer=row["layer"]
+        if row["kind"]=="video" and layer.get("source_kind")=="still_image":
+            args.extend(["-loop","1","-framerate",str(fps)])
+        args.extend(["-i",str(row["file"])])
         start=row["start"];source_in=row["source_in"];duration=row["duration"]
         if row["kind"]=="video":
             visual=(f"[{index}:v:0]trim=start={source_in}:duration={duration},"
