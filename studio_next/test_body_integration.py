@@ -100,6 +100,28 @@ class TrustedCreativeBodyToolTests(unittest.TestCase):
                         _commit_actual_body_output(target,successful)
             self.assertEqual(target.read_bytes(),b"physically rendered bytes"*50)
 
+    def test_late_directory_sync_error_preserves_already_published_original(self):
+        # A backend or another editor might have accepted the final file
+        # before the filesystem reported a late directory fsync failure.
+        # Failure must not delete the public master or leave private stages.
+        with tempfile.TemporaryDirectory() as root:
+            target=Path(root)/"already-accepted.png"
+            from studio_next.body_integration import _commit_actual_body_output
+            def produce(stage):
+                stage.write_bytes(actual_rgb_png())
+            with patch("studio_next.body_integration.sync_published_file",
+                       side_effect=OSError("simulated postlink durability failure")):
+                with self.assertRaisesRegex(OSError,"postlink durability"):
+                    _commit_actual_body_output(target,produce)
+            self.assertTrue(target.is_file())
+            from studio_next.media_vault import verify_media_container
+            verify_media_container(target,"image/png")
+            self.assertFalse(list(Path(root).glob(".zx7-uncommitted-*")))
+            before=target.read_bytes()
+            with self.assertRaises(FileExistsError):
+                _commit_actual_body_output(target,produce)
+            self.assertEqual(target.read_bytes(),before)
+
     def test_png_header_without_actual_pixels_is_never_a_real_artifact(self):
         with tempfile.TemporaryDirectory() as root:
             p=Path(root)/"fake-thumbnail.png"
