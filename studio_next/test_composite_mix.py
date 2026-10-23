@@ -78,6 +78,53 @@ class LayeredProductionCompositingTests(unittest.TestCase):
             self.assertIn("overlay=",command[command.index("-filter_complex")+1])
             self.assertEqual(command[command.index("-filter_complex")+1].count("]overlay="),34)
 
+    def test_stereo_artist_balance_is_measured_in_actual_decoded_samples(self):
+        import array
+        import math
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            plan,document,vault=self.fixture(root)
+            tone=root/"owner-actual-tone.wav"
+            subprocess.run(["ffmpeg","-hide_banner","-loglevel","error",
+                "-nostdin","-y","-f","lavfi","-i",
+                "sine=frequency=440:sample_rate=48000:duration=1",
+                "-c:a","pcm_s16le",str(tone)],check=True,timeout=45)
+            proof=vault.ingest(tone,mime="audio/wav",
+                rights="owner_supplied",source_type="owner_upload",
+                source_id="original-440Hz-mono",
+                evidence="Native rendered source audio physical waveform",
+                owner_or_generator="source-owner")
+            plan["canvas"].update(width=128,height=96,fps=12,duration=1)
+            plan["video_layers"]=[]
+            audio=plan["audio_tracks"][0]
+            audio.update(source=tone.name,asset_id=proof["asset_id"],
+                attestation_id=proof["attestation_id"],source_in=0,start=0,
+                duration=1,gain_db=0,stereo_balance=-1)
+            cmd=actual_composite_command(plan,root,vault,root/"spatial.mp4")
+            self.assertIn("pan=stereo|c0=1*c0|c1=0*c1",
+                          cmd[cmd.index("-filter_complex")+1])
+            document.write_text(json.dumps(plan))
+            movie=root/"real-stereo-audio-movie.mp4"
+            result=render_composition(document,root,root/"vault",movie)
+            self.assertTrue(result["full_picture_and_sound_decoder_completed"])
+            raw=subprocess.check_output(["ffmpeg","-hide_banner",
+                "-loglevel","error","-nostdin","-i",str(movie),
+                "-map","0:a:0","-ac","2","-ar","48000",
+                "-f","f32le","-"],timeout=45)
+            values=array.array("f")
+            values.frombytes(raw)
+            left=list(values[0::2])
+            right=list(values[1::2])
+            self.assertGreater(len(left),1000)
+            rms_left=math.sqrt(sum(x*x for x in left)/len(left))
+            rms_right=math.sqrt(sum(x*x for x in right)/len(right))
+            self.assertGreater(rms_left,.015)
+            self.assertLess(rms_right,rms_left*.08)
+            for untrusted in (float("nan"),float("inf"),True,-1.1,1.1):
+                audio["stereo_balance"]=untrusted
+                with self.assertRaisesRegex(ValueError,"stereo balance"):
+                    actual_composite_command(plan,root,vault,root/"never.mp4")
+
     def test_physically_encoded_multilayer_movie_has_audio_and_rights(self):
         from studio_next.delivery_audit import _probe_details
         with tempfile.TemporaryDirectory() as root:

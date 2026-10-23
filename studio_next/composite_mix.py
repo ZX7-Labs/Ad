@@ -184,7 +184,7 @@ def validate_composition(plan,workspace,vault):
                       if kind=="video" else
                       {"id","source","asset_id","attestation_id","start","source_in","duration","gain_db"})
             supported=required|({"motion","fade_in_seconds","fade_out_seconds","chroma_key","source_kind","matte"}
-                                if kind=="video" else {"gain_keyframes"})
+                                if kind=="video" else {"gain_keyframes","stereo_balance"})
             if not required.issubset(layer) or not set(layer).issubset(supported):
                 raise ValueError("Director-specified "+kind+" layer is incomplete or uses untrusted effects")
             identifier=layer["id"]
@@ -290,6 +290,10 @@ def validate_composition(plan,workspace,vault):
                 if isinstance(gain,bool) or not isinstance(gain,(int,float)) or (
                         not math.isfinite(gain) or abs(gain)>120):
                     raise ValueError("Unsafe audio gain")
+                balance=layer.get("stereo_balance",0)
+                if (type(balance) not in (int,float) or
+                        not math.isfinite(balance) or not -1<=balance<=1):
+                    raise ValueError("Audio stereo balance must be a finite authored value in [-1,1]")
                 envelope=layer.get("gain_keyframes",[])
                 if not isinstance(envelope,list) or len(envelope)>64:
                     raise ValueError("Original audio envelope must be a bounded list")
@@ -391,6 +395,15 @@ def actual_composite_command(plan,workspace,vault,out):
             effects=(f"[{source_index}:a:0]atrim=start={source_in}:duration={duration},"
                 "asetpts=PTS-STARTPTS,aresample=48000,"
                 f"aformat=channel_layouts=stereo,volume={layer['gain_db']}dB")
+            balance=float(layer.get("stereo_balance",0))
+            if balance:
+                # Per-channel post-upmix balance, not invented 3D sound or
+                # altered speech timing. Inverse endpoints mute only one bus.
+                # Leaving balance at 0 retains the existing stereo field.
+                left=1-max(0.0,balance)
+                right=1+min(0.0,balance)
+                effects+=(f",pan=stereo|c0={left:.9g}*c0"
+                          f"|c1={right:.9g}*c1")
             envelope=_gain_automation_expression(layer)
             if envelope is not None:
                 effects+=","+envelope
