@@ -58,17 +58,19 @@
     "independent_model_inference_actually_triggered": false,
     "full_native_after_source_custody_hardening": "https://github.com/oyzitjfzj/Ad/actions/runs/39928192941",
     "full_native_after_source_custody_hardening_conclusion": "success",
-    "latest_verified_integrated_native": "https://github.com/oyzitjfzj/Ad/actions/runs/39933979484",
+    "latest_verified_integrated_native": "https://github.com/oyzitjfzj/Ad/actions/runs/39942955940",
     "latest_verified_integrated_native_outcome": {
-      "status": "completed",
-      "conclusion": "success",
-      "cases_ran": 511,
-      "passed": 510,
+      "source_commit": "23880ec2438551716677778cb1083d83dd3816b4",
+      "workflow_run": 39942955940,
+      "result": "success",
+      "test_cases_ran": 528,
+      "passed": 527,
       "skipped": 1,
-      "skipped_reason": "browser-only suite separately run on prior exact code; current mobile/security contract run successful",
-      "source_commit": "1348c1e68a81e5fa05bf2d69a7045ca68440c7ee",
-      "physical_proof": "GitHub action logged all newly added private source, competing output, audio duration and EXR true-decoder cases as passed",
-      "url": "https://github.com/oyzitjfzj/Ad/actions/runs/39933979484"
+      "true_native_aces2_10bit_whole_scene_prores_confirmed": true,
+      "true_graph_vfx_to_rights_to_aces2_film_to_rights_to_resume_confirmed": true,
+      "review_frame_publication_race_verified": true,
+      "production_all_12_gates_approved": false,
+      "independent_creative_brain_final_film_approved": false
     },
     "current_matching_native_actual_source_security": "https://github.com/oyzitjfzj/Ad/actions/runs/39928193050",
     "current_matching_native_actual_source_security_cases": 37,
@@ -266,7 +268,8 @@
     "next_native_verification": {
       "commit": "23880ec2438551716677778cb1083d83dd3816b4",
       "run": "https://github.com/oyzitjfzj/Ad/actions/runs/39942955940",
-      "state": "in_progress_at_checkpoint"
+      "status": "completed_success",
+      "actual_test_report": "528 tests ran, 527 passed, one browser-only test skipped"
     },
     "next_full_original_film_proof": [
       "body.aces2_movie: graph-attested source 32float OpenEXR -> real pinned OCIO ACES2 SDR display transform of every frame -> 16bit physical RGB intermediate -> native ProRes 422 10bit MOV full pixel/audio decode (sound is intentionally absent)",
