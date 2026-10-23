@@ -20,7 +20,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from .composite_mix import _exact_media,sealed_attested_original
+from .composite_mix import _exact_media,sealed_attested_original,_decoded_source_duration
 from .body_color_pipeline import _actual_bt709_source
 from .media_vault import MediaVault,sha256_file
 from .precision_retime import _source_timebase
@@ -77,8 +77,14 @@ def plan_verified_sequence(plan,workspace,vault_root):
             raise ValueError("Original decoded frame range exceeds real owned footage")
         if clip["audio"] not in ("preserve_source","intentional_silence"):
             raise ValueError("Artist must explicitly preserve original sound or authorize silence")
-        if clip["audio"]=="preserve_source" and not measured["audio_stream_present"]:
-            raise ValueError("Original audio is not physically present to preserve")
+        if clip["audio"]=="preserve_source":
+            if not measured["audio_stream_present"]:
+                raise ValueError("Original audio is not physically present to preserve")
+            # A 2-second MP4 picture can contain only 1 second of recorded
+            # dialogue. Do not fill the rest with fabricated 'preserved' sound.
+            actual_sound_seconds=_decoded_source_duration(source,"audio")
+            if float(Fraction(end,1)/fps)>actual_sound_seconds+.015:
+                raise ValueError("Requested cut outlasts recorded original audio stream")
         total_frames+=end-first
         if total_frames>2_000_000:
             raise ValueError("Single native render exceeds bounded source frame workload")

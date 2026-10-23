@@ -116,6 +116,38 @@ class RealOwnedSequenceCuts(unittest.TestCase):
         self.assertAlmostEqual(original_first,410,delta=20)
         self.assertAlmostEqual(different_second,690,delta=25)
 
+    def test_original_camera_picture_longer_than_recorded_sound_cannot_claim_preserved_audio(self):
+        source=self.root/"picture-2s-sound-1s.mp4"
+        command=["ffmpeg","-hide_banner","-loglevel","error","-nostdin","-y",
+            "-f","lavfi","-i","color=c=green:s=160x90:r=24:d=2",
+            "-f","lavfi","-i",
+            "sine=frequency=590:sample_rate=48000:duration=1",
+            "-c:v","libx264","-pix_fmt","yuv420p",
+            "-x264-params","colorprim=bt709:transfer=bt709:colormatrix=bt709",
+            "-color_primaries","bt709","-color_trc","bt709","-colorspace","bt709",
+            "-c:a","aac",str(source)]
+        proc=subprocess.run(command,capture_output=True,text=True,timeout=60)
+        self.assertEqual(proc.returncode,0,proc.stderr)
+        proof=self.vault.ingest(source,mime="video/mp4",
+            rights="owner_supplied",source_type="owner_upload",
+            source_id="original-camera-with-short-recorded-dialogue",
+            evidence="Actual original two-second picture with one-second original audio",
+            owner_or_generator="owner")
+        self.plan["clips"][0].update({
+            "source":"zx7:sha256:"+proof["asset_id"],
+            "asset_id":proof["asset_id"],
+            "attestation_id":proof["attestation_id"],
+            "first_frame":16,"end_frame":36,"audio":"preserve_source"})
+        with self.assertRaisesRegex(ValueError,"outlasts recorded original audio"):
+            plan_verified_sequence(self.plan,self.root,self.root/"vault")
+        self.plan["clips"][0]["audio"]="intentional_silence"
+        audited=plan_verified_sequence(self.plan,self.root,self.root/"vault")
+        self.assertEqual(audited["frames"],44)
+        self.plan["clips"][0].update({"first_frame":0,"end_frame":20,
+                                      "audio":"preserve_source"})
+        checked=plan_verified_sequence(self.plan,self.root,self.root/"vault")
+        self.assertEqual(checked["frames"],44)
+
     def test_encoder_only_reads_sealed_rights_attested_original_sources_despite_checkout_swap(self):
         real_run=subprocess.run
         original=self.originals[0][0]
