@@ -21,6 +21,41 @@ def job():
 
 
 class SafeLocalVideoDiffusionAdapterTests(unittest.TestCase):
+    def test_local_model_credentials_and_prompts_ignore_ambient_http_proxy(self):
+        import os
+        from unittest.mock import patch
+        from studio_next.generative_video_providers import (
+            _LOCAL_ONLY_HTTP, open_verified_local_api)
+        from urllib.request import ProxyHandler
+        proxies=[handler.proxies for handler in _LOCAL_ONLY_HTTP.handlers
+                 if isinstance(handler,ProxyHandler)]
+        self.assertEqual(proxies,[{}])
+        class LocalApi(BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b'{"local":"verified"}')
+            def log_message(self,*args):return
+        server=ThreadingHTTPServer(("127.0.0.1",0),LocalApi)
+        thread=Thread(target=server.serve_forever,daemon=True)
+        thread.start()
+        try:
+            from urllib.error import URLError
+            url="http://127.0.0.1:"+str(server.server_port)+"/system_stats"
+            with patch.dict(os.environ,{
+                    "http_proxy":"http://127.0.0.1:1",
+                    "HTTP_PROXY":"http://127.0.0.1:1",
+                    "no_proxy":"","NO_PROXY":""}):
+                with open_verified_local_api(url,timeout=4) as reply:
+                    self.assertEqual(json.loads(reply.read()),
+                                     {"local":"verified"})
+            with self.assertRaisesRegex(ValueError,"local HTTP"):
+                open_verified_local_api("http://example.com:8765/model",timeout=4)
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+
     def test_live_local_comfy_api_does_not_follow_redirects_to_other_paths(self):
         from studio_next.generative_video_providers import inspect_comfyui
         observed=[]

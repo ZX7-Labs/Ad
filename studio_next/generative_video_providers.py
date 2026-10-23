@@ -18,7 +18,7 @@ import shutil
 import subprocess
 from pathlib import Path
 from urllib.parse import urlsplit
-from urllib.request import Request,build_opener,HTTPRedirectHandler
+from urllib.request import Request,build_opener,HTTPRedirectHandler,ProxyHandler
 
 # Current declared upstream licenses; actual weights still need provenance.
 VIDEO_MODEL_CANDIDATES=(
@@ -55,7 +55,10 @@ class _RejectLocalRedirect(HTTPRedirectHandler):
             "Untrusted local video API attempted an unauthorized HTTP redirect")
 
 
-_LOCAL_ONLY_HTTP=build_opener(_RejectLocalRedirect())
+# urllib's default opener reads HTTP_PROXY/HTTPS_PROXY from the caller
+# environment. A host-admin model may NEVER send source prompts or media
+# descriptions through an ambient third-party proxy.
+_LOCAL_ONLY_HTTP=build_opener(ProxyHandler({}),_RejectLocalRedirect())
 
 
 def open_verified_local_api(url,*,timeout):

@@ -108,7 +108,7 @@ class PhysicalBodySnapshotTests(unittest.TestCase):
                            ".zx7-scene-seal-", ".zx7-temporal-", ".zx7-aces2-",
                            ".zx7-aces2-movie-", ".zx7-review-frame-",
                            ".zx7-comfy-stage-", ".zx7-vault-checkout-",
-                           ".zx7-composite-render-"):
+                           ".zx7-composite-render-", ".zx7-plan-"):
                 with self.subTest(prefix=prefix):
                     private=project/(prefix+"frozen-work")
                     private.mkdir()
