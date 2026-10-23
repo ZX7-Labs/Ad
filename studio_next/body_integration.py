@@ -35,6 +35,7 @@ from .film_finishing import finish_authorized_movie
 from .body_color_pipeline import render_verified_color_job
 from .body_exr_passes import render_original_exr_passes,verify_exr_bundle
 from .body_aces2_preview import render_aces_2_sdr_preview
+from .body_aces2_movie import render_aces2_scene_movie
 from .body_frame_resume import render_resumable_exr_passes
 from .precision_retime import render_retime
 from .body_sequence_cuts import render_verified_sequence
@@ -165,6 +166,7 @@ def _trusted_body_revision(tool_id):
         "body.blender3d":["native_body_engines.py","blender_scene.py"],
         "body.exr_passes":["body_exr_passes.py","blender_scene.py","media_vault.py"],
         "body.aces2_preview":["body_aces2_preview.py","body_exr_passes.py","media_vault.py"],
+        "body.aces2_movie":["body_aces2_movie.py","body_aces2_preview.py","body_exr_passes.py","media_vault.py","production_qc.py"],
         "body.exr_checkpoint":["body_frame_resume.py","body_exr_passes.py","blender_scene.py","media_vault.py"],
         "body.motion2d":["native_body_engines.py","motion_bridge.py","font_registry.py",
                          "silent_audio.py","../motion_studio/render.py","../motion_studio/voice.py"],
@@ -197,6 +199,7 @@ def _trusted_body_revision(tool_id):
         "body.blender3d":["blender","ffmpeg"],
         "body.exr_passes":["blender"],
         "body.aces2_preview":[],
+        "body.aces2_movie":["ffmpeg","ffprobe"],
         "body.exr_checkpoint":["blender"],
         "body.motion2d":["ffmpeg","ffprobe"],
     }
@@ -227,7 +230,8 @@ def _trusted_body_revision(tool_id):
                        "body.review_frame":("Pillow",),
                        "body.review_compare":("Pillow",),
                        "body.exr_passes":("OpenEXR",),
-                       "body.aces2_preview":("OpenEXR","opencolorio","Pillow","numpy")}
+                       "body.aces2_preview":("OpenEXR","opencolorio","Pillow","numpy"),
+                       "body.aces2_movie":("OpenEXR","opencolorio","numpy")}
     for library in runtime_libraries.get(tool_id,()):
         try:version=importlib.metadata.version(library)
         except importlib.metadata.PackageNotFoundError:version="not_installed"
@@ -496,6 +500,13 @@ def body_catalog(workspace,*,vault_root=None):
             lambda staged:render_aces_2_sdr_preview(
                 plan,root,vault.root,staged))
 
+    def aces_native_scene_movie(inputs):
+        plan=_path_within(root,inputs["plan"],exists=True)
+        output=_body_output(root,inputs["out"],allowed=(".mov",))
+        return _commit_actual_body_output(output,
+            lambda staged:render_aces2_scene_movie(
+                plan,root,vault.root,staged))
+
     def review_data(inputs):
         archive=_path_within(root,inputs["bundle"],exists=True)
         return read_verified_review(archive,inputs["bundle_sha256"],root)
@@ -686,6 +697,13 @@ def body_catalog(workspace,*,vault_root=None):
         "write",bool(shutil.which("blender") and
                       importlib.util.find_spec("OpenEXR") is not None),
         ["scene_json","out"],render_checkpointed_exr)
+    add("body.aces2_movie","actual owned ACES2 scene-linear EXR to 10bit SDR movie",
+        "Every licensed native RGBA frame receives pinned OCIO2.5 ACES2 view on 16-bit RGB and real ProRes422 10bit encoding; SDR VFX review without audio, not HDR or aesthetic certification",
+        "write",bool(shutil.which("ffmpeg") and shutil.which("ffprobe") and
+                     importlib.util.find_spec("OpenEXR") and
+                     importlib.util.find_spec("PyOpenColorIO") and
+                     importlib.util.find_spec("numpy")),
+        ["plan","out"],aces_native_scene_movie)
     add("body.aces2_preview","pinned ASWF ACES 2.0 scene-linear to SDR review",
         "Actual OpenEXR float RGBA, rights-attested source, built-in OCIO 2.5 ACES2 display view and independently decoded PNG; review only",
         "write",bool(importlib.util.find_spec("OpenEXR") and

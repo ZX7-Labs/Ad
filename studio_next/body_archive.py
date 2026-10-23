@@ -34,6 +34,7 @@ _PRIVATE_RENDER_PREFIXES=(
     ".zx7-scene-seal-",
     ".zx7-temporal-",
     ".zx7-aces2-",
+    ".zx7-aces2-movie-",
 )
 
 
