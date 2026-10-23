@@ -245,7 +245,7 @@ class MediaVault:
             else:
                 rows=db.execute("SELECT attestation_id,rights,source_type,source_id,evidence,owner_or_generator FROM attestations WHERE digest=? AND attestation_id=?",
                                (digest,attestation_id)).fetchall()
-        if not rows or not path.is_file() or path.stat().st_size!=blob[0] or sha256_file(path)!=digest:
+        if not rows or path.is_symlink() or not path.is_file() or path.stat().st_size!=blob[0] or sha256_file(path)!=digest:
             raise MediaCustodyError("Missing or altered stored media and provenance")
         return {"asset_id":digest,"size_bytes":blob[0],"mime":blob[1],
                 "path":str(path),"rights_attestations":[{
