@@ -3,7 +3,7 @@
   "date": "2026-10-23",
   "project": "ZX7 Studio / BODY",
   "canonical_branch": "zx7-body/mobile-operator-20261021",
-  "canonical_head": "33e8eb831ef09bd35dcd25c3a56cf0b4228856c0",
+  "canonical_head": "1348c1e68a81e5fa05bf2d69a7045ca68440c7ee",
   "draft_pr": "https://github.com/oyzitjfzj/Ad/pull/3",
   "main_untouched": true,
   "original_art_and_voices_unchanged": true,
@@ -174,5 +174,28 @@
     "whole_12_subsystem_gate_certified": false,
     "native_504_total_verified": true,
     "shared_source_implementation_changes_invalidate_all_consumers_including_OTIO": true
+  },
+  "current_engineering_increment": {
+    "source_code_commit": "1348c1e68a81e5fa05bf2d69a7045ca68440c7ee",
+    "source_history": [
+      "8f1f596a508cc556555c44bd9e800829cb1bc722",
+      "a95cada2dff739c18f17854a587db95574b683ef",
+      "868f518982c9a620668bab9f2701513a6baa9283",
+      "21446de9b868ad953146eafb48714175affe5877",
+      "1348c1e68a81e5fa05bf2d69a7045ca68440c7ee"
+    ],
+    "corrected_real_failure_paths": [
+      "Reversible owner-edit timeline previously unlinked a competing producer's accepted movie upon native hardlink failure; now guarded with immutable prepublication decision evidence and no public unlink",
+      "Owner rights-attested generic FFmpeg editor previously encoded directly to public MP4 and unlinked output on error; now decodes private staging and publishes exclusive hardlink",
+      "Original picture/audio review previously directly copied over public ZXREVIEW and deleted it on failure; now no-clobber link from verified temporary same-filesystem archive",
+      "Blender EXR ZIP previously published directly to public output then deleted it after exceptions; now only fully decoded private EXR archive is published by exclusive link",
+      "Project backups previously inspected only sealed-original private temporary paths; now also refuse in-flight review and EXR staging",
+      "Legacy generic owned editor previously tested only that source audio exists, not that the physical audio stream lasts through picture; now checks actual independent video/audio stream extents before native preservation"
+    ],
+    "native_target": "https://github.com/oyzitjfzj/Ad/actions/runs/39933979484",
+    "focused_source_security_target": "https://github.com/oyzitjfzj/Ad/actions/runs/39933979527",
+    "mobile_security_target": "https://github.com/oyzitjfzj/Ad/actions/runs/39933979500",
+    "current_release_note": "These newly committed production-security changes require matching completed native+focused CI before being reported as physically verified; the previously accepted 504-case native baseline remains at commit 132a813b36ac8db23edc51eb18508695e2b6d5c8. Zero/12 full elite film subsystem gates achieved. No new film authored by an independent installed creative Brain.",
+    "last_confirmed_security": "https://github.com/oyzitjfzj/Ad/actions/runs/39933979500"
   }
 }
