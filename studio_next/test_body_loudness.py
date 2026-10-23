@@ -66,6 +66,52 @@ class NativeSoundLevelProof(unittest.TestCase):
                                b["integrated_loudness_lufs"],9)
             self.assertGreater(a["measured_true_peak_dbfs"]-
                                b["measured_true_peak_dbfs"],9)
+    def test_loudness_analyzer_reads_attested_cas_not_mutable_owner_movie_checkout(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as home:
+            root=Path(home)
+            source=root/"original-artist-voice-clip.mp4"
+            proc=subprocess.run(["ffmpeg","-hide_banner","-loglevel","error","-nostdin","-y",
+                "-f","lavfi","-i","color=c=black:s=160x90:r=12:d=2",
+                "-f","lavfi","-i",
+                "sine=frequency=560:sample_rate=48000:duration=2",
+                "-c:v","libx264","-pix_fmt","yuv420p",
+                "-c:a","aac","-shortest",str(source)],
+                capture_output=True,text=True,timeout=65)
+            self.assertEqual(proc.returncode,0,proc.stderr)
+            vault=MediaVault(root/"vault")
+            receipt=vault.ingest(source,mime="video/mp4",rights="owner_supplied",
+                source_type="owner_upload",source_id="licensed-original-voice",
+                evidence="Actual original voice and picture authored in test",
+                owner_or_generator="owner")
+            plan=root/"director-sound-audit.json"
+            plan.write_text(json.dumps({"media":{"source":source.name,
+                "asset_id":receipt["asset_id"],
+                "attestation_id":receipt["attestation_id"]}}))
+            owner=source.read_bytes()
+            original_run=subprocess.run
+            observed=[]
+            def intercept(argv,**kwargs):
+                if argv and argv[0]=="ffmpeg" and "-af" in argv and "ebur128=peak=true" in argv:
+                    decoder=Path(argv[argv.index("-i")+1])
+                    self.assertIn(".zx7-owned-sources-",str(decoder))
+                    self.assertFalse(decoder.stat().st_mode & 0o222)
+                    self.assertEqual(sha256_file(decoder),receipt["asset_id"])
+                    observed.append(decoder)
+                    source.write_bytes(b"unlicensed replacement while analyzer is measuring")
+                    try:return original_run(argv,**kwargs)
+                    finally:source.write_bytes(owner)
+                return original_run(argv,**kwargs)
+            with patch("studio_next.body_loudness.subprocess.run",side_effect=intercept):
+                proven=inspect_original_loudness(plan,root,root/"vault")
+            self.assertTrue(proven["meter_analyzed_exact_private_attested_cas"])
+            self.assertTrue(proven["source_original_audio_stream_verified"])
+            self.assertIsInstance(proven["measured_true_peak_dbfs"],float)
+            self.assertEqual(sha256_file(source),receipt["asset_id"])
+            self.assertEqual(len(observed),1)
+            self.assertFalse(observed[0].exists())
+            self.assertFalse(list(root.glob(".zx7-owned-sources-*")))
+
     def test_unlicensed_source_or_movie_without_audio_is_never_called_sound_compliant(self):
         with tempfile.TemporaryDirectory() as home:
             root=Path(home)

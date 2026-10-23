@@ -13,9 +13,10 @@ import json
 import math
 import re
 import subprocess
+import tempfile
 from pathlib import Path
 
-from .composite_mix import _exact_media
+from .composite_mix import _exact_media,sealed_attested_original
 from .delivery_audit import _probe_details
 from .media_vault import MediaVault,sha256_file
 
@@ -40,7 +41,10 @@ def inspect_original_loudness(plan_file,workspace,vault_root):
     source=Path(plan_file).resolve()
     if not source.is_file() or not source.is_relative_to(root):
         raise ValueError("No original protected artist loudness plan")
+    plan_sha=sha256_file(source)
     plan=json.loads(source.read_text(encoding="utf-8"))
+    if sha256_file(source)!=plan_sha:
+        raise ValueError("Sound director's original plan changed during read")
     if not isinstance(plan,dict) or set(plan)!={"media"}:
         raise ValueError("Sound audit needs only verified original media")
     media=plan["media"]
@@ -55,13 +59,24 @@ def inspect_original_loudness(plan_file,workspace,vault_root):
                          attestation_id=media["attestation_id"])
     if digest!=media["asset_id"]:
         raise ValueError("Source changed before native sound loudness measurement")
-    proc=subprocess.run(
-        ["ffmpeg","-hide_banner","-nostdin","-loglevel","info",
-         "-i",str(movie),"-map","0:a:0","-vn",
-         "-af","ebur128=peak=true","-f","null","-"],
-        capture_output=True,text=True,timeout=7200,check=False)
-    if proc.returncode:
-        raise ValueError("Original waveform failed actual full-program true-peak analysis")
+    with tempfile.TemporaryDirectory(prefix=".zx7-owned-sources-",dir=root) as working:
+        frozen=sealed_attested_original(
+            MediaVault(vault_root),digest,media["attestation_id"],
+            Path(working),{})
+        if sha256_file(source)!=plan_sha or sha256_file(movie)!=digest:
+            raise ValueError("Original sound program changed before native analysis")
+        proc=subprocess.run(
+            ["ffmpeg","-hide_banner","-nostdin","-loglevel","info",
+             "-i",str(frozen),"-map","0:a:0","-vn",
+             "-af","ebur128=peak=true","-f","null","-"],
+            capture_output=True,text=True,timeout=7200,check=False)
+        if proc.returncode:
+            raise ValueError("Original waveform failed actual full-program true-peak analysis")
+        if (sha256_file(frozen)!=digest or sha256_file(movie)!=digest
+                or sha256_file(source)!=plan_sha):
+            raise ValueError("Original audio bytes or owner direction changed during true-peak measurement")
+        MediaVault(vault_root).inspect(digest,
+            attestation_id=media["attestation_id"])
     if "Summary:" not in (proc.stderr or ""):
         raise ValueError("Actual EBU R128 media analysis was not completed")
     report=proc.stderr.rsplit("Summary:",1)[1]
@@ -75,8 +90,8 @@ def inspect_original_loudness(plan_file,workspace,vault_root):
         peak=_level(facts["True peak"],"Peak","dBFS")
     except KeyError as exc:
         raise ValueError("Incomplete originally decoded broadcast audio measurements") from exc
-    if sha256_file(movie)!=digest:
-        raise ValueError("Artist original footage/sound changed during measurement")
+    if sha256_file(movie)!=digest or sha256_file(source)!=plan_sha:
+        raise ValueError("Artist original footage/sound or instructions changed during measurement")
     return {
         "path":str(movie),
         "sha256":digest,"bytes":movie.stat().st_size,
@@ -92,6 +107,7 @@ def inspect_original_loudness(plan_file,workspace,vault_root):
             physical["duration_seconds"]<60,
         "source_duration_seconds":physical["duration_seconds"],
         "source_original_audio_stream_verified":True,
+        "meter_analyzed_exact_private_attested_cas":True,
         "audio_stream_selection":"first actual audio stream",
         "loudness_normalization_applied_to_source":False,
         "any_target_lufs_or_peak_imposed":False,
