@@ -4,6 +4,8 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
+from threading import Thread
 from pathlib import Path
 from unittest.mock import patch
 from studio_next.comfy_video_runtime import (
@@ -19,6 +21,45 @@ def job():
 
 
 class SafeLocalVideoDiffusionAdapterTests(unittest.TestCase):
+    def test_live_local_comfy_api_does_not_follow_redirects_to_other_paths(self):
+        from studio_next.generative_video_providers import inspect_comfyui
+        observed=[]
+        class Redirect(BaseHTTPRequestHandler):
+            def do_GET(self):
+                observed.append(("GET",self.path))
+                self.send_response(302)
+                self.send_header("Location",
+                    "http://127.0.0.1:"+str(self.server.server_port)+"/unapproved")
+                self.end_headers()
+            def do_POST(self):
+                observed.append(("POST",self.path))
+                self.send_response(307)
+                self.send_header("Location",
+                    "http://127.0.0.1:"+str(self.server.server_port)+"/unapproved")
+                self.end_headers()
+            def log_message(self,*args):
+                return
+        server=ThreadingHTTPServer(("127.0.0.1",0),Redirect)
+        worker=Thread(target=server.serve_forever,daemon=True)
+        worker.start()
+        try:
+            endpoint="http://127.0.0.1:"+str(server.server_port)
+            self.assertFalse(inspect_comfyui(endpoint)["service_reachable"])
+            local=LocalComfyVideoClient(endpoint)
+            with self.assertRaisesRegex(ValueError,"redirect"):
+                local.call("GET","/system_stats")
+            with self.assertRaisesRegex(ValueError,"redirect"):
+                local.call("POST","/prompt",{"prompt":{"safe":{"inputs":{}}}})
+            self.assertEqual(observed,[
+                ("GET","/system_stats"),
+                ("GET","/system_stats"),
+                ("POST","/prompt")])
+            self.assertFalse(any("/unapproved" in path for _,path in observed))
+        finally:
+            server.shutdown()
+            server.server_close()
+            worker.join(timeout=5)
+
     def test_model_owns_acting_prompt_format_timing_no_template_or_default(self):
         x=job()
         self.assertEqual(validate_video_job(x)["frames"],49)
