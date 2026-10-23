@@ -118,6 +118,15 @@ def render(original_path):
         visual("second.png","words-evolution",3.9,3.4),
         visual("closing.png","geometry-outro",7.2,3.7),
         visual("final.png","words-outro",7.65,3.3)]
+    # Director-authored staggered parallax. Actual frames are moved by the
+    # installed compositor; the artist's typography stays legible.
+    for index,initial,final,span in (
+        (1,(-18,-5),(15,10),3.5),
+        (3,(14,8),(-25,-5),3.8),
+        (5,(-14,6),(22,-12),3.6)):
+        images[index]["motion"]=[
+            {"at_seconds":0,"x":initial[0],"y":initial[1]},
+            {"at_seconds":span,"x":final[0],"y":final[1]}]
     sound=refs[song.name]
     plan={"canvas":{"width":W,"height":H,"fps":FPS,
            "duration":DURATION,"background":"#081025"},
