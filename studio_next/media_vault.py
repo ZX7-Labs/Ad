@@ -105,10 +105,60 @@ def verify_media_container(path,mime):
         from .creative_asset_ops import validate_original_svg_art
         validate_original_svg_art(path)
     elif mime=="model/gltf-binary":
-        with path.open("rb") as f:
-            first=f.read(12)
-        if len(first)!=12 or first[:4]!=b"glTF":
-            raise MediaCustodyError("Claimed 3D GLB is not a real binary scene")
+        # glTF v2 GLB is a precisely chunked binary container, not twelve
+        # bytes beginning with "glTF". Verify actual JSON scene metadata and
+        # every chunk boundary before granting source rights. This verifies
+        # binary structure, NOT artistic geometry, UVs, shader or render quality.
+        import struct
+        size=path.stat().st_size
+        if size<32:
+            raise MediaCustodyError("Original GLB has no complete scene")
+        try:
+            with path.open("rb") as scene:
+                magic,version,declared=struct.unpack("<4sII",scene.read(12))
+                if magic!=b"glTF" or version!=2 or declared!=size:
+                    raise MediaCustodyError("Original GLB header/version/size is false")
+                visited=12
+                first_json=None
+                chunks=0
+                has_binary=False
+                while visited<size:
+                    header=scene.read(8)
+                    if len(header)!=8:
+                        raise MediaCustodyError("Truncated original GLB chunk header")
+                    length,kind=struct.unpack("<I4s",header)
+                    visited+=8
+                    if length%4!=0 or length>size-visited or chunks>=64:
+                        raise MediaCustodyError("Invalid native GLB chunk boundary")
+                    if chunks==0:
+                        if kind!=b"JSON" or not 4<=length<=8*1024*1024:
+                            raise MediaCustodyError("GLB has no bounded native JSON scene")
+                        first_json=json.loads(scene.read(length).rstrip(b" \\t\\r\\n\\x00"))
+                        if not isinstance(first_json,dict):
+                            raise MediaCustodyError("GLB scene description is not JSON")
+                    else:
+                        if kind==b"JSON" or (kind==b"BIN\\x00" and has_binary):
+                            raise MediaCustodyError("GLB has duplicate scene or binary chunks")
+                        if kind==b"BIN\\x00":has_binary=True
+                        scene.seek(length,1)
+                    visited+=length
+                    chunks+=1
+                if visited!=size:
+                    raise MediaCustodyError("Native GLB file contains undeclared bytes")
+                if (not isinstance(first_json,dict)
+                        or first_json.get("asset",{}).get("version")!="2.0"
+                        or not isinstance(first_json.get("scenes"),list)
+                        or not first_json["scenes"]
+                        or not isinstance(first_json.get("nodes"),list)
+                        or not first_json["nodes"]
+                        or not (first_json.get("meshes") or first_json.get("cameras"))):
+                    raise MediaCustodyError(
+                        "Original GLB lacks a real scene graph and authored geometry/camera")
+                if first_json.get("buffers") and not has_binary:
+                    raise MediaCustodyError("GLB describes missing required binary source")
+        except (OSError,struct.error,UnicodeDecodeError,
+                json.JSONDecodeError,TypeError,AttributeError) as exc:
+            raise MediaCustodyError("Original GLB failed full binary scene verification") from exc
     elif mime=="image/x-exr":
         # Standalone, potentially owner-supplied scene-linear EXR must be
         # physically decoded. A matching EXR magic prefix, filename or
