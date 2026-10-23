@@ -119,7 +119,7 @@ def verify_media_container(path,mime):
         import OpenEXR
         try:
             with path.open("rb") as data:
-                if data.read(4)!=b"\\x76\\x2f\\x31\\x01":
+                if data.read(4)!=bytes((0x76,0x2f,0x31,0x01)):
                     raise MediaCustodyError("Original image has no real OpenEXR magic")
             with OpenEXR.File(str(path),separate_channels=True) as exr:
                 if not exr.parts:
