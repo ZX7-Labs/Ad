@@ -124,6 +124,16 @@ def fingerprint_physical_inputs(tool_id,inputs,workspace):
         p=_file(root,source)
         if p.is_file():
             found.add(p)
+            if p.suffix.lower()==".otio" and tool_id=="body.otio_owned_import":
+                from .body_sequence_otio import import_verified_sequence_otio
+                imported=import_verified_sequence_otio(p,root,root/"vault")
+                for shot in imported["plan"]["clips"]:
+                    receipt=MediaVault(root/"vault").inspect(
+                        shot["asset_id"],attestation_id=shot["attestation_id"])
+                    original=Path(receipt["path"]).resolve()
+                    if not original.is_relative_to(root):
+                        raise ValueError("Editable source escaped the owner workspace")
+                    found.add(original)
             if p.suffix.lower()==".json":
                 document=json.loads(p.read_text(encoding="utf-8"))
                 _nested_sources(document,root,found)
@@ -135,13 +145,6 @@ def fingerprint_physical_inputs(tool_id,inputs,workspace):
                     plan_verified_sequence(document,root,root/"vault")
                 if tool_id=="body.motion2d":
                     _authored_typefaces(document,selected_fonts)
-        elif p.suffix==".otio" and tool_id=="body.otio_owned_import":
-            from .body_sequence_otio import import_verified_sequence_otio
-            imported=import_verified_sequence_otio(p,root,root/"vault")
-            for shot in imported["plan"]["clips"]:
-                custody=MediaVault(root/"vault").inspect(
-                    shot["asset_id"],attestation_id=shot["attestation_id"])
-                found.add(Path(custody["path"]).resolve())
         elif p.is_dir():
             for child in p.rglob("*"):
                 if child.is_symlink():
