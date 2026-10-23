@@ -160,6 +160,51 @@ class MediaVaultProductionTests(unittest.TestCase):
             with self.assertRaisesRegex(MediaCustodyError,"altered"):
                 vault.inspect(ref["asset_id"])
 
+    def test_real_mesh_glb_requires_physical_buffer_and_bounded_buffer_views(self):
+        import json
+        import struct
+        with tempfile.TemporaryDirectory() as home:
+            root=Path(home)
+            original=root/"artist-mesh.glb"
+            vault=MediaVault(root/"vault")
+            geometry=struct.pack("<fff",0.25,0.5,-1.0)+bytes(4)
+            base={"asset":{"version":"2.0"},"scenes":[{"nodes":[0]}],
+                  "nodes":[{"mesh":0}],
+                  "meshes":[{"primitives":[{"attributes":{"POSITION":0}}]}],
+                  "buffers":[{"byteLength":len(geometry)}],
+                  "bufferViews":[{"buffer":0,"byteOffset":0,
+                                  "byteLength":len(geometry)}],
+                  "accessors":[{"bufferView":0,"componentType":5126,
+                                "count":1,"type":"VEC3"}]}
+            def encoded(document,embed=True):
+                metadata=json.dumps(document,separators=(",",":")).encode()
+                metadata+=b" "*((-len(metadata))%4)
+                chunks=struct.pack("<I4s",len(metadata),b"JSON")+metadata
+                if embed:
+                    chunks+=struct.pack("<I4s",len(geometry),
+                                        bytes((66,73,78,0)))+geometry
+                return struct.pack("<4sII",b"glTF",2,12+len(chunks))+chunks
+            original.write_bytes(encoded(base))
+            verified=vault.ingest(original,mime="model/gltf-binary",
+                rights="owner_supplied",source_type="owner_upload",
+                source_id="actual-original-3d-geometry",
+                evidence="Owner physical mesh and bounded glTF buffer",
+                owner_or_generator="owner")
+            self.assertEqual(vault.inspect(verified["asset_id"])["mime"],
+                             "model/gltf-binary")
+            forged={**base,"buffers":[{"byteLength":len(geometry)+16}]}
+            escaped={**base,"bufferViews":[{"buffer":0,"byteOffset":12,
+                                            "byteLength":16}]}
+            for fake in (encoded(base,embed=False),encoded(forged),
+                         encoded(escaped)):
+                original.write_bytes(fake)
+                with self.assertRaises(MediaCustodyError):
+                    vault.ingest(original,mime="model/gltf-binary",
+                        rights="owner_supplied",source_type="owner_upload",
+                        source_id="claimed-unbounded-geometry",
+                        evidence="Unverified requested mesh",
+                        owner_or_generator="owner")
+
     def test_real_glb_json_chunk_and_complete_native_length_are_required(self):
         import json
         import struct
