@@ -63,9 +63,15 @@ def _whole_frames(time,fps,label):
 
 
 def _required_metadata(value,label):
-    if not isinstance(value,dict) or value.get("schema")!=_SCHEMA:
+    # OTIO native C++ serializes nested dictionaries as AnyDictionary,
+    # not Python dict. Read their actual mapping fields without assuming the
+    # in-process Python type was preserved by the professional codec.
+    if not hasattr(value,"get") or value.get("schema")!=_SCHEMA:
         raise ValueError("Missing exact authenticated ZX7 "+label+" NLE metadata")
-    return value
+    try:
+        return dict(value)
+    except (TypeError,ValueError) as exc:
+        raise ValueError("Malformed original editor metadata map") from exc
 
 
 def _video_metadata(clip,index,plan):
@@ -96,7 +102,7 @@ def import_verified_sequence_otio(file_path,workspace,vault_root):
                    "source_media_originals_attested"}:
         raise ValueError("Unexpected original timeline metadata contract")
     fpsmeta=meta["frame_rate"]
-    if (not isinstance(fpsmeta,dict)
+    if (not hasattr(fpsmeta,"get")
             or set(fpsmeta)!={"numerator","denominator"}
             or type(fpsmeta["numerator"]) is not int
             or type(fpsmeta["denominator"]) is not int
