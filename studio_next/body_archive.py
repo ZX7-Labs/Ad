@@ -142,7 +142,7 @@ def create_body_archive(workspace,archive):
             sources.append((relative,source,path))
         rows=[]
         try:
-            with tarfile.open(tmp,"w:gz",format=tarfile.PAX_FORMAT) as tar:
+            with tarfile.open(tmp,"x:gz",format=tarfile.PAX_FORMAT) as tar:
                 for relative,source,original in sources:
                     before=sha256_file(source)
                     length=source.stat().st_size
