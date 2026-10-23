@@ -71,7 +71,7 @@ class ActualNativeSceneToProRes(unittest.TestCase):
             "body.aces2_movie",args,allowed_access={"read","write"})
         self.assertTrue(validate_witness("body.aces2_movie",response))
         observed=subprocess.run(["ffprobe","-v","error","-count_frames",
-            "-show_entries","stream=codec_name,pix_fmt,nb_read_frames",
+            "-show_entries","stream=codec_name,pix_fmt,nb_read_frames,color_space,color_transfer,color_primaries,color_range",
             "-of","json",str(self.root/"real-aces2-prores.mov")],
             capture_output=True,text=True,check=True,timeout=60)
         streams=json.loads(observed.stdout)["streams"]
@@ -79,6 +79,8 @@ class ActualNativeSceneToProRes(unittest.TestCase):
         self.assertEqual(streams[0]["codec_name"],"prores")
         self.assertEqual(streams[0]["pix_fmt"],"yuv422p10le")
         self.assertEqual(streams[0]["nb_read_frames"],"2")
+        self.assertEqual(streams[0].get("color_space"),"bt709")
+        self.assertEqual(streams[0].get("color_primaries"),"bt709")
         self.assertFalse(list(self.root.glob(".zx7-aces2-movie-*")))
 
     def test_native_aces2_movie_enters_real_generated_license_and_resumes(self):
