@@ -112,5 +112,93 @@ class OneBrainConnectedBodyRegression(unittest.TestCase):
             finally:c.close()
 
 
+
+
+@unittest.skipUnless(__import__("shutil").which("ffmpeg") and
+                     __import__("shutil").which("ffprobe"),
+                     "Actual native video and sound required for model-facing physical loop")
+class RealConnectedBrainToOwnedCinemaTests(unittest.TestCase):
+    def test_host_authorized_model_interface_executes_and_observes_actual_decoded_film(self):
+        import json
+        import subprocess
+        from studio_next.media_vault import MediaVault,sha256_file
+        from studio_next.production_qc import full_decode_inspection
+        with tempfile.TemporaryDirectory() as root:
+            service=LocalBodyCoordinator(root)
+            try:
+                workspace=service._workspace("real-owner-film")
+                workspace.mkdir(parents=True,exist_ok=True)
+                source=workspace/"true-camera.mp4"
+                generated=subprocess.run(["ffmpeg","-hide_banner",
+                    "-loglevel","error","-nostdin","-y",
+                    "-f","lavfi","-i","color=c=0x2060aa:s=160x90:r=24:d=0.75",
+                    "-f","lavfi","-i",
+                    "sine=frequency=460:sample_rate=48000:duration=0.75",
+                    "-c:v","libx264","-pix_fmt","yuv420p","-c:a","aac",
+                    "-shortest",str(source)],capture_output=True,text=True,timeout=55)
+                self.assertEqual(generated.returncode,0,generated.stderr)
+                vault=MediaVault(workspace/"vault")
+                custody=vault.ingest(source,mime="video/mp4",
+                    rights="owner_supplied",source_type="owner_upload",
+                    source_id="model-nerve-actual-camera",
+                    evidence="Actual decoded original source plus soundtrack",
+                    owner_or_generator="authorized-owner")
+                edit={"format":{"width":160,"height":90,"fps":24,
+                         "framing":"fit","background":"#080F1C"},
+                    "clips":[{"id":"actual-scene","source":source.name,
+                      "rights":"owner_supplied","audio":"preserve_source",
+                      "asset_id":custody["asset_id"],
+                      "attestation_id":custody["attestation_id"]}]}
+                (workspace/"owner-cut.json").write_text(json.dumps(edit))
+                authored={"project":{"creative_intent":
+                          "One model-authored original cinematic cut with real rights"},
+                          "shots":[{"id":"actual-scene","purpose":
+                              "Decode original camera movement and recorded sound",
+                              "duration_seconds":0.75}],"assets":[],
+                          "tool_graph":[
+                            {"id":"original-edit","tool_id":"body.render_edit_owned",
+                             "purpose":"Physically cut only licensed original footage",
+                             "inputs":{"edit":"owner-cut.json",
+                                       "out":"accepted-model-film.mp4"},
+                             "depends_on":[]},
+                            {"id":"audited-original","tool_id":"body.asset_vault",
+                             "purpose":"Preserve graph-proven actual edited original",
+                             "inputs":{"source_witness":{"$node_output":"original-edit"}},
+                             "depends_on":["original-edit"]}]}
+                host=BodyAuthority(workspace_ids=frozenset({"real-owner-film"}),
+                    tool_access=frozenset({"read","write"}),
+                    operations=frozenset({"submit"}))
+                model_interface=LiveBodySignal(service,authority=host)
+                chosen=model_interface.describe("real-owner-film","body.render_edit_owned")
+                self.assertEqual(chosen["status"],"ready_to_preflight")
+                preview=model_interface.preflight("real-owner-film",
+                    "body.render_edit_owned",{"edit":"owner-cut.json",
+                                               "out":"accepted-model-film.mp4"})
+                self.assertEqual(preview["readiness"],"preflight_checked_not_executed")
+                self.assertFalse(preview["real_movie_rendered"])
+                job=model_interface.command("submit",{
+                    "film_ir":authored,"workspace_id":"real-owner-film"})
+                for _ in range(220):
+                    observed=model_interface.observe(job["job_id"])
+                    if observed["job_state"] in ("completed","failed","blocked"):
+                        break
+                    time.sleep(.04)
+                self.assertEqual(observed["job_state"],"completed",observed)
+                self.assertFalse(observed["movie_physically_decoded_by_this_observation"])
+                movie=workspace/"accepted-model-film.mp4"
+                physical=full_decode_inspection(movie,expected={
+                    "width":160,"height":90,"require_audio":True})
+                self.assertTrue(physical["full_picture_and_sound_decoder_completed"])
+                self.assertTrue(physical["technical_delivery_verified"])
+                self.assertEqual(vault.inspect(sha256_file(movie))["asset_id"],
+                                 sha256_file(movie))
+                with self.assertRaises(PermissionError):
+                    model_interface.command("retry",{"job_id":job["job_id"]})
+                with self.assertRaises(PermissionError):
+                    model_interface.observe("some-other-job")
+            finally:
+                service.close()
+
+
 if __name__=="__main__":
     unittest.main()
