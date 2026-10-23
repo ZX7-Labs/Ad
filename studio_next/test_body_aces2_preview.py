@@ -30,15 +30,15 @@ class RealOwnerACES2SceneColorProof(unittest.TestCase):
         self.vault=MediaVault(self.root/"vault")
         film=sample()
         film["shot_id"]="licensed-scene-linear-color-engine"
-        film["frames"]=1
+        film["frames"]=2
         film["fps"]=12
         film["width"]=96
         film["height"]=64
         film["samples"]=2
-        film["camera"]["animate_location"][-1]["frame"]=1
+        film["camera"]["animate_location"][-1]["frame"]=2
         for item in film["objects"]:
             for curve in item.get("animate",{}).values():
-                if curve:curve[-1]["frame"]=1
+                if curve:curve[-1]["frame"]=2
         self.scene=self.root/"owned-scene.json"
         self.scene.write_text(json.dumps(film))
         self.exr=self.root/"licensed-float-exr.zip"
