@@ -38,7 +38,16 @@ def verify_media_container(path,mime):
         from .delivery_audit import _probe_details
         import subprocess
         try:
-            return _probe_details(path)
+            observed=_probe_details(path)
+            decoded=subprocess.run([
+                "ffmpeg","-hide_banner","-loglevel","error","-nostdin",
+                "-xerror","-i",str(path),"-map","0:v:0",
+                "-map","0:a:0?","-f","null","-"],
+                capture_output=True,timeout=3600,check=False)
+            if decoded.returncode!=0:
+                raise MediaCustodyError(
+                    "Original video failed complete physical picture/audio decode")
+            return observed
         except (OSError,ValueError,RuntimeError,subprocess.SubprocessError) as exc:
             # Source footage failures are an ordinary untrusted upload error,
             # not an uncaught internal server exception or valid asset.
