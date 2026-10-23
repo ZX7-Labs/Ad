@@ -144,6 +144,10 @@ def verify_media_container(path,mime):
             from PIL import Image
             with Image.open(path) as image:
                 image.verify()
+            with Image.open(path) as image:
+                image.load()
+                if image.width<1 or image.height<1:
+                    raise MediaCustodyError("Original graphic contains no actual pixels")
         except (ImportError,OSError,ValueError) as exc:
             raise MediaCustodyError("No decoded original graphic available") from exc
     # font/ttf, font/otf and binary originals require trusted import provenance
