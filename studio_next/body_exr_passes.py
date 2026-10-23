@@ -15,6 +15,7 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -151,7 +152,7 @@ def render_original_exr_passes(scene_file,workspace,output,*,assets_root=None):
     original_sha=sha256_file(original)
     destination.parent.mkdir(parents=True,exist_ok=True)
     try:
-        with tempfile.TemporaryDirectory(prefix="zx7-original-exr-render-") as temp:
+        with tempfile.TemporaryDirectory(prefix=".zx7-original-exr-render-",dir=root) as temp:
             frames_dir=Path(temp)/"frames"
             frames_dir.mkdir()
             cmd=["blender","--background","--factory-startup",
@@ -186,13 +187,21 @@ def render_original_exr_passes(scene_file,workspace,output,*,assets_root=None):
                     "channels":pass_info["actual_channel_names"]})
             if sha256_file(original)!=original_sha:
                 raise ValueError("Director's 3D scene changed during original scene-linear render")
-            with zipfile.ZipFile(destination,"x",compression=zipfile.ZIP_DEFLATED,
+            archive=Path(temp)/"verified-original-exr.zip"
+            with zipfile.ZipFile(archive,"x",compression=zipfile.ZIP_DEFLATED,
                                 compresslevel=6,allowZip64=True) as bundle:
                 for file in frame_paths:
                     bundle.write(file,arcname="frames/"+file.name)
                 bundle.writestr("manifest.json",json.dumps(
                     manifest,sort_keys=True,ensure_ascii=False,indent=2)+"\n")
-        independent=verify_exr_bundle(destination)
+            independent=verify_exr_bundle(archive)
+            if sha256_file(original)!=original_sha:
+                raise ValueError("Director scene changed before EXR publication")
+            with archive.open("rb") as verified_source:
+                os.fsync(verified_source.fileno())
+            # Publish only a fully decoded, verified archive. Never delete a
+            # competing approved ZIP that appeared while Cycles was running.
+            os.link(archive,destination)
         return {"path":str(destination),"sha256":sha256_file(destination),
                 "bytes":destination.stat().st_size,
                 "original_scene_sha256":original_sha,
@@ -201,5 +210,6 @@ def render_original_exr_passes(scene_file,workspace,output,*,assets_root=None):
                 "verified_channels":manifest["frames"][0]["channels"],
                 "human_quality_approved":False,"ACES_color_grade_proven":False}
     except BaseException:
-        destination.unlink(missing_ok=True)
+        # Only the temporary render belongs to us. A public destination might
+        # be another compositor's approved EXR bundle; never unlink it.
         raise

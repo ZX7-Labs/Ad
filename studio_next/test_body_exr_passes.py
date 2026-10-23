@@ -166,6 +166,33 @@ class Real32FloatMultiPassVfx(unittest.TestCase):
                      encoding="utf-8")
 
 
+    def test_real_exr_competing_master_is_not_overwritten_or_deleted(self):
+        from unittest.mock import patch
+        from studio_next import body_exr_passes
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d)
+            scene,_=self.scene(root)
+            prior=root/"existing-original-artist-exr.zip"
+            render_original_exr_passes(scene,root,prior)
+            expected=sha256_file(prior)
+            movie=root/"rival-exr-cannot-be-replaced.zip"
+            real_link=os.link
+            published=False
+            def competing_artist_wins(src,dst,*args,**kwargs):
+                nonlocal published
+                if Path(dst)==movie:
+                    self.assertIn(".zx7-original-exr-render-",str(src))
+                    shutil.copyfile(prior,movie)
+                    published=True
+                return real_link(src,dst,*args,**kwargs)
+            with patch.object(body_exr_passes.os,"link",side_effect=competing_artist_wins):
+                with self.assertRaises(FileExistsError):
+                    render_original_exr_passes(scene,root,movie)
+            self.assertTrue(published)
+            self.assertEqual(sha256_file(movie),expected)
+            self.assertTrue(verify_exr_bundle(movie)["original_exr_passes_real"])
+            self.assertFalse(list(root.glob(".zx7-original-exr-render-*")))
+
     def test_non_authorized_external_GLB_only_claims_are_not_vfx_evidence(self):
         with tempfile.TemporaryDirectory() as d:
             root=Path(d)
