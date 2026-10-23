@@ -32,6 +32,7 @@ _SOURCE_FIELDS={
     "body.full_decode":("source",),
     "body.loudness":("plan",),
     "body.review":("plan",),
+    "body.temporal_evidence":("plan",),
     "body.review_data":("bundle",),
     "body.review_frame":("bundle",),
     "body.review_compare":("before_bundle","after_bundle"),

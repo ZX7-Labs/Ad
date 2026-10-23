@@ -42,6 +42,7 @@ from .body_owned_edit import render_verified_owned_edit,validate_owned_edit
 from .production_qc import full_decode_inspection
 from .body_loudness import inspect_original_loudness
 from .body_observation import produce_review_bundle,verify_review_bundle
+from .body_temporal_evidence import observe_every_original_frame
 from .body_review_access import read_verified_review,extract_verified_review_frame
 from .body_review_compare import compare_verified_revisions
 from .body_plugins import discover_enabled_body_plugins
@@ -147,6 +148,7 @@ def _trusted_body_revision(tool_id):
         "body.full_decode":["production_qc.py","delivery_audit.py"],
         "body.loudness":["body_loudness.py","media_vault.py","composite_mix.py"],
         "body.review":["body_observation.py","production_qc.py","media_vault.py"],
+        "body.temporal_evidence":["body_temporal_evidence.py","composite_mix.py","precision_retime.py","body_observation.py","production_qc.py","media_vault.py"],
         "body.review_data":["body_review_access.py","body_observation.py"],
         "body.review_frame":["body_review_access.py","body_observation.py"],
         "body.review_compare":["body_review_compare.py","body_review_access.py","body_observation.py"],
@@ -177,6 +179,7 @@ def _trusted_body_revision(tool_id):
         "body.full_decode":["ffmpeg","ffprobe"],
         "body.loudness":["ffmpeg","ffprobe"],
         "body.review":["ffmpeg","ffprobe"],
+        "body.temporal_evidence":["ffmpeg","ffprobe"],
         "body.review_data":[],
         "body.review_frame":[],
         "body.review_compare":[],
@@ -208,6 +211,7 @@ def _trusted_body_revision(tool_id):
                        "body.otio_owned_export":("opentimelineio",),
                        "body.otio_owned_import":("opentimelineio",),
                        "body.review":("Pillow",),
+                       "body.temporal_evidence":("numpy",),
                        "body.review_data":("Pillow",),
                        "body.review_frame":("Pillow",),
                        "body.review_compare":("Pillow",),
@@ -453,6 +457,13 @@ def body_catalog(workspace,*,vault_root=None):
         return _commit_actual_body_output(dest,
             lambda staged:produce_review_bundle(original,root,vault.root,staged))
 
+    def temporal_all_frames(inputs):
+        original=_path_within(root,inputs["plan"],exists=True)
+        dest=_body_output(root,inputs["out"],allowed=(".json",))
+        return _commit_actual_body_output(dest,
+            lambda staged:observe_every_original_frame(
+                original,root,vault.root,staged))
+
     def review_data(inputs):
         archive=_path_within(root,inputs["bundle"],exists=True)
         return read_verified_review(archive,inputs["bundle_sha256"],root)
@@ -613,6 +624,11 @@ def body_catalog(workspace,*,vault_root=None):
         "write",bool(shutil.which("ffmpeg") and shutil.which("ffprobe") and
                      importlib.util.find_spec("PIL") is not None),
         ["plan","out"],review_actual_film)
+    add("body.temporal_evidence","whole original film frame-by-frame physical evidence",
+        "Rights-attested native exact-CFR every-frame RGB metrics and actually decoded soundtrack; no inferred scene meaning",
+        "write",bool(shutil.which("ffmpeg") and shutil.which("ffprobe")
+                     and importlib.util.find_spec("numpy") is not None),
+        ["plan","out"],temporal_all_frames)
     add("body.loudness","measure actual first soundtrack LUFS, LRA and measured true-peak",
         "Read-only native FFmpeg EBU R128 measurement of original rights-cleared movie, no forced mastering targets",
         "read",bool(shutil.which("ffmpeg") and shutil.which("ffprobe")),
