@@ -141,5 +141,21 @@
         "sha256": "e9c4294effe162719355d00aa1a969a6f6b3d2ccf73fafb0e280ad6c2e036cb5"
       }
     ]
+  },
+  "canonical_2026_10_23_body_status": {
+    "source_of_truth": "docs/ZX7_BODY_CHECKPOINT_2026-10-23.json",
+    "canonical_branch": "zx7-body/mobile-operator-20261021",
+    "last_verified_source_commit": "f5ef1be25656b64a136c183f3e5a575a7adb182a",
+    "latest_real_native_evidence": "https://github.com/oyzitjfzj/Ad/actions/runs/39970317860",
+    "installed_native_suite_total": 544,
+    "installed_native_suite_passed": 543,
+    "browser_only_skipped_here": 1,
+    "repo_source_inventory": "https://github.com/oyzitjfzj/Ad/actions/runs/39969523313",
+    "static_source_risk_candidates": 379,
+    "actual_premium_body_production_ready": false,
+    "actual_independent_artistic_film_and_human_signoff": false,
+    "release_gate_count_completed": 0,
+    "release_gate_count_total": 12,
+    "caveat": "Historical 21 October branch/recovery facts below remain historical; never interpret them as current canonical release readiness."
   }
 }
