@@ -186,11 +186,6 @@ def plan_retime(plan,root,vault_root,*,probe=None):
         allparts.append({"first":first,"end":end,"speed":speed,"duration":duration})
     if expected>24*3600:
         raise ValueError("Local retime stage exceeds its 24-hour output safety capacity")
-    if probe is None and audio=="preserve_source":
-        sound_capacity=_decoded_source_duration(source,"audio")
-        if any(float(Fraction(item["end"],1)/fps)>sound_capacity+.015
-               for item in allparts):
-            raise ValueError("Time warp exceeds actual original recorded-audio stream")
     # Verify real source timing and its decoded frame count, not a user claim.
     # Dependency injection here is used only for isolated tests.
     if probe is None:
@@ -199,6 +194,11 @@ def plan_retime(plan,root,vault_root,*,probe=None):
             raise ValueError("Actual source rate differs from the selected frame timebase")
         if any(item["end"]>physical_frame_count for item in allparts):
             raise ValueError("Selected original edit reaches beyond source footage")
+        if audio=="preserve_source":
+            sound_capacity=_decoded_source_duration(source,"audio")
+            if any(float(Fraction(item["end"],1)/fps)>sound_capacity+.015
+                   for item in allparts):
+                raise ValueError("Time warp exceeds actual original recorded-audio stream")
     return {"source":source,"fps":fps,"audio":audio,"parts":allparts,
             "expected_seconds":float(expected),"source_fps":rate,
             "width":meta["width"],"height":meta["height"]}
