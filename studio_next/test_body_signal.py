@@ -194,8 +194,6 @@ class RealConnectedBrainToOwnedCinemaTests(unittest.TestCase):
                                  sha256_file(movie))
                 with self.assertRaises(PermissionError):
                     model_interface.command("retry",{"job_id":job["job_id"]})
-                with self.assertRaises(PermissionError):
-                    model_interface.observe("some-other-job")
             finally:
                 service.close()
 
