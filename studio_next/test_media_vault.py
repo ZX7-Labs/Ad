@@ -160,6 +160,26 @@ class MediaVaultProductionTests(unittest.TestCase):
             with self.assertRaisesRegex(MediaCustodyError,"altered"):
                 vault.inspect(ref["asset_id"])
 
+    def test_actual_font_uses_real_sfnt_unicode_glyph_tables_not_magic_header(self):
+        from studio_next.media_vault import verify_media_container
+        with tempfile.TemporaryDirectory() as root:
+            folder=Path(root)
+            ttf=folder/"invented-art-direction.ttf"
+            ttf.write_bytes(bytes((0,1,0,0))+b"fake-artist-glyphs"*90)
+            otf=folder/"invented-other-typeface.otf"
+            otf.write_bytes(b"OTTO"+b"fake-otf-tables"*80)
+            for path,mime in ((ttf,"font/ttf"),(otf,"font/otf")):
+                with self.subTest(mime=mime):
+                    with self.assertRaises(MediaCustodyError):
+                        verify_media_container(path,mime)
+            font=Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
+            import importlib.util
+            if font.is_file() and importlib.util.find_spec("fontTools"):
+                self.assertTrue(
+                    verify_media_container(font,"font/ttf")["actual_file_bytes_checked"])
+                with self.assertRaises(MediaCustodyError):
+                    verify_media_container(font,"font/otf")
+
     def test_real_mesh_glb_requires_physical_buffer_and_bounded_buffer_views(self):
         import json
         import struct
