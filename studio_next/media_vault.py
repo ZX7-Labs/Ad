@@ -184,6 +184,8 @@ class MediaVault:
         digest=sha256_file(path)
         dest=self._loc(digest)
         dest.parent.mkdir(parents=True,exist_ok=True)
+        if dest.is_symlink():
+            raise MediaCustodyError("Content-addressed creative media may not be a symlink")
         if not dest.is_file():
             fd,tmp=tempfile.mkstemp(prefix="."+digest[:10]+"-",dir=dest.parent)
             try:
