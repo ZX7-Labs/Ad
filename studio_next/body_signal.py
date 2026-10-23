@@ -1,0 +1,146 @@
+"""ZX7 unified model-neutral BODY signal: compact senses and authorized actions.
+
+Consolidates the separate 21 October live-signal experiment onto the canonical
+BodyAffordanceSurface + factual Body sensory contract. Not a creative model, MCP
+implementation, media decoder, autonomous worker or artist quality certificate.
+A host constructs BodyAuthority out-of-band; untrusted model data never grants
+filesystem, workspace, network, spending or native operation rights.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Callable
+
+from .body_affordances import BodyAffordanceSurface
+from .body_integration import body_catalog
+from .body_sensory import sense_body_job
+from .film_ir import validate_film_ir
+
+_ACTIONS=frozenset({"submit","pause","cancel","resume","retry"})
+_ACCESS=frozenset({"read","write","network","paid"})
+
+
+class BodyCommandRejected(ValueError):
+    """A command was rejected without starting new execution."""
+
+
+@dataclass(frozen=True)
+class BodyAuthority:
+    """Real owner-provided immutable permission scope, not model arguments."""
+    workspace_ids: frozenset[str]
+    operations: frozenset[str]=field(default_factory=frozenset)
+    fact_ids: frozenset[str]=field(default_factory=frozenset)
+    tool_access: frozenset[str]=field(default_factory=lambda:frozenset({"read"}))
+
+    def __post_init__(self):
+        if (not isinstance(self.workspace_ids,frozenset)
+            or not self.workspace_ids or
+            any(not isinstance(x,str) or not x or len(x)>80 or
+                not all(c.isalnum() or c in "-_" for c in x)
+                for x in self.workspace_ids) or
+            not isinstance(self.operations,frozenset) or
+            not self.operations.issubset(_ACTIONS) or
+            not isinstance(self.fact_ids,frozenset) or
+            any(not isinstance(x,str) or not x for x in self.fact_ids) or
+            not isinstance(self.tool_access,frozenset) or
+            not self.tool_access or not self.tool_access.issubset(_ACCESS)):
+            raise ValueError("Only narrow host-issued BODY authority is valid")
+        if "submit" in self.operations and "write" not in self.tool_access:
+            raise ValueError("Submit requires host-issued write access")
+
+
+class LiveBodySignal:
+    """Read real registered tools, observe actual status, command owner jobs.
+
+    This deliberately REUSES one trusted catalog, native persistence, native
+    source validation and sense_body_job rather than forked implementations.
+    """
+    VERSION="zx7-body-signal/2"
+
+    def __init__(self,coordinator,*,authority:BodyAuthority,
+                 catalog_factory:Callable|None=None):
+        if not isinstance(authority,BodyAuthority):
+            raise TypeError("BODY requires out-of-band host-issued authority")
+        self._coordinator=coordinator
+        self._authority=authority
+        self._factory=catalog_factory or body_catalog
+
+    def _workspace(self,workspace_id):
+        if (not isinstance(workspace_id,str)
+                or workspace_id not in self._authority.workspace_ids):
+            raise PermissionError("Workspace has not been authorized by owner host")
+        return self._coordinator._workspace(workspace_id)
+
+    def _surface(self,workspace_id):
+        return BodyAffordanceSurface(self._factory(self._workspace(workspace_id)))
+
+    def discover(self,workspace_id,*,capability=None,cursor=None,limit=12,
+                 include_unavailable=False):
+        return {"protocol":self.VERSION,**self._surface(workspace_id).discover(
+            capability=capability,cursor=cursor,limit=limit,
+            include_unavailable=include_unavailable,
+            allowed_access=self._authority.tool_access)}
+
+    def describe(self,workspace_id,tool_id):
+        return {"protocol":self.VERSION,**self._surface(workspace_id).describe(
+            tool_id,allowed_access=self._authority.tool_access)}
+
+    def preflight(self,workspace_id,tool_id,inputs):
+        return {"protocol":self.VERSION,**self._surface(workspace_id).preflight(
+            tool_id,inputs,allowed_access=self._authority.tool_access)}
+
+    def observe(self,job_id,*,include_artifacts=False,max_stages=16):
+        if type(include_artifacts) is not bool:
+            raise BodyCommandRejected("Artifact detail must be a boolean")
+        job=self._coordinator.inspect(job_id)
+        self._workspace(job["workspace_id"])
+        signal=sense_body_job(self._coordinator,job_id,max_stages=max_stages)
+        report={"protocol":self.VERSION,**signal}
+        if include_artifacts:
+            inventory=self._coordinator.list_media(job_id)
+            actual=inventory.get("assets",[])
+            if not isinstance(actual,list):
+                raise RuntimeError("Malformed actual workspace media inventory")
+            report["workspace_media"]=[
+                {"path":item["path"],"sha256":item["sha256"],
+                 "bytes":item["bytes"],"accepted_as_finished_film":False}
+                for item in actual[:200] if isinstance(item,dict)
+                and all(k in item for k in ("path","sha256","bytes"))]
+            report["workspace_media_is_not_job_specific_receipt"]=True
+            report["more_workspace_media"]=len(actual)>200
+        return report
+
+    def command(self,action,arguments):
+        if action not in _ACTIONS or not isinstance(action,str):
+            raise BodyCommandRejected("Unknown model-facing BODY operation")
+        if action not in self._authority.operations:
+            raise PermissionError("Host did not authorize this BODY mutation")
+        if not isinstance(arguments,dict):
+            raise BodyCommandRejected("Typed BODY command object required")
+        expected={"film_ir","workspace_id"} if action=="submit" else {"job_id"}
+        if set(arguments)!=expected:
+            raise BodyCommandRejected("Unapproved BODY command argument fields")
+        if action=="submit":
+            workspace_id=arguments["workspace_id"]
+            self._workspace(workspace_id)
+            ir=arguments["film_ir"]
+            if not isinstance(ir,dict):
+                raise BodyCommandRejected("Original creative Film IR object required")
+            catalog=self._factory(self._workspace(workspace_id))
+            validation=validate_film_ir(ir,
+                installed_tool_ids=catalog.executable_ids(
+                    allowed_access=self._authority.tool_access),
+                fact_ids=set(self._authority.fact_ids))
+            if not validation.render_ready:
+                raise BodyCommandRejected("Proposed film is not physically runnable: "+
+                    "; ".join(validation.errors+validation.warnings)[:1200])
+            # Coordinator's durable graph independently rechecks physical
+            # assets, licenses, executable revisions and each source SHA.
+            return self._coordinator.submit(ir,workspace_id=workspace_id)
+        job_id=arguments["job_id"]
+        record=self._coordinator.inspect(job_id)
+        self._workspace(record["workspace_id"])
+        if action in ("pause","cancel"):
+            return self._coordinator.request_control(job_id,action)
+        return self._coordinator.retry_job(job_id,resume=action=="resume")
