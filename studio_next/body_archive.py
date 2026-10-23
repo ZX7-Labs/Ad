@@ -68,6 +68,14 @@ _PRIVATE_RENDER_PREFIXES=(
     ".zx7-aces2-",
     ".zx7-aces2-movie-",
     ".zx7-review-frame-",
+    ".zx7-comfy-stage-",
+    ".zx7-relink-seal-",
+    ".zx7-verified-relink-",
+    ".zx7-import-",
+    ".zx7-uncommitted-",
+    ".zx7-otio-import-",
+    ".zx7-nle-",
+    ".zx7-incomplete-",
 )
 
 
