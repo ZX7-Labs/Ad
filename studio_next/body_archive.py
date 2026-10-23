@@ -141,8 +141,10 @@ def create_body_archive(workspace,archive):
                 copies[relative]=str(source)
             sources.append((relative,source,path))
         rows=[]
+        owned_stage=False
         try:
             with tarfile.open(tmp,"x:gz",format=tarfile.PAX_FORMAT) as tar:
+                owned_stage=True
                 for relative,source,original in sources:
                     before=sha256_file(source)
                     length=source.stat().st_size
@@ -169,7 +171,10 @@ def create_body_archive(workspace,archive):
             # Do NOT replace a racing artist's approved project backup.
             os.link(tmp,out)
         finally:
-            tmp.unlink(missing_ok=True)
+            # If a different backup process won exclusive stage creation,
+            # this process has no right to erase that operator's archive.
+            if owned_stage:
+                tmp.unlink(missing_ok=True)
     return {"archive":str(out),"sha256":digest,"files":len(rows),
             "bytes":out.stat().st_size,"signed":False,
             "source_workspace":str(root),
