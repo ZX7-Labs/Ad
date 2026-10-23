@@ -87,7 +87,7 @@ class RealOwnerACES2SceneColorProof(unittest.TestCase):
     def test_wrong_input_color_rights_or_frame_are_refused_before_png(self):
         import copy
         for changes in (
-            {"frame_index":2},
+            {"frame_index":3},
             {"source_color_space":"ACEScg"},
             {"alpha_association":"unknown"},
             {"source":{**self.plan["source"],"attestation_id":"fake"}},
