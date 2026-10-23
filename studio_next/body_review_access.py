@@ -10,6 +10,8 @@ No stylistic inference, model-side Python, shell command or embedded HTML.
 """
 from __future__ import annotations
 import json
+import os
+import tempfile
 import re
 import zipfile
 from pathlib import Path
@@ -76,16 +78,24 @@ def extract_verified_review_frame(archive,expected_sha256,workspace,
     if hashlib.sha256(picture).hexdigest()!=row["sha256"] or len(picture)!=row["bytes"]:
         raise ValueError("Review picture differs from encoded source evidence")
     dest.parent.mkdir(parents=True,exist_ok=True)
-    try:
-        dest.write_bytes(picture)
-        verify_media_container(dest,"image/png")
-        return {"path":str(dest),"sha256":sha256_file(dest),
-                "bytes":dest.stat().st_size,
-                "source_film_sha256":manifest["source_sha256"],
-                "source_review_sha256":expected_sha256,
-                "original_time_seconds":row["time_seconds"],
-                "selected_frame_index":frame_index,
-                "human_artistic_quality_approved":False}
-    except BaseException:
-        dest.unlink(missing_ok=True)
-        raise
+    # Decode privately before publishing any director-visible PNG. A losing
+    # reviewer may NOT delete an independently accepted competitor's image.
+    dest.parent.mkdir(parents=True,exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".zx7-review-frame-",
+                                      dir=dest.parent) as scratch:
+        staged=Path(scratch)/"decoded-original-picture.png"
+        with staged.open("xb") as native:
+            native.write(picture)
+            native.flush()
+            os.fsync(native.fileno())
+        verify_media_container(staged,"image/png")
+        if sha256_file(file)!=expected_sha256:
+            raise ValueError("Original review archive changed while decoding")
+        os.link(staged,dest)
+    return {"path":str(dest),"sha256":sha256_file(dest),
+            "bytes":dest.stat().st_size,
+            "source_film_sha256":manifest["source_sha256"],
+            "source_review_sha256":expected_sha256,
+            "original_time_seconds":row["time_seconds"],
+            "selected_frame_index":frame_index,
+            "human_artistic_quality_approved":False}
