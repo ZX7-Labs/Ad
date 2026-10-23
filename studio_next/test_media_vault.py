@@ -58,6 +58,36 @@ class MediaVaultProductionTests(unittest.TestCase):
             with self.assertRaises(MediaCustodyError):
                 store.inspect(digest)
 
+    def test_media_objects_cannot_escape_owner_cas_through_symlinked_shard(self):
+        from studio_next.media_vault import sha256_file
+        with tempfile.TemporaryDirectory() as p:
+            workspace=Path(p)
+            asset=workspace/"legal-owner-media.bin"
+            asset.write_bytes(b"original-creator-byte-evidence"*180)
+            vault=MediaVault(workspace/"vault")
+            prefix=sha256_file(asset)[:2]
+            foreign=workspace/"outside-vault"
+            foreign.mkdir()
+            (vault.objects/prefix).symlink_to(foreign,target_is_directory=True)
+            with self.assertRaisesRegex(MediaCustodyError,"symlink"):
+                vault.ingest(asset,mime="application/octet-stream",
+                    rights="owner_supplied",source_type="owner_upload",
+                    source_id="creator-camera",evidence="Owner actual source",
+                    owner_or_generator="owner")
+            self.assertFalse(list(foreign.iterdir()))
+
+    def test_media_vault_refuses_linked_external_provenance_db(self):
+        with tempfile.TemporaryDirectory() as p:
+            workspace=Path(p)
+            outside=workspace/"foreign.sqlite3"
+            outside.write_bytes(b"forged-database")
+            store=workspace/"vault"
+            store.mkdir()
+            (store/"assets.sqlite3").symlink_to(outside)
+            with self.assertRaisesRegex(MediaCustodyError,"linked object or database"):
+                MediaVault(store)
+            self.assertEqual(outside.read_bytes(),b"forged-database")
+
     def test_simultaneous_identical_verified_blob_is_reused_not_damaged(self):
         from studio_next import media_vault
         from studio_next.media_vault import sha256_file
