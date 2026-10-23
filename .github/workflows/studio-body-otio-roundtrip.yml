@@ -6,6 +6,10 @@ on:
     paths:
       - ".github/workflows/studio-body-otio-roundtrip.yml"
       - "studio_next/body_sequence_otio.py"
+      - "studio_next/body_materials.py"
+      - "studio_next/body_integration.py"
+      - "studio_next/body_sequence_cuts.py"
+      - "studio_next/media_vault.py"
       - "studio_next/test_body_sequence_otio.py"
 permissions:
   contents: read
