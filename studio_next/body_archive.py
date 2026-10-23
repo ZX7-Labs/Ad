@@ -11,12 +11,15 @@ cryptographic signature. No remote provider or subscription.
 """
 from __future__ import annotations
 
+import ctypes
+import errno
 import hashlib
 import io
 import json
 import os
 import shutil
 import sqlite3
+import sys
 import tarfile
 import tempfile
 from pathlib import Path
@@ -26,6 +29,35 @@ from .body_portability import prepare_relocated_workspace
 
 _MANIFEST="__zx7_body_snapshot_manifest__.json"
 _MAGIC="ZX7-BODY-REAL-MEDIA-V1"
+
+
+def _publish_restored_directory_exclusively(staged,target):
+    """Publish a whole recovered project without replacing a racing owner.
+
+    On supported Linux hosts renameat2(RENAME_NOREPLACE) is the only
+    required atomic primitive. os.replace/os.rename can erase an existing
+    empty approved workspace between preflight and commit. Do not silently
+    claim cross-platform no-clobber behavior when this ABI is unavailable.
+    """
+    if sys.platform!="linux":
+        raise RuntimeError("Exclusive atomic workspace restoration requires Linux renameat2")
+    native=ctypes.CDLL(None,use_errno=True)
+    rename=getattr(native,"renameat2",None)
+    if rename is None:
+        raise RuntimeError("Host lacks Linux atomic no-replace directory publication")
+    rename.argtypes=[
+        ctypes.c_int,ctypes.c_char_p,ctypes.c_int,
+        ctypes.c_char_p,ctypes.c_uint]
+    rename.restype=ctypes.c_int
+    if rename(-100,os.fsencode(staged),-100,os.fsencode(target),1)!=0:
+        error=ctypes.get_errno()
+        if error==errno.EEXIST:
+            raise FileExistsError(
+                errno.EEXIST,"Another operator already published this workspace",
+                str(target))
+        raise OSError(error,os.strerror(error),str(target))
+
+
 # Private staging directories never become supposedly approved project media.
 _PRIVATE_RENDER_PREFIXES=(
     ".zx7-owned-sources-",
@@ -124,7 +156,9 @@ def create_body_archive(workspace,archive):
                 info.size=len(payload);info.mode=0o600;info.mtime=0
                 tar.addfile(info,io.BytesIO(payload))
             digest=sha256_file(tmp)
-            os.replace(tmp,out)
+            # Same-directory hardlink is a no-clobber atomic file publish.
+            # Do NOT replace a racing artist's approved project backup.
+            os.link(tmp,out)
         finally:
             tmp.unlink(missing_ok=True)
     return {"archive":str(out),"sha256":digest,"files":len(rows),
@@ -213,7 +247,7 @@ def restore_body_archive(archive,destination,*,expected_sha256,relocate=False):
                 raise ValueError("Cross-host migration requested at unchanged workspace path")
             # Namespace and SQLite metadata transformed only inside the
             # fully verified staging directory, before one atomic publication.
-            os.replace(temp,target)
+            _publish_restored_directory_exclusively(temp,target)
         return {"restored":str(target),"files":len(accounted),
                 "archive_sha256":expected_sha256,"all_physical_bytes_verified":True,
                 "artistic_project_preserved":True,
