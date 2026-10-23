@@ -1,9 +1,11 @@
 import hashlib
+import os
 import sqlite3
 import tarfile
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from studio_next.body_archive import create_body_archive,restore_body_archive
 from studio_next.media_vault import MediaVault
@@ -117,6 +119,61 @@ class PhysicalBodySnapshotTests(unittest.TestCase):
             permitted=create_body_archive(project,root/"backup.tar.gz")
             self.assertEqual(permitted["files"],1)
             self.assertTrue(permitted["sha256"])
+
+    def test_simultaneous_approved_archive_is_not_replaced_by_snapshot(self):
+        from studio_next import body_archive
+        with tempfile.TemporaryDirectory() as p:
+            root=Path(p)
+            original=root/"actual-films"
+            original.mkdir()
+            (original/"work.json").write_text('{"scene":"original"}')
+            prior=root/"winner.tar.gz"
+            desired=b"EXISTING-APPROVED-ARCHIVE-WINS"*200
+            native=os.link
+            race=False
+            def competing_operator(source,destination,*args,**kwargs):
+                nonlocal race
+                if Path(destination)==prior:
+                    prior.write_bytes(desired)
+                    race=True
+                return native(source,destination,*args,**kwargs)
+            with patch.object(body_archive.os,"link",side_effect=competing_operator):
+                with self.assertRaises(FileExistsError):
+                    create_body_archive(original,prior)
+            self.assertTrue(race)
+            self.assertEqual(prior.read_bytes(),desired)
+            self.assertFalse((root/".winner.tar.gz.uncommitted").exists())
+
+    @unittest.skipUnless(__import__("sys").platform=="linux",
+                         "Requires actual Linux no-replace directory rename")
+    def test_simultaneous_empty_restored_workspace_is_never_destroyed(self):
+        from studio_next import body_archive
+        with tempfile.TemporaryDirectory() as p:
+            root=Path(p)
+            original=root/"editor-project"
+            original.mkdir()
+            (original/"real-original.txt").write_bytes(b"rights-safe-shot"*12)
+            saved=create_body_archive(original,root/"approved.tar.gz")
+            import shutil
+            shutil.rmtree(original)
+            real_publish=body_archive._publish_restored_directory_exclusively
+            race=False
+            def opposing_operator(stage,dest):
+                nonlocal race
+                if Path(dest)==original:
+                    original.mkdir()
+                    race=True
+                return real_publish(stage,dest)
+            with patch.object(body_archive,"_publish_restored_directory_exclusively",
+                              side_effect=opposing_operator):
+                with self.assertRaises(FileExistsError):
+                    restore_body_archive(saved["archive"],original,
+                                         expected_sha256=saved["sha256"])
+            self.assertTrue(race)
+            self.assertTrue(original.is_dir())
+            self.assertFalse((original/"real-original.txt").exists())
+            self.assertEqual(list(original.iterdir()),[])
+            self.assertFalse(list(root.glob(".zx7-restore-*")))
 
     def test_reject_nonempty_destination_and_archive_inside_workspace(self):
         with tempfile.TemporaryDirectory() as root:
