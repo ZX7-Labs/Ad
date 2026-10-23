@@ -3,7 +3,7 @@
   "date": "2026-10-23",
   "project": "ZX7 Studio / BODY",
   "canonical_branch": "zx7-body/mobile-operator-20261021",
-  "canonical_head": "1348c1e68a81e5fa05bf2d69a7045ca68440c7ee",
+  "canonical_head": "c63a86d721ae59c68cf7fbbff2df05de477aba8c",
   "draft_pr": "https://github.com/oyzitjfzj/Ad/pull/3",
   "main_untouched": true,
   "original_art_and_voices_unchanged": true,
@@ -211,6 +211,50 @@
       "result": "completed_success"
     },
     "focused_native": "https://github.com/oyzitjfzj/Ad/actions/runs/39933979527",
-    "focused_native_result": "in_progress_not_yet_accepted"
+    "focused_native_result": "in_progress_not_yet_accepted",
+    "active_source_head": "c63a86d721ae59c68cf7fbbff2df05de477aba8c",
+    "new_verified_code_contributions": [
+      {
+        "commit": "bd1c4d2316182ef92f7cfc9982ca1041bd006eca",
+        "area": "Immutable actual original Blender scene copies used by resumable EXR jobs, temporally swapped owner JSON rejected from being fed to Cycles",
+        "test": "Real 32f scene-source race proof; integrated prior run 39935134250 success before follow-on BODY capabilities"
+      },
+      {
+        "commit": "8384a1a917f01a70923d55166dc352af2a6cb0cd",
+        "area": "Rights-attested entire original constant-frame-rate picture sampled and real soundtrack meter evidence; physically stream-decoded temporal trace, stage immutable original and no-clobber receipt",
+        "test": "First integrated run 39935797294 RED: unknown JSON artifact lacked strict BODY witness verifier, corrected by 27b130...; do not borrow earlier success"
+      },
+      {
+        "commit": "27b130f40907747d691b74ac53ae77efc7913fe8",
+        "area": "Strict structural readback of every whole-movie timecode, hashed original and technically measured normalized 8-bit RGB per-frame evidence; graph witness now enforces special format",
+        "test": "Original red run corrected; full matching native CI still needs successful result"
+      },
+      {
+        "commit": "54a6149aa16a0ed7a2d3fe4c20a08d4d5a00c4e4",
+        "area": "Pinned real native OCIO 2.5 ACES 2.0 CG display view from Blender OpenEXR 32f to independently decoded 8-bit PNG viewing proof with exact source vault attestation and config fingerprint",
+        "test": "No HDR mastering claimed; true native OpenEXR/OCIO/Pillow tests required and ongoing"
+      },
+      {
+        "commit": "bd532deb0afec31ec16ad8129ebdbf02db2be6fb",
+        "area": "Correct invalid-frame adversarial ACES2 real Blender 2-frame fixture",
+        "test": "Physical external native CI not final at snapshot"
+      },
+      {
+        "commit": "c63a86d721ae59c68cf7fbbff2df05de477aba8c",
+        "area": "Protect autonomous model-facing command and discovery against two legacy unlicensed-provenance edit and OTIO engines; keep old compatibility engines for controlled operator migration only",
+        "test": "In current final native regression cycle"
+      }
+    ],
+    "pending_matching_integrated_native": "https://github.com/oyzitjfzj/Ad/actions/runs/39936972527",
+    "pending_matching_source_security": "https://github.com/oyzitjfzj/Ad/actions/runs/39936972580",
+    "verified_matching_mobile_security": "https://github.com/oyzitjfzj/Ad/actions/runs/39936972633",
+    "output_limitations": [
+      "A physically decoded 8-bit ACES2 PNG preview is not cinema release color management, a scene-linear HDR delivered movie or a trusted camera-IDT chain",
+      "Framewise RGB amplitude differences are factual visual signals not autonomously meaningful story and artistry scores",
+      "No external independent film Brain has authored a premium shot sequence and executed all of it on a persistent signed production host",
+      "No legal free footage GPU, persistent authorized remote Android HTTPS or real distributed worker farm confirmed",
+      "All 12 final professional master gates still require independent total acceptance"
+    ],
+    "recommended_next_verified_step": "Obtain exact-code completed integrated 5xx-test native OpenEXR/OCIO/temporal/Brain permission proof, fix any red result, then test independent multi-shot real source film through ONE creative model and BODY, preserving original project voice and source. Never call this complete without all twelve gates."
   }
 }
