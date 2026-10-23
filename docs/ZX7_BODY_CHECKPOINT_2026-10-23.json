@@ -58,16 +58,17 @@
     "independent_model_inference_actually_triggered": false,
     "full_native_after_source_custody_hardening": "https://github.com/oyzitjfzj/Ad/actions/runs/39928192941",
     "full_native_after_source_custody_hardening_conclusion": "success",
-    "latest_verified_integrated_native": "https://github.com/oyzitjfzj/Ad/actions/runs/39928192941",
+    "latest_verified_integrated_native": "https://github.com/oyzitjfzj/Ad/actions/runs/39933979484",
     "latest_verified_integrated_native_outcome": {
       "status": "completed",
       "conclusion": "success",
-      "cases_ran": 504,
-      "passed": 503,
+      "cases_ran": 511,
+      "passed": 510,
       "skipped": 1,
-      "skipped_reason": "real Chromium handled by separate browser workflow",
-      "source_commit": "132a813b36ac8db23edc51eb18508695e2b6d5c8",
-      "artifacts": "https://github.com/oyzitjfzj/Ad/actions/runs/39928192941/artifacts/12490642129"
+      "skipped_reason": "browser-only suite separately run on prior exact code; current mobile/security contract run successful",
+      "source_commit": "1348c1e68a81e5fa05bf2d69a7045ca68440c7ee",
+      "physical_proof": "GitHub action logged all newly added private source, competing output, audio duration and EXR true-decoder cases as passed",
+      "url": "https://github.com/oyzitjfzj/Ad/actions/runs/39933979484"
     },
     "current_matching_native_actual_source_security": "https://github.com/oyzitjfzj/Ad/actions/runs/39928193050",
     "current_matching_native_actual_source_security_cases": 37,
@@ -195,7 +196,21 @@
     "native_target": "https://github.com/oyzitjfzj/Ad/actions/runs/39933979484",
     "focused_source_security_target": "https://github.com/oyzitjfzj/Ad/actions/runs/39933979527",
     "mobile_security_target": "https://github.com/oyzitjfzj/Ad/actions/runs/39933979500",
-    "current_release_note": "These newly committed production-security changes require matching completed native+focused CI before being reported as physically verified; the previously accepted 504-case native baseline remains at commit 132a813b36ac8db23edc51eb18508695e2b6d5c8. Zero/12 full elite film subsystem gates achieved. No new film authored by an independent installed creative Brain.",
-    "last_confirmed_security": "https://github.com/oyzitjfzj/Ad/actions/runs/39933979500"
+    "current_release_note": "Latest 511-case integrated real native proof success and 2026-10-23 mobile security success now independently confirmed. Focused source-custody CI still in progress; do not borrow its prior results. All 12 professional final subsystem gates remain not fully accepted, and no independently Brain-generated cinematic film has been certified.",
+    "last_confirmed_security": "https://github.com/oyzitjfzj/Ad/actions/runs/39933979500",
+    "integrated_native_verified": {
+      "url": "https://github.com/oyzitjfzj/Ad/actions/runs/39933979484",
+      "result": "completed_success",
+      "tests": 511,
+      "pass": 510,
+      "skip": 1,
+      "source_commit": "1348c1e68a81e5fa05bf2d69a7045ca68440c7ee"
+    },
+    "security_verified": {
+      "url": "https://github.com/oyzitjfzj/Ad/actions/runs/39933979500",
+      "result": "completed_success"
+    },
+    "focused_native": "https://github.com/oyzitjfzj/Ad/actions/runs/39933979527",
+    "focused_native_result": "in_progress_not_yet_accepted"
   }
 }
