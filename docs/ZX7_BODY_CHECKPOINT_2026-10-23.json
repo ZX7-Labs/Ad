@@ -3,7 +3,7 @@
   "date": "2026-10-23",
   "project": "ZX7 Studio / BODY",
   "canonical_branch": "zx7-body/mobile-operator-20261021",
-  "canonical_head": "c63a86d721ae59c68cf7fbbff2df05de477aba8c",
+  "canonical_head": "23880ec2438551716677778cb1083d83dd3816b4",
   "draft_pr": "https://github.com/oyzitjfzj/Ad/pull/3",
   "main_untouched": true,
   "original_art_and_voices_unchanged": true,
@@ -177,7 +177,7 @@
     "shared_source_implementation_changes_invalidate_all_consumers_including_OTIO": true
   },
   "current_engineering_increment": {
-    "source_code_commit": "1348c1e68a81e5fa05bf2d69a7045ca68440c7ee",
+    "source_code_commit": "23880ec2438551716677778cb1083d83dd3816b4",
     "source_history": [
       "8f1f596a508cc556555c44bd9e800829cb1bc722",
       "a95cada2dff739c18f17854a587db95574b683ef",
@@ -255,6 +255,40 @@
       "No legal free footage GPU, persistent authorized remote Android HTTPS or real distributed worker farm confirmed",
       "All 12 final professional master gates still require independent total acceptance"
     ],
-    "recommended_next_verified_step": "Obtain exact-code completed integrated 5xx-test native OpenEXR/OCIO/temporal/Brain permission proof, fix any red result, then test independent multi-shot real source film through ONE creative model and BODY, preserving original project voice and source. Never call this complete without all twelve gates."
+    "recommended_next_verified_step": "Obtain exact-code completed integrated 5xx-test native OpenEXR/OCIO/temporal/Brain permission proof, fix any red result, then test independent multi-shot real source film through ONE creative model and BODY, preserving original project voice and source. Never call this complete without all twelve gates.",
+    "latest_full_accepted_native_baseline": {
+      "commit": "31d066ae521d4ced15f37067eef17cce695d8d7f",
+      "run": "https://github.com/oyzitjfzj/Ad/actions/runs/39939028994",
+      "ran": 523,
+      "skipped": 1,
+      "status": "success"
+    },
+    "next_native_verification": {
+      "commit": "23880ec2438551716677778cb1083d83dd3816b4",
+      "run": "https://github.com/oyzitjfzj/Ad/actions/runs/39942955940",
+      "state": "in_progress_at_checkpoint"
+    },
+    "next_full_original_film_proof": [
+      "body.aces2_movie: graph-attested source 32float OpenEXR -> real pinned OCIO ACES2 SDR display transform of every frame -> 16bit physical RGB intermediate -> native ProRes 422 10bit MOV full pixel/audio decode (sound is intentionally absent)",
+      "body.asset_vault now admits decoded body.aces2_movie outputs only via graph-bound authorized physical producers, never via model text",
+      "Physical integration test constructs real Blender 32f scene, licenses original source, renders whole 10bit color-managed scene film, licenses generated MOV, and replays graph without replacing accepted bytes",
+      "body.review_frame now exclusively hardlinks private fully decoded PNG; losing competing writer can no longer delete approved image",
+      "Private review image extraction and scene-movie intermediates are refused by director project archive/restore policy"
+    ],
+    "old_11_second_demo": {
+      "github_action": "https://github.com/oyzitjfzj/Ad/actions/runs/39909749426",
+      "artifact_name": "zx7-body-original-film",
+      "filename": "zx7-body-original-film.mp4",
+      "sha256": "7e6a57a2d037a476c243202acaa27d5e239b7c7a26bab60bc93aafc84f81c733",
+      "actual_duration_seconds": 11,
+      "independent_creative_brain_generated": false,
+      "entire_professional_studio_approved": false
+    },
+    "remaining_unproven": [
+      "The newly added all-frames ACES2 10bit MOV and its full source->vault->film graph still need exact HEAD CI pass and actual full-film independent artist quality approval",
+      "HDR/ACES camera input-to-master workflows and advanced multi-artist roundtrips remain unfinished",
+      "No persistent GPU-original human scene generation or production distributed render farm is proven",
+      "A complete independent creative Brain connected for full director revision loops and released film quality is not proven"
+    ]
   }
 }
