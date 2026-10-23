@@ -153,17 +153,31 @@ def render_original_exr_passes(scene_file,workspace,output,*,assets_root=None):
     destination.parent.mkdir(parents=True,exist_ok=True)
     try:
         with tempfile.TemporaryDirectory(prefix=".zx7-original-exr-render-",dir=root) as temp:
+            # The Blender process must read only sealed, byte-exact owner
+            # instructions. A mutable checkout can be swapped and restored
+            # while native Cycles is running; postrender hash alone misses it.
+            frozen=Path(temp)/"original-sealed-scene.json"
+            with original.open("rb") as artist,frozen.open("xb") as native:
+                shutil.copyfileobj(artist,native,1024*1024)
+                native.flush()
+                os.fsync(native.fileno())
+            if (sha256_file(frozen)!=original_sha or
+                    sha256_file(original)!=original_sha):
+                raise ValueError("Original 3D artist scene changed during native sealing")
+            os.chmod(frozen,0o400)
             frames_dir=Path(temp)/"frames"
             frames_dir.mkdir()
             cmd=["blender","--background","--factory-startup",
                  "--python-exit-code","1","--python",
                  str(Path(__file__).parent/"blender_scene.py"),"--",
-                 "--scene",str(original),"--out",str(frames_dir),
+                 "--scene",str(frozen),"--out",str(frames_dir),
                  "--exr-passes"]
             if assets_root:
                 cmd+=["--assets-root",str(Path(assets_root).resolve())]
             subprocess.run(cmd,check=True,timeout=7200,
                            capture_output=True,text=True)
+            if sha256_file(frozen)!=original_sha:
+                raise ValueError("Sealed 3D scene changed during native Cycles execution")
             frame_paths=sorted(frames_dir.glob("frame_*.exr"))
             if len(frame_paths)!=job["frames"] or not frame_paths:
                 raise RuntimeError("Blender failed artist-chosen original EXR frame count")
@@ -195,7 +209,8 @@ def render_original_exr_passes(scene_file,workspace,output,*,assets_root=None):
                 bundle.writestr("manifest.json",json.dumps(
                     manifest,sort_keys=True,ensure_ascii=False,indent=2)+"\n")
             independent=verify_exr_bundle(archive)
-            if sha256_file(original)!=original_sha:
+            if (sha256_file(original)!=original_sha or
+                    sha256_file(frozen)!=original_sha):
                 raise ValueError("Director scene changed before EXR publication")
             with archive.open("rb") as verified_source:
                 os.fsync(verified_source.fileno())
