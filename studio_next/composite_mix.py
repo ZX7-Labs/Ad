@@ -504,9 +504,13 @@ def render_composition(plan_json,workspace,vault_root,out,*,runner=None,probe=No
     if output.suffix.lower()!=".mp4" or output.exists():
         raise ValueError("Cannot overwrite previously accepted original movie")
     output.parent.mkdir(parents=True,exist_ok=True)
-    temporary=output.with_name(output.stem+".incomplete.mp4")
-    if temporary.exists():
-        raise FileExistsError("Unreconciled original editor output exists")
+    # Each licensed editor render owns a distinct exclusive stage. A shared
+    # deterministic ".incomplete.mp4" can be raced: FFmpeg -y would overwrite
+    # another editor's in-flight movie, or loser cleanup could unlink it.
+    fd,private_name=tempfile.mkstemp(
+        prefix=".zx7-composite-render-",suffix=".mp4",dir=output.parent)
+    os.close(fd)
+    temporary=Path(private_name)
     try:
         with tempfile.TemporaryDirectory(prefix=".zx7-owned-sources-",dir=root) as working:
             frozen,originals,snapshots=_freeze_composition_sources(
@@ -550,7 +554,6 @@ def render_composition(plan_json,workspace,vault_root,out,*,runner=None,probe=No
             with temporary.open("rb") as movie:
                 os.fsync(movie.fileno())
             os.link(temporary,output)
-        temporary.unlink(missing_ok=True)
         return {"path":str(output),"sha256":sha256_file(output),
                 "bytes":output.stat().st_size,"duration_seconds":detail["duration_seconds"],
                 "video_layers":len(plan["video_layers"]),
@@ -560,6 +563,7 @@ def render_composition(plan_json,workspace,vault_root,out,*,runner=None,probe=No
                 "test_runner_or_probe_injected":not real_codec_proof,
                 "sealed_original_cas_during_decode":True,
                 "human_artistic_approval":False}
-    except BaseException:
+    finally:
+        # Only this attempt's native private movie may be deleted. Never
+        # delete an accepted film after losing the no-clobber hardlink race.
         temporary.unlink(missing_ok=True)
-        raise

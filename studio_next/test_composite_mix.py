@@ -5,6 +5,7 @@ import shutil
 import subprocess
 import wave
 from pathlib import Path
+from unittest.mock import patch
 
 from studio_next.composite_mix import actual_composite_command,render_composition
 from studio_next.media_vault import MediaVault
@@ -353,6 +354,37 @@ class LayeredProductionCompositingTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,"source trim exceeds"):
                 actual_composite_command(plan,root,vault,out)
             self.assertFalse(out.exists())
+
+    def test_concurrent_editor_cannot_overwrite_or_delete_approved_movie(self):
+        from studio_next import composite_mix
+        from studio_next.media_vault import sha256_file
+        with tempfile.TemporaryDirectory() as workspace:
+            root=Path(workspace)
+            plan,source,vault=self.fixture(root)
+            plan["canvas"].update(width=320,height=240,duration=2)
+            source.write_text(json.dumps(plan))
+            previously_approved=root/"other-editor-accepted.mp4"
+            first=render_composition(source,root,root/"vault",previously_approved)
+            self.assertTrue(first["full_picture_and_sound_decoder_completed"])
+            master_digest=sha256_file(previously_approved)
+            planned=root/"race-at-final-movie.mp4"
+            original_link=composite_mix.os.link
+            raced=False
+            def first_editor_wins(stage,final,*args,**kwargs):
+                nonlocal raced
+                if Path(final)==planned:
+                    self.assertIn(".zx7-composite-render-",str(stage))
+                    shutil.copyfile(previously_approved,planned)
+                    raced=True
+                return original_link(stage,final,*args,**kwargs)
+            with patch.object(composite_mix.os,"link",side_effect=first_editor_wins):
+                with self.assertRaises(FileExistsError):
+                    render_composition(source,root,root/"vault",planned)
+            self.assertTrue(raced)
+            self.assertEqual(sha256_file(planned),master_digest)
+            self.assertEqual(sha256_file(previously_approved),master_digest)
+            self.assertFalse(list(root.glob(".zx7-composite-render-*")))
+            self.assertFalse(list(root.glob(".zx7-owned-sources-*")))
 
     def test_camera_movie_longer_than_its_audio_cannot_invent_missing_sound(self):
         with tempfile.TemporaryDirectory() as root:
