@@ -89,6 +89,16 @@ def verify_media_container(path,mime):
             with wave.open(str(path),"rb") as audio:
                 if audio.getnframes()<1 or audio.getframerate()<1:
                     raise MediaCustodyError("Decoded sound file has no actual samples")
+                expected=(audio.getnframes()*audio.getnchannels()*
+                          audio.getsampwidth())
+                counted=0
+                while True:
+                    block=audio.readframes(65536)
+                    if not block:break
+                    counted+=len(block)
+                if counted!=expected:
+                    raise MediaCustodyError(
+                        "Original WAV claimed more PCM samples than physically recorded")
         except wave.Error as exc:
             raise MediaCustodyError("WAV identity is not backed by actual PCM") from exc
     elif mime=="image/svg+xml":
