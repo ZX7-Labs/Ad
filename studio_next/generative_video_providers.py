@@ -18,7 +18,7 @@ import shutil
 import subprocess
 from pathlib import Path
 from urllib.parse import urlsplit
-from urllib.request import build_opener,HTTPRedirectHandler
+from urllib.request import Request,build_opener,HTTPRedirectHandler
 
 # Current declared upstream licenses; actual weights still need provenance.
 VIDEO_MODEL_CANDIDATES=(
@@ -63,7 +63,10 @@ def open_verified_local_api(url,*,timeout):
 
     The returned stream belongs to the caller, which must close it.
     """
-    part=urlsplit(url)
+    address=url.full_url if isinstance(url,Request) else url
+    if not isinstance(address,str):
+        raise ValueError("Invalid local video API request")
+    part=urlsplit(address)
     if (part.scheme!="http" or part.hostname not in SUPPORTED_LOCAL_HOSTS or
             part.port is None or part.username or part.password or
             part.fragment):
