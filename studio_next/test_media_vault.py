@@ -36,6 +36,25 @@ class MediaVaultProductionTests(unittest.TestCase):
             with self.assertRaisesRegex(MediaCustodyError,"altered"):
                 vault.inspect(ref["asset_id"])
 
+    def test_forged_exr_zip_cannot_acquire_native_generated_rights(self):
+        import zipfile
+        with tempfile.TemporaryDirectory() as root:
+            project=Path(root)
+            forged=project/"claimed-vfx-frame-pass.zip"
+            with zipfile.ZipFile(forged,"w") as archive:
+                archive.writestr("manifest.json",
+                    '{"schema":1,"frames":[{"file":"frames/frame_0001.exr",'
+                    '"sha256":"0000","bytes":5,"channels":["Combined.R"]}]}')
+                archive.writestr("frames/frame_0001.exr",b"FAKE!")
+            vault=MediaVault(project/"vault")
+            with self.assertRaises(MediaCustodyError):
+                vault.ingest(forged,mime="application/x-zx7-exr-bundle",
+                    rights="generated_original",source_type="trusted_renderer",
+                    source_id="unverified-blender",
+                    evidence="A made-up EXR bundle is not actual VFX",
+                    owner_or_generator="fake-operator")
+            self.assertFalse(list(vault.objects.rglob("*")))
+
     def test_real_video_media_claim_requires_a_decodable_video_not_text(self):
         with tempfile.TemporaryDirectory() as root:
             p=Path(root)/"invented-video.mp4"

@@ -14,6 +14,7 @@ from studio_next.body_aces2_preview import (
 from studio_next.body_integration import body_catalog,validate_witness
 from studio_next.body_exr_passes import render_original_exr_passes
 from studio_next.media_vault import MediaVault,sha256_file
+from studio_next.body_publication import physical_tool_attempt
 from studio_next.test_blender_scene import sample
 
 _NATIVE_READY=(shutil.which("blender") is not None
@@ -44,11 +45,19 @@ class RealOwnerACES2SceneColorProof(unittest.TestCase):
         self.exr=self.root/"licensed-float-exr.zip"
         result=render_original_exr_passes(self.scene,self.root,self.exr)
         self.assertTrue(result["actual_32bit_float_VFX_passes"])
-        self.proof=self.vault.ingest(self.exr,mime="application/octet-stream",
-            rights="generated_original",source_type="trusted_renderer",
-            source_id="actual-Blender-native-owner-vfx",
-            evidence="True real Blender Cycles original scene-linear OpenEXR result",
-            owner_or_generator="ZX7 verified 3D renderer")
+        # This is the real registered, model-facing BODY generated-source
+        # custody instrument, not a test-written license or hand-made ID.
+        # The trusted graph, not LLM JSON, establishes renderer authority.
+        original_output={"path":str(self.exr),"sha256":sha256_file(self.exr),
+                         "bytes":self.exr.stat().st_size}
+        with physical_tool_attempt("real-native-cg","original-exr-custody",
+                                   "verified-actual-blender", "body.asset_vault"):
+            self.proof=body_catalog(self.root).invoke("body.asset_vault",
+                {"source_witness":original_output},
+                allowed_access={"read","write"})
+        self.assertEqual(self.vault.inspect(
+            self.proof["asset_id"],attestation_id=self.proof["attestation_id"])["mime"],
+            "application/x-zx7-exr-bundle")
         self.plan={
             "source":{"source":"zx7:sha256:"+self.proof["asset_id"],
                       "asset_id":self.proof["asset_id"],

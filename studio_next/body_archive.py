@@ -33,6 +33,7 @@ _PRIVATE_RENDER_PREFIXES=(
     ".zx7-original-exr-render-",
     ".zx7-scene-seal-",
     ".zx7-temporal-",
+    ".zx7-aces2-",
 )
 
 

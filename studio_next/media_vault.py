@@ -23,7 +23,8 @@ _RIGHTS={"owner_supplied","generated_original","appropriately_licensed"}
 _ALLOWED_MIME={"image/png","image/jpeg","image/webp","image/svg+xml",
  "image/x-exr","video/mp4","video/quicktime","video/webm",
  "audio/wav","audio/mpeg","audio/flac","font/ttf","font/otf",
- "model/gltf-binary","application/octet-stream"}
+ "model/gltf-binary","application/octet-stream",
+ "application/x-zx7-exr-bundle"}
 class MediaCustodyError(ValueError):
     pass
 
@@ -89,6 +90,21 @@ def verify_media_container(path,mime):
             first=f.read(12)
         if len(first)!=12 or first[:4]!=b"glTF":
             raise MediaCustodyError("Claimed 3D GLB is not a real binary scene")
+    elif mime=="application/x-zx7-exr-bundle":
+        # Never grant trusted CG source rights to an arbitrary ZIP or opaque
+        # binary. Real native OpenEXR re-decodes ALL physically rendered
+        # float32 RGBA, depth, normal and motion passes on ingest.
+        from .body_exr_passes import verify_exr_bundle
+        import zipfile
+        try:
+            actual=verify_exr_bundle(path)
+            if not (actual["original_exr_passes_real"] and
+                    actual["reloaded_every_frame_and_sha256_verified"]):
+                raise MediaCustodyError("Unverified original 32f EXR frame archive")
+        except (ValueError,RuntimeError,TypeError,OSError,KeyError,
+                zipfile.BadZipFile) as exc:
+            raise MediaCustodyError(
+                "Not a physically decoded and verified native 32f EXR bundle") from exc
     elif mime in ("audio/mpeg","audio/flac"):
         import subprocess
         try:

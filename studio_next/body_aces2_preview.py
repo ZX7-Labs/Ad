@@ -112,7 +112,7 @@ def render_aces_2_sdr_preview(plan_file,workspace,vault_root,output):
         raise ValueError("Original frame index must be an exact positive integer")
     vault=MediaVault(vault_root)
     item=vault.inspect(source["asset_id"],attestation_id=source["attestation_id"])
-    if item["mime"]!="application/octet-stream":
+    if item["mime"]!="application/x-zx7-exr-bundle":
         raise ValueError("Only a trusted original EXR frame bundle may enter ACES2")
     in_archive=Path(item["path"])
     cpu,ocio_version,ocio_hash=_physical_config()
@@ -187,7 +187,7 @@ def render_aces_2_sdr_preview(plan_file,workspace,vault_root,output):
                 raise ValueError("Native ACES2 image did not survive independent PNG decoding")
         if (sha256_file(frozen)!=source["asset_id"] or
                 sha256_file(original)!=prior or
-                vault.inspect(source["asset_id"],attestation_id=source["attestation_id"])["mime"]!="application/octet-stream"):
+                vault.inspect(source["asset_id"],attestation_id=source["attestation_id"])["mime"]!="application/x-zx7-exr-bundle"):
             raise ValueError("Original owned frame or director color intent changed during preview")
         os.link(staged,dest)
     return {"path":str(dest),"sha256":sha256_file(dest),

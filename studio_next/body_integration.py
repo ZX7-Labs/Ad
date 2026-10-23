@@ -599,7 +599,8 @@ def body_catalog(workspace,*,vault_root=None):
         if not source.is_relative_to(root):
             raise ValueError("Only genuine media from this original workspace")
         supported={".mp4":"video/mp4",".png":"image/png",
-                   ".mov":"video/quicktime",".webm":"video/webm"}
+                   ".mov":"video/quicktime",".webm":"video/webm",
+                   ".zip":"application/x-zx7-exr-bundle"}
         mime=supported.get(source.suffix.lower())
         if mime is None:
             raise ValueError("Unrecognized verified tool output cannot be laundered into licensed media")
@@ -772,6 +773,7 @@ def _require_authentic_generated_media_lineage(film_ir):
     # generated-original rights. Only trusted originating renderers or editors
     # which themselves require MediaVault source custody may be archived.
     trusted_producers={"body.blender3d","body.motion2d",
+                       "body.exr_passes","body.exr_checkpoint",
                        "body.render_edit_owned",
                        "body.composite_mix","body.film_finish"}
     for node in graph:

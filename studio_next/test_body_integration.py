@@ -140,6 +140,18 @@ class TrustedCreativeBodyToolTests(unittest.TestCase):
         trusted={**legacy,"tool_id":"body.render_edit_owned"}
         self.assertIsNone(_require_authentic_generated_media_lineage(
             {"tool_graph":[trusted,valid]}))
+        for real_cg in ("body.exr_passes","body.exr_checkpoint"):
+            with self.subTest(real_cg=real_cg):
+                original={**legacy,"tool_id":real_cg}
+                self.assertIsNone(_require_authentic_generated_media_lineage(
+                    {"tool_graph":[original,valid]}))
+        for unapproved in ("body.aces2_preview","body.inspect",
+                           "body.otio","body.render_edit"):
+            with self.subTest(unapproved=unapproved):
+                original={**legacy,"tool_id":unapproved}
+                with self.assertRaisesRegex(ValueError,"trusted renderer dependency"):
+                    _require_authentic_generated_media_lineage(
+                        {"tool_graph":[original,valid]})
 
     def test_actual_png_witness_cannot_mint_generated_rights_by_direct_catalog_call(self):
         if importlib.util.find_spec("PIL") is None and not shutil.which("ffmpeg"):
