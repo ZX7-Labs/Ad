@@ -104,7 +104,7 @@ class PhysicalBodySnapshotTests(unittest.TestCase):
             (project/"source.json").write_text('{"real":"director"}')
             for prefix in (".zx7-media-review-", ".zx7-original-exr-render-",
                            ".zx7-scene-seal-", ".zx7-temporal-", ".zx7-aces2-",
-                           ".zx7-aces2-movie-"):
+                           ".zx7-aces2-movie-", ".zx7-review-frame-"):
                 with self.subTest(prefix=prefix):
                     private=project/(prefix+"frozen-work")
                     private.mkdir()
