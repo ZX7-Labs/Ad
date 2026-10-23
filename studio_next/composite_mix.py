@@ -370,6 +370,31 @@ _SUFFIX_BY_MIME={
 }
 
 
+def sealed_attested_original(vault,asset_id,attestation_id,private,cache):
+    """Shared real native compositor/cut CAS seal, never a model-owned source.
+
+    Always inspect the *exact* owner's immutable attestation first, copy the
+    actual vault bytes to an exclusive 0700 render sandbox, fsync, SHA-check,
+    chmod 0400, and pass only this frozen local file to the decoder.
+    """
+    receipt=vault.inspect(asset_id,attestation_id=attestation_id)
+    suffix=_SUFFIX_BY_MIME.get(receipt["mime"])
+    if suffix is None:
+        raise ValueError("No supported original decoder media format")
+    key=(asset_id,suffix)
+    if key not in cache:
+        frozen=private/(asset_id+suffix)
+        with Path(receipt["path"]).open("rb") as incoming, frozen.open("xb") as stored:
+            shutil.copyfileobj(incoming,stored,1024*1024)
+            stored.flush()
+            os.fsync(stored.fileno())
+        if sha256_file(frozen)!=asset_id:
+            raise ValueError("Original video/audio changed while sealing actual decoder input")
+        os.chmod(frozen,0o400)
+        cache[key]=frozen
+    return cache[key]
+
+
 def _freeze_composition_sources(plan,root,vault,private):
     """Copy every owner-attested original into readonly CAS-sealed render inputs.
 
@@ -385,25 +410,15 @@ def _freeze_composition_sources(plan,root,vault,private):
             identity=layer["asset_id"]
             attestation=layer["attestation_id"]
             record=vault.inspect(identity,attestation_id=attestation)
-            mime=record["mime"]
-            suffix=_SUFFIX_BY_MIME.get(mime)
+            suffix=_SUFFIX_BY_MIME.get(record["mime"])
             if suffix is None:
                 raise ValueError("No exact decoder format for original layer material")
             original_layer=next(x for x in plan[kind] if x["id"]==layer["id"])
             original=_exact_media(original_layer,vault,root,
                                   need=kind)
             preserved[str(original)]=identity
-            frozen=sealed.get((identity,suffix))
-            if frozen is None:
-                frozen=private/(identity+suffix)
-                with Path(record["path"]).open("rb") as input_stream, frozen.open("xb") as output:
-                    shutil.copyfileobj(input_stream,output,1024*1024)
-                    output.flush()
-                    os.fsync(output.fileno())
-                if sha256_file(frozen)!=identity:
-                    raise ValueError("Native compositor source changed while sealing original media")
-                os.chmod(frozen,0o400)
-                sealed[(identity,suffix)]=frozen
+            frozen=sealed_attested_original(
+                vault,identity,attestation,private,sealed)
             layer["source"]=str(frozen.relative_to(root))
     validate_composition(clone,root,vault)
     return clone,preserved,sealed

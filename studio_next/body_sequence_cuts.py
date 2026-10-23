@@ -15,14 +15,17 @@ from __future__ import annotations
 from fractions import Fraction
 import json
 import math
+import os
 import subprocess
+import tempfile
 from pathlib import Path
 
-from .composite_mix import _exact_media
+from .composite_mix import _exact_media,sealed_attested_original
 from .body_color_pipeline import _actual_bt709_source
 from .media_vault import MediaVault,sha256_file
 from .precision_retime import _source_timebase
 from .delivery_audit import _probe_details
+from .production_qc import full_decode_inspection
 
 
 def _integer(number,label,*,low=1,high=100000000):
@@ -125,6 +128,13 @@ def verified_sequence_command(evaluated,output):
 
 
 def render_verified_sequence(plan_file,workspace,vault_root,output):
+    """Write a new real video from exact original picture/sound CAS, never mutable checkout.
+
+    The exact director edit, all signed custody, normalized frame clock,
+    actual full decoded video/audio, and non-overwriting publication are
+    required before an accepted result. Any exception removes private bytes,
+    never someone else's already approved output.
+    """
     root=Path(workspace).resolve()
     document=Path(plan_file).resolve()
     destination=Path(output).resolve()
@@ -137,34 +147,64 @@ def render_verified_sequence(plan_file,workspace,vault_root,output):
     if sha256_file(document)!=accepted_plan_sha256:
         raise ValueError("Director timeline modified during source validation")
     checked=plan_verified_sequence(plan,root,vault_root)
+    vault=MediaVault(vault_root)
     destination.parent.mkdir(parents=True,exist_ok=True)
-    try:
-        rendered=subprocess.run(verified_sequence_command(checked,destination),
+    with tempfile.TemporaryDirectory(prefix=".zx7-owned-sources-",dir=root) as working:
+        private=Path(working)
+        originals={}
+        sealed={}
+        evaluated={**checked,"clips":[]}
+        for authored,clip in zip(plan["clips"],checked["clips"]):
+            identity=authored["asset_id"]
+            attestation=authored["attestation_id"]
+            frozen=sealed_attested_original(
+                vault,identity,attestation,private,sealed)
+            evaluated["clips"].append({**clip,"source":frozen})
+            originals[str(clip["source"])]=identity
+        if sha256_file(document)!=accepted_plan_sha256:
+            raise ValueError("Director timeline changed before the native decoder started")
+        encoded=private/"native-original-edited.mp4"
+        rendered=subprocess.run(verified_sequence_command(evaluated,encoded),
                 capture_output=True,text=True,timeout=7200)
         if rendered.returncode!=0:
             raise RuntimeError("Original licensed multicut encoder failed: "+rendered.stderr[-1400:])
-        proof=_probe_details(destination)
-        frame_rate,frame_count=_source_timebase(destination)
+        proof=_probe_details(encoded)
+        frame_rate,frame_count=_source_timebase(encoded)
         if (frame_rate!=checked["fps"] or frame_count!=checked["frames"] or
              (proof["width"],proof["height"])!=(checked["width"],checked["height"]) or
              not proof["audio_stream_present"] or
-             abs(proof["duration_seconds"]-checked["seconds"])>max(.12,2/float(checked["fps"]))):
+             abs(proof["duration_seconds"]-checked["seconds"])>
+                 max(.12,2/float(checked["fps"]))):
             raise ValueError("Physically decoded movie disagrees with original absolute frame decisions")
-        _actual_bt709_source(destination)
-        if any(sha256_file(original)!=digest for original,digest in
-               checked["originals"].items()):
+        _actual_bt709_source(encoded)
+        decoded=full_decode_inspection(encoded,expected={
+            "width":checked["width"],"height":checked["height"],
+            "duration_seconds":checked["seconds"],"require_audio":True})
+        if (not decoded["technical_delivery_verified"] or
+                not decoded["full_picture_and_sound_decoder_completed"]):
+            raise ValueError("Actual entire edited movie picture or audio failed decoder")
+        if any(sha256_file(path)!=digest for path,digest in originals.items()):
             raise ValueError("Original footage changed during precise film cut")
+        if any(sha256_file(path)!=digest for (digest,_),path in sealed.items()):
+            raise ValueError("Sealed native decoder footage changed during physical film cut")
+        for authored in plan["clips"]:
+            vault.inspect(authored["asset_id"],
+                          attestation_id=authored["attestation_id"])
         if sha256_file(document)!=accepted_plan_sha256:
             raise ValueError("Director's exact timeline changed during physical frame cut")
-        return {"path":str(destination),"sha256":sha256_file(destination),
-                "bytes":destination.stat().st_size,
-                "original_physical_source_assets":len(checked["originals"]),
-                "actual_cut_operations":len(checked["clips"]),
-                "physical_original_frames_delivered":frame_count,
-                "original_audio_stream_present":True,
-                "movie_seconds":proof["duration_seconds"],
-                "physically_verified_BT709_CFR":True,
-                "creative_story_quality_certified":False}
-    except BaseException:
-        destination.unlink(missing_ok=True)
-        raise
+        with encoded.open("rb") as ready:
+            os.fsync(ready.fileno())
+        # Hard-link is a same-filesystem exclusive publication: refuse
+        # another producer's finished film instead of silently replacing it.
+        os.link(encoded,destination)
+    return {"path":str(destination),"sha256":sha256_file(destination),
+            "bytes":destination.stat().st_size,
+            "original_physical_source_assets":len(checked["originals"]),
+            "actual_cut_operations":len(checked["clips"]),
+            "physical_original_frames_delivered":frame_count,
+            "original_audio_stream_present":True,
+            "movie_seconds":proof["duration_seconds"],
+            "physically_verified_BT709_CFR":True,
+            "full_picture_and_sound_decoder_completed":True,
+            "sealed_original_cas_during_decode":True,
+            "creative_story_quality_certified":False}

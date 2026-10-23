@@ -116,6 +116,62 @@ class RealOwnedSequenceCuts(unittest.TestCase):
         self.assertAlmostEqual(original_first,410,delta=20)
         self.assertAlmostEqual(different_second,690,delta=25)
 
+    def test_encoder_only_reads_sealed_rights_attested_original_sources_despite_checkout_swap(self):
+        real_run=subprocess.run
+        original=self.originals[0][0]
+        owner_bytes=original.read_bytes()
+        alternate=self.originals[1][0].read_bytes()
+        consumed=[]
+        def adversarial_encoder(argv,**kwargs):
+            if argv and argv[0]=="ffmpeg" and "-filter_complex" in argv:
+                inputs=[Path(argv[i+1]) for i,arg in enumerate(argv[:-1])
+                        if arg=="-i"]
+                self.assertEqual(len(inputs),2)
+                for path in inputs:
+                    self.assertIn(".zx7-owned-sources-",str(path))
+                    self.assertFalse(path.stat().st_mode & 0o222)
+                    self.assertIn(sha256_file(path),
+                        {record["asset_id"] for _,record in self.originals})
+                consumed.extend(inputs)
+                # Modify the mutable owner-visible editor checkout for the
+                # whole real native FFmpeg process, then restore originals.
+                original.write_bytes(alternate)
+                try:
+                    return real_run(argv,**kwargs)
+                finally:
+                    original.write_bytes(owner_bytes)
+            return real_run(argv,**kwargs)
+        out=self.root/"actual-sealed-original-multicut.mp4"
+        with patch("studio_next.body_sequence_cuts.subprocess.run",
+                   side_effect=adversarial_encoder):
+            evidence=render_verified_sequence(self.document,self.root,
+                                                 self.root/"vault",out)
+        self.assertTrue(evidence["full_picture_and_sound_decoder_completed"])
+        self.assertTrue(evidence["sealed_original_cas_during_decode"])
+        self.assertEqual(evidence["physical_original_frames_delivered"],36)
+        self.assertEqual(sha256_file(original),self.originals[0][1]["asset_id"])
+        self.assertGreater(self._pixel(out,.25)[0],self._pixel(out,.25)[2]+90)
+        self.assertEqual(len(consumed),2)
+        self.assertTrue(all(not p.exists() for p in consumed))
+        self.assertFalse(list(self.root.glob(".zx7-owned-sources-*")))
+
+    def test_concurrent_accepted_movie_cannot_be_unlinked_when_new_encode_loses_race(self):
+        previous=self.root/"protected-director-master.mp4"
+        original_bytes=b"DO-NOT-REPLACE-DIRECTOR-APPROVED-CREATIVE"
+        actual_run=subprocess.run
+        def concurrent_creator(argv,**kwargs):
+            result=actual_run(argv,**kwargs)
+            if argv and argv[0]=="ffmpeg" and "-filter_complex" in argv:
+                previous.write_bytes(original_bytes)
+            return result
+        with patch("studio_next.body_sequence_cuts.subprocess.run",
+                   side_effect=concurrent_creator):
+            with self.assertRaises(FileExistsError):
+                render_verified_sequence(self.document,self.root,
+                                          self.root/"vault",previous)
+        self.assertEqual(previous.read_bytes(),original_bytes)
+        self.assertFalse(list(self.root.glob(".zx7-owned-sources-*")))
+
     def test_timeline_changed_while_real_encoder_runs_is_not_accepted(self):
         actual_run=subprocess.run
         altered=False
