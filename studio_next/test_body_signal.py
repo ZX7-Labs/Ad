@@ -45,6 +45,41 @@ class OneBrainConnectedBodyRegression(unittest.TestCase):
             finally:
                 coordinator.close()
 
+    def test_model_cannot_discover_or_execute_legacy_unattested_editors(self):
+        with tempfile.TemporaryDirectory() as root:
+            owner=LocalBodyCoordinator(root,execute=lambda ir,w:{
+                "status":"blocked","errors":["No original physical movie"]})
+            try:
+                signal=LiveBodySignal(owner,authority=BodyAuthority(
+                    workspace_ids=frozenset({"trusted-director"}),
+                    operations=frozenset({"submit"}),
+                    tool_access=frozenset({"read","write"})))
+                discovered=[]
+                cursor=None
+                while True:
+                    page=signal.discover("trusted-director",limit=40,
+                                         include_unavailable=True,cursor=cursor)
+                    discovered.extend(x["tool_id"] for x in page["affordances"])
+                    cursor=page["next_cursor"]
+                    if cursor is None:break
+                self.assertNotIn("body.render_edit",discovered)
+                self.assertNotIn("body.otio",discovered)
+                self.assertIn("body.render_edit_owned",discovered)
+                for old in ("body.render_edit","body.otio"):
+                    with self.subTest(tool=old):
+                        with self.assertRaises(PermissionError):
+                            signal.describe("trusted-director",old)
+                        with self.assertRaises(PermissionError):
+                            signal.preflight("trusted-director",old,{})
+                        attempted=authored_film()
+                        attempted["tool_graph"][0]["tool_id"]=old
+                        with self.assertRaises(BodyCommandRejected):
+                            signal.command("submit",{
+                                "workspace_id":"trusted-director",
+                                "film_ir":attempted})
+            finally:
+                owner.close()
+
     def test_host_scope_prevents_cross_workspace_job_inspection_and_writes(self):
         with tempfile.TemporaryDirectory() as root:
             owner=LocalBodyCoordinator(root,execute=lambda ir,w:{

@@ -31,10 +31,14 @@ class BodyAffordanceSurface:
     All original motor activity still goes through owner authorization and the
     durable film DAG, with its physical post-render verifier/lease/recovery.
     """
-    def __init__(self, catalog):
+    def __init__(self, catalog, *, excluded_tool_ids=frozenset()):
         if not isinstance(catalog,ToolCatalog):
             raise TypeError("Only a trusted installed BODY catalog is sensed")
+        if (not isinstance(excluded_tool_ids,frozenset) or
+                any(not isinstance(name,str) for name in excluded_tool_ids)):
+            raise TypeError("Only a host-owned immutable tool exclusion policy is valid")
         self.catalog=catalog
+        self._excluded=excluded_tool_ids
 
     @staticmethod
     def _permissions(permitted):
@@ -65,6 +69,7 @@ class BodyAffordanceSurface:
         rows,revisions,runnable,retry=self._actual()
         indexed=[]
         for row in rows:
+            if row["id"] in self._excluded:continue
             installed=row["id"] in runnable and row["status"]=="installed"
             if row["access"] not in permitted:continue
             if capability is not None and row["capability"]!=capability:continue
@@ -98,6 +103,8 @@ class BodyAffordanceSurface:
         permitted=self._permissions(allowed_access)
         if not isinstance(tool_id,str) or not _ID.fullmatch(tool_id):
             raise ValueError("Exact named tool identity required")
+        if tool_id in self._excluded:
+            raise PermissionError("Model-facing BODY tool has no current source-rights custody")
         rows,revisions,runnable,retry=self._actual()
         for row in rows:
             if row["id"]!=tool_id:continue

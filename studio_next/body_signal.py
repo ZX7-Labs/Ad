@@ -19,6 +19,10 @@ from .film_ir import validate_film_ir
 
 _ACTIONS=frozenset({"submit","pause","cancel","resume","retry"})
 _ACCESS=frozenset({"read","write","network","paid"})
+# Legacy edit/OTIO accept owner-supplied textual rights labels without real
+# MediaVault custody. Retain them for explicit historical migration, never
+# advertise or execute them from an autonomous model-facing BODY signal.
+_LEGACY_UNATTESTED=frozenset({"body.render_edit","body.otio"})
 
 
 class BodyCommandRejected(ValueError):
@@ -73,7 +77,9 @@ class LiveBodySignal:
         return self._coordinator._workspace(workspace_id)
 
     def _surface(self,workspace_id):
-        return BodyAffordanceSurface(self._factory(self._workspace(workspace_id)))
+        return BodyAffordanceSurface(
+            self._factory(self._workspace(workspace_id)),
+            excluded_tool_ids=_LEGACY_UNATTESTED)
 
     def discover(self,workspace_id,*,capability=None,cursor=None,limit=12,
                  include_unavailable=False):
@@ -129,8 +135,10 @@ class LiveBodySignal:
                 raise BodyCommandRejected("Original creative Film IR object required")
             catalog=self._factory(self._workspace(workspace_id))
             validation=validate_film_ir(ir,
-                installed_tool_ids=catalog.executable_ids(
-                    allowed_access=self._authority.tool_access),
+                installed_tool_ids=(
+                    catalog.executable_ids(
+                        allowed_access=self._authority.tool_access)
+                    -_LEGACY_UNATTESTED),
                 fact_ids=set(self._authority.fact_ids))
             if not validation.render_ready:
                 raise BodyCommandRejected("Proposed film is not physically runnable: "+
