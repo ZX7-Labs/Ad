@@ -179,6 +179,32 @@ class MediaVaultProductionTests(unittest.TestCase):
                     owner_or_generator="fake-operator")
             self.assertFalse(list(vault.objects.rglob("*")))
 
+    def test_wav_cannot_claim_unrecorded_pcm_audio_samples(self):
+        import wave
+        import struct
+        with tempfile.TemporaryDirectory() as home:
+            root=Path(home)
+            original=root/"recorded-owner-dialogue.wav"
+            with wave.open(str(original),"wb") as recording:
+                recording.setnchannels(1)
+                recording.setsampwidth(2)
+                recording.setframerate(48000)
+                recording.writeframes(b"\0"*48000)
+            actual=bytearray(original.read_bytes())
+            self.assertEqual(actual[36:40],b"data")
+            # A forged WAVE length claims twice the recorded samples.
+            struct.pack_into("<I",actual,40,96000)
+            struct.pack_into("<I",actual,4,96036)
+            original.write_bytes(actual)
+            vault=MediaVault(root/"vault")
+            with self.assertRaisesRegex(MediaCustodyError,"more PCM samples"):
+                vault.ingest(original,mime="audio/wav",
+                    rights="owner_supplied",source_type="owner_upload",
+                    source_id="claimed-speech",
+                    evidence="User-supplied recording with invalid source extent",
+                    owner_or_generator="owner")
+            self.assertFalse(list(vault.objects.rglob("*")))
+
     def test_real_video_media_claim_requires_a_decodable_video_not_text(self):
         with tempfile.TemporaryDirectory() as root:
             p=Path(root)/"invented-video.mp4"
