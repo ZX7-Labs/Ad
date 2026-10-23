@@ -97,7 +97,7 @@ def render(original_path):
     for path in (*media,song):
         refs[path.name]=vault.ingest(path,
             mime="audio/wav" if path.suffix==".wav" else "image/png",
-            rights="generated_original",source_type="generated_original",
+            rights="generated_original",source_type="trusted_renderer",
             source_id="independent-body-source-20261023",
             evidence="Original procedural pixels and additive PCM, physically generated",
             owner_or_generator="ZX7 original motion proof")
