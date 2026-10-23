@@ -15,10 +15,46 @@ import tomllib
 from pathlib import Path
 
 
+_REVIEW_CALLS=frozenset({
+    "os.replace","os.rename","os.link","os.unlink","os.remove",
+    "shutil.copyfile","shutil.copy2","shutil.rmtree",
+    "subprocess.run","subprocess.Popen","subprocess.call",
+    "eval","exec",
+})
+
+
+def _call_name(expr):
+    if isinstance(expr,ast.Name):
+        return expr.id
+    if isinstance(expr,ast.Attribute):
+        parent=_call_name(expr.value)
+        return (parent+"." if parent else "")+expr.attr
+    return ""
+
+
+def _risky_python_sites(tree,path):
+    sites=[]
+    for node in ast.walk(tree):
+        if not isinstance(node,ast.Call):
+            continue
+        name=_call_name(node.func)
+        shell_true=any(
+            kw.arg=="shell" and isinstance(kw.value,ast.Constant)
+            and kw.value.value is True for kw in node.keywords)
+        if name in _REVIEW_CALLS or (
+                name.endswith((".unlink",".write_text",".write_bytes"))
+                and name not in _REVIEW_CALLS) or shell_true:
+            sites.append({"path":path,"line":node.lineno,
+                          "call":name,"shell_true":shell_true,
+                          "independently_security_reviewed":False})
+    return sorted(sites,key=lambda item:item["line"])
+
+
 def audit(root, names):
     import yaml
     files=[]
     blocked=[]
+    risky_sites=[]
     summary={"python":0,"json":0,"toml":0,"yaml":0,"other":0}
     for name in sorted(set(names)):
         relative=Path(name)
@@ -39,6 +75,7 @@ def audit(root, names):
             if typ=="py":
                 tree=ast.parse(data.decode("utf-8"),filename=name)
                 compile(tree,name,"exec")
+                risky_sites.extend(_risky_python_sites(tree,name))
             elif typ=="json":
                 json.loads(data)
             elif typ=="toml":
@@ -54,6 +91,9 @@ def audit(root, names):
         blocked.append({"reason":"duplicate tracked source path"})
     return {"schema":1,"scope":"every tracked file","files":files,
             "counts":summary,"total_file_count":len(files),
+            "static_source_change_sites":sorted(
+                risky_sites,key=lambda row:(row["path"],row["line"])),
+            "static_source_change_sites_are_candidates_not_verified_flaws":True,
             "blocking_source_format_errors":blocked,
             "security_manual_review_complete":False,
             "film_release_production_approved":False,
@@ -78,6 +118,7 @@ def main(argv=None):
                                  ensure_ascii=False)+"\n",encoding="utf-8")
     print(json.dumps({"git_commit":report["git_commit"],
        "sources":report["total_file_count"],"counts":report["counts"],
+       "risk_sites":len(report["static_source_change_sites"]),
        "format_blockers":report["blocking_source_format_errors"],
        "full_production_approved":False}))
     return 1 if report["blocking_source_format_errors"] else 0
