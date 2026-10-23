@@ -148,7 +148,7 @@ class VerifiedProfessionalRelinkTests(unittest.TestCase):
 
     def test_tampered_original_otio_at_native_relink_publish_is_not_accepted(self):
         from studio_next import body_asset_links as links
-        writer=links.otio.adapters.write_to_file
+        writer=otio.adapters.write_to_file
         mutated=False
         def adversarial_artist_write(timeline,destination,*args,**kwargs):
             nonlocal mutated
@@ -159,7 +159,7 @@ class VerifiedProfessionalRelinkTests(unittest.TestCase):
                 self.source.write_bytes(self.source.read_bytes()+b"untrusted-change")
                 mutated=True
             return result
-        with patch.object(links.otio.adapters,"write_to_file",
+        with patch.object(otio.adapters,"write_to_file",
                           side_effect=adversarial_artist_write):
             with self.assertRaisesRegex(RuntimeError,"changed during relocation"):
                 self.run_relink()
