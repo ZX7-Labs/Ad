@@ -194,6 +194,78 @@ class LayeredProductionCompositingTests(unittest.TestCase):
             self.assertGreater(max(raw),60)
             self.assertTrue((Path(root)/"real-still-editor.mp4").is_file())
 
+    def test_real_trimmed_motion_roto_matte_follows_original_picture_clock(self):
+        try:
+            from PIL import Image
+        except ImportError:
+            self.skipTest("Requires a real still-image pixel decoder")
+        from studio_next.media_vault import sha256_file
+        with tempfile.TemporaryDirectory() as home:
+            root=Path(home)
+            plan,document,vault=self.fixture(root)
+            front=root/"licensed-flat-color.png"
+            Image.new("RGBA",(64,64),(250,9,9,255)).save(front)
+            mask_video=root/"original-temporal-mask.mp4"
+            movie=subprocess.run(["ffmpeg","-hide_banner","-loglevel","error",
+                "-nostdin","-y","-f","lavfi","-i",
+                "color=c=black:s=64x64:r=12:d=1",
+                "-vf","drawbox=x=0:y=0:w=32:h=64:color=white:t=fill:"
+                      "enable='lt(t,0.5)',"
+                      "drawbox=x=32:y=0:w=32:h=64:color=white:t=fill:"
+                      "enable='gte(t,0.5)'",
+                "-c:v","libx264","-pix_fmt","yuv420p",str(mask_video)],
+                capture_output=True,text=True,timeout=60)
+            self.assertEqual(movie.returncode,0,movie.stderr)
+            picture=vault.ingest(front,mime="image/png",rights="owner_supplied",
+                source_type="owner_upload",source_id="original-owned-graphic",
+                evidence="Source creator provided actual decoded red RGBA art",
+                owner_or_generator="creator")
+            mask=vault.ingest(mask_video,mime="video/mp4",
+                rights="owner_supplied",source_type="owner_upload",
+                source_id="timevarying-director-rotoscope",
+                evidence="Original editor painted two distinct matte poses in real frames",
+                owner_or_generator="creator")
+            plan["canvas"]={"width":64,"height":64,"fps":12,
+                            "duration":.5,"background":"#0000FF"}
+            plan["video_layers"]=[{
+                "id":"independent-temporal-luma-roto",
+                "source":front.name,"asset_id":picture["asset_id"],
+                "attestation_id":picture["attestation_id"],
+                "source_kind":"still_image","start":0,"source_in":0,
+                "duration":.5,"x":0,"y":0,"width":64,"height":64,
+                "opacity":1,
+                "matte":{"source":mask_video.name,"asset_id":mask["asset_id"],
+                         "attestation_id":mask["attestation_id"],
+                         "source_kind":"video","source_in":.25,"invert":False}}]
+            plan["audio_tracks"]=[]
+            before=(sha256_file(front),sha256_file(mask_video))
+            document.write_text(json.dumps(plan))
+            finished=root/"physical-rotoscope-frames.mp4"
+            receipt=render_composition(document,root,root/"vault",finished)
+            self.assertTrue(receipt["full_picture_and_sound_decoder_completed"])
+            def pixel(t,x):
+                data=subprocess.check_output([
+                    "ffmpeg","-hide_banner","-loglevel","error","-nostdin",
+                    "-ss",str(t),"-i",str(finished),
+                    "-frames:v","1","-f","rawvideo","-pix_fmt","rgb24","-"],
+                    timeout=40)
+                i=(24*64+x)*3
+                return tuple(data[i:i+3])
+            early_left=pixel(.10,10)
+            early_right=pixel(.10,50)
+            late_left=pixel(.36,10)
+            late_right=pixel(.36,50)
+            self.assertGreater(early_left[0],170)
+            self.assertGreater(early_right[2],170)
+            self.assertGreater(late_left[2],170)
+            self.assertGreater(late_right[0],170)
+            self.assertEqual(before,(sha256_file(front),sha256_file(mask_video)))
+            impossible=json.loads(document.read_text())
+            impossible["video_layers"][0]["matte"]["source_in"]=.8
+            with self.assertRaisesRegex(ValueError,"Roto matte exceeds"):
+                actual_composite_command(impossible,root,vault,
+                                         root/"never-accepted.mp4")
+
     def test_actual_owned_roto_matte_multiplies_original_transparency(self):
         try:
             from PIL import Image
