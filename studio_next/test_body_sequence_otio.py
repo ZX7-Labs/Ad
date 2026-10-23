@@ -1,0 +1,139 @@
+"""True Academy OpenTimelineIO round-trip, source rights and audio loss adversary."""
+import copy
+import json
+import shutil
+import subprocess
+import tempfile
+import unittest
+from pathlib import Path
+
+from studio_next.body_sequence_otio import (
+    export_verified_sequence_otio,import_verified_sequence_otio)
+from studio_next.media_vault import MediaVault
+
+
+@unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"),
+                     "Real original-frame codec required")
+class OwnedOriginalOTIOContract(unittest.TestCase):
+    def setUp(self):
+        try:import opentimelineio as otio
+        except ImportError:self.skipTest("Actual professional OTIO library not installed")
+        self.otio=otio
+        self.tmp=tempfile.TemporaryDirectory()
+        self.root=Path(self.tmp.name)
+        vault=MediaVault(self.root/"vault")
+        clips=[]
+        for i,(shade,tone) in enumerate((("red",440),("blue",680))):
+            source=self.root/f"actual-take-{i}.mp4"
+            command=["ffmpeg","-hide_banner","-loglevel","error","-nostdin",
+                "-y","-f","lavfi","-i",
+                f"color=c={shade}:s=160x90:r=24:d=1.5",
+                "-f","lavfi","-i",
+                f"sine=frequency={tone}:sample_rate=48000:duration=1.5",
+                "-c:v","libx264","-pix_fmt","yuv420p",
+                "-x264-params","colorprim=bt709:transfer=bt709:colormatrix=bt709",
+                "-color_primaries","bt709","-color_trc","bt709","-colorspace","bt709",
+                "-c:a","aac","-shortest",str(source)]
+            result=subprocess.run(command,capture_output=True,text=True,timeout=70)
+            self.assertEqual(result.returncode,0,result.stderr)
+            proof=vault.ingest(source,mime="video/mp4",rights="owner_supplied",
+                source_type="owner_upload",source_id=f"artist-take-{i}",
+                evidence="Real owner's test take and native soundtrack",
+                owner_or_generator="test-owner")
+            clips.append({"source":"zx7:sha256:"+proof["asset_id"],
+                "asset_id":proof["asset_id"],"attestation_id":proof["attestation_id"],
+                "first_frame":4+i*2,"end_frame":17+i*3,
+                "audio":"intentional_silence" if i==1 else "preserve_source"})
+        self.plan={"frame_rate":{"numerator":24,"denominator":1},
+            "frame_size":{"width":160,"height":90},"clips":clips}
+        self.source=self.root/"original.json";self.source.write_text(json.dumps(self.plan))
+        self.timeline=self.root/"original.otio"
+    def tearDown(self):self.tmp.cleanup()
+    def export(self):
+        return export_verified_sequence_otio(self.source,self.root,
+                                               self.root/"vault",self.timeline)
+    def test_export_import_source_proofs_and_original_picture_sound(self):
+        receipt=self.export()
+        self.assertEqual(receipt["frame_count"],31)
+        loaded=import_verified_sequence_otio(self.timeline,self.root,
+                                             self.root/"vault")
+        self.assertEqual(loaded["plan"],self.plan)
+        self.assertTrue(loaded["all_audio_positions_and_sources_matched"])
+        self.assertFalse(loaded["unrepresentable_effects_silently_dropped"])
+        timeline=self.otio.adapters.read_from_file(str(self.timeline))
+        self.assertEqual(len(timeline.video_tracks()),1)
+        self.assertEqual(len(timeline.audio_tracks()),1)
+        self.assertIsInstance(timeline.audio_tracks()[0][0],self.otio.schema.Clip)
+        self.assertIsInstance(timeline.audio_tracks()[0][1],self.otio.schema.Gap)
+        with self.assertRaises(ValueError):
+            self.export()
+
+    def test_native_nle_reorder_preserves_audio_and_source_attestations(self):
+        self.export()
+        timeline=self.otio.adapters.read_from_file(str(self.timeline))
+        for track in (timeline.video_tracks()[0],timeline.audio_tracks()[0]):
+            first=track[0].deepcopy();second=track[1].deepcopy()
+            track.clear();track.append(second);track.append(first)
+        updated=self.root/"reordered.otio"
+        self.otio.adapters.write_to_file(timeline,str(updated))
+        result=import_verified_sequence_otio(updated,self.root,self.root/"vault")
+        self.assertEqual(result["plan"]["clips"],list(reversed(self.plan["clips"])))
+        self.assertEqual(result["frame_count"],31)
+
+    def test_trims_and_synchronised_audio_must_change_together(self):
+        self.export()
+        timeline=self.otio.adapters.read_from_file(str(self.timeline))
+        video=timeline.video_tracks()[0][0]
+        video.source_range=self.otio.opentime.TimeRange(
+            self.otio.opentime.RationalTime(5,24),
+            self.otio.opentime.RationalTime(8,24))
+        file=self.root/"drift.otio"
+        self.otio.adapters.write_to_file(timeline,str(file))
+        with self.assertRaisesRegex(ValueError,"drift"):
+            import_verified_sequence_otio(file,self.root,self.root/"vault")
+        audio=timeline.audio_tracks()[0][0]
+        audio.source_range=video.source_range
+        aligned=self.root/"aligned.otio"
+        self.otio.adapters.write_to_file(timeline,str(aligned))
+        recovered=import_verified_sequence_otio(aligned,self.root,self.root/"vault")
+        self.assertEqual(recovered["plan"]["clips"][0]["first_frame"],5)
+        self.assertEqual(recovered["plan"]["clips"][0]["end_frame"],13)
+
+    def test_unknown_relinked_source_wrong_rights_and_dropped_audio_are_rejected(self):
+        self.export()
+        timeline=self.otio.adapters.read_from_file(str(self.timeline))
+        timeline.video_tracks()[0][0].media_reference.target_url="file:///stolen/source.mp4"
+        bad=self.root/"relink.otio"
+        self.otio.adapters.write_to_file(timeline,str(bad))
+        with self.assertRaisesRegex(ValueError,"CAS"):
+            import_verified_sequence_otio(bad,self.root,self.root/"vault")
+        timeline=self.otio.adapters.read_from_file(str(self.timeline))
+        timeline.video_tracks()[0][0].metadata["zx7"]["attestation_id"]="fake"
+        bad=self.root/"rights.otio"
+        self.otio.adapters.write_to_file(timeline,str(bad))
+        with self.assertRaises(ValueError):
+            import_verified_sequence_otio(bad,self.root,self.root/"vault")
+        timeline=self.otio.adapters.read_from_file(str(self.timeline))
+        timeline.audio_tracks()[0].clear()
+        bad=self.root/"lost-audio.otio"
+        self.otio.adapters.write_to_file(timeline,str(bad))
+        with self.assertRaisesRegex(ValueError,"unaligned"):
+            import_verified_sequence_otio(bad,self.root,self.root/"vault")
+
+    def test_unsupported_nle_transition_and_fractional_frame_refused(self):
+        self.export()
+        timeline=self.otio.adapters.read_from_file(str(self.timeline))
+        timeline.video_tracks()[0][0].source_range=self.otio.opentime.TimeRange(
+            self.otio.opentime.RationalTime(4.5,24),
+            self.otio.opentime.RationalTime(9,24))
+        bad=self.root/"fractional.otio";self.otio.adapters.write_to_file(timeline,str(bad))
+        with self.assertRaisesRegex(ValueError,"Fractional"):
+            import_verified_sequence_otio(bad,self.root,self.root/"vault")
+        timeline=self.otio.adapters.read_from_file(str(self.timeline))
+        timeline.video_tracks()[0].append(self.otio.schema.Gap(
+            source_range=self.otio.opentime.TimeRange(
+                self.otio.opentime.RationalTime(0,24),
+                self.otio.opentime.RationalTime(5,24))))
+        bad=self.root/"picture-gap.otio";self.otio.adapters.write_to_file(timeline,str(bad))
+        with self.assertRaises(ValueError):
+            import_verified_sequence_otio(bad,self.root,self.root/"vault")

@@ -1,0 +1,28 @@
+name: ZX7 BODY Genuine OTIO Audio-Visual Roundtrip
+on:
+  workflow_dispatch:
+  push:
+    branches: [zx7-body/mobile-operator-20261021]
+    paths:
+      - ".github/workflows/studio-body-otio-roundtrip.yml"
+      - "studio_next/body_sequence_otio.py"
+      - "studio_next/test_body_sequence_otio.py"
+permissions:
+  contents: read
+jobs:
+  real-originals-to-professional-otio:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install real ASWF OpenTimelineIO and native original footage decoder
+        run: |
+          python -m pip install --disable-pip-version-check 'opentimelineio==0.18.1'
+          ffmpeg -version | head -1
+          ffprobe -version | head -1
+      - name: Verify immutable exact frame edits across real professional OTIO serialization
+        run: |
+          python -m unittest studio_next.test_body_sequence_otio -v
