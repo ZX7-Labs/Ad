@@ -17,6 +17,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import tempfile
 from pathlib import Path, PurePosixPath
 from urllib.parse import unquote, urlsplit
@@ -130,7 +131,17 @@ def relink_verified_otio(source,workspace,old_workspace,output):
         not report.get("rebind_and_rerun_required")):
         raise ValueError("Original host identity does not match verified relocation")
     original_sha=sha256_file(original)
-    timeline=otio.adapters.read_from_file(str(original))
+    with tempfile.TemporaryDirectory(
+            prefix=".zx7-relink-seal-",dir=root) as private:
+        sealed=Path(private)/"director-original.otio"
+        with original.open("rb") as inp,sealed.open("xb") as out:
+            shutil.copyfileobj(inp,out,1024*1024)
+            out.flush()
+            os.fsync(out.fileno())
+        if sha256_file(sealed)!=original_sha or sha256_file(original)!=original_sha:
+            raise RuntimeError("Original artistic timeline changed while sealing")
+        os.chmod(sealed,0o400)
+        timeline=otio.adapters.read_from_file(str(sealed))
     if not isinstance(timeline,otio.schema.Timeline):
         raise ValueError("Source is not an editable OTIO timeline")
     original_semantics=_except_external_urls(json.loads(
@@ -198,6 +209,11 @@ def relink_verified_otio(source,workspace,old_workspace,output):
                     original_clip.media_reference.target_url
                 for original_clip,checked_clip in zip(clips,verified_clips)):
             raise RuntimeError("Re-linked physical timeline failed actual OTIO roundtrip")
+        # Re-verify original artist timeline at the last trusted instant,
+        # BEFORE exposing any new edit. Never delete a competing artist's
+        # approved relink on a lost publication race.
+        if sha256_file(original)!=original_sha:
+            raise RuntimeError("Original artistic timeline was changed during relocation")
         # Lexical link creation is atomic, unlike overwriting a pre-existing
         # accepted director cut with os.replace.
         os.link(temporary,destination,follow_symlinks=False)
@@ -208,9 +224,6 @@ def relink_verified_otio(source,workspace,old_workspace,output):
         finally:os.close(directory_fd)
     finally:
         temporary.unlink(missing_ok=True)
-    if sha256_file(original)!=original_sha:
-        destination.unlink(missing_ok=True)
-        raise RuntimeError("Original artistic timeline was changed during relocation")
     return {
         "original_otio_sha256":original_sha,
         "relinked_otio_sha256":sha256_file(destination),
