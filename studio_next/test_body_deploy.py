@@ -58,6 +58,35 @@ class SecurePersistentFilmBodyInstallerTests(unittest.TestCase):
                 configure_independent_studio(base/"data",code_root=code,
                     config_dir=code/"keys",unit_dir=base/"unit")
 
+    def test_broken_or_existing_service_symlink_cannot_write_into_outside_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            code=self.fixture(tmp)
+            config=root/"config"
+            units=root/"units"
+            outside=root/"outside-other-owner.service"
+            outside.write_bytes(b"unchanged-original-systemd-service")
+            units.mkdir()
+            service=units/"zx7-studio-body.service"
+            service.symlink_to(outside)
+            params={"code_root":code,"config_dir":config,"unit_dir":units}
+            with self.assertRaisesRegex(ValueError,"symlink"):
+                configure_independent_studio(root/"films",**params)
+            self.assertEqual(outside.read_bytes(),
+                             b"unchanged-original-systemd-service")
+            service.unlink()
+            missing=root/"unrelated-future-unit.service"
+            service.symlink_to(missing)
+            with self.assertRaisesRegex(ValueError,"symlink"):
+                configure_independent_studio(root/"films",**params)
+            self.assertFalse(missing.exists())
+            service.unlink()
+            proof=configure_independent_studio(root/"films",**params)
+            self.assertTrue(proof["configured"])
+            self.assertFalse(proof["enabled_automatically"])
+            self.assertTrue(service.is_file())
+            self.assertFalse(service.is_symlink())
+
     def test_private_token_and_unit_will_not_be_silently_overwritten(self):
         with tempfile.TemporaryDirectory() as root:
             base=Path(root)

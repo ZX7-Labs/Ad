@@ -95,10 +95,30 @@ def configure_independent_studio(workspace,*,config_dir=None,unit_dir=None,
        "[Install]\n"
        "WantedBy=default.target\n"
     )
-    if unit.is_file() and unit.read_text()!=content:
-        raise FileExistsError("Existing production service unit changed; inspect before replacing")
-    if not unit.exists():
-        unit.write_text(content,encoding="utf-8")
+    if unit.is_symlink():
+        raise ValueError("Original local systemd service unit cannot be a symlink")
+    if unit.exists() and not unit.is_file():
+        raise FileExistsError("Existing original service unit is not a regular file")
+    if unit.is_file():
+        if unit.read_text(encoding="utf-8")!=content:
+            raise FileExistsError("Existing production service unit changed; inspect before replacing")
+    else:
+        # A plain write_text() follows broken symlinks and can truncate other
+        # artists' host files, including an unrelated installation. A unit
+        # is committed only as a brand-new owner-specific pathname.
+        try:
+            with unit.open("x",encoding="utf-8") as created:
+                created.write(content)
+                created.flush()
+                os.fsync(created.fileno())
+        except FileExistsError:
+            if (unit.is_symlink() or not unit.is_file() or
+                    unit.read_text(encoding="utf-8")!=content):
+                raise FileExistsError(
+                    "Competing host operator installed a different or linked service")
+        folder_fd=os.open(units,os.O_RDONLY|os.O_DIRECTORY)
+        try:os.fsync(folder_fd)
+        finally:os.close(folder_fd)
     return {"configured":True,"service_unit":str(unit),
             "persistent_workspace_root":str(home),
             "operator_secret_path":str(env),
