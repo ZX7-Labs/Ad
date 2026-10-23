@@ -190,5 +190,32 @@ class TrueOwnerAttestedGenericEditorTests(unittest.TestCase):
         self.assertTrue(did)
         self.assertFalse((self.root/"blocked-plan.mp4").exists())
 
+    def test_real_competing_master_cannot_be_overwritten_or_deleted_at_publication(self):
+        import os
+        from studio_next import body_owned_edit
+        destination=self.root/"rival-owned-master.mp4"
+        rival=self.root/"actual_1.mp4"
+        rival_sha=sha256_file(rival)
+        real_link=os.link
+        raced=False
+        def competitor_wins(src,dst,*args,**kwargs):
+            nonlocal raced
+            if Path(dst)==destination:
+                self.assertIn(".zx7-owned-sources-",str(src))
+                shutil.copyfile(rival,destination)
+                raced=True
+            return real_link(src,dst,*args,**kwargs)
+        with patch.object(body_owned_edit.os,"link",side_effect=competitor_wins):
+            with self.assertRaises(FileExistsError):
+                render_verified_owned_edit(self.plan_file,self.root,
+                                           self.root/"vault",destination)
+        self.assertTrue(raced)
+        self.assertEqual(sha256_file(destination),rival_sha)
+        self.assertFalse(list(self.root.glob(".zx7-owned-sources-*")))
+        decoded=subprocess.run(["ffmpeg","-hide_banner","-loglevel","error",
+            "-xerror","-i",str(destination),"-map","0:v:0","-map","0:a:0",
+            "-f","null","-"],capture_output=True,timeout=40)
+        self.assertEqual(decoded.returncode,0,decoded.stderr)
+
 
 if __name__=="__main__":unittest.main()

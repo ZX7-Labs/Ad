@@ -14,6 +14,7 @@ import hashlib
 import io
 import json
 import math
+import os
 import re
 import shutil
 import subprocess
@@ -203,7 +204,7 @@ def produce_review_bundle(plan_path,workspace,vault_root,output):
     audio=[]
     dest.parent.mkdir(parents=True,exist_ok=True)
     try:
-        with tempfile.TemporaryDirectory(prefix="zx7-media-review-") as scratch:
+        with tempfile.TemporaryDirectory(prefix=".zx7-media-review-",dir=root) as scratch:
             stage=Path(scratch)
             for i,timestamp in enumerate(times,1):
                 frame=stage/f"review_{i:04d}.png"
@@ -269,7 +270,10 @@ def produce_review_bundle(plan_path,workspace,vault_root,output):
                 raise ValueError("Review artifact source provenance changed")
             if sha256_file(movie)!=original_hash:
                 raise ValueError("Original picture or sound changed before proof release")
-            shutil.copyfile(archive,dest)
+            # The verified archive and destination share the trusted workspace
+            # filesystem: publish only if no other reviewer won the race.
+            # Copying directly to dest could truncate an accepted review.
+            os.link(archive,dest)
             return {"path":str(dest),"sha256":sha256_file(dest),
                     "bytes":dest.stat().st_size,
                     "source_sha256":original_hash,
@@ -277,5 +281,6 @@ def produce_review_bundle(plan_path,workspace,vault_root,output):
                     "original_audio_windows_measured":len(audio),
                     "human_artistic_quality_certified":False}
     except BaseException:
-        dest.unlink(missing_ok=True)
+        # Never delete an independently accepted review bundle. Staging is
+        # private and automatically removed by TemporaryDirectory.
         raise

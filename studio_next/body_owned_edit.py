@@ -115,15 +115,19 @@ def render_verified_owned_edit(plan_file, workspace, vault_root, output):
             if sha256_file(plan_file)!=before or any(
                     sha256_file(path)!=digest for path,digest in originals.items()):
                 raise ValueError("Original source or plan changed before the actual encoder")
-            command=edit_ffmpeg_command(frozen,root,output,source_info=sources)
+            # FFmpeg -y may only touch an isolated private staging file.
+            # Publishing directly to a public destination permits a racing
+            # writer's accepted master to be overwritten or deleted on error.
+            staged=Path(directory)/"native-owned-edited.mp4"
+            command=edit_ffmpeg_command(frozen,root,staged,source_info=sources)
             # No arbitrary owner/model shell commands or mutable source paths.
             complete=subprocess.run(command,capture_output=True,text=True,timeout=3600)
             if complete.returncode:
                 raise RuntimeError("Source-attested native editor failed: "+complete.stderr[-1400:])
-            final=probe_media(output)
+            final=probe_media(staged)
             if not final["audio"]:
                 raise RuntimeError("Encoded film lacks independently decoded soundtrack")
-            qa=full_decode_inspection(output,expected={
+            qa=full_decode_inspection(staged,expected={
                 "width":plan["format"]["width"],
                 "height":plan["format"]["height"],
                 "require_audio":True})
@@ -143,6 +147,11 @@ def render_verified_owned_edit(plan_file, workspace, vault_root, output):
                         attestation_id=clip["attestation_id"])
                 if stored["rights_attestations"][0]["rights"]!=clip["rights"]:
                     raise ValueError("Original source rights changed during encoding")
+            with staged.open("rb") as verified_output:
+                os.fsync(verified_output.fileno())
+            # Only a single atomic, exclusive hardlink may expose a fully
+            # decoded, still-rights-attested movie. A competitor wins safely.
+            os.link(staged,output)
         return {"source_custody_count":len(clean["clips"]),
                 "distinct_originals":len(originals),
                 "plan_sha256":before,
@@ -154,5 +163,6 @@ def render_verified_owned_edit(plan_file, workspace, vault_root, output):
                 "ownership_independently_legally_certified":False,
                 "artistic_quality_certified":False}
     except BaseException:
-        output.unlink(missing_ok=True)
+        # TemporaryDirectory cleans OUR private render on every failure.
+        # Never unlink the public destination: another writer may own it.
         raise

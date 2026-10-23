@@ -127,6 +127,30 @@ class OriginalFilmObservationIntegration(unittest.TestCase):
             },sort_keys=True,indent=2)+"\n")
         with self.assertRaisesRegex(ValueError,"new standalone"):
             produce_review_bundle(self.plan_file,self.root,self.root/"vault",out)
+    def test_competing_verified_review_remains_immutable_after_publication_race(self):
+        from unittest.mock import patch
+        from studio_next import body_observation
+        original=self.root/"verified-existing.zxreview"
+        first=produce_review_bundle(self.plan_file,self.root,self.root/"vault",original)
+        expected=sha256_file(original)
+        destination=self.root/"another-review-won.zxreview"
+        native_link=os.link
+        raced=False
+        def external_review_wins(source,target,*args,**kwargs):
+            nonlocal raced
+            if Path(target)==destination:
+                self.assertIn(".zx7-media-review-",str(source))
+                shutil.copyfile(original,destination)
+                raced=True
+            return native_link(source,target,*args,**kwargs)
+        with patch.object(body_observation.os,"link",side_effect=external_review_wins):
+            with self.assertRaises(FileExistsError):
+                produce_review_bundle(self.plan_file,self.root,self.root/"vault",destination)
+        self.assertTrue(raced)
+        self.assertEqual(sha256_file(destination),expected)
+        self.assertEqual(verify_review_bundle(destination)["actual_sampled_frames"],3)
+        self.assertFalse(list(self.root.glob(".zx7-media-review-*")))
+
     def test_rights_spoof_timestamp_injection_or_truncated_audio_block_before_export(self):
         for case in ("wrong_digest","unknown_attestation","outside_movie",
                      "unordered","invalid_nan","non_audio_time_window"):
