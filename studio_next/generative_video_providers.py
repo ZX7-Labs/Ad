@@ -18,7 +18,7 @@ import shutil
 import subprocess
 from pathlib import Path
 from urllib.parse import urlsplit
-from urllib.request import urlopen
+from urllib.request import build_opener,HTTPRedirectHandler
 
 # Current declared upstream licenses; actual weights still need provenance.
 VIDEO_MODEL_CANDIDATES=(
@@ -47,6 +47,30 @@ def safe_local_api(url):
     return url.rstrip("/")
 
 
+class _RejectLocalRedirect(HTTPRedirectHandler):
+    """Forbid all redirects from an authorized loopback ComfyUI origin."""
+
+    def redirect_request(self,request,fp,code,msg,headers,newurl):
+        raise ValueError(
+            "Untrusted local video API attempted an unauthorized HTTP redirect")
+
+
+_LOCAL_ONLY_HTTP=build_opener(_RejectLocalRedirect())
+
+
+def open_verified_local_api(url,*,timeout):
+    """Open only an explicit loopback HTTP API URL; never follow a redirect.
+
+    The returned stream belongs to the caller, which must close it.
+    """
+    part=urlsplit(url)
+    if (part.scheme!="http" or part.hostname not in SUPPORTED_LOCAL_HOSTS or
+            part.port is None or part.username or part.password or
+            part.fragment):
+        raise ValueError("Native visual model API may only contact local HTTP")
+    return _LOCAL_ONLY_HTTP.open(url,timeout=timeout)
+
+
 def measured_gpu_vram_mb(*, runner=None):
     """Measure CUDA capacity; free GitHub Actions CPU must not impersonate GPU."""
     run=runner or subprocess.run
@@ -67,7 +91,7 @@ def inspect_comfyui(endpoint,*, fetch=None):
     endpoint=safe_local_api(endpoint)
     if fetch is None:
         def fetch(url):
-            with urlopen(url,timeout=4) as r:
+            with open_verified_local_api(url,timeout=4) as r:
                 return json.loads(r.read(2_000_000))
     try:
         info=fetch(endpoint+"/system_stats")
