@@ -104,6 +104,32 @@ def verify_media_container(path,mime):
     elif mime=="image/svg+xml":
         from .creative_asset_ops import validate_original_svg_art
         validate_original_svg_art(path)
+    elif mime in ("font/ttf","font/otf"):
+        # Source owners can attest a font license only after actual sfnt glyph
+        # metadata parses. A four-byte sfnt signature or fabricated name
+        # table is not proof of an artist-usable text shaping resource.
+        import importlib.util
+        if importlib.util.find_spec("fontTools") is None:
+            raise MediaCustodyError("Native font source decoder not installed")
+        from fontTools.ttLib import TTFont,TTLibError
+        with path.open("rb") as actual_font:
+            signature=actual_font.read(4)
+        if ((mime=="font/ttf" and signature not in (
+                    bytes((0,1,0,0)),b"true"))
+                or (mime=="font/otf" and signature!=b"OTTO")):
+            raise MediaCustodyError("Original font sfnt container does not match MIME")
+        try:
+            with TTFont(str(path),lazy=False,recalcBBoxes=False) as face:
+                cmap=face.getBestCmap()
+                if (not isinstance(cmap,dict) or not cmap
+                        or not 1<=face["maxp"].numGlyphs<=200000
+                        or not 16<=face["head"].unitsPerEm<=16384):
+                    raise MediaCustodyError(
+                        "Original typeface has no real Unicode glyph metrics")
+        except (OSError,ValueError,KeyError,TTLibError,AssertionError,
+                IndexError,TypeError) as exc:
+            raise MediaCustodyError(
+                "Original claimed typeface failed native font table/glyph inspection") from exc
     elif mime=="model/gltf-binary":
         # glTF v2 GLB is a precisely chunked binary container, not twelve
         # bytes beginning with "glTF". Verify actual JSON scene metadata and
