@@ -134,7 +134,7 @@ def render_aces2_scene_movie(plan_file,workspace,vault_root,output):
              "-i",str(rgb_path),"-an",
              "-vf","scale=in_range=full:out_range=limited:out_color_matrix=bt709,format=yuv422p10le",
              "-c:v","prores_ks","-profile:v","3",
-             "-pix_fmt","yuv422p10le",
+             "-pix_fmt","yuv422p10le","-color_range","tv",
              "-color_primaries","bt709","-color_trc","iec61966-2-1",
              "-colorspace","bt709","-movflags","+write_colr",str(movie)]
         proc=subprocess.run(cmd,capture_output=True,text=True,timeout=1200)
