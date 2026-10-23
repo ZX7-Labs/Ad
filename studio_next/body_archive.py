@@ -76,6 +76,7 @@ _PRIVATE_RENDER_PREFIXES=(
     ".zx7-otio-import-",
     ".zx7-nle-",
     ".zx7-incomplete-",
+    ".zx7-vault-checkout-",
 )
 
 
