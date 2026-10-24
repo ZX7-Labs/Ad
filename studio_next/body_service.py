@@ -58,6 +58,8 @@ class LocalBodyCoordinator:
     def __init__(self,root,*,execute=None,workers=1):
         if type(workers) is not int or not (1<=workers<=16):
             raise ValueError("Operator must choose finite host workload capacity")
+        if Path(root).is_symlink():
+            raise ValueError("Studio host root cannot be a filesystem link")
         self.root=Path(root).resolve()
         self.root.mkdir(parents=True,exist_ok=True)
         # An OS process lock is released on crash, unlike a stale Python flag.
