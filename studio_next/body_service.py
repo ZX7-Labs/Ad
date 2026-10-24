@@ -62,6 +62,9 @@ class LocalBodyCoordinator:
             raise ValueError("Studio host root cannot be a filesystem link")
         self.root=Path(root).resolve()
         self.root.mkdir(parents=True,exist_ok=True)
+        for name in ("body-service.lock","body-jobs.sqlite3","projects"):
+            if (self.root/name).is_symlink():
+                raise ValueError("Studio host state cannot be a filesystem link")
         # An OS process lock is released on crash, unlike a stale Python flag.
         # Two independent services must NEVER drive the same renderer DB,
         # originals and partially produced frames concurrently.
