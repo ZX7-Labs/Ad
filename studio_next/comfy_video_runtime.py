@@ -70,7 +70,8 @@ def _approved_graph(config_root, job):
         raise ValueError("Real ComfyUI API workflow and its model bindings required")
     graph_bytes=proof.read_bytes()
     graph=json.loads(graph_bytes)
-    desc=json.loads(binds.read_text(encoding="utf-8"))
+    bindings_bytes=binds.read_bytes()
+    desc=json.loads(bindings_bytes.decode("utf-8"))
     if not isinstance(graph,dict) or not isinstance(desc,dict):
         raise ValueError("Model's trusted workflow must be an object")
     if desc.get("model_id")!=job["model_id"]:
