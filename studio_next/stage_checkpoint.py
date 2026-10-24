@@ -38,7 +38,9 @@ class DurableStageStore:
         return self.root/(name+"."+fingerprint(immutable_input)+".json")
 
     def find(self, name, immutable_input):
-        path=self._path(name)
+        path=self._path(name,immutable_input)
+        if not path.is_file():
+            path=self._path(name)
         if not path.is_file():
             return None
         content=json.loads(path.read_text(encoding="utf-8"))
