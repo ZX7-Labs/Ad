@@ -48,8 +48,9 @@ class DurableStageStore:
         if not path.is_file():
             return None
         content=json.loads(path.read_text(encoding="utf-8"))
-        if not isinstance(content,dict) or content.get("schema")!=1:
-            raise ValueError("Corrupt/unknown checkpoint schema")
+        if (not isinstance(content,dict) or content.get("schema")!=1
+                or content.get("stage")!=name):
+            raise ValueError("Corrupt/unknown original stage checkpoint schema")
         if content.get("input_sha256")!=fingerprint(immutable_input):
             # A different director version must NOT receive a stale shot.
             return None
