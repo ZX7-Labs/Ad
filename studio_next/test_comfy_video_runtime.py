@@ -98,6 +98,15 @@ class SafeLocalVideoDiffusionAdapterTests(unittest.TestCase):
             server.server_close()
             worker.join(timeout=5)
 
+    def test_untrusted_comfy_task_id_is_not_an_http_path(self):
+        api=LocalComfyVideoClient("http://127.0.0.1:8188",
+            request=lambda method,path,data,binary:{
+                "prompt_id":"../../other-project"} if path=="/prompt" else {})
+        with self.assertRaisesRegex(ValueError,"path-safe"):
+            api.create({"node":{"inputs":{}}})
+        with self.assertRaisesRegex(ValueError,"path-safe"):
+            api.wait("../private-workspace","node",max_seconds=1)
+
     def test_model_owns_acting_prompt_format_timing_no_template_or_default(self):
         x=job()
         self.assertEqual(validate_video_job(x)["frames"],49)
