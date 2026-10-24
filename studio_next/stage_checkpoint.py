@@ -76,7 +76,13 @@ class DurableStageStore:
                 dest.write(blob)
                 dest.flush()
                 os.fsync(dest.fileno())
-            os.replace(tmp,path)
+            try:
+                os.link(tmp,path)
+            except FileExistsError:
+                if (path.is_symlink() or not path.is_file()
+                        or path.read_text(encoding="utf-8")!=blob):
+                    raise ValueError(
+                        "Another model stage output already owns these original inputs")
         finally:
             if os.path.exists(tmp):
                 os.unlink(tmp)
