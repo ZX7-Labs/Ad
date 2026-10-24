@@ -28,7 +28,62 @@
     "physical_render_and_revision_proof": "scripted local HTTP protocol fixture, real FFmpeg pictures/audio/decode and original-stage reuse"
   },
   "remote_ci": {
-    "status": "pending matching pushed code"
+    "status": "all matching checks succeeded",
+    "code_commit": "c4a8d5ea1994141fc1cb9921759608d456cd1c28",
+    "native": {
+      "run_id": 40099995901,
+      "conclusion": "success",
+      "tests_run": 583,
+      "tests_passed": 582,
+      "tests_skipped": 1,
+      "skip_reason": "actual Chromium browser test runs separately",
+      "tests_failed": 0,
+      "tests_errors": 0,
+      "separately_installed_wheel_native_render": "passed",
+      "url": "https://github.com/oyzitjfzj/Ad/actions/runs/40099995901"
+    },
+    "browser": {
+      "run_id": 40099995883,
+      "conclusion": "success",
+      "tests_run": 1,
+      "tests_passed": 1,
+      "tests_skipped": 0,
+      "actual_chromium": true,
+      "ordinary_brief_form_uses_scripted_model_fixture": true,
+      "physical_android_or_remote_https_verified": false,
+      "url": "https://github.com/oyzitjfzj/Ad/actions/runs/40099995883"
+    },
+    "source_custody": {
+      "run_id": 40099997459,
+      "conclusion": "success",
+      "tests_run": 45,
+      "tests_passed": 45,
+      "tests_skipped": 0,
+      "url": "https://github.com/oyzitjfzj/Ad/actions/runs/40099997459"
+    },
+    "otio": {
+      "run_id": 40099995891,
+      "conclusion": "success",
+      "tests_run": 8,
+      "tests_passed": 8,
+      "tests_skipped": 0,
+      "url": "https://github.com/oyzitjfzj/Ad/actions/runs/40099995891"
+    },
+    "security": {
+      "run_id": 40099995924,
+      "conclusion": "success",
+      "tests_run": 217,
+      "tests_passed": 111,
+      "tests_skipped": 106,
+      "url": "https://github.com/oyzitjfzj/Ad/actions/runs/40099995924"
+    },
+    "source_inventory": {
+      "run_id": 40099995895,
+      "conclusion": "success",
+      "url": "https://github.com/oyzitjfzj/Ad/actions/runs/40099995895"
+    },
+    "focused_checks_overlap_the_native_suite": true,
+    "live_neural_creativity_or_semantic_sound_review_certified": false
   },
   "final_studio_subsystem_gates_accepted": 0,
   "total_final_studio_subsystem_gates": 12,
@@ -42,5 +97,6 @@
     "independent skilled human quality comparisons"
   ],
   "keep_existing_pr_draft": true,
-  "merge_main_authorized_by_this_checkpoint": false
+  "merge_main_authorized_by_this_checkpoint": false,
+  "verified_code_commit": "c4a8d5ea1994141fc1cb9921759608d456cd1c28"
 }

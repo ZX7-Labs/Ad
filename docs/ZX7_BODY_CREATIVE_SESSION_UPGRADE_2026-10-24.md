@@ -111,3 +111,25 @@ Voice API reference consulted: the official Supertonic Python
 It documents `voice_style_names`, `get_voice_style`,
 `get_voice_style_from_path`, and the synthesis controls used here. Runtime
 support still depends on the actually installed package and model assets.
+
+
+## Matching verified code and CI
+
+Code commit: `c4a8d5ea1994141fc1cb9921759608d456cd1c28`.
+The companion checkpoint records these exact run identities and counts.
+
+| Verification | Result | Matching run |
+|---|---|---|
+| Native all-module suite and separately installed native wheel | 583 run, 582 passed, one browser-only skip; native media/GUI/package steps succeeded | [40099995901](https://github.com/oyzitjfzj/Ad/actions/runs/40099995901) |
+| Actual mobile-width Chromium, including ordinary brief form | One passed, zero skipped; scripted model protocol fixture | [40099995883](https://github.com/oyzitjfzj/Ad/actions/runs/40099995883) |
+| Source-custody actual codec regressions | 45 passed, zero skipped | [40099997459](https://github.com/oyzitjfzj/Ad/actions/runs/40099997459) |
+| Actual ASWF OTIO roundtrip | Eight passed, zero skipped | [40099995891](https://github.com/oyzitjfzj/Ad/actions/runs/40099995891) |
+| Minimal dependency security runner | 217 run, 111 passed, 106 skipped | [40099995924](https://github.com/oyzitjfzj/Ad/actions/runs/40099995924) |
+| Tracked source inventory | Succeeded | [40099995895](https://github.com/oyzitjfzj/Ad/actions/runs/40099995895) |
+
+The focused checks overlap the full suite; their counts must not be added as
+independent coverage. Local all-module verification ran the same 583 cases:
+545 passed and 38 unavailable-native/browser cases skipped. The installed-wheel
+import/contract smoke and client JavaScript syntax check passed locally.
+No skipped case is counted as a pass. These successful checks do not replace the
+still-open independent creative-model and professional quality acceptance.
