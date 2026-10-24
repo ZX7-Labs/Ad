@@ -201,7 +201,10 @@ class SafeLocalVideoDiffusionAdapterTests(unittest.TestCase):
                         render_actual_generated_scene(actual,root/"fake",
                             comfy_endpoint="http://127.0.0.1:8188",
                             client=false,probe=lambda path:{"seconds":1})
-                    link.assert_not_called()
+                    # A durable private prompt checkpoint may correctly be
+                    # published even when the returned video is invalid.
+                    # The public director film must NEVER be published.
+                    self.assertFalse((root/"fake"/"filmed.mp4").exists())
                 original=render_actual_generated_scene(actual,root/"true",
                     comfy_endpoint="http://127.0.0.1:8188",client=fake)
                 accepted=Path(original["clip"])
