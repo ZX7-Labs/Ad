@@ -30,10 +30,12 @@ class DurableStageStore:
     def __init__(self, root):
         self.root=Path(root)
 
-    def _path(self, name):
+    def _path(self, name, immutable_input=None):
         if not isinstance(name,str) or _STAGE.fullmatch(name) is None:
             raise ValueError("Unsafe checkpoint identity")
-        return self.root/(name+".json")
+        if immutable_input is None:
+            return self.root/(name+".json")
+        return self.root/(name+"."+fingerprint(immutable_input)+".json")
 
     def find(self, name, immutable_input):
         path=self._path(name)
