@@ -10,7 +10,7 @@ class AutonomousArtToolDiscoveryTests(unittest.TestCase):
     def test_installed_tools_are_measured_not_claimed(self):
         finder=lambda app:{'blender':'/usr/bin/blender','ffmpeg':'/usr/bin/ffmpeg',
                            'ffprobe':'/usr/bin/ffprobe','krita':'/opt/krita'}.get(app)
-        inventory=creative_tool_inventory(finder=finder)
+        inventory=creative_tool_inventory(finder=finder,installed_operation_ids={"body.blender3d","body.composite_mix"})
         available={s["tool_id"]:s for s in inventory["actual_installed_tools"]}
         self.assertIn("blender",available)
         self.assertIn("ffmpeg",available)

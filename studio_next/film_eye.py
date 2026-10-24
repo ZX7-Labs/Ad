@@ -15,7 +15,8 @@ import json
 import math
 import subprocess
 from pathlib import Path
-from urllib.request import Request, urlopen
+from urllib.request import Request
+from .local_model_http import urlopen
 
 from .providers import LocalModelSettings
 

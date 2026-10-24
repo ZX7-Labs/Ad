@@ -122,7 +122,7 @@ def run_audition(brief_paths, model, root):
         target.mkdir(exist_ok=True)
         context={"owner_request":brief["request"],"owner_facts":brief["facts"],
                  "preferences":brief.get("preferences",{}),
-                 "available_voices":brief.get("available_voices",["M3","F2"]),
+                 "available_voices":brief.get("available_voices",[]),
                  "asset_rights":brief.get("asset_rights",{}),
                  "creative_instruction":"You decide; never fit the film into a canned ad/lesson pattern"}
         fingerprint=hashlib.sha256(json.dumps(context,ensure_ascii=False,sort_keys=True).encode()).hexdigest()

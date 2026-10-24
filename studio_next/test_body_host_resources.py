@@ -26,7 +26,8 @@ class ActualProductionCapacityContracts(unittest.TestCase):
                 memory=lambda:{"available_bytes":3100000000,
                                "total_bytes":8100000000,
                                "measurement":"known-test-physical-memory"},
-                nvidia_binary="/usr/bin/nvidia-smi",gpu_runner=runner)
+                nvidia_binary="/usr/bin/nvidia-smi",gpu_runner=runner,
+                cgroup_root=Path(root)/"absent-cgroup-fixture")
             self.assertEqual(evidence["cpu_logical_processors"],12)
             self.assertEqual(evidence["workspace_disk"]["free_bytes"],3000000000)
             devices=evidence["nvidia_gpu_driver"]["devices"]

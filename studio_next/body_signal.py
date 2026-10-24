@@ -20,6 +20,7 @@ from .body_affordances import BodyAffordanceSurface
 from .body_integration import body_catalog
 from .body_sensory import sense_body_job
 from .film_ir import validate_film_ir
+from .body_document_schemas import validate_document
 
 _ACTIONS=frozenset({"author_plan","submit","pause","cancel","resume","retry"})
 _ACCESS=frozenset({"read","write","network","paid"})
@@ -143,12 +144,21 @@ class LiveBodySignal:
         required=schema["required"]
         permitted=("plan","edit","scene_json","original_film_ir","video_job")
         document_fields=[name for name in required if name in permitted]
+        if "input_name" in arguments:
+            selected=arguments["input_name"]
+            if selected not in required or selected not in permitted+("operation",):
+                raise BodyCommandRejected("Unsupported creative document input_name")
+            document_fields=[selected]
         if len(document_fields)!=1:
             raise BodyCommandRejected(
                 "Installed BODY tool has no single supported JSON creative document")
         document=arguments["document"]
         if not isinstance(document,dict):
             raise BodyCommandRejected("Creative technical tool plan must be a JSON object")
+        try:
+            schema_validated=validate_document(tool_id,document,document_fields[0])
+        except ValueError as exc:
+            raise BodyCommandRejected(str(exc)) from exc
         try:
             raw=(json.dumps(document,allow_nan=False,ensure_ascii=False,
                 sort_keys=True,separators=(",",":"))+"\n").encode("utf-8")
@@ -196,6 +206,7 @@ class LiveBodySignal:
             "path":"brain-authored/"+target.name,
             "sha256":digest,"bytes":len(raw),
             "immutable_editor_document_published":True,
+            "document_shape_validated":schema_validated,
             "tool_ready_to_execute_now":detail["status"]=="ready_to_preflight",
             "source_legal_rights_certified":False,
             "film_physically_rendered":False,
@@ -222,7 +233,7 @@ class LiveBodySignal:
             report["more_workspace_media"]=len(actual)>200
         return report
 
-    def command(self,action,arguments):
+    def command(self,action,arguments,*,submission_key=None):
         if action not in _ACTIONS or not isinstance(action,str):
             raise BodyCommandRejected("Unknown model-facing BODY operation")
         if action not in self._authority.operations:
@@ -232,7 +243,8 @@ class LiveBodySignal:
         expected=({"film_ir","workspace_id"} if action=="submit" else
                   {"workspace_id","tool_id","document"} if action=="author_plan"
                   else {"job_id"})
-        if set(arguments)!=expected:
+        if (set(arguments)!=expected and not (
+                action=="author_plan" and set(arguments)==expected|{"input_name"})):
             raise BodyCommandRejected("Unapproved BODY command argument fields")
         if action=="author_plan":
             return self._author_original_plan(arguments)
@@ -254,6 +266,23 @@ class LiveBodySignal:
                     "; ".join(validation.errors+validation.warnings)[:1200])
             # Coordinator's durable graph independently rechecks physical
             # assets, licenses, executable revisions and each source SHA.
+            if submission_key is not None:
+                if not isinstance(submission_key,str) or len(submission_key)!=64 or any(
+                        c not in "0123456789abcdef" for c in submission_key):
+                    raise BodyCommandRejected("Host submission key must be a SHA256")
+                # Stable across a session crash after job insertion but before
+                # recording its receipt. The validated original must match.
+                identity=hashlib.sha256((workspace_id+submission_key).encode()).hexdigest()
+                with self._coordinator._connect() as db:
+                    existing=db.execute("SELECT workspace_id,original_ir,status FROM jobs WHERE id=?",
+                                        (identity,)).fetchone()
+                if existing is not None:
+                    if existing[0]!=workspace_id or json.loads(existing[1])!=ir:
+                        raise BodyCommandRejected("Submission key conflicts with original film")
+                    return {"job_id":identity,"workspace_id":workspace_id,
+                            "status":existing[2],"original_artistic_plan_preserved":True,
+                            "existing_submission_reused":True}
+                return self._coordinator.submit(ir,workspace_id=workspace_id,job_id=identity)
             return self._coordinator.submit(ir,workspace_id=workspace_id)
         job_id=arguments["job_id"]
         record=self._coordinator.inspect(job_id)

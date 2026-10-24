@@ -1,0 +1,277 @@
+"""Queryable versioned JSON authoring contracts for native media instruments.
+
+Schemas validate document shape. Native preflight independently verifies media,
+rights, exact source duration, tool availability and cross-field semantics.
+No composition, voice, aesthetic, score or shot plan is supplied here.
+"""
+from copy import deepcopy
+import hashlib
+import json
+import math
+import re
+
+
+def obj(required, optional=None):
+    return {"type": "object", "required": list(required),
+            "properties": {**required, **(optional or {})}, "additionalProperties": False}
+
+
+def array(item, **limits):
+    return {"type": "array", "items": item, **limits}
+
+
+def number(low=None, high=None, *, integer=False, positive=False):
+    result = {"type": "integer" if integer else "number"}
+    if low is not None: result["minimum"] = low
+    if high is not None: result["maximum"] = high
+    if positive: result["exclusiveMinimum"] = 0
+    return result
+
+
+def choice(*values):
+    return {"enum": list(values)}
+
+
+TEXT = {"type": "string", "minLength": 1}
+DIGEST = {"type": "string", "pattern": r"^[0-9a-f]{64}$"}
+COLOR = {"type": "string", "pattern": r"^#[0-9a-fA-F]{6}$"}
+TIME = number(0)
+POSITIVE = number(positive=True)
+PIXEL = number(integer=True)
+SIZE = number(1, integer=True)
+SOURCE = obj({"source": TEXT, "asset_id": DIGEST, "attestation_id": TEXT})
+RATE = obj({"numerator": SIZE, "denominator": SIZE})
+SOUND = choice("preserve_source", "intentional_silence")
+PAIR = array(TIME, minItems=2, maxItems=2)
+
+_SOURCE_FIELDS = SOURCE["properties"]
+_TIMING = {"start": TIME, "source_in": TIME, "duration": POSITIVE}
+_VIDEO = obj({"id": TEXT, **_SOURCE_FIELDS, **_TIMING,
+              "x": PIXEL, "y": PIXEL, "width": SIZE, "height": SIZE,
+              "opacity": number(0, 1)}, {
+    "source_kind": choice("video", "still_image"),
+    "motion": array(obj({"at_seconds": TIME, "x": PIXEL, "y": PIXEL})),
+    "fade_in_seconds": TIME, "fade_out_seconds": TIME,
+    "chroma_key": obj({"color": COLOR, "similarity": number(high=1, positive=True), "blend": number(0, 1)}),
+    "matte": obj({**_SOURCE_FIELDS, "source_kind": choice("video", "still_image"),
+                  "source_in": TIME, "invert": {"type": "boolean"}})})
+_AUDIO = obj({"id": TEXT, **_SOURCE_FIELDS, **_TIMING, "gain_db": number(-120, 120)}, {
+    "gain_keyframes": array(obj({"at_seconds": TIME, "gain_db": number(-120, 120)})),
+    "stereo_balance": number(-1, 1)})
+_SEQUENCE = obj({"frame_rate": RATE, "frame_size": obj({"width": SIZE, "height": SIZE}),
+    "clips": array(obj({**_SOURCE_FIELDS, "first_frame": number(0, integer=True),
+                       "end_frame": SIZE, "audio": SOUND}), minItems=1, maxItems=128)})
+
+_SCHEMAS = {
+    "body.composite_mix": ("plan", obj({
+        "canvas": obj({"width": SIZE, "height": SIZE, "fps": SIZE,
+                       "duration": POSITIVE, "background": COLOR}, {
+            "color_semantics": obj({"input": choice("bt709"), "output": choice("bt709")})}),
+        "video_layers": array(_VIDEO), "audio_tracks": array(_AUDIO)})),
+    "body.sequence_cuts": ("plan", _SEQUENCE),
+    "body.timeline_revision": ("plan", _SEQUENCE),
+    "body.otio_owned_export": ("plan", _SEQUENCE),
+    "body.retime": ("plan", obj({**_SOURCE_FIELDS, "source_fps": RATE,
+        "segments": array(obj({"first_frame": number(0, integer=True), "end_frame": SIZE,
+                               "speed": RATE}), minItems=1, maxItems=4096), "audio": SOUND}, {
+        "interpolation": choice("frame_repeat", "motion_compensated")})),
+    "body.review": ("plan", obj({"media": SOURCE,
+        "timecodes_seconds": array(TIME, minItems=1, maxItems=24),
+        "audio_windows_seconds": array(PAIR, maxItems=24)})),
+    "body.loudness": ("plan", obj({"media": SOURCE})),
+    "body.color_lut": ("plan", obj({"media": SOURCE,
+        "color_transform": obj({"kind": choice("display_referred_3d_lut"),
+            "input_color_space": choice("bt709"), "output_color_space": choice("bt709"),
+            "cube": SOURCE, "interpolation": choice("tetrahedral", "trilinear")}),
+        "output_profile": choice("h264_8bit_sdr", "prores_10bit_sdr")})),
+    "body.film_finish": ("plan", obj({"media": SOURCE, "ops": obj({
+        "video_ops": array({"oneOf": [
+            obj({"kind": choice("color_eq"), "brightness": number(-1,1),
+                 "contrast": number(0,3), "saturation": number(0,5), "gamma": number(.1,10)}),
+            obj({"kind": choice("denoise"), "luma_spatial": number(0,20), "luma_temporal": number(0,20)}),
+            obj({"kind": choice("sharpen"), "strength": number(-2,5)})]}),
+        "audio_ops": array({"oneOf": [obj({"kind": choice("gain"), "db": number(-60,30)}),
+            obj({"kind": choice("loudnorm"), "integrated_lufs": number(-70,-5),
+                 "true_peak_dbfs": number(-9,0), "loudness_range": number(1,30)})]})})})),
+}
+
+# The 2D instrument's drawing grammar is technical geometry, not a supplied
+# composition. All positions, words, durations, motion and sounds are authored.
+_RGBA={"type":"string","pattern":r"^#[0-9a-fA-F]{6}(?:[0-9a-fA-F]{2})?$"}
+_XY=array(number(),minItems=2,maxItems=2)
+_BOX=array(number(),minItems=4,maxItems=4)
+_EMPTY_TEXT={"type":"string"}
+_PAINT={"fill":_RGBA,"stroke":_RGBA,"width":number(.1,64)}
+_DRAWINGS=[]
+for _kind,_fields,_optional in (
+    ("rect",{"box":_BOX},{"radius":number(0,1024)}),
+    ("ellipse",{"box":_BOX},{}),
+    ("line",{"points":array(_XY,minItems=2,maxItems=200)},{}),
+    ("polygon",{"points":array(_XY,minItems=3,maxItems=200)},{}),
+    ("text",{"text":TEXT,"at":_XY,"size":number(2,256)},
+        {"font":TEXT,"align":choice("left","center","right"),"leading":number(.5,3)})):
+    _DRAWINGS.append(obj({"type":choice(_kind),**_fields},{**_PAINT,**_optional}))
+_KEYFRAME={"type":"array","prefixItems":[TIME,number(),choice("linear","smooth","in","out","spring")],
+           "minItems":2,"maxItems":3}
+_PROPS={name:number() for name in ("x","y","scale","scale_x","scale_y","angle","opacity","reveal","blur")}
+_LAYER=obj({"asset":TEXT},{**_PROPS,"in":TIME,"out":TIME,
+    "shadow":obj({}, {"alpha":number(0,1),"blur":TIME,"dx":number(),"dy":number()}),
+    "animate":obj({}, {key:{"oneOf":[number(),array(_KEYFRAME,minItems=1)]} for key in _PROPS})})
+_VOICE={"type":"string","pattern":r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$"}
+_VOICE_SETTINGS=obj({}, {"speed":number(.1,4),"silence_duration":number(0,10),
+    "total_steps":number(1,100,integer=True),"max_chunk_length":number(1,10000,integer=True),"lang":TEXT})
+_SYNTH=obj({"type":choice("synth"),"at":TIME,"seconds":POSITIVE,"gain":number(0,16),
+    "partials":array(obj({"start_hz":number(0,24000),"end_hz":number(0,24000),
+        "amplitude":number(0,16),"phase_radians":number(-1e6,1e6)}),maxItems=64),
+    "noise_gain":number(0,1),"seed":number(0,integer=True),
+    "envelope":array(_XY,minItems=2,maxItems=128)})
+_CUE={"oneOf":[_SYNTH,obj({"type":choice("ink","paper","tap"),"at":TIME},
+    {"seconds":POSITIVE,"gain":number(0,1),"hz":number(30,12000)})]}
+_NOTE=obj({"at":TIME,"midi":number(0,127)},
+          {"seconds":POSITIVE,"gain":number(0,10),"decay":number(0,10)})
+_MIX=obj({}, {"voice_gain_db":number(-120,120),"fade_in_seconds":TIME,"fade_out_seconds":TIME,
+    "peak_ceiling":{"oneOf":[number(high=1,positive=True),{"type":"null"}]},
+    "loudness":{"oneOf":[obj({"integrated_lufs":number(-70,-5),"true_peak_dbfs":number(-9,0),
+                              "loudness_range":number(1,30)}),{"type":"null"}]}})
+_MOTION=obj({
+    "project":obj({"title":TEXT,"creative_intent":TEXT,"width":number(320,2160,integer=True),
+        "height":number(320,4096,integer=True),"background":_RGBA,"voice":_VOICE},
+        {"voice_settings":_VOICE_SETTINGS,"score":array(_NOTE),"audio_mix":_MIX,
+         "background_noise":{"oneOf":[obj({"gain":number(0,255),"seed":number(0,integer=True)}),{"type":"null"}]}}),
+    "assets":array(obj({"id":TEXT,"status":choice("verified"),
+        "rights":choice("generated_original","appropriately_licensed"),"location":TEXT,
+        "artwork":obj({"size":_XY,"items":array({"oneOf":_DRAWINGS},minItems=1,maxItems=300)})}),minItems=1),
+    "shots":array(obj({"id":TEXT,"purpose":TEXT,"duration_seconds":number(.5,60),
+        "narration":_EMPTY_TEXT,"asset_refs":array(TEXT),"layers":array(_LAYER,minItems=1,maxItems=100)},
+        {"fact_refs":array(TEXT),"voice":_VOICE,"voice_settings":_VOICE_SETTINGS,"cues":array(_CUE)}),minItems=1),
+    "tool_graph":array(obj({"id":TEXT,"tool_id":choice("motion_studio.composite"),
+        "purpose":TEXT,"inputs":obj({}),"depends_on":array(TEXT,maxItems=0)}),minItems=1,maxItems=1)},
+    {"owner_facts":{"type":"object","required":[],"properties":{},"additionalProperties":True}})
+_SCHEMAS["body.motion2d"]=("original_film_ir",_MOTION)
+_SCHEMAS["body.render_edit_owned"]=("edit",obj({
+    "format":obj({"width":SIZE,"height":SIZE,"fps":SIZE,"framing":choice("fit","fill"),"background":COLOR}),
+    "clips":array(obj({"id":TEXT,**_SOURCE_FIELDS,"audio":SOUND,
+        "rights":choice("owner_supplied","generated_original","appropriately_licensed")}),minItems=1,maxItems=128)}))
+_SCHEMAS["body.temporal_evidence"]=("plan",obj({"media":SOURCE,
+    "preview":obj({"width":number(8,160,integer=True),"height":number(8,160,integer=True)})}))
+_SCHEMAS["body.generate_video"]=("video_job",obj({"model_id":TEXT,"prompt":TEXT,"negative_prompt":_EMPTY_TEXT,
+    "width":number(1,65536,integer=True),"height":number(1,65536,integer=True),
+    "frames":number(1,65536,integer=True),"fps":number(1,65536,integer=True),
+    "seed":number(0,2**64-1,integer=True)}))
+
+_VEC3=array(number(-1e7,1e7),minItems=3,maxItems=3)
+_RGB=array(number(0,1),minItems=3,maxItems=3)
+_VEC4=array(number(0,1),minItems=4,maxItems=4)
+_CURVE=array(obj({"frame":SIZE,"value":_VEC3}),minItems=1)
+_TRANSFORM={"location":_VEC3,"rotation_degrees":_VEC3,
+            "scale":array(number(.0001,100000),minItems=3,maxItems=3)}
+_ANIMATION={"animate":obj({}, {key:_CURVE for key in _TRANSFORM})}
+_OBJECT_BASE={"id":TEXT,"material":TEXT,**_TRANSFORM}
+_BLENDER=obj({"shot_id":TEXT,"width":SIZE,"height":SIZE,"fps":SIZE,"frames":SIZE,
+    "world":obj({"color":_RGB,"strength":number(0,100)}),
+    "camera":obj({"location":_VEC3,"target":_VEC3,"lens_mm":number(1,300)},
+        {"animate_location":_CURVE,"animate_target":_CURVE,
+         "depth_of_field":obj({"focus_distance":number(.001,10000),"fstop":number(.1,100)})}),
+    "materials":array(obj({"id":TEXT,"color":_VEC4,"metallic":number(0,1),"roughness":number(.001,1)}),minItems=1),
+    "objects":array({"oneOf":[
+        obj({**_OBJECT_BASE,"type":choice("cube","uv_sphere","ico_sphere","cylinder","cone","torus","plane")},_ANIMATION),
+        obj({**_OBJECT_BASE,"type":choice("custom_mesh"),"vertices":array(_VEC3,minItems=3),
+             "faces":array(array(number(0,integer=True),minItems=3),minItems=1)},_ANIMATION),
+        obj({**_OBJECT_BASE,"type":choice("licensed_glb"),"asset":TEXT,
+             "rights":choice("owner_supplied","appropriately_licensed")},_ANIMATION)]},minItems=1),
+    "lights":array(obj({"id":TEXT,"type":choice("AREA","POINT","SUN","SPOT"),
+        "location":_VEC3,"rotation_degrees":_VEC3,"energy":number(0,1e7),"color":_RGB},
+        {"size":number(.01,10000)}),minItems=1)}, {"samples":SIZE})
+for _tool in ("body.blender3d","body.exr_passes","body.exr_checkpoint"):
+    _SCHEMAS[_tool]=("scene_json",_BLENDER)
+_ACES={"source":SOURCE,"source_color_space":choice("Linear Rec.709 (sRGB)"),
+    "alpha_association":choice("associated_scene_linear"),"scene_linear_background_rgb":_RGB,
+    "display":choice("sRGB - Display"),"view":choice("ACES 2.0 - SDR 100 nits (Rec.709)")}
+_SCHEMAS["body.aces2_movie"]=("plan",obj(_ACES))
+_SCHEMAS["body.aces2_preview"]=("plan",obj({**_ACES,"frame_index":SIZE}))
+_INDEX=number(0,integer=True)
+_DELTA=number(-2000000,2000000,integer=True)
+_EDITOR_OPS=[]
+for _kind,_fields in (
+    ("roll",{"at":_INDEX,"delta":_DELTA}),
+    ("slip",{"clip":_INDEX,"delta":_DELTA}),
+    ("slide",{"clip":_INDEX,"delta":_DELTA}),
+    ("ripple_trim",{"clip":_INDEX,"edge":choice("in","out"),"delta":_DELTA}),
+    ("split",{"clip":_INDEX,"offset":SIZE}),
+    ("reorder",{"clip":_INDEX,"to":_INDEX})):
+    _EDITOR_OPS.append(obj({"kind":choice(_kind),**_fields}))
+_SECONDARY={"body.timeline_revision":{"operation":obj({
+    "operations":array({"oneOf":_EDITOR_OPS},minItems=1,maxItems=64)})}}
+
+
+def document_contract(tool_id,input_name=None):
+    if tool_id not in _SCHEMAS:
+        return None
+    field, schema = _SCHEMAS[tool_id]
+    if input_name is not None and input_name!=field:
+        schema=_SECONDARY.get(tool_id,{}).get(input_name)
+        if schema is None:return None
+        field=input_name
+    schema = deepcopy(schema)
+    schema["$schema"] = "https://json-schema.org/draft/2020-12/schema"
+    digest = hashlib.sha256(json.dumps(schema, sort_keys=True).encode()).hexdigest()
+    return {"version": "zx7-document/1", "sha256": digest, "input_name": field,
+            "json_schema": schema, "validation_scope": "shape and declared numeric bounds",
+            "native_source_and_semantic_preflight_required": True}
+
+
+def document_contracts(tool_id):
+    primary=document_contract(tool_id)
+    if primary is None:return {}
+    return {primary["input_name"]:primary,**{
+        name:document_contract(tool_id,name) for name in _SECONDARY.get(tool_id,{})}}
+
+
+def validate_document(tool_id, document,input_name=None):
+    contract = document_contract(tool_id,input_name)
+    if contract is None:
+        return False
+    _validate(document, contract["json_schema"], "")
+    return True
+
+
+def _validate(value, schema, path):
+    def reject(message):
+        raise ValueError((path or "/") + ": " + message)
+    if "oneOf" in schema:
+        matches = 0
+        for item in schema["oneOf"]:
+            try: _validate(value, item, path)
+            except ValueError: continue
+            matches += 1
+        if matches != 1: reject("must match exactly one supported operation")
+        return
+    if "enum" in schema and value not in schema["enum"]: reject("unsupported value")
+    kind = schema.get("type")
+    types = {"object": dict, "array": list, "string": str, "integer": int,"null":type(None),
+             "boolean": bool, "number": (int, float)}
+    if kind and (not isinstance(value, types[kind]) or
+                 (kind in ("integer", "number") and isinstance(value, bool))):
+        reject("expected " + kind)
+    if kind == "object":
+        missing = set(schema["required"]) - set(value)
+        if missing: reject("missing " + ", ".join(sorted(missing)))
+        extra = set(value) - set(schema["properties"])
+        if extra and not schema.get("additionalProperties"): reject("unsupported fields " + ", ".join(sorted(extra)))
+        for key, item in value.items():
+            if key not in schema["properties"]:continue
+            escaped = key.replace("~", "~0").replace("/", "~1")
+            _validate(item, schema["properties"][key], path + "/" + escaped)
+    elif kind == "array":
+        if not schema.get("minItems",0) <= len(value) <= schema.get("maxItems",2**31): reject("array size")
+        for i, item in enumerate(value):
+            item_schema=schema["prefixItems"][i] if "prefixItems" in schema else schema["items"]
+            _validate(item, item_schema, path + "/" + str(i))
+    elif kind == "string":
+        if len(value) < schema.get("minLength",0): reject("empty string")
+        if "pattern" in schema and not re.fullmatch(schema["pattern"], value): reject("invalid format")
+    elif kind in ("number", "integer"):
+        if not math.isfinite(value): reject("must be finite")
+        if "minimum" in schema and value < schema["minimum"]: reject("below minimum")
+        if "maximum" in schema and value > schema["maximum"]: reject("above maximum")
+        if "exclusiveMinimum" in schema and value <= schema["exclusiveMinimum"]: reject("must be positive")

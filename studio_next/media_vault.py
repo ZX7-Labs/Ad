@@ -112,6 +112,7 @@ def verify_media_container(path,mime):
         if importlib.util.find_spec("fontTools") is None:
             raise MediaCustodyError("Native font source decoder not installed")
         from fontTools.ttLib import TTFont,TTLibError
+        import struct
         with path.open("rb") as actual_font:
             signature=actual_font.read(4)
         if ((mime=="font/ttf" and signature not in (
@@ -127,7 +128,7 @@ def verify_media_container(path,mime):
                     raise MediaCustodyError(
                         "Original typeface has no real Unicode glyph metrics")
         except (OSError,ValueError,KeyError,TTLibError,AssertionError,
-                IndexError,TypeError) as exc:
+                IndexError,TypeError,struct.error) as exc:
             raise MediaCustodyError(
                 "Original claimed typeface failed native font table/glyph inspection") from exc
     elif mime=="model/gltf-binary":

@@ -1,3 +1,4 @@
+from .voice_contract import valid_voice_id, validate_voice_settings
 #!/usr/bin/env python3
 """Truthful original screenplay audition. Planning only; no output is a rendered MP4."""
 import argparse
@@ -31,7 +32,7 @@ Choose scene count, scene lengths, style, narrative type, opening, camera, music
 Do not invent product specs, buttons, pricing, outcomes or proof. Every asserted owner fact must cite its supplied fact ID.
 The original production capability is not known. Specify any unknown footage/assets/render tools honestly instead of pretending they exist.
 Return one complete JSON object, no Markdown:
-{"title":"specific title","creative_intent":"reason to make this video","story":"arc in concrete prose","audience_impact":"what viewer feels/understands","visual_language":{"imagery":"original look","typography":"font intent","composition":"specific logic","camera":"specific logic","3d":"whether and why","music":"what and why","sound":"rhythm and motifs"},"voice":{"choice":"M3 or F2 or no_voice","why":"rationale","delivery":"emotional performance, no universal speed numbers"},"scenes":[{"id":"meaningful name","purpose":"narrative work of scene","duration_seconds":4.2,"narration":"exact spoken words or empty for meaningful silence","visual":"precise visual scene and spatial objects","motion":"what actually moves and how","edit":"exact transition and reason","audio":"sound and mixing intentions","fact_refs":["owner fact IDs actually used"],"assets_needed":["specific actual or conceptual assets needed"]}],"last_image":"specific final frame","production_unknowns":["truly unavailable production dependencies"]}.
+{"title":"specific title","creative_intent":"reason to make this video","story":"arc in concrete prose","audience_impact":"what viewer feels/understands","visual_language":{"imagery":"original look","typography":"font intent","composition":"specific logic","camera":"specific logic","3d":"whether and why","music":"what and why","sound":"rhythm and motifs"},"voice":{"choice":"installed voice ID or no_voice","why":"rationale","delivery":"emotional performance, no universal speed numbers"},"scenes":[{"id":"meaningful name","purpose":"narrative work of scene","duration_seconds":4.2,"narration":"exact spoken words or empty for meaningful silence","visual":"precise visual scene and spatial objects","motion":"what actually moves and how","edit":"exact transition and reason","audio":"sound and mixing intentions","fact_refs":["owner fact IDs actually used"],"assets_needed":["specific actual or conceptual assets needed"]}],"last_image":"specific final frame","production_unknowns":["truly unavailable production dependencies"]}.
 Every scene should make the film BETTER. Elaborate where useful, but do not impose a preset number of shots."""
 
 CRITIC = """You are a skeptical INDEPENDENT FILM EDITOR auditing another person's draft.
@@ -104,8 +105,8 @@ def audit(brief,pitches,selection,treatment,review):
         if not isinstance(scene.get("assets_needed"),list):
             errors.append(f"Scene {n} lacks asset requirements")
     voice=treatment.get("voice")
-    if not isinstance(voice,dict) or voice.get("choice") not in ("M3","F2","no_voice"):
-        errors.append("Voice not actually available")
+    if not isinstance(voice,dict) or not valid_voice_id(voice.get("choice")):
+        errors.append("Invalid voice identity; availability must be checked by runtime")
     if not treatment.get("story") or not treatment.get("creative_intent"):
         errors.append("No true narrative")
     if not isinstance(review.get("approved_for_human_audition"),bool):

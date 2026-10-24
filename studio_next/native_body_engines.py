@@ -7,6 +7,8 @@ must stay unresolved rather than being replaced by moving-card footage.
 """
 from __future__ import annotations
 
+from .voice_contract import valid_voice_id, validate_voice_settings
+
 import json
 import shutil
 import subprocess
@@ -70,7 +72,7 @@ def render_original_motion(ir_file,video_target,*,width,fps,trusted_voice_assets
     facts=frozenset(raw.get("owner_facts",{}))
     original=compile_motion_project(raw,fact_ids=facts)
     voice=original.get("voice")
-    if voice not in ("no_voice","M3","F2"):
+    if not valid_voice_id(voice):
         raise ValueError("Director-selected motion voice is not installed")
     movie=Path(video_target)
     if movie.exists() or movie.suffix.lower()!=".mp4":
@@ -81,12 +83,12 @@ def render_original_motion(ir_file,video_target,*,width,fps,trusted_voice_assets
         root=Path(tmp)
         project=root/"project.json"
         project.write_text(json.dumps(original,ensure_ascii=False,indent=2))
-        if voice=="no_voice":
+        if not any(scene["narration"].strip() for scene in original["scenes"]):
             run([sys.executable,"-m","studio_next.silent_audio","--project",str(project),
                  "--out",str(root)],check=True,timeout=120)
         else:
             if trusted_voice_assets is None or not Path(trusted_voice_assets).is_dir():
-                raise ValueError("Only actually installed approved M3/F2 assets may speak")
+                raise ValueError("Only actually installed selected voice assets may speak")
             run([sys.executable,"-m","motion_studio.voice","--project",str(project),
                  "--out",str(root),"--model-dir",str(trusted_voice_assets)],
                 check=True,timeout=1200)

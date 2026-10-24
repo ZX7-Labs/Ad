@@ -57,7 +57,7 @@ Storyboard every shot with a specific physical/visual action. Detail film sound 
 as images. Good storytelling can choose live action, licensed footage, motion graphics,
 3D, animation or combinations, but mark UNAVAILABLE resources honestly and suggest
 a production provider or ask for an asset if required. Never pretend a concept rendered.
-Voice identity options currently M3 or F2, not compulsory use. No singing/copyrighted media.
+Choose any supplied installed voice identity, or deliberate silence. No singing/copyrighted media.
 Product claims MUST come from the supplied owner facts and not from invented UI or outcomes.
 For nonfiction, no invented events or research facts.
 Return JSON: {"film_title":"distinctive",
@@ -221,7 +221,7 @@ def trial(model,brief,out):
         treatment=stage("03_screenplay",WRITE,
             {"brief":brief,"selected":candidates[choice],
              "creative_challenge":selector.get("challenge_for_writer"),
-             "available_voice_identities":["M3","F2"],
+             "available_voice_identities":brief.get("available_voices",[]),
              "available_production_capabilities":brief.get("capability_catalog",[]),
              "unavailable_tools_must_be_labelled":True})
         errors,warnings=validate_script(treatment,facts)

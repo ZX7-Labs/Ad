@@ -14,6 +14,7 @@ import argparse
 import json
 import os
 import shutil
+import tempfile
 from pathlib import Path
 
 
@@ -39,7 +40,15 @@ FOSS_TOOL_CANDIDATES = (
 )
 
 
-def probe_creative_tools(*, finder=None, specs=FOSS_TOOL_CANDIDATES):
+APPLICATION_OPERATIONS = {
+    "blender": ("body.blender3d", "body.exr_passes"),
+    "ffmpeg": ("body.composite_mix", "body.sequence_cuts", "body.film_finish"),
+    "inkscape": ("body.vector_png",),
+}
+
+
+def probe_creative_tools(*, finder=None, specs=FOSS_TOOL_CANDIDATES,
+                         installed_operation_ids=frozenset()):
     """Binary presence checked on THIS machine, not an imagined cloud install."""
     finder=finder or shutil.which
     found=[]
@@ -60,18 +69,32 @@ def probe_creative_tools(*, finder=None, specs=FOSS_TOOL_CANDIDATES):
             "resolved_executable":chosen[1] if chosen else None,
             "creative_capabilities":list(spec["craft"]),
             "license_family":spec["license"],
-            "registered_execution_adapter":spec.get("adapter"),
-            "can_render_in_zx7_now":bool(chosen and spec.get("adapter")),
+            "registered_execution_adapter":next(iter(
+                APPLICATION_OPERATIONS.get(name, ())),None),
+            "executable_body_operations":[op for op in APPLICATION_OPERATIONS.get(name,())
+                                          if op in installed_operation_ids],
+            "can_render_in_zx7_now":bool(chosen and any(
+                op in installed_operation_ids for op in APPLICATION_OPERATIONS.get(name,()))),
             "requires_authorized_assets_and_production_validation":True,
             "can_make_arbitrary_cinematic_output":False,
         })
     return found
 
 
-def creative_tool_inventory(*, finder=None):
+def creative_tool_inventory(*, finder=None, installed_operation_ids=None):
     # The true local production capacities are dynamically probed. Uninstalled
     # software is shown as candidate tools, not marketed as working.
-    candidates=probe_creative_tools(finder=finder)
+    if installed_operation_ids is None:
+        # Tests that substitute only binary lookup do not establish executable
+        # adapters. Normal discovery uses the same authority as LiveBodySignal.
+        installed_operation_ids=frozenset()
+        if finder is None:
+            from .body_integration import body_catalog
+            with tempfile.TemporaryDirectory(prefix="zx7-tool-probe-") as root:
+                installed_operation_ids=body_catalog(root).executable_ids(
+                    allowed_access={"read","write"})
+    candidates=probe_creative_tools(finder=finder,
+        installed_operation_ids=installed_operation_ids)
     return {
         "actual_installed_tools":[x for x in candidates if x["installed_on_current_machine"]],
         "not_installed_tools":[x for x in candidates if not x["installed_on_current_machine"]],

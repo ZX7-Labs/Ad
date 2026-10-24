@@ -65,7 +65,9 @@ class OneBrainConnectedBodyRegression(unittest.TestCase):
                 self.assertFalse(advertised["complete_studio_certified"])
                 document={"format":{"width":128,"height":96,"fps":12,
                                      "framing":"fit","background":"#111111"},
-                          "clips":[],"story":"This is artist data, not approved footage"}
+                          "clips":[{"id":"original","source":"unprovided.mp4",
+                              "rights":"owner_supplied","audio":"preserve_source",
+                              "asset_id":"0"*64,"attestation_id":"not-yet-attested"}]}
                 arguments={"workspace_id":"authorized-editor",
                            "tool_id":"body.render_edit_owned",
                            "document":document}

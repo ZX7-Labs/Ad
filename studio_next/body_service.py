@@ -55,9 +55,13 @@ _MEDIA_MIME={".mp4":"video/mp4",".mov":"video/quicktime",
 
 
 class LocalBodyCoordinator:
-    def __init__(self,root,*,execute=None,workers=1):
+    def __init__(self,root,*,execute=None,workers=1,upload_timeout_seconds=30,
+                 creative_model=None):
         if type(workers) is not int or not (1<=workers<=16):
             raise ValueError("Operator must choose finite host workload capacity")
+        if (type(upload_timeout_seconds) not in (int,float) or
+                not 1<=upload_timeout_seconds<=600):
+            raise ValueError("Owner uploads require a bounded transfer deadline")
         if Path(root).is_symlink():
             raise ValueError("Studio host root cannot be a filesystem link")
         self.root=Path(root).resolve()
@@ -87,6 +91,9 @@ class LocalBodyCoordinator:
         self._queued=set()
         self._lock=threading.RLock()
         self._maintenance_lock=threading.RLock()
+        self._active_uploads=set()
+        self._reserved_upload_bytes=0
+        self.upload_timeout_seconds=upload_timeout_seconds
         self._workspace_locks={}
         self.execute=execute or run_body_project
         self._uses_native_executor=execute is None
@@ -105,6 +112,10 @@ class LocalBodyCoordinator:
         # so deterministic host-approved tools can actually resume NOW.
         # Non-idempotent operations still require manual reconciliation.
         self._reconcile_orphaned_work_on_exclusive_startup()
+        self.creative_sessions=None
+        if creative_model is not None:
+            from .body_creative_session import CreativeSessions
+            self.creative_sessions=CreativeSessions(self,creative_model)
 
     def _connect(self):
         if self.database.is_symlink():
@@ -172,32 +183,48 @@ class LocalBodyCoordinator:
             if final.exists():
                 raise FileExistsError("Original imported media is immutable; never overwrite")
             stage=folder/(".zx7-import-"+uuid.uuid4().hex+".tmp")
-            try:
-                with stage.open("xb") as dest:
-                    remaining=bytes_expected
-                    while remaining:
-                        chunk=stream.read(min(1024*1024,remaining))
-                        if not isinstance(chunk,(bytes,bytearray)) or not chunk:
-                            raise ValueError("Owner upload ended before declared physical bytes")
-                        dest.write(chunk)
-                        remaining-=len(chunk)
-                    dest.flush()
-                    os.fsync(dest.fileno())
-                vault=MediaVault(folder/"vault")
-                attested=vault.ingest(stage,mime=mime,rights="owner_supplied",
-                    source_type="owner_upload",source_id=source_id,
-                    evidence=rights_evidence,owner_or_generator="authenticated_local_owner")
-                os.link(stage,final)
-                return {"source":filename,"asset_id":attested["asset_id"],
-                        "attestation_id":attested["attestation_id"],
-                        "mime":mime,"bytes":bytes_expected,
-                        "verified_real_media_bytes":True,
-                        "rights_claim":"Owner-attested; no independent legal ownership certification"}
+            # Reserve enough space for the staging file and immutable CAS copy.
+            reservation=2*bytes_expected
+            if shutil.disk_usage(folder).free < self._reserved_upload_bytes+reservation:
+                raise ValueError("Insufficient unreserved disk space for owner upload")
+            self._reserved_upload_bytes+=reservation
+            self._active_uploads.add(stage)
+        # Stream and decode outside the global admission/snapshot lock. An
+        # in-flight reservation explicitly prevents an inconsistent snapshot.
+        deadline=time.monotonic()+self.upload_timeout_seconds
+        try:
+            with stage.open("xb") as dest:
+                remaining=bytes_expected
+                reader=getattr(stream,"read1",stream.read)
+                while remaining:
+                    if time.monotonic()>=deadline:
+                        raise TimeoutError("Owner upload exceeded transfer deadline")
+                    limit=min(1024*1024,remaining)
+                    chunk=reader(limit)
+                    if time.monotonic()>=deadline:
+                        raise TimeoutError("Owner upload exceeded transfer deadline")
+                    if not isinstance(chunk,(bytes,bytearray)) or not 0<len(chunk)<=limit:
+                        raise ValueError("Owner upload ended before declared physical bytes")
+                    dest.write(chunk)
+                    remaining-=len(chunk)
+                dest.flush()
+                os.fsync(dest.fileno())
+            vault=MediaVault(folder/"vault")
+            attested=vault.ingest(stage,mime=mime,rights="owner_supplied",
+                source_type="owner_upload",source_id=source_id,
+                evidence=rights_evidence,owner_or_generator="authenticated_local_owner")
+            os.link(stage,final)
+            return {"source":filename,"asset_id":attested["asset_id"],
+                    "attestation_id":attested["attestation_id"],
+                    "mime":mime,"bytes":bytes_expected,
+                    "verified_real_media_bytes":True,
+                    "rights_claim":"Owner-attested; no independent legal ownership certification"}
+        finally:
+            try:stage.unlink(missing_ok=True)
             finally:
-                # Original uploads are immutable once exclusively linked.
-                # Never unlink an independently accepted media file after
-                # another service/editor wins a publication race.
-                stage.unlink(missing_ok=True)
+                with self._maintenance_lock:
+                    self._active_uploads.discard(stage)
+                    self._reserved_upload_bytes-=reservation
 
     def submit(self,film_ir,*,workspace_id,job_id=None):
         if not isinstance(film_ir,dict) or not isinstance(film_ir.get("tool_graph"),list):
@@ -248,12 +275,18 @@ class LocalBodyCoordinator:
         """
         with self._maintenance_lock:
             with self._lock:
+                if self._active_uploads:
+                    raise RuntimeError("Cannot snapshot partially uploaded owner artwork")
                 if self._queued:
                     raise RuntimeError("Cannot snapshot studio with active render jobs")
                 with self._connect() as db:
                     active=db.execute(
                         "SELECT COUNT(*) FROM jobs WHERE status IN ('queued','running')"
                     ).fetchone()[0]
+                    if self.creative_sessions is not None:
+                        sessions=db.execute("SELECT state FROM creative_sessions").fetchall()
+                        if any(json.loads(raw)["status"] in ("queued","running") for (raw,) in sessions):
+                            raise RuntimeError("Cannot snapshot an active creative session")
                 if active:
                     raise RuntimeError("Cannot snapshot incomplete running original cinema")
                 if next(self.projects.rglob(".zx7-import-*.tmp"),None) is not None:
@@ -503,9 +536,13 @@ class LocalBodyCoordinator:
                 "SELECT id FROM jobs WHERE status IN ('queued','running')")]
         for identity in ids:
             self.queue(identity)
+        if self.creative_sessions is not None:
+            self.creative_sessions.resume_pending()
         return len(ids)
 
     def close(self):
+        if self.creative_sessions is not None:
+            self.creative_sessions.close()
         self.executor.shutdown(wait=True)
         fcntl.flock(self._instance_lock.fileno(),fcntl.LOCK_UN)
         self._instance_lock.close()
@@ -599,7 +636,13 @@ def make_body_http_handler(coordinator,token):
             try:
                 if path=="/v1/health":
                     return self._reply(200,{"service":"zx7-local-body",
-                        "host_only":"127.0.0.1","online":True})
+                        "host_only":"127.0.0.1","online":True,
+                        "creative_model_configured":getattr(coordinator,"creative_sessions",None) is not None})
+                if path.startswith("/v1/creative-sessions/"):
+                    manager=getattr(coordinator,"creative_sessions",None)
+                    if manager is None:
+                        return self._reply(503,{"error":"No local creative model configured on this host"})
+                    return self._reply(200,manager.inspect(path.removeprefix("/v1/creative-sessions/")))
                 if path=="/v1/jobs":
                     return self._reply(200,coordinator.list_jobs())
                 if path=="/v1/resources":
@@ -650,6 +693,30 @@ def make_body_http_handler(coordinator,token):
         def do_POST(self):
             if not self._authorized():return
             path=urlsplit(self.path).path
+            if path.startswith("/v1/creative-sessions/") and path.endswith("/stop"):
+                manager=getattr(coordinator,"creative_sessions",None)
+                if manager is None:
+                    return self._reply(503,{"error":"No local creative model configured on this host"})
+                try:
+                    if self.headers.get("Content-Length","0") not in ("0",""):
+                        raise ValueError("Stop takes no substituted creative input")
+                    identity=path.removeprefix("/v1/creative-sessions/").removesuffix("/stop")
+                    return self._reply(202,manager.stop(identity))
+                except (ValueError,TypeError) as exc:
+                    return self._reply(400,{"error":str(exc)})
+            if path=="/v1/creative-sessions":
+                manager=getattr(coordinator,"creative_sessions",None)
+                if manager is None:
+                    return self._reply(503,{"error":"No local creative model configured on this host"})
+                try:
+                    length=int(self.headers.get("Content-Length","0"))
+                    if not 0<length<=131072:raise ValueError("Bounded creative brief required")
+                    payload=json.loads(self.rfile.read(length))
+                    if not isinstance(payload,dict) or set(payload)!={"workspace_id","brief","facts"}:
+                        raise ValueError("Creative request needs workspace_id, brief and facts")
+                    return self._reply(202,manager.create(payload["workspace_id"],payload["brief"],payload["facts"]))
+                except (ValueError,TypeError) as exc:
+                    return self._reply(400,{"error":str(exc)})
             if path=="/v1/affordances/preflight":
                 # A sensory validation, NEVER a privileged execution or grant.
                 # The owner must submit an independently protected Film IR job.
@@ -708,6 +775,7 @@ def make_body_http_handler(coordinator,token):
                     return self._reply(404,{"error":"Invalid original media route"})
                 try:
                     length=int(self.headers.get("Content-Length","0"))
+                    self.connection.settimeout(coordinator.upload_timeout_seconds)
                     receipt=coordinator.upload_owner_media(
                         pieces[3],pieces[5],self.rfile,length,
                         mime=self.headers.get("Content-Type",""),
@@ -749,12 +817,12 @@ def make_body_http_handler(coordinator,token):
     return Handler
 
 
-def start_local_body_service(root,*,secret,port=8765,workers=1):
+def start_local_body_service(root,*,secret,port=8765,workers=1,creative_model=None):
     if type(port) is not int or not (0<port<65536):
         raise ValueError("Local port must be explicit and valid")
     if not isinstance(secret,str) or len(secret)<32:
         raise ValueError("Local creative body API needs secret >=32 characters")
-    coordinator=LocalBodyCoordinator(root,workers=workers)
+    coordinator=LocalBodyCoordinator(root,workers=workers,creative_model=creative_model)
     server=None
     try:
         # Bind first: a port collision must not strand an exclusive workspace
@@ -773,12 +841,20 @@ def main():
     p.add_argument("--workspace-root",type=Path,required=True)
     p.add_argument("--port",type=int,default=8765)
     p.add_argument("--workers",type=int,default=1)
+    p.add_argument("--creative-api",default="http://127.0.0.1:8085")
+    p.add_argument("--creative-model",help="Installed local model ID; enables ordinary brief sessions")
     a=p.parse_args()
     secret=os.getenv("ZX7_BODY_API_TOKEN")
     if not secret or len(secret)<32:
         raise SystemExit("Set a unique 32+ character ZX7_BODY_API_TOKEN in host environment")
+    model=None
+    if a.creative_model:
+        from .providers import LocalCreativeModel,LocalModelSettings
+        from .body_creative_session import SESSION_SYSTEM
+        model=LocalCreativeModel(LocalModelSettings(base_url=a.creative_api,
+            model_id=a.creative_model,max_response_bytes=262144),system_prompt=SESSION_SYSTEM)
     start_local_body_service(a.workspace_root,secret=secret,
-                             port=a.port,workers=a.workers)
+                             port=a.port,workers=a.workers,creative_model=model)
 
 
 if __name__=="__main__":main()

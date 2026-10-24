@@ -36,7 +36,11 @@ class RealMobileBrowserAcceptance(unittest.TestCase):
                 wav.setframerate(16000)
                 wav.writeframes(b"\x00\x00"*16000)
             original=sound.read_bytes()
-            coordinator=LocalBodyCoordinator(base/"runtime")
+            class ModelProtocolFixture:
+                def decide(self,context):
+                    return {"action":"question","arguments":{"question":"Browser protocol fixture: which source should be used?"},
+                            "reason":"Scripted test response; not live model inference"}
+            coordinator=LocalBodyCoordinator(base/"runtime",creative_model=ModelProtocolFixture())
             server=ThreadingHTTPServer(
                 ("127.0.0.1",0),make_body_http_handler(coordinator,token))
             worker=threading.Thread(target=server.serve_forever,daemon=True)
@@ -71,6 +75,14 @@ class RealMobileBrowserAcceptance(unittest.TestCase):
                     self.assertGreater(len(page.locator("#tools").inner_text()),15)
                     page.locator("#resources").get_by_text("Free host disk",exact=False).wait_for()
                     self.assertIn("GPU hardware is NOT evidence",page.locator("#resources").inner_text())
+                    self.assertFalse(page.locator("#creative-submit").is_disabled())
+                    page.locator("#creative-workspace").fill("ordinary_brief")
+                    page.locator("#creative-brief").fill("Create an original piece from this ordinary brief.")
+                    page.locator("#creative-submit").click()
+                    page.locator("#creative-status").get_by_text("decisions",exact=False).wait_for()
+                    page.locator("#creative-refresh").click()
+                    page.locator("#creative-status").get_by_text("needs_owner_input",exact=False).wait_for()
+                    self.assertIn("Browser protocol fixture",page.locator("#creative-status").inner_text())
 
                     page.locator("#asset-space").fill("original_recovery")
                     page.locator("#source").fill("operator-camera-sound-01")

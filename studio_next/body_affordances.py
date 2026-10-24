@@ -14,6 +14,7 @@ import re
 
 from .contracts import ACCESS_MODES
 from .registry import ToolCatalog, _check_technical_input_types
+from .body_document_schemas import document_contracts
 
 _ID = re.compile(r"^[a-z][a-z0-9_.-]{1,100}$")
 _CURSOR = re.compile(r"^([0-9]{1,6})\.([0-9a-f]{64})$")
@@ -114,6 +115,7 @@ class BodyAffordanceSurface:
             return {"schema":1,"tool_id":tool_id,
                     "status":"ready_to_preflight" if live else "needs_setup",
                     "input_schema":row["schema"] if live else None,
+                    "document_contracts":document_contracts(tool_id),
                     "capability":row["capability"],"access":row["access"],
                     "limitations":row["limitations"],
                     "declared_license":row["license"],

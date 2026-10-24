@@ -6,6 +6,8 @@ shots, camera geometry, brand evidence, speech or rights.
 """
 from __future__ import annotations
 
+from .voice_contract import valid_voice_id, validate_voice_settings
+
 import argparse
 import json
 import math
@@ -13,6 +15,7 @@ import re
 from pathlib import Path
 
 from .film_ir import validate_film_ir
+from .sound_synthesis import validate_synth,validate_mix
 
 TOOL_ID = "motion_studio.composite"
 _COLOR = re.compile(r"^#[0-9a-fA-F]{6}(?:[0-9a-fA-F]{2})?$")
@@ -161,7 +164,8 @@ def compile_motion_project(ir, *, fact_ids=frozenset()):
     height = _number(meta.get("height"), "project.height", 320, 4096)
     _require(isinstance(width,int) and isinstance(height,int), "Integer canvas dimensions required")
     voice = meta.get("voice")
-    _require(voice in ("M3", "F2", "no_voice"), "Director must choose installed voice or meaningful silence")
+    _require(valid_voice_id(voice), "Director must choose installed voice or meaningful silence")
+    voice_settings=validate_voice_settings(meta.get("voice_settings",{}))
     graph = ir["tool_graph"]
     _require(len(graph) == 1 and graph[0]["tool_id"] == TOOL_ID and graph[0].get("inputs", {}) == {},
              "Motion adapter supports exactly one explicit static composite invocation, no arbitrary commands")
@@ -177,7 +181,10 @@ def compile_motion_project(ir, *, fact_ids=frozenset()):
         sid=s["id"]
         duration=_number(s.get("duration_seconds"), sid+".duration", 0.5, 60)
         _require(isinstance(s.get("narration"),str), sid+" needs explicit spoken text or empty silence")
-        if voice=="no_voice":
+        selected_voice=s.get("voice",voice)
+        _require(valid_voice_id(selected_voice),sid+" invalid voice identity")
+        scene_settings=validate_voice_settings(s.get("voice_settings",{}))
+        if selected_voice=="no_voice":
             _require(not s["narration"].strip(), "no_voice cannot synthesize spoken script")
         _require("layers" in s and isinstance(s["layers"],list) and s["layers"],
                  sid+" needs deliberately authored drawable layers")
@@ -188,6 +195,9 @@ def compile_motion_project(ir, *, fact_ids=frozenset()):
         cues=s.get("cues", [])
         _require(isinstance(cues,list), sid+" cues must be a list")
         for cue in cues:
+            if isinstance(cue,dict) and cue.get("type")=="synth":
+                validate_synth(cue,duration)
+                continue
             _require(isinstance(cue,dict) and cue.get("type") in ("ink","paper","tap"),
                      sid+" unsupported audio cue")
             _require(set(cue) <= {"type","at","seconds","gain","hz"}, sid+" invalid audio cue fields")
@@ -198,6 +208,7 @@ def compile_motion_project(ir, *, fact_ids=frozenset()):
             if "hz" in cue:_number(cue["hz"],sid+" frequency",30,12000)
         scenes.append({"id":sid, "min_seconds":duration, "narration":s["narration"],
                        "layers":clean_layers, "cues":cues,
+                       "voice":selected_voice,"voice_settings":scene_settings,
                        "tail":0, "voice_delay":0})
     score=meta.get("score",[])
     _require(isinstance(score,list), "Score must be list")
@@ -220,7 +231,8 @@ def compile_motion_project(ir, *, fact_ids=frozenset()):
     return {"title":meta["title"],"direction_source":"Compiled from explicit, rights-checked Film IR; artistic approval NOT implied",
             "width":width,"height":height,"background":meta["background"],
             "grid":0,"grid_color":meta["background"],"voice":voice,
-            "background_noise":grain,
+            "background_noise":grain,"voice_settings":voice_settings,
+            "audio_mix":validate_mix(meta.get("audio_mix",{})),
             "assets":assets,"scenes":scenes,"score":score}
 
 

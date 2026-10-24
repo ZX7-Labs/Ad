@@ -15,6 +15,7 @@ from pathlib import Path
 from .body_integration import body_catalog
 from .creative_tool_registry import creative_tool_inventory
 from .generative_video_providers import discover_local_generators
+from .body_document_schemas import document_contracts
 
 
 def operational_tool_summary(workspace,*,keywords=None):
@@ -44,6 +45,7 @@ def explain_operational_tool(workspace,tool_id):
             return {"status":"ready_for_execution_trial",
                     "tool_id":tool_id,
                     "operation_schema":tool["schema"],
+                    "document_contracts":document_contracts(tool_id),
                     "capability":tool["capability"],
                     "access":tool["access"],
                     "limits":tool["limitations"],
@@ -54,7 +56,7 @@ def explain_operational_tool(workspace,tool_id):
 
 def concise_body_status(workspace):
     tools=operational_tool_summary(workspace)
-    physical=creative_tool_inventory()
+    physical=creative_tool_inventory(installed_operation_ids={t["tool_id"] for t in tools})
     generators=discover_local_generators()
     gpu_ready=[c["id"] for c in generators["video_generation_options"]
                if c["ready_for_independent_execution_trial"]]

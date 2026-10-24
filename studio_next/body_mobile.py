@@ -21,6 +21,13 @@ PAGE = """<!doctype html><html lang="en"><head>
 <label for="rights">Rights evidence</label><textarea id="rights"></textarea>
 <label for="asset">Media file</label><input id="asset" type="file">
 <button id="upload" disabled>Import verified media</button><output id="upload-status"></output></section>
+<section><h2>Create from a brief</h2><p id="creative-runtime">Connect to check the local creative model.</p>
+<label for="creative-workspace">Workspace ID</label><input id="creative-workspace" placeholder="my_film">
+<label for="creative-brief">What should the studio create?</label><textarea id="creative-brief" placeholder="Describe your goal, audience and creative needs. You can use your phone keyboard's dictation."></textarea>
+<label for="creative-facts">Known facts (optional, one per line)</label><textarea id="creative-facts"></textarea>
+<button id="creative-submit" disabled>Create</button><button id="creative-refresh" disabled>Refresh creative progress</button>
+<button id="creative-stop" disabled>Stop creative session</button>
+<output id="creative-status" aria-live="polite"></output></section>
 <section><h2>Submit authored film</h2><p>The BODY accepts original Film IR. It does not write or change the screenplay.</p>
 <label for="workspace">Workspace ID</label><input id="workspace">
 <label for="film">Original Film IR JSON</label><input id="film" type="file" accept=".json,application/json">
@@ -31,7 +38,7 @@ PAGE = """<!doctype html><html lang="en"><head>
 <button id="impact-button" disabled>Preview affected operations</button>
 <pre id="impact"></pre></section>
 <section><h2>Durable jobs</h2><button id="jobs-button" disabled>Refresh jobs</button><div id="jobs"></div></section>
-<footer>Production BODY control; no external port, no creative-brain claims.</footer></main>
+<footer>Local studio control · output quality depends on the installed model and tools.</footer></main>
 <script defer src="/studio.js"></script></body></html>"""
 
 STYLE = """*{box-sizing:border-box}body{margin:0;background:#0d131a;color:#f5f7fb;font:16px system-ui,sans-serif}main{max-width:720px;margin:0 auto;padding:18px 15px 70px}
@@ -45,7 +52,7 @@ pre{white-space:pre-wrap;font-size:12px}footer{text-align:center;padding:20px}""
 
 SCRIPT = r"""(()=>{
 'use strict';
-let secret=null;
+let secret=null,creativeSession=null,creativeReady=false,creativeTimer=null;
 const e=id=>document.getElementById(id);
 const print=(id,msg)=>{e(id).textContent=String(msg)};
 const node=(tag,msg)=>{const n=document.createElement(tag);n.textContent=String(msg);return n};
@@ -57,7 +64,7 @@ async function api(path,options={}){
  if(!r.ok){let s='HTTP '+r.status;try{s=(await r.json()).error||s}catch(_){}throw Error(s)}
  return r.json();
 }
-function enabled(v){for(const id of ['tools-button','resources-button','impact-button','jobs-button','upload','submit'])e(id).disabled=!v}
+function enabled(v){if(!v&&creativeTimer){clearTimeout(creativeTimer);creativeTimer=null}for(const id of ['tools-button','resources-button','impact-button','jobs-button','upload','submit','creative-refresh','creative-stop'])e(id).disabled=!v}
 async function tools(){
  const root=e('tools');root.replaceChildren();
  for(const t of (await api('/v1/tools')).tools||[]){const n=node('div',t.tool_id+' — '+t.capability+' ('+t.access+')');n.className='entry';root.append(n)}
@@ -109,9 +116,26 @@ async function jobs(){
 e('connect').onclick=async()=>{
  const key=e('token').value;if(key.length<32){print('status','Token must contain at least 32 characters');return}
  secret=key;e('token').value='';
- try{await api('/v1/health');enabled(true);print('status','Connected, token stays in tab memory');await Promise.all([tools(),jobs(),resources()])}
- catch(err){secret=null;enabled(false);print('status',err.message)}
+ try{const health=await api('/v1/health');creativeReady=health.creative_model_configured===true;enabled(true);e('creative-submit').disabled=!creativeReady;print('creative-runtime',creativeReady?'A local creative model is configured. Describe your idea to begin.':'Local creative model is not configured on this host.');print('status','Connected, token stays in tab memory');await Promise.all([tools(),jobs(),resources()])}
+ catch(err){secret=null;enabled(false);e('creative-submit').disabled=true;print('status',err.message)}
 };
+async function creativeProgress(){
+ if(creativeTimer){clearTimeout(creativeTimer);creativeTimer=null}
+ if(!creativeSession)throw Error('Create a brief first');
+ const state=await api('/v1/creative-sessions/'+encodeURIComponent(creativeSession));
+ const last=state.events?.at(-1);
+ print('creative-status',state.status+' · '+(state.events||[]).length+' decisions\n'+(state.summary||state.question||state.error||last?.decision?.reason||'Working')+'\n'+(last?.result?.error||'')+'\nJobs: '+(state.jobs||[]).join(', '));
+ if(['queued','running'].includes(state.status))creativeTimer=setTimeout(()=>creativeProgress().catch(err=>print('creative-status',err.message)),1500);
+}
+e('creative-submit').onclick=async()=>{try{
+ const workspace=e('creative-workspace').value.trim(),brief=e('creative-brief').value.trim();
+ if(!valid(workspace)||!brief)throw Error('Enter workspace ID and your creative brief');
+ const facts={};e('creative-facts').value.split('\n').map(x=>x.trim()).filter(Boolean).forEach((line,i)=>facts['fact_'+(i+1)]=line);
+ const session=await api('/v1/creative-sessions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({workspace_id:workspace,brief,facts})});
+ creativeSession=session.session_id;await creativeProgress();
+}catch(err){print('creative-status',err.message)}};
+e('creative-stop').onclick=async()=>{try{if(!creativeSession)throw Error('No active creative session');await api('/v1/creative-sessions/'+encodeURIComponent(creativeSession)+'/stop',{method:'POST'});print('creative-status','Stop requested. Use job controls to stop an existing render.')}catch(err){print('creative-status',err.message)}};
+e('creative-refresh').onclick=()=>creativeProgress().catch(err=>print('creative-status',err.message));
 e('tools-button').onclick=()=>tools().catch(err=>print('status',err.message));
 e('resources-button').onclick=()=>resources().catch(err=>print('status',err.message));
 e('jobs-button').onclick=()=>jobs().catch(err=>print('status',err.message));

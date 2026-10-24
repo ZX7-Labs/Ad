@@ -8,6 +8,8 @@ Renderer availability is reported separately, never silently replacing art.
 """
 from __future__ import annotations
 
+from .voice_contract import valid_voice_id, validate_voice_settings
+
 import argparse
 import hashlib
 import json
@@ -44,7 +46,7 @@ these technical keys:
 {"title":"your own original title",
 "creative_intent":"exact source artistic objective",
 "story":"complete causally connected story",
-"voice":{"choice":"M3|F2|no_voice","why":"why appropriate"},
+"voice":{"choice":"installed voice ID or no_voice","why":"why appropriate"},
 "scenes":[
  {"id":"unique safe filename-like shot identifier",
   "purpose":"specific dramatic function",
@@ -75,8 +77,8 @@ def validate_translation(treatment, facts):
         if not isinstance(treatment.get(name),str) or not treatment[name].strip():
             raise ValueError("Director did not deliver "+name)
     voice=treatment.get("voice")
-    if not isinstance(voice,dict) or voice.get("choice") not in ("M3","F2","no_voice"):
-        raise ValueError("Missing approved narrator choice or intentional silence")
+    if not isinstance(voice,dict) or not valid_voice_id(voice.get("choice")):
+        raise ValueError("Missing narrator identity or intentional silence")
     if not isinstance(voice.get("why"),str) or not voice["why"].strip():
         raise ValueError("Voice artistic rationale required")
     scenes=treatment.get("scenes")
@@ -94,6 +96,9 @@ def validate_translation(treatment, facts):
             identifier in (".","..") or identifier in seen):
             raise ValueError("Unsafe/duplicate scene ID")
         seen.add(identifier)
+        if not valid_voice_id(scene.get("voice",voice["choice"])):
+            raise ValueError("Invalid scene narrator identity")
+        validate_voice_settings(scene.get("voice_settings",{}))
         for key in ("purpose","visual","motion","edit","audio"):
             if not isinstance(scene.get(key),str) or not scene[key].strip():
                 raise ValueError("Director's shot missing "+key)
@@ -109,7 +114,7 @@ def validate_translation(treatment, facts):
         assets=scene.get("assets_needed")
         if not isinstance(assets,list) or any(not isinstance(x,str) for x in assets):
             raise ValueError("Assets/rights provenance missing")
-    if voice["choice"]=="no_voice" and any(s["narration"].strip() for s in scenes):
+    if voice["choice"]=="no_voice" and any(s["narration"].strip() and s.get("voice",voice["choice"])=="no_voice" for s in scenes):
         raise ValueError("Director cannot silently discard spoken dialogue")
     return {"scenes":len(scenes),"duration_seconds":sum(x["duration_seconds"] for x in scenes),
             "format_preselected":False,"media_preselected":False,

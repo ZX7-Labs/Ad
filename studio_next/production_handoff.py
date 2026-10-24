@@ -238,12 +238,14 @@ script, story, distribution context and resource capabilities.
 NEVER force vertical, short runtime, preset voice, default music or identical pacing.
 Do not select a voice contrary to an already specified treatment; if the film
 actually has narrated shots, 'no_voice' is NOT allowed.
-For now, installed narrator identities are M3 and F2; choose purposefully.
+Choose a voice ID from the supplied runtime inventory, or no_voice for silence.
+Voice language, speed, pause and identity may be deliberately chosen per scene.
+Missing voice assets are an unresolved production need, not a reason to change the story.
 Export shape and fps must be positive integers; working CPU render resources
 are bounded and huge settings may not be presently possible.
 Return JSON only:
 {"format":{"width":1080,"height":1920,"fps":24,"framing":"fit",
-"background":"#101010"},"voice":"M3","reason":"real editorial justification"}.
+"background":"#101010"},"voice":"installed voice ID or no_voice","reason":"real editorial justification"}.
 These numbers are an EXAMPLE JSON SHAPE, not mandatory artistic defaults.
 """
 

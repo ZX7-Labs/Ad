@@ -7,6 +7,8 @@ Stage artifacts are content-addressed by the existing checkpoint system.
 """
 from __future__ import annotations
 
+from .voice_contract import valid_voice_id, validate_voice_settings
+
 import math
 
 
@@ -28,7 +30,7 @@ Return ONLY JSON with the exact required fields:
 "audience_impact":"what audience feels, knows or does",
 "visual_language":{"imagery":"...","typography":"...","composition":"...",
 "camera":"...","3d":"motivated where needed","music":"...","sound":"..."},
-"voice":{"choice":"M3|F2|no_voice","why":"...","delivery":"..."},
+"voice":{"choice":"installed voice ID or no_voice","why":"...","delivery":"..."},
 "scene_map":[{"id":"meaningful unique machine ID",
 "purpose":"how this advances story","duration_seconds":4.5,
 "dramatic_action":"specific event/causal change","visual_goal":"specific film image",
@@ -293,7 +295,7 @@ def validate_spine(spine, fact_ids):
               for x in visual.values()) or not visual:
         raise ValueError("Visual grammar missing")
     voice=spine.get("voice")
-    if not isinstance(voice,dict) or voice.get("choice") not in ("M3","F2","no_voice"):
+    if not isinstance(voice,dict) or not valid_voice_id(voice.get("choice")):
         raise ValueError("Voice must be approved or deliberately silent")
     if not isinstance(spine.get("production_unknowns"),list):
         raise ValueError("Missing production unknowns ledger")
@@ -377,7 +379,7 @@ def create_screenplay(brief, pitches, selection, call_stage):
                 invalid,call_stage,i+1)
         scenes.append(shot)
     voice=spine["voice"]["choice"]
-    if voice=="no_voice" and any(s["narration"].strip() for s in scenes):
+    if voice=="no_voice" and any(s["narration"].strip() and s.get("voice",voice)=="no_voice" for s in scenes):
         raise ValueError("Model chose no_voice but wrote actual spoken dialogue")
     return {k:v for k,v in spine.items() if k!="scene_map"} | {"scenes":scenes}
 

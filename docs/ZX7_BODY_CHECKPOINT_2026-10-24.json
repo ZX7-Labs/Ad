@@ -1,0 +1,46 @@
+{
+  "date": "2026-10-24",
+  "project": "ZX7 Studio BODY",
+  "branch": "zx7-body/mobile-operator-20261021",
+  "based_on_commit": "9d01010d2aec98dca81fa34aa3168c35e1ddc278",
+  "implementation_document": "docs/ZX7_BODY_CREATIVE_SESSION_UPGRADE_2026-10-24.md",
+  "new_entry_point": "authenticated ordinary brief -> configured local model -> LiveBodySignal -> durable native graph",
+  "document_contracts": {
+    "primary_tools": 18,
+    "secondary_documents": 1,
+    "scope": "JSON structure; native semantic/source verification remains mandatory"
+  },
+  "voice_choices": "safe IDs, actual installed style discovery, engine loading and per-scene controls; no M3/F2-only active production gate",
+  "sound_choices": "existing attested audio files plus authored procedural partials, sweeps, noise and envelopes; explicit new-film mix controls",
+  "local_verification": {
+    "tests_run": 583,
+    "tests_passed": 545,
+    "tests_skipped": 38,
+    "tests_failed": 0,
+    "tests_errors": 0,
+    "full_test_log_sha256": "d063a94c0120dbcde2c9f95d4f8fcca71418ca40c1be2b9d1a8781c879f7d3e8",
+    "separate_installed_wheel_smoke": "passed",
+    "client_javascript_syntax": "passed",
+    "live_creative_llm_inference": false,
+    "actual_tts_weights_inference": false,
+    "local_chromium_browser_run": false,
+    "gpu_video_generation": false,
+    "physical_render_and_revision_proof": "scripted local HTTP protocol fixture, real FFmpeg pictures/audio/decode and original-stage reuse"
+  },
+  "remote_ci": {
+    "status": "pending matching pushed code"
+  },
+  "final_studio_subsystem_gates_accepted": 0,
+  "total_final_studio_subsystem_gates": 12,
+  "independent_professional_creative_quality_accepted": false,
+  "remaining_acceptance": [
+    "actual configured creative model independently authors and revises varied commissions",
+    "semantic audiovisual listening and continuous-motion review with executed repairs",
+    "broader professional NLE, tracking/roto/VFX, color and sound delivery scope",
+    "authorized deployed generator weights and real GPU capacity",
+    "persistent authenticated remote HTTPS and physical Android session",
+    "independent skilled human quality comparisons"
+  ],
+  "keep_existing_pr_draft": true,
+  "merge_main_authorized_by_this_checkpoint": false
+}

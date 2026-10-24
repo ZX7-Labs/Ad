@@ -15,6 +15,7 @@ from .font_registry import resolve_artist_font
 _SOURCE_FIELDS={
     "body.inspect":("source",),
     "body.resolve_asset":(),
+    "body.voice_inventory":("voice_assets",),
     "body.render_edit":("edit",),
     "body.render_edit_owned":("edit",),
     "body.retime":("plan",),

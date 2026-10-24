@@ -6,6 +6,8 @@ A declared missing capability STOPS output instead of silently lowering quality.
 """
 from __future__ import annotations
 
+from .voice_contract import valid_voice_id, validate_voice_settings
+
 import argparse
 import hashlib
 import json
@@ -51,8 +53,9 @@ def verify_rendered_shot_duration(shot, actual_seconds, fps):
 
 
 def validate_delivery(data, treatment):
-    if not isinstance(data,dict) or set(data)!={"format","voice","reason"}:
+    if not isinstance(data,dict) or not {"format","voice","reason"}.issubset(data) or set(data)-{"format","voice","reason","voice_settings"}:
         raise ValueError("Director must explicitly select delivery format and voice")
+    validate_voice_settings(data.get("voice_settings",{}))
     fmt=data["format"]
     if not isinstance(fmt,dict) or set(fmt)!={"width","height","fps","framing","background"}:
         raise ValueError("Director did not specify complete delivery")
@@ -62,28 +65,33 @@ def validate_delivery(data, treatment):
     if fmt["framing"] not in ("fit","fill") or not re.fullmatch(
         r"#[0-9A-Fa-f]{6}", str(fmt["background"])):
         raise ValueError("Unsupported explicit framing/background")
-    if data["voice"] not in ("M3","F2","no_voice"):
+    if not valid_voice_id(data["voice"]):
         raise ValueError("Voice engine has not been installed/approved")
     if not isinstance(data["reason"],str) or not data["reason"].strip():
         raise ValueError("Output decisions need artistic purpose")
     selected=treatment.get("voice")
-    if isinstance(selected,dict) and selected.get("choice") in ("M3","F2","no_voice"):
+    if isinstance(selected,dict) and valid_voice_id(selected.get("choice")):
         if data["voice"] != selected["choice"]:
             raise ValueError("Delivery cannot silently change director-selected voice")
-    if data["voice"]=="no_voice":
-        if any(s.get("narration","").strip() for s in _scenes(treatment)):
+    for shot in _scenes(treatment):
+        chosen=shot.get("voice",data["voice"])
+        if not valid_voice_id(chosen):raise ValueError("Invalid scene voice identity")
+        validate_voice_settings(shot.get("voice_settings",{}))
+        if chosen=="no_voice" and shot.get("narration","").strip():
             raise ValueError("Cannot discard narrated scenes to avoid voice synthesis")
     return data
 
 
 def _tts_for_single(shot,voice,shot_dir,assets):
-    if voice not in ("M3","F2") or assets is None or not assets.is_dir():
-        raise ValueError("Approved M3/F2 voice runtime/assets must actually be installed")
+    voice=shot.get("voice",voice)
+    if not valid_voice_id(voice,allow_silence=False) or assets is None or not assets.is_dir():
+        raise ValueError("Selected voice runtime/assets must actually be installed")
     text=shot.get("narration","")
     if not isinstance(text,str) or not text.strip():
         return None
     project=shot_dir/"voice-project.json"
     project.write_text(json.dumps({"voice":voice,
+        "voice_settings":validate_voice_settings(shot.get("voice_settings",{})),
         "scenes":[{"id":shot["id"],"narration":text}]},ensure_ascii=False))
     _run(["python","-m","motion_studio.voice","--project",project,
           "--out",shot_dir/"speech","--model-dir",assets],timeout=1200)
@@ -95,6 +103,7 @@ def _visual_renderer_revision():
     """Any changed physical renderer invalidates saved visual clips, not the art."""
     root=Path(__file__).resolve().parent
     sources=(root/"execute_film.py",root/"blender_scene.py",
+             root/"motion_bridge.py",root/"voice_contract.py",root/"sound_synthesis.py",
              root/"edit_timeline.py",root/"visual_engine_hub.py",
              root/"comfy_video_runtime.py",root/"generative_video_providers.py",
              root.parent/"motion_studio"/"render.py",
@@ -180,7 +189,7 @@ def render_approved_designs(treatment, fact_ledger, designs_dir, delivery,
         shot_dir=output_dir/f"scene-{n:03d}-{sid}"
         shot_dir.mkdir(parents=True,exist_ok=True)
         narration=shot.get("narration","")
-        if narration and delivery["voice"]=="no_voice":
+        if narration and shot.get("voice",delivery["voice"])=="no_voice":
             raise ValueError("Cannot silently discard spoken narration")
         signature=_scene_clip_signature(shot,design,delivery,fact_ledger,
                                          renderer_revision)
@@ -194,14 +203,15 @@ def render_approved_designs(treatment, fact_ledger, designs_dir, delivery,
                 project=verification["project"]
                 if project["voice"]!=delivery["voice"]:
                     raise ValueError("Shot cannot override approved voice identity")
+                project["voice_settings"]={**delivery.get("voice_settings",{}),**project.get("voice_settings",{})}
                 path=shot_dir/"scene-project.json"
                 path.write_text(json.dumps(project,ensure_ascii=False,indent=2))
-                if delivery["voice"]=="no_voice":
+                if not any(scene["narration"].strip() for scene in project["scenes"]):
                     _run(["python","-m","studio_next.silent_audio",
                           "--project",path,"--out",shot_dir])
                 else:
                     if assets is None or not assets.is_dir():
-                        raise ValueError("M3/F2 voice assets required")
+                        raise ValueError("Selected voice assets required")
                     _run(["python","-m","motion_studio.voice","--project",path,
                           "--out",shot_dir,"--model-dir",assets],timeout=1200)
                 _run(["python","-m","motion_studio.render","--project",path,
@@ -230,7 +240,7 @@ def render_approved_designs(treatment, fact_ledger, designs_dir, delivery,
                 clip=visual
                 voice_status="intentional_silence"
                 if narration:
-                    audio=_tts_for_single(shot,delivery["voice"],shot_dir,assets)
+                    audio=_tts_for_single({**shot,"voice_settings":{**delivery.get("voice_settings",{}),**shot.get("voice_settings",{})}},delivery["voice"],shot_dir,assets)
                     duration=probe_media(visual)["seconds"]
                     sound=json.loads(subprocess.check_output(["ffprobe","-v","error",
                         "-show_entries","format=duration","-of","json",str(audio)]))
@@ -244,7 +254,7 @@ def render_approved_designs(treatment, fact_ledger, designs_dir, delivery,
                           "-map","0:v:0","-map","1:a:0",
                           "-c:v","copy","-af",f"apad,atrim=duration={duration:.6f}",
                           "-c:a","aac","-movflags","+faststart","-t",str(duration),clip])
-                    voice_status="M3_F2_recorded"
+                    voice_status="selected_voice_recorded"
             else:
                 plug=resolve_visual_engine(verification["engine"])
                 if plug is None:
@@ -253,7 +263,7 @@ def render_approved_designs(treatment, fact_ledger, designs_dir, delivery,
                 if narration:
                     # Attach the SAME approved narrator to genuine generated
                     # live-action footage; model cannot silently choose new speech.
-                    audio=_tts_for_single(shot,delivery["voice"],shot_dir,assets)
+                    audio=_tts_for_single({**shot,"voice_settings":{**delivery.get("voice_settings",{}),**shot.get("voice_settings",{})}},delivery["voice"],shot_dir,assets)
                     duration=probe_media(clip)["seconds"]
                     vocal=json.loads(subprocess.check_output(
                         ["ffprobe","-v","error","-show_entries",
@@ -269,7 +279,7 @@ def render_approved_designs(treatment, fact_ledger, designs_dir, delivery,
                           "-c:a","aac","-movflags","+faststart",
                           "-t",str(duration),with_voice])
                     clip=with_voice
-                    voice_status="M3_F2_recorded"
+                    voice_status="selected_voice_recorded"
         media=probe_media(clip)
         timing_proof=verify_rendered_shot_duration(shot,media["seconds"],
                                                  delivery["format"]["fps"])

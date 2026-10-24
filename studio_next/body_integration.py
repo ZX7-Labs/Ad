@@ -141,6 +141,7 @@ def _trusted_body_revision(tool_id):
     dependencies={
         "body.inspect":["delivery_audit.py"],
         "body.resolve_asset":["media_vault.py"],
+        "body.voice_inventory":["voice_contract.py"],
         "body.render_edit":["edit_timeline.py"],
         "body.render_edit_owned":["body_owned_edit.py","edit_timeline.py","media_vault.py","production_qc.py"],
         "body.retime":["precision_retime.py","media_vault.py","delivery_audit.py","composite_mix.py","production_qc.py"],
@@ -169,11 +170,12 @@ def _trusted_body_revision(tool_id):
         "body.aces2_movie":["body_aces2_movie.py","body_aces2_preview.py","body_exr_passes.py","media_vault.py","production_qc.py"],
         "body.exr_checkpoint":["body_frame_resume.py","body_exr_passes.py","blender_scene.py","media_vault.py"],
         "body.motion2d":["native_body_engines.py","motion_bridge.py","font_registry.py",
-                         "silent_audio.py","../motion_studio/render.py","../motion_studio/voice.py"],
+                         "silent_audio.py","voice_contract.py","sound_synthesis.py","../motion_studio/render.py","../motion_studio/voice.py"],
     }
     commands={
         "body.inspect":["ffprobe"],
         "body.resolve_asset":[],
+        "body.voice_inventory":[],
         "body.render_edit":["ffmpeg","ffprobe"],
         "body.render_edit_owned":["ffmpeg","ffprobe"],
         "body.retime":["ffmpeg","ffprobe"],
@@ -208,7 +210,7 @@ def _trusted_body_revision(tool_id):
         raise ValueError("No verified implementation dependencies for "+tool_id)
     h=hashlib.sha256()
     for item in ("body_integration.py","body_publication.py","durable_sqlite.py",
-                 "body_tool_contracts.py","registry.py")+tuple(known):
+                 "body_tool_contracts.py","body_document_schemas.py","registry.py")+tuple(known):
         p=base/item
         h.update(item.encode())
         h.update(p.read_bytes())
@@ -295,6 +297,13 @@ def body_catalog(workspace,*,vault_root=None):
     def inspect(inputs):
         path=_path_within(root,inputs["source"],exists=True)
         return _witness(path)
+
+    def inspect_voices(inputs):
+        from .voice_contract import voice_inventory
+        directory=_path_within(root,inputs["voice_assets"],exists=False)
+        if not directory.is_dir():raise ValueError("Voice assets must be a local model directory")
+        return {"model_dir":str(directory),"inventory":voice_inventory(directory),
+                "voice_inference_performed":False}
 
     def resolve_owner_media(inputs):
         """One compact read tool resolves a verified CAS asset by real identity.
@@ -759,6 +768,9 @@ def body_catalog(workspace,*,vault_root=None):
     add("body.asset_vault","audited generated-media provenance",
         "Custody is accepted only from an actually verified trusted renderer node",
         "write",True,["source_witness"],vault_asset)
+    add("body.voice_inventory","discover installed voice identities and synthesis controls",
+        "Local style documents and package presence; actual TTS loading remains independently required",
+        "read",True,["voice_assets"],inspect_voices)
     for spec,runner,idempotent,version,operational,materials in discover_enabled_body_plugins():
         if not operational:
             from dataclasses import replace
@@ -773,6 +785,10 @@ def validate_witness(_tool_id,result):
     """Physically revisit file and stored rights evidence on every resume."""
     if not isinstance(result,dict):
         return False
+    if _tool_id=="body.voice_inventory":
+        from .voice_contract import voice_inventory
+        try:return result["inventory"]==voice_inventory(result["model_dir"])
+        except (ValueError,KeyError,OSError,TypeError):return False
     if "asset_id" in result:
         digest=result.get("asset_id")
         att=result.get("attestation_id")
