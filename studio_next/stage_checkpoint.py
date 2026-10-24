@@ -70,7 +70,7 @@ class DurableStageStore:
                 "model_output":model_output}
         # File is always closed and fsynced BEFORE it becomes visible as valid.
         blob=json.dumps(record,ensure_ascii=False,indent=2,allow_nan=False)+"\n"
-        fd,tmp=tempfile.mkstemp(prefix="."+name+"-",suffix=".tmp",dir=self.root)
+        fd,tmp=tempfile.mkstemp(prefix=".zx7-stage-checkpoint-",suffix=".tmp",dir=self.root)
         try:
             with os.fdopen(fd,"w",encoding="utf-8") as dest:
                 dest.write(blob)
