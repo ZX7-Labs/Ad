@@ -39,8 +39,12 @@ class DurableStageStore:
 
     def find(self, name, immutable_input):
         path=self._path(name,immutable_input)
+        if self.root.is_symlink() or path.is_symlink():
+            raise ValueError("Creative stage source checkpoint is a symbolic link")
         if not path.is_file():
             path=self._path(name)
+        if self.root.is_symlink() or path.is_symlink():
+            raise ValueError("Legacy creative checkpoint is a symbolic link")
         if not path.is_file():
             return None
         content=json.loads(path.read_text(encoding="utf-8"))
