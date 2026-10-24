@@ -30,6 +30,7 @@ from .media_vault import sha256_file
 
 _APPROVED_FIELDS=("prompt","negative_prompt","width","height","frames","fps","seed")
 _NAME=re.compile(r"^[A-Za-z0-9_.-]{1,180}$")
+_PROMPT_ID=re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 
 
 def validate_video_job(job):
