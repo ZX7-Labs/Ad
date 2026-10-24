@@ -68,7 +68,9 @@ class LocalBodyCoordinator:
         # An OS process lock is released on crash, unlike a stale Python flag.
         # Two independent services must NEVER drive the same renderer DB,
         # originals and partially produced frames concurrently.
-        self._instance_lock=(self.root/"body-service.lock").open("a+")
+        lock_fd=os.open(self.root/"body-service.lock",
+                        os.O_RDWR|os.O_CREAT|getattr(os,"O_NOFOLLOW",0),0o600)
+        self._instance_lock=os.fdopen(lock_fd,"a+")
         try:
             fcntl.flock(self._instance_lock.fileno(),
                         fcntl.LOCK_EX|fcntl.LOCK_NB)
