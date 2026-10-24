@@ -33,7 +33,43 @@
     "notes": "Optional native/desktop/browser cases absent locally; matching GitHub native runner must exercise them."
   },
   "remote_ci": {
-    "status": "not yet pushed or verified for this upgrade"
+    "code_commit": "2ed97ef169eefcacd77aa4054bc58ff1345bc957",
+    "status": "six matching checks succeeded; additional installed CGI runner still in progress",
+    "native": {
+      "run_id": 40129388756,
+      "conclusion": "success",
+      "tests_run": 596,
+      "tests_passed": 595,
+      "tests_skipped": 1,
+      "separately_installed_wheel_native_render": "passed",
+      "artifact_id": 12575016376,
+      "artifact_sha256": "28779ba11331ff0a21dee3f42477af74af581ba8e3f5f8ba88063a8a88333add"
+    },
+    "actual_mobile_browser": {
+      "run_id": 40129388875,
+      "conclusion": "success"
+    },
+    "source_custody": {
+      "run_id": 40129388794,
+      "conclusion": "success"
+    },
+    "otio": {
+      "run_id": 40129388805,
+      "conclusion": "success"
+    },
+    "security": {
+      "run_id": 40129388834,
+      "conclusion": "success"
+    },
+    "source_inventory": {
+      "run_id": 40129388748,
+      "conclusion": "success"
+    },
+    "installed_cgi_vfx": {
+      "run_id": 40129388910,
+      "status": "in_progress",
+      "conclusion": null
+    }
   },
   "still_unverified": [
     "actual GPU-conditioned human video inference",
@@ -42,5 +78,18 @@
     "independently accepted premium creative Brain or universal production release"
   ],
   "keep_existing_pr_draft": true,
-  "merge_main_authorized": false
+  "merge_main_authorized": false,
+  "verified_code_commit": "2ed97ef169eefcacd77aa4054bc58ff1345bc957",
+  "local_installed_wheel_native_proof": {
+    "module_bytes_match_published_source": true,
+    "cgi_sha256": "d5c58729a37396c1017478b42ec7bd75472990f684d916c741c6c710a6800943",
+    "tracked_vfx_sha256": "ba5aaf38fb30c519e76cdf6ca4e7ab740499b0f9355ccab1304266bc58291f6c",
+    "actual_cgi_frames": 12,
+    "actual_tracked_frames": 24,
+    "original_audio_decoded_pcm_identical": true,
+    "human_acting_generation_proven": false,
+    "general_3d_camera_tracking_proven": false,
+    "autonomous_creative_brain_used": false,
+    "proof_scope": "Actual native CGI and planar VFX execution, not world-class artistic approval"
+  }
 }

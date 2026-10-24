@@ -152,6 +152,25 @@ jobs:
           "$RUNNER_TEMP/zx7-body-installed/bin/zx7-desktop" --help
           "$RUNNER_TEMP/zx7-body-installed/bin/zx7-archive" --help
           "$RUNNER_TEMP/zx7-body-installed/bin/zx7-relink-otio" --help
+      - name: Verify pinned Blender 4.5.15 for installed product CGI acceptance
+        run: |
+          curl --fail --location --silent --show-error --retry 2 --connect-timeout 30 --max-time 240 \
+            https://download.blender.org/release/Blender4.5/blender-4.5.15-linux-x64.tar.xz \
+            -o "$RUNNER_TEMP/blender.tar.xz"
+          python - <<'PY'
+          import hashlib,os
+          from pathlib import Path
+          p=Path(os.environ['RUNNER_TEMP'])/'blender.tar.xz'
+          with p.open('rb') as stream:actual=hashlib.file_digest(stream,'sha256').hexdigest()
+          assert actual=='0d2b8bb2efe97e6c8eb57de6b7322f8800e1984e3125b60decca5f6771e4773e',actual
+          PY
+          tar --no-same-owner -xf "$RUNNER_TEMP/blender.tar.xz" -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/blender-4.5.15-linux-x64" >> "$GITHUB_PATH"
+      - name: Installed public BODY actually renders CGI and tracked occluded VFX
+        working-directory: ${{ runner.temp }}
+        run: |
+          "$RUNNER_TEMP/zx7-body-installed/bin/python" -u -m studio_next.body_cgi_proof \
+            --workspace "$GITHUB_WORKSPACE/output/body-release-proof/cgi-vfx" --size 384 --frames 24 --samples 16
       - name: Save exact release evidence without certifying artistic quality
         run: |
           python - <<'PY'
@@ -171,6 +190,9 @@ jobs:
           physical=json.loads((root/'native/verified-native-body-result.json').read_text())
           assert physical['real_3d_rendered'] and physical['real_2d_rendered']
           assert physical['exact_all_nodes_resumed']
+          cgi=json.loads((root/'cgi-vfx/native-proof.json').read_text())
+          assert cgi['actual_cgi_frames']==24 and cgi['actual_tracked_frames']==24
+          assert cgi['original_audio_decoded_pcm_identical']
           assert (root/'desktop-qa.png').is_file()
           release={
             'source_commit':os.environ['GITHUB_SHA'],
@@ -184,6 +206,7 @@ jobs:
             'actual_process_death_publication_recovery_without_rerender':True,
             'actual_pause_restart_and_original_job_resume':True,
             'separately_installed_wheel_native_2d_3d_audio_otio_mp4':True,
+            'installed_pbr_cgi_and_planar_occluded_vfx':cgi,
             'sqlite_runtime':sqlite3.sqlite_version,
             'gpu_video_generation_verified':False,
             'independent_premium_artist_or_original_fold_film_proven':False,

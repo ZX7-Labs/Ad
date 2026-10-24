@@ -145,8 +145,8 @@ Local real Blender 4.5.15 CPU rendered a 512-square, 36-frame glass/liquid/metal
 product shot with curved UV label and moving camera. A separate 24-frame
 tracked/occluded composite preserved the decoded original audio exactly.
 Automated tests also compare measured corners against independent 3D projection
-and reject deliberately lost tracks. New CI exercises an installed wheel with
-real Blender media; the existing complete native regression remains separate.
+and reject deliberately lost tracks. The integrated native CI exercises the complete regression and then the
+installed wheel with pinned Blender 4.5.15 and real CGI/planar media.
 Check the companion checkpoint for exact source/run identity and counts.
 
 This expands the production BODY. It does not certify a universal finished
@@ -156,4 +156,5 @@ automatic roto/relighting or independent customer-conversion performance.
 Those require additional real runtime integration and physical acceptance.
 
 Primary technical references: [Blender Principled BSDF](https://docs.blender.org/manual/en/4.5/render/shader_nodes/shader/principled.html),
-[OpenCV homography tutorial](https://docs.opencv.org/4.x/d1/de0/tutorial_py_feature_homography.html).
+[OpenCV homography tutorial](https://docs.opencv.org/4.x/d1/de0/tutorial_py_feature_homography.html),
+[ComfyUI native upload implementation](https://github.com/comfyanonymous/ComfyUI/blob/master/server.py).
