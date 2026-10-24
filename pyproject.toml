@@ -13,6 +13,7 @@ dependencies = []
 [project.optional-dependencies]
 production = ["numpy>=1.26,<3", "Pillow>=10,<13", "opentimelineio>=0.17,<1", "fonttools>=4,<5"]
 vfx_exr = ["OpenEXR>=3.3,<4", "numpy>=1.26,<3"]
+vfx_tracking = ["opencv-python-headless>=4.10,<5", "numpy>=1.26,<3", "Pillow>=10,<13"]
 
 [project.scripts]
 zx7-body = "studio_next.body_service:main"

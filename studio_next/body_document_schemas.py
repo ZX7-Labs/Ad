@@ -157,7 +157,8 @@ _SCHEMAS["body.temporal_evidence"]=("plan",obj({"media":SOURCE,
 _SCHEMAS["body.generate_video"]=("video_job",obj({"model_id":TEXT,"prompt":TEXT,"negative_prompt":_EMPTY_TEXT,
     "width":number(1,65536,integer=True),"height":number(1,65536,integer=True),
     "frames":number(1,65536,integer=True),"fps":number(1,65536,integer=True),
-    "seed":number(0,2**64-1,integer=True)}))
+    "seed":number(0,2**64-1,integer=True)},
+    {"images":array(obj({"binding":TEXT,"media":SOURCE}),maxItems=16)}))
 
 _VEC3=array(number(-1e7,1e7),minItems=3,maxItems=3)
 _RGB=array(number(0,1),minItems=3,maxItems=3)
@@ -166,24 +167,46 @@ _CURVE=array(obj({"frame":SIZE,"value":_VEC3}),minItems=1)
 _TRANSFORM={"location":_VEC3,"rotation_degrees":_VEC3,
             "scale":array(number(.0001,100000),minItems=3,maxItems=3)}
 _ANIMATION={"animate":obj({}, {key:_CURVE for key in _TRANSFORM})}
+_MODIFIER={"oneOf":[obj({"kind":choice("bevel"),"width":number(.000001,1000),"segments":number(1,12,integer=True),"angle_degrees":number(0,180)}),
+    obj({"kind":choice("solidify"),"thickness":number(.000001,1000),"offset":number(-1,1)}),
+    obj({"kind":choice("subdivision"),"levels":number(0,4,integer=True)})]}
+_ANIMATION.update({"parent":TEXT,"interpolation":choice("LINEAR","BEZIER","CONSTANT"),"modifiers":array(_MODIFIER,maxItems=8)})
+_UV=array(number(-10000,10000),minItems=2,maxItems=2)
+_PBR_OPTIONS={"transmission":number(0,1),"ior":number(1,4),"coat":number(0,1),"coat_roughness":number(0,1),
+    "sheen":number(0,1),"emission_color":_RGB,"emission_strength":number(0,100000),"normal_strength":number(0,10),
+    "texture_alpha":{"type":"boolean"},**{key:TEXT for key in ("base_color_texture","roughness_texture","metallic_texture","normal_texture","emission_texture")}}
 _OBJECT_BASE={"id":TEXT,"material":TEXT,**_TRANSFORM}
 _BLENDER=obj({"shot_id":TEXT,"width":SIZE,"height":SIZE,"fps":SIZE,"frames":SIZE,
-    "world":obj({"color":_RGB,"strength":number(0,100)}),
+    "world":obj({"color":_RGB,"strength":number(0,100)},
+        {"environment_texture":TEXT,"environment_rotation_degrees":number(-36000,36000)}),
     "camera":obj({"location":_VEC3,"target":_VEC3,"lens_mm":number(1,300)},
         {"animate_location":_CURVE,"animate_target":_CURVE,
-         "depth_of_field":obj({"focus_distance":number(.001,10000),"fstop":number(.1,100)})}),
-    "materials":array(obj({"id":TEXT,"color":_VEC4,"metallic":number(0,1),"roughness":number(.001,1)}),minItems=1),
+         "depth_of_field":obj({"focus_distance":number(.001,10000),"fstop":number(.1,100)}),
+         "animate_lens_mm":array(obj({"frame":SIZE,"value":array(number(1,300),minItems=1,maxItems=1)}),minItems=1),
+         "animate_focus_distance":array(obj({"frame":SIZE,"value":array(number(.001,10000),minItems=1,maxItems=1)}),minItems=1)}),
+    "materials":array(obj({"id":TEXT,"color":_VEC4,"metallic":number(0,1),"roughness":number(.001,1)},_PBR_OPTIONS),minItems=1),
     "objects":array({"oneOf":[
-        obj({**_OBJECT_BASE,"type":choice("cube","uv_sphere","ico_sphere","cylinder","cone","torus","plane")},_ANIMATION),
+        obj({**_OBJECT_BASE,"type":choice("cube","uv_sphere","ico_sphere","cylinder","cone","torus","plane","empty")},_ANIMATION),
         obj({**_OBJECT_BASE,"type":choice("custom_mesh"),"vertices":array(_VEC3,minItems=3),
-             "faces":array(array(number(0,integer=True),minItems=3),minItems=1)},_ANIMATION),
+             "faces":array(array(number(0,integer=True),minItems=3),minItems=1)},
+            {**_ANIMATION,"uvs":array(array(_UV,minItems=3),minItems=1)}),
+        obj({**_OBJECT_BASE,"type":choice("lathe"),"profile":array(array(number(-1e7,1e7),minItems=2,maxItems=2),minItems=2,maxItems=512),
+            "segments":number(8,512,integer=True),"caps":{"type":"boolean"}},_ANIMATION),
         obj({**_OBJECT_BASE,"type":choice("licensed_glb"),"asset":TEXT,
              "rights":choice("owner_supplied","appropriately_licensed")},_ANIMATION)]},minItems=1),
     "lights":array(obj({"id":TEXT,"type":choice("AREA","POINT","SUN","SPOT"),
         "location":_VEC3,"rotation_degrees":_VEC3,"energy":number(0,1e7),"color":_RGB},
-        {"size":number(.01,10000)}),minItems=1)}, {"samples":SIZE})
+        {"size":number(.01,10000),"size_y":number(.01,10000),"shape":choice("DISK","SQUARE","RECTANGLE","ELLIPSE")}),minItems=1)}, {"samples":SIZE,"denoise":{"type":"boolean"}})
 for _tool in ("body.blender3d","body.exr_passes","body.exr_checkpoint"):
     _SCHEMAS[_tool]=("scene_json",_BLENDER)
+_SCHEMAS["body.cgi_shot"]=("plan",obj({"scene":_BLENDER,
+    "assets":array(obj({"name":TEXT,"media":SOURCE}))}))
+_SCHEMAS["body.planar_insert"]=("plan",obj({"media":SOURCE,"overlay":SOURCE,
+    "quad":array(_UV,minItems=4,maxItems=4),"opacity":number(0,1),
+    "audio":choice("preserve_source","intentional_silence"),
+    "tracking":obj({"max_features":number(32,20000,integer=True),"min_matches":number(8,2000,integer=True),
+        "min_inlier_ratio":number(.1,1),"ransac_pixels":number(.1,30),"max_reprojection_error":number(.1,30)})},
+    {"foreground":obj({"media":SOURCE,"kind":choice("still_image","video")})}))
 _ACES={"source":SOURCE,"source_color_space":choice("Linear Rec.709 (sRGB)"),
     "alpha_association":choice("associated_scene_linear"),"scene_linear_background_rgb":_RGB,
     "display":choice("sRGB - Display"),"view":choice("ACES 2.0 - SDR 100 nits (Rec.709)")}

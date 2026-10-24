@@ -4,10 +4,47 @@ import tempfile
 import unittest
 from pathlib import Path
 from studio_next.generative_video_providers import (
-    discover_local_generators,measured_gpu_vram_mb,safe_local_api)
+    discover_local_generators,measured_gpu_vram_mb,safe_local_api,generator_material_identity)
+
+
+def installed_workflow(folder,kind):
+    graph={'generate':{'class_type':kind,'inputs':{k:0 for k in ('prompt','frames','width','height','fps')}},
+           'save':{'class_type':'SaveVideo','inputs':{'video':['generate',0]}}}
+    (folder/'workflow.json').write_text(json.dumps(graph))
+    (folder/'bindings.json').write_text(json.dumps({'model_id':folder.name,'output_node':'save',
+        'inputs':{k:{'node':'generate','key':k} for k in ('prompt','frames','width','height','fps')}}))
 
 
 class ActualVideoGeneratorDiscoveryTests(unittest.TestCase):
+    def test_additional_owned_engine_is_discovered_without_editing_candidate_code(self):
+        with tempfile.TemporaryDirectory() as root:
+            p=Path(root)/'owned-audiovisual-engine';p.mkdir()
+            blob=p/'checkpoint.safetensors';blob.write_bytes(b'contract-only-not-real-model'*128)
+            digest=hashlib.sha256(blob.read_bytes()).hexdigest()
+            data={'model_id':p.name,'weight_sha256':digest,'license_accepted_or_verified':True,
+                'required_weight_roles':['checkpoint'],'weight_files':[{'role':'checkpoint','path':blob.name,'sha256':digest}],
+                'minimum_locally_verified_vram_mb':12000,'required_comfyui_nodes':['OwnedVideoNode','SaveVideo'],
+                'model_metadata':{'repo':'owner/verified-local-engine','license_metadata':'owner-verified-test-license','capabilities':['image_to_video','dialogue_video']}}
+            (p/'deployment.json').write_text(json.dumps(data))
+            installed_workflow(p,'OwnedVideoNode')
+            def fetch(url):return {'devices':[]} if url.endswith('/system_stats') else {'OwnedVideoNode':{},'SaveVideo':{}}
+            state=discover_local_generators(gpu_mb=16000,deployed_root=root,comfy_endpoint='http://localhost:8188',fetch=fetch)
+            custom=next(x for x in state['video_generation_options'] if x['id']==p.name)
+            self.assertTrue(custom['ready_for_independent_execution_trial']);self.assertIsNotNone(custom['verified_weight_set_sha256'])
+            self.assertFalse(custom['actual_movie_generated_and_ffprobed'])
+            identity=generator_material_identity(root,p.name)
+            (p/'workflow.json').write_text((p/'workflow.json').read_text()+'\n')
+            self.assertNotEqual(identity,generator_material_identity(root,p.name))
+            broken=p/'bad-deployment';broken.mkdir();(broken/'deployment.json').write_text('{broken')
+            (p/'bindings.json').write_text('{broken')
+            invalid=discover_local_generators(gpu_mb=16000,deployed_root=root,comfy_endpoint='http://localhost:8188',fetch=fetch)
+            self.assertFalse(next(x for x in invalid['video_generation_options'] if x['id']==p.name)['ready_for_independent_execution_trial'])
+            installed_workflow(p,'OwnedVideoNode')
+            zero=discover_local_generators(gpu_mb=0,deployed_root=root,comfy_endpoint='http://localhost:8188',fetch=fetch)
+            self.assertFalse(next(x for x in zero['video_generation_options'] if x['id']==p.name)['ready_for_independent_execution_trial'])
+            blob.write_bytes(b'changed-weights'*256)
+            self.assertFalse(any(x['id']==p.name for x in discover_local_generators(gpu_mb=16000,deployed_root=root,comfy_endpoint='http://localhost:8188',fetch=fetch)['video_generation_options']))
+
     def test_cpu_runner_cannot_falsely_claim_real_video_generation(self):
         with tempfile.TemporaryDirectory() as root:
             state=discover_local_generators(gpu_mb=0,deployed_root=root)
@@ -52,6 +89,7 @@ class ActualVideoGeneratorDiscoveryTests(unittest.TestCase):
                 "weight_files":weights,
                 "license_accepted_or_verified":True,
                 "required_comfyui_nodes":["WanVideoModelLoader","SaveVideo"]}))
+            installed_workflow(p,'WanVideoModelLoader')
             def fake(url):
                 return {"devices":[{"name":"Nvidia GPU"}]} if url.endswith("/system_stats") else {
                     "WanVideoModelLoader":{},"SaveVideo":{}}
@@ -61,6 +99,9 @@ class ActualVideoGeneratorDiscoveryTests(unittest.TestCase):
             self.assertTrue(choice["ready_for_independent_execution_trial"])
             self.assertFalse(choice["actual_movie_generated_and_ffprobed"])
             self.assertFalse(a["all_video_generation_operational"])
+            (p/'workflow.json').unlink()
+            missing=discover_local_generators(gpu_mb=9000,deployed_root=root,comfy_endpoint='http://localhost:8188',fetch=fake)
+            self.assertFalse(missing['video_generation_options'][0]['ready_for_independent_execution_trial'])
 
 
 if __name__=="__main__":

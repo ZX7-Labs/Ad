@@ -67,6 +67,7 @@ def concise_body_status(workspace):
         "third_party_apps_present_but_not_all_wired":[a["tool_id"] for a in
            physical["actual_installed_tools"] if not a["can_render_in_zx7_now"]],
         "physically_enabled_generators":gpu_ready,
+        "video_generator_options":generators["video_generation_options"],
         "one_model_can_discover_and_choose_without_reading_documentation":True,
         "claimed_complete_premium_studio":False,
         "claim":"Real tool interface; successful movie depends on source art and tested runtime"}

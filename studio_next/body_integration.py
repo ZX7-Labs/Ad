@@ -27,6 +27,8 @@ from .editorial_interchange import export_editable_timeline
 from .body_sequence_otio import export_verified_sequence_otio,import_verified_sequence_otio
 from .creative_asset_ops import rasterize_original_svg,extract_director_selected_frame
 from .native_body_engines import render_original_blender,render_original_motion
+from .body_cgi import render_cgi_plan
+from .body_planar import render_planar_insert
 from .delivery_audit import audit_delivered_movie,_probe_details
 from .durable_graph import DurableFilmGraph,execute_durable_film_graph
 from .media_vault import MediaVault,sha256_file,verify_media_container,MediaCustodyError
@@ -163,8 +165,10 @@ def _trusted_body_revision(tool_id):
         "body.review_data":["body_review_access.py","body_observation.py"],
         "body.review_frame":["body_review_access.py","body_observation.py"],
         "body.review_compare":["body_review_compare.py","body_review_access.py","body_observation.py"],
-        "body.generate_video":["comfy_video_runtime.py","generative_video_providers.py"],
+        "body.generate_video":["comfy_video_runtime.py","generative_video_providers.py","composite_mix.py","media_vault.py"],
         "body.blender3d":["native_body_engines.py","blender_scene.py"],
+        "body.cgi_shot":["body_cgi.py","native_body_engines.py","blender_scene.py","media_vault.py","composite_mix.py","production_qc.py"],
+        "body.planar_insert":["body_planar.py","media_vault.py","composite_mix.py","precision_retime.py","body_color_pipeline.py","production_qc.py"],
         "body.exr_passes":["body_exr_passes.py","blender_scene.py","media_vault.py"],
         "body.aces2_preview":["body_aces2_preview.py","body_exr_passes.py","media_vault.py"],
         "body.aces2_movie":["body_aces2_movie.py","body_aces2_preview.py","body_exr_passes.py","media_vault.py","production_qc.py"],
@@ -199,6 +203,8 @@ def _trusted_body_revision(tool_id):
         "body.review_compare":[],
         "body.generate_video":["ffprobe"],
         "body.blender3d":["blender","ffmpeg"],
+        "body.cgi_shot":["blender","ffmpeg","ffprobe"],
+        "body.planar_insert":["ffmpeg","ffprobe"],
         "body.exr_passes":["blender"],
         "body.aces2_preview":[],
         "body.aces2_movie":["ffmpeg","ffprobe"],
@@ -222,7 +228,8 @@ def _trusted_body_revision(tool_id):
         stat=file.stat()
         h.update(json.dumps({"command":cmd,"binary_path":str(file),
               "size":stat.st_size,"mtime_ns":stat.st_mtime_ns},sort_keys=True).encode())
-    runtime_libraries={"body.motion2d":("numpy","Pillow","fonttools","supertonic"),
+    runtime_libraries={"body.planar_insert":("opencv-python-headless","numpy"),
+                       "body.motion2d":("numpy","Pillow","fonttools","supertonic"),
                        "body.otio":("opentimelineio",),
                        "body.otio_owned_export":("opentimelineio",),
                        "body.otio_owned_import":("opentimelineio",),
@@ -558,11 +565,14 @@ def body_catalog(workspace,*,vault_root=None):
         job=validate_video_job(json.loads(source.read_text(encoding="utf-8")))
         local_endpoint=os.getenv("ZX7_COMFY_API")
         local_weights=os.getenv("ZX7_VIDEO_DEPLOYMENTS","models/creative-video")
-        stable_sha=hashlib.sha256(source.read_bytes()).hexdigest()[:32]
+        from .generative_video_providers import generator_material_identity
+        deployment=generator_material_identity(local_weights,job['model_id'])
+        stable_sha=hashlib.sha256(source.read_bytes()+json.dumps(
+            {'deployment':deployment,'local_endpoint':local_endpoint},sort_keys=True).encode()).hexdigest()[:32]
         physical_job_folder=root/"_real_generated_jobs"/stable_sha
         actual=render_actual_generated_scene(
             job,physical_job_folder,deployment_root=local_weights,
-            comfy_endpoint=local_endpoint)
+            comfy_endpoint=local_endpoint,workspace=root,vault_root=vault.root)
         filmed=Path(actual["clip"])
         if not filmed.is_file():
             raise RuntimeError("Real video diffusion tool supplied no source footage")
@@ -593,6 +603,21 @@ def body_catalog(workspace,*,vault_root=None):
         return _commit_actual_body_output(
             dest,lambda staged:render_original_blender(
                 source,staged,trusted_asset_root=trusted_asset_root))
+
+    def cgi_shot(inputs):
+        plan=_path_within(root,inputs["plan"],exists=True)
+        dest=_body_output(root,inputs["out"],allowed=(".mp4",))
+        return _commit_actual_body_output(dest,lambda stage:
+            render_cgi_plan(plan,root,vault.root,stage))
+
+    def planar_insert(inputs):
+        plan=_path_within(root,inputs["plan"],exists=True)
+        dest=_body_output(root,inputs["out"],allowed=(".mp4",))
+        measured={}
+        def produce(stage):measured.update(render_planar_insert(plan,root,vault.root,stage))
+        receipt=_commit_actual_body_output(dest,produce)
+        return {**receipt,**{k:v for k,v in measured.items() if k not in ("path","sha256")},
+                "tracking_metrics_observed_in_this_invocation":bool(measured)}
 
     def render_scene_linear_exr(inputs):
         scene=_path_within(root,inputs["scene_json"],exists=True)
@@ -727,6 +752,13 @@ def body_catalog(workspace,*,vault_root=None):
     add("body.blender3d","physical 3D filmmaking","Blender real rendered geometries, materials and moving camera",
         "write",bool(shutil.which("blender") and video_io),
         ["scene_json","out"],render3d)
+    add("body.cgi_shot","source-attested product CGI and PBR scene rendering",
+        "Sealed real texture/GLB assets; authored glass, coats, normal maps, UV meshes, radial products, hierarchy, camera/focus animation and optional denoising; actual Blender Cycles CPU",
+        "write",bool(shutil.which("blender") and video_io),["plan","out"],cgi_shot)
+    add("body.planar_insert","measured planar tracking and corner-pin VFX",
+        "SIFT/RANSAC original reference-to-frame motion; premultiplied-alpha perspective insertion, owned foreground mattes and bitstream-preserved sound; fails on track loss, not 3D camera solve",
+        "write",bool(video_io and importlib.util.find_spec("cv2") and importlib.util.find_spec("numpy")),
+        ["plan","out"],planar_insert)
     add("body.motion2d","original 2D/2.5D animation","Independent vector character and motion compositor",
         "write",bool(video_io and motion_libraries),["original_film_ir","out","width","fps"],render2d)
     add("body.resolve_asset","verify and locate original licensed media by content identity",
@@ -822,7 +854,7 @@ def _require_authentic_generated_media_lineage(film_ir):
                        "body.exr_passes","body.exr_checkpoint",
                        "body.aces2_movie",
                        "body.render_edit_owned",
-                       "body.composite_mix","body.film_finish"}
+                       "body.composite_mix","body.film_finish","body.cgi_shot","body.planar_insert"}
     for node in graph:
         if not isinstance(node,dict) or node.get("tool_id")!="body.asset_vault":
             continue

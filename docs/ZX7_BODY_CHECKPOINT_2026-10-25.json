@@ -1,0 +1,46 @@
+{
+  "date": "2026-10-25",
+  "branch": "zx7-body/mobile-operator-20261021",
+  "base_commit": "0b9a94e2b69786487c9cd25cb21081741c903e1b",
+  "public_source_changed": true,
+  "main_untouched": true,
+  "production_complete": false,
+  "implemented": [
+    "body.cgi_shot with sealed attested textures and GLB",
+    "PBR glass/coat/emission and image maps, UV meshes, lathe geometry, parent rigs/modifiers, lens/focus animation",
+    "body.planar_insert with measured SIFT/RANSAC homographies, supplied foreground matte and original audio copying",
+    "dynamic self-hosted engine discovery and attested reference-PNG workflow inputs",
+    "model/workflow/reference/endpoint identity bound to generation reuse"
+  ],
+  "local_native_proof": {
+    "cgi_sha256": "d76ffbf0425c81d43cbe90bf124ba2e17e8742cbc71c276564c8344807bd8120",
+    "tracked_vfx_sha256": "ba5aaf38fb30c519e76cdf6ca4e7ab740499b0f9355ccab1304266bc58291f6c",
+    "actual_cgi_frames": 24,
+    "actual_tracked_frames": 24,
+    "original_audio_decoded_pcm_identical": true,
+    "human_acting_generation_proven": false,
+    "general_3d_camera_tracking_proven": false,
+    "autonomous_creative_brain_used": false,
+    "proof_scope": "Actual native CGI and planar VFX execution, not world-class artistic approval"
+  },
+  "local_tests": {
+    "suite_run": 596,
+    "passed": 558,
+    "skipped": 38,
+    "failed": 0,
+    "errors": 0,
+    "final_generation_changes_focused_tests_passed": 34,
+    "notes": "Optional native/desktop/browser cases absent locally; matching GitHub native runner must exercise them."
+  },
+  "remote_ci": {
+    "status": "not yet pushed or verified for this upgrade"
+  },
+  "still_unverified": [
+    "actual GPU-conditioned human video inference",
+    "general 3D camera solve and automatic human roto",
+    "character rigging/animation and fluid/cloth simulation",
+    "independently accepted premium creative Brain or universal production release"
+  ],
+  "keep_existing_pr_draft": true,
+  "merge_main_authorized": false
+}

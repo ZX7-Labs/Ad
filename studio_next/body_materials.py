@@ -7,6 +7,7 @@ and separate from the creative brain; it cannot choose composition/style.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 from .media_vault import sha256_file,MediaVault
@@ -39,6 +40,8 @@ _SOURCE_FIELDS={
     "body.review_compare":("before_bundle","after_bundle"),
     "body.generate_video":("video_job",),
     "body.blender3d":("scene_json","assets_root"),
+    "body.cgi_shot":("plan",),
+    "body.planar_insert":("plan",),
     "body.exr_passes":("scene_json","assets_root"),
     "body.aces2_preview":("plan",),
     "body.aces2_movie":("plan",),
@@ -161,6 +164,12 @@ def fingerprint_physical_inputs(tool_id,inputs,workspace):
     physical=[{"relative":str(path.relative_to(root)),
              "bytes":path.stat().st_size,"sha256":sha256_file(path)}
             for path in sorted(found)]
+    if tool_id=='body.generate_video':
+        from .generative_video_providers import generator_material_identity
+        job=json.loads(_file(root,inputs['video_job']).read_text())
+        physical.append({'trusted_generator_deployment':generator_material_identity(
+            os.getenv('ZX7_VIDEO_DEPLOYMENTS','models/creative-video'),job['model_id']),
+            'operator_local_endpoint':os.getenv('ZX7_COMFY_API')})
     for name in sorted(selected_fonts):
         font=Path(resolve_artist_font(name))
         physical.append({"installed_typeface":name,"resolved_font":str(font.resolve()),

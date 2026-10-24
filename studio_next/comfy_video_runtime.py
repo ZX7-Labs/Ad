@@ -24,9 +24,11 @@ from urllib.parse import urlencode
 from urllib.request import Request
 
 from .generative_video_providers import (
-    safe_local_api,discover_local_generators,open_verified_local_api)
+    safe_local_api,discover_local_generators,open_verified_local_api,_read_manifest)
 from .stage_checkpoint import DurableStageStore
 from .media_vault import sha256_file
+from .media_vault import MediaVault,verify_media_container
+from .composite_mix import _exact_media,sealed_attested_original
 
 _APPROVED_FIELDS=("prompt","negative_prompt","width","height","frames","fps","seed")
 _NAME=re.compile(r"^[A-Za-z0-9_.-]{1,180}$")
@@ -34,7 +36,7 @@ _PROMPT_ID=re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 
 
 def validate_video_job(job):
-    if not isinstance(job,dict) or set(job)!=(set(_APPROVED_FIELDS)|{"model_id"}):
+    if not isinstance(job,dict) or not (set(_APPROVED_FIELDS)|{"model_id"}).issubset(job) or set(job)-(set(_APPROVED_FIELDS)|{"model_id","images"}):
         raise ValueError("External video-generation job requires exact technical fields")
     if not isinstance(job["model_id"],str) or not _NAME.fullmatch(job["model_id"]):
         raise ValueError("Unregistered video generator identity")
@@ -49,6 +51,13 @@ def validate_video_job(job):
     if not isinstance(job["seed"],int) or isinstance(job["seed"],bool) or not (
             0<=job["seed"]<2**64):
         raise ValueError("Seed must be an unsigned deterministic film render integer")
+    images=job.get('images',[]);names=set()
+    if not isinstance(images,list) or len(images)>16:raise ValueError('Invalid reference-image inputs')
+    for image in images:
+        if not isinstance(image,dict) or set(image)!={'binding','media'} or not isinstance(image['binding'],str) or not _NAME.fullmatch(image['binding']) or image['binding'] in names:
+            raise ValueError('Each reference image needs a distinct approved workflow binding')
+        names.add(image['binding']);media=image['media']
+        if not isinstance(media,dict) or set(media)!={'source','asset_id','attestation_id'} or not all(isinstance(x,str) and x for x in media.values()):raise ValueError('Reference image requires exact original source custody')
     return job
 
 
@@ -129,6 +138,24 @@ class LocalComfyVideoClient:
             raise ValueError("Local ComfyUI did not return a path-safe generation ID")
         return receipt["prompt_id"]
 
+    def upload_image(self,path,asset_id):
+        """Only exact owned PNG bytes enter a content-addressed input namespace."""
+        if not isinstance(asset_id,str) or not re.fullmatch(r'[a-f0-9]{64}',asset_id) or sha256_file(path)!=asset_id:
+            raise ValueError('Reference upload differs from verified original image')
+        raw=Path(path).read_bytes()
+        if hashlib.sha256(raw).hexdigest()!=asset_id:raise ValueError('Reference upload differs from verified original image')
+        if not raw.startswith(b'\x89PNG\r\n\x1a\n') or len(raw)>16000000:raise ValueError('Reference upload requires a bounded real PNG')
+        name=asset_id+'.png';boundary='zx7-image-'+asset_id
+        parts=[f'--{boundary}\r\nContent-Disposition: form-data; name="subfolder"\r\n\r\nzx7-body\r\n',
+            f'--{boundary}\r\nContent-Disposition: form-data; name="overwrite"\r\n\r\ntrue\r\n',
+            f'--{boundary}\r\nContent-Disposition: form-data; name="image"; filename="{name}"\r\nContent-Type: image/png\r\n\r\n']
+        body=''.join(parts).encode()+raw+f'\r\n--{boundary}--\r\n'.encode()
+        req=Request(self.endpoint+'/upload/image',data=body,method='POST',headers={'Content-Type':'multipart/form-data; boundary='+boundary})
+        with open_verified_local_api(req,timeout=120) as response:receipt=json.loads(response.read(65536))
+        if not isinstance(receipt,dict) or receipt.get('name')!=name or receipt.get('subfolder')!='zx7-body' or receipt.get('type')!='input':
+            raise ValueError('Local image server changed the content-addressed input identity')
+        return 'zx7-body/'+name
+
     def wait(self,prompt_id,output_node,*,poll_seconds=3,max_seconds=1800,sleep=None):
         sleeper=sleep or time.sleep
         deadline=time.monotonic()+max_seconds
@@ -164,8 +191,46 @@ class LocalComfyVideoClient:
         raise TimeoutError("Real video generation did not complete within allowed compute budget")
 
 
+def checked_image_bindings(graph,metadata):
+    slots=metadata.get('images',{});required=metadata.get('required_images',[])
+    if not isinstance(slots,dict) or len(slots)>16 or not isinstance(required,list) or not all(isinstance(x,str) and x in slots for x in required) or len(set(required))!=len(required):raise ValueError('Invalid installed reference-image bindings')
+    used=set()
+    for name,slot in slots.items():
+        if not isinstance(name,str) or not _NAME.fullmatch(name) or not isinstance(slot,dict) or set(slot)!={'node','key'} or not all(isinstance(x,str) for x in slot.values()):raise ValueError('Invalid native reference-image slot')
+        node=graph.get(slot['node']);identity=(slot['node'],slot['key'])
+        if identity in used or not isinstance(node,dict) or not isinstance(node.get('inputs'),dict) or slot['key'] not in node['inputs']:raise ValueError('Reference binding does not identify a distinct installed node input')
+        if any(identity==(x.get('node'),x.get('key')) for x in metadata.get('inputs',{}).values() if isinstance(x,dict)):raise ValueError('Image binding overlaps an authored text or timing input')
+        used.add(identity)
+    return slots,required
+
+
+def bind_reference_images(graph,metadata,job,renderer,workspace,vault_root):
+    """Apply only operator-installed LoadImage slots, never artist-supplied code."""
+    supplied=job.get('images',[]);slots,required=checked_image_bindings(graph,metadata)
+    names={x['binding'] for x in supplied}
+    if not set(required).issubset(names) or not names.issubset(slots):raise ValueError('Missing required or unregistered workflow image input')
+    if not supplied:return []
+    if workspace is None or vault_root is None:raise ValueError('Reference conditioning requires an authenticated production workspace')
+    root=Path(workspace).resolve();vault=MediaVault(vault_root);observed=[]
+    with tempfile.TemporaryDirectory(prefix='.zx7-generation-images-',dir=root) as temp:
+        private=Path(temp);snapshots={}
+        for item in supplied:
+            slot=slots[item['binding']]
+            node=graph.get(slot['node'])
+            media=item['media'];source=_exact_media(media,vault,root,need='generation reference image')
+            if vault.inspect(media['asset_id'],attestation_id=media['attestation_id'])['mime']!='image/png':raise ValueError('Reference conditioning currently requires an attested PNG')
+            frozen=sealed_attested_original(vault,media['asset_id'],media['attestation_id'],private,snapshots)
+            verify_media_container(frozen,'image/png')
+            uploaded=renderer.upload_image(frozen,media['asset_id'])
+            if uploaded!='zx7-body/'+media['asset_id']+'.png':raise ValueError('Reference server/client returned an unregistered input path')
+            node['inputs'][slot['key']]=uploaded
+            if sha256_file(frozen)!=media['asset_id'] or sha256_file(source)!=media['asset_id']:raise ValueError('Reference source changed during actual upload')
+            observed.append((source,media))
+    return observed
+
+
 def render_actual_generated_scene(job,scene_folder,*,deployment_root="models/creative-video",
-                                  comfy_endpoint=None,client=None,probe=None):
+                                  comfy_endpoint=None,client=None,probe=None,workspace=None,vault_root=None):
     """No output file exists unless an actual generator produces decodable video."""
     validate_video_job(job)
     endpoint=safe_local_api(comfy_endpoint) if comfy_endpoint else None
@@ -179,8 +244,11 @@ def render_actual_generated_scene(job,scene_folder,*,deployment_root="models/cre
         raise ValueError("Real GPU, weight-proved licensed model and live workflow missing")
     graph,meta,workflow_sha=_approved_graph(deployment_root,job)
     renderer=client or LocalComfyVideoClient(endpoint)
+    image_sources=bind_reference_images(graph,meta,job,renderer,workspace,vault_root)
     stage=DurableStageStore(Path(scene_folder)/"video-generator-jobs")
-    identity={"job":job,"approved_workflow_sha256":workflow_sha}
+    weights_sha=selected.get("verified_weight_set_sha256")
+    identity={"job":job,"local_endpoint":endpoint,"approved_workflow_sha256":workflow_sha,
+              "verified_weight_set_sha256":weights_sha}
     previous=stage.find("comfy_prompt",identity)
     pid=previous.get("prompt_id") if isinstance(previous,dict) else None
     if not pid:
@@ -233,12 +301,21 @@ def render_actual_generated_scene(job,scene_folder,*,deployment_root="models/cre
         _,_,current_workflow_sha=_approved_graph(deployment_root,job)
         if current_workflow_sha!=workflow_sha:
             raise ValueError("Installed original generator workflow changed during render")
+        if weights_sha is not None:
+            current=_read_manifest(deployment_root,job["model_id"])
+            if current is None or current.get("verified_weight_set_sha256")!=weights_sha:
+                raise ValueError("Verified generation weights changed during render")
+        for original,media in image_sources:
+            if sha256_file(original)!=media['asset_id']:raise ValueError('Original reference image changed during generation')
+            MediaVault(vault_root).inspect(media['asset_id'],attestation_id=media['attestation_id'])
         # This is a same-filesystem exclusive publish, not overwrite of an
         # unverified or competing model/video editor output.
         os.link(stage_path,path)
     return {"clip":path,"fps":job["fps"],"seconds":report["duration_seconds"],
             "sha256":digest,"audio":bool(report["audio_present"]),
             "workflow_sha256":workflow_sha,
+            "verified_weight_set_sha256":weights_sha,
+            "reference_image_asset_ids":[media['asset_id'] for _,media in image_sources],
             "full_original_video_and_sound_decoded":True,
             "human_cinematic_performance_approved":False,
             "generated_with_actual_self_hosted_model":client is None,

@@ -33,6 +33,7 @@ VIDEO_MODEL_CANDIDATES=(
      "capabilities":["text_to_video","image_to_video","cinematic_scene"]},
 )
 SUPPORTED_LOCAL_HOSTS=frozenset({"127.0.0.1","localhost","::1"})
+_MODEL_ID=re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,100}$")
 
 
 def safe_local_api(url):
@@ -115,8 +116,9 @@ def inspect_comfyui(endpoint,*, fetch=None):
 
 def _read_manifest(folder,model_id):
     """A deployment config is a technical capability *not* a creative script."""
+    if not isinstance(model_id,str) or not _MODEL_ID.fullmatch(model_id):return None
     path=Path(folder)/model_id/"deployment.json"
-    if not path.is_file():
+    if path.parent.is_symlink() or path.is_symlink() or not path.is_file():
         return None
     data=json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(data,dict) or data.get("model_id")!=model_id or (
@@ -134,7 +136,9 @@ def _read_manifest(folder,model_id):
     components=data.get("weight_files")
     if not isinstance(components,list) or not components:
         return None
-    required={"diffusion","vae","text_encoder"}
+    declared=data.get("required_weight_roles",["diffusion","vae","text_encoder"])
+    if not isinstance(declared,list) or not declared or any(not isinstance(x,str) or not _MODEL_ID.fullmatch(x) for x in declared) or len(set(declared))!=len(declared):return None
+    required=set(declared)
     observed=set()
     for component in components:
         if not isinstance(component,dict) or set(component)!={"role","path","sha256"}:
@@ -159,6 +163,9 @@ def _read_manifest(folder,model_id):
             return None
     if not required.issubset(observed):
         return None
+    if data['weight_sha256'] not in {x['sha256'] for x in components}:return None
+    data["verified_weight_set_sha256"]=hashlib.sha256(json.dumps(
+        {"model_id":model_id,"required_roles":sorted(required),"components":components},sort_keys=True).encode()).hexdigest()
     return data
 
 
@@ -170,9 +177,26 @@ def discover_local_generators(*,gpu_mb=None,comfy_endpoint=None,
     runtime=(inspect_comfyui(comfy_endpoint,fetch=fetch) if comfy_endpoint
              else {"service_reachable":False,"available_node_classes":[],
                    "video_inference_verified":False})
-    choices=[]
-    for spec in VIDEO_MODEL_CANDIDATES:
-        deployment=_read_manifest(deployed_root,spec["id"])
+    def available_manifest(model_id):
+        try:return _read_manifest(deployed_root,model_id)
+        except (OSError,ValueError,TypeError):return None
+    choices=[];specs=list(VIDEO_MODEL_CANDIDATES);known={s["id"] for s in specs}
+    # A host-installed, rights-checked engine does not need a source-code
+    # edit to join the artist's capability inventory. The initial research
+    # candidates remain informative when no deployment has been installed.
+    directory=Path(deployed_root)
+    if directory.is_dir():
+        for child in sorted(directory.iterdir()):
+            if child.name in known or child.is_symlink() or not child.is_dir():continue
+            manifest=available_manifest(child.name)
+            if manifest is None:continue
+            metadata=manifest.get("model_metadata")
+            if not isinstance(metadata,dict) or set(metadata)!={"repo","license_metadata","capabilities"}:continue
+            tasks=metadata["capabilities"]
+            if not all(isinstance(metadata[k],str) and metadata[k].strip() for k in ("repo","license_metadata")) or not isinstance(tasks,list) or not tasks or not all(isinstance(t,str) and _MODEL_ID.fullmatch(t) for t in tasks):continue
+            specs.append({"id":child.name,"repo":metadata["repo"],"license_metadata":metadata["license_metadata"],"capabilities":tasks,"needs_vram_mb":None})
+    for spec in specs:
+        deployment=available_manifest(spec["id"])
         workflow_nodes=deployment.get("required_comfyui_nodes",[]) if deployment else []
         nodes=runtime["available_node_classes"]
         needed=spec["needs_vram_mb"]
@@ -182,7 +206,19 @@ def discover_local_generators(*,gpu_mb=None,comfy_endpoint=None,
             minimum=deployment.get("minimum_locally_verified_vram_mb")
             if isinstance(minimum,int) and not isinstance(minimum,bool) and minimum>0:
                 needed=minimum
-        proven=bool(deployment and isinstance(needed,int) and gpu_mb>=needed and
+        workflow_valid=False;image_inputs=[]
+        if deployment:
+            try:
+                from .comfy_video_runtime import _approved_graph,checked_image_bindings
+                # Inspect installed slots without submitting a prompt or
+                # choosing creative directions. Values are discarded here.
+                inspection={'model_id':spec['id'],**{k:None for k in ('prompt','negative_prompt','width','height','frames','fps','seed')}}
+                graph,binding,_=_approved_graph(deployed_root,inspection)
+                slots,required=checked_image_bindings(graph,binding)
+                workflow_valid=all(isinstance(n,dict) and n.get('class_type') in nodes for n in graph.values())
+                image_inputs=[{'binding':name,'required':name in required} for name in sorted(slots)]
+            except (OSError,ValueError,TypeError,KeyError):pass
+        proven=bool(deployment and workflow_valid and isinstance(needed,int) and gpu_mb>=needed and
             runtime["service_reachable"] and
             isinstance(workflow_nodes,list) and workflow_nodes and
             all(isinstance(n,str) and n in nodes for n in workflow_nodes))
@@ -194,6 +230,9 @@ def discover_local_generators(*,gpu_mb=None,comfy_endpoint=None,
             "minimum_deployment_verified_gpu_mb":needed,
             "measured_local_cuda_vram_mb":gpu_mb,
             "weights_verified_locally":bool(deployment),
+            "installed_workflow_verified":workflow_valid,
+            "reference_image_inputs":image_inputs,
+            "verified_weight_set_sha256":deployment.get("verified_weight_set_sha256") if deployment else None,
             "local_workflow_nodes_verified":proven,
             "ready_for_independent_execution_trial":proven,
             "actual_movie_generated_and_ffprobed":False,
@@ -205,6 +244,20 @@ def discover_local_generators(*,gpu_mb=None,comfy_endpoint=None,
             "comfyui":runtime,"video_generation_options":choices,
             "all_video_generation_operational":False,
             "disclosure":"A provider is not a completed MP4. Real model rendering and decoder evidence are separate."}
+
+
+def generator_material_identity(folder,model_id):
+    """Actual operator deployment identity for DAG and native-job reuse."""
+    if not isinstance(model_id,str) or not _MODEL_ID.fullmatch(model_id):raise ValueError('Invalid generator identity')
+    root=Path(folder).resolve();manifest=_read_manifest(root,model_id)
+    if manifest is None:raise ValueError('Generator deployment has no current verified source identity')
+    files={}
+    for name in ('deployment.json','workflow.json','bindings.json'):
+        p=root/model_id/name
+        if p.is_symlink() or not p.is_file():raise ValueError('Generator deployment requires real non-linked '+name)
+        files[name]=hashlib.sha256(p.read_bytes()).hexdigest()
+    return {'deployment_root':str(root),'model_id':model_id,
+        'verified_weight_set_sha256':manifest['verified_weight_set_sha256'],'files':files}
 
 
 def main():

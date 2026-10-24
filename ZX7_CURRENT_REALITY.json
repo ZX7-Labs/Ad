@@ -160,5 +160,13 @@
     "last_decoded_real_renderer_work": "original Blender scene -> EXR32 passes -> ACES2 ProRes10 and layered matte + stereo sound film; native CPU motion-compensated slow-motion",
     "no_confusion_with_11_second_demo": "Earlier 11-second film used script-authored creative directions, NOT independently run AI creative Brain",
     "notes": "A CI-passing collection of actual machine capabilities is not certification of world-leading independent creative cinema."
+  },
+  "canonical_2026_10_25_body_status": {
+    "source_of_truth": "docs/ZX7_BODY_CHECKPOINT_2026-10-25.json",
+    "canonical_branch": "zx7-body/mobile-operator-20261021",
+    "actual_cgi_and_planar_rendered_locally": true,
+    "reference_image_transport_tested": true,
+    "gpu_human_inference_verified": false,
+    "production_release_approved": false
   }
 }
