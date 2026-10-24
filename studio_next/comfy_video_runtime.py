@@ -123,8 +123,10 @@ class LocalComfyVideoClient:
 
     def create(self,graph):
         receipt=self.call("POST","/prompt",{"prompt":graph})
-        if not isinstance(receipt,dict) or not isinstance(receipt.get("prompt_id"),str):
-            raise ValueError("Local ComfyUI did not accept film storyboard generation")
+        if (not isinstance(receipt,dict) or
+                not isinstance(receipt.get("prompt_id"),str) or
+                not _PROMPT_ID.fullmatch(receipt["prompt_id"])):
+            raise ValueError("Local ComfyUI did not return a path-safe generation ID")
         return receipt["prompt_id"]
 
     def wait(self,prompt_id,output_node,*,poll_seconds=3,max_seconds=1800,sleep=None):
