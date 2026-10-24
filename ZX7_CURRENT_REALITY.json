@@ -167,6 +167,12 @@
     "actual_cgi_and_planar_rendered_locally": true,
     "reference_image_transport_tested": true,
     "gpu_human_inference_verified": false,
-    "production_release_approved": false
+    "production_release_approved": false,
+    "verified_source_commit": "a06bdbe2dbec9a469bd05c12947138ae115bbc63",
+    "native_run": "https://github.com/oyzitjfzj/Ad/actions/runs/40130150118",
+    "native_tests_run": 596,
+    "native_tests_passed": 595,
+    "native_browser_only_skip": 1,
+    "actual_installed_package_cgi_and_planar_media_verified": true
   }
 }

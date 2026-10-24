@@ -158,3 +158,24 @@ Those require additional real runtime integration and physical acceptance.
 Primary technical references: [Blender Principled BSDF](https://docs.blender.org/manual/en/4.5/render/shader_nodes/shader/principled.html),
 [OpenCV homography tutorial](https://docs.opencv.org/4.x/d1/de0/tutorial_py_feature_homography.html),
 [ComfyUI native upload implementation](https://github.com/comfyanonymous/ComfyUI/blob/master/server.py).
+
+
+## Exact accepted execution evidence
+
+Application change: `2ed97ef169eefcacd77aa4054bc58ff1345bc957`. Integrated proof
+source: `a06bdbe2dbec9a469bd05c12947138ae115bbc63` (workflow/document changes;
+application module bytes unchanged).
+
+| Verification | Observed result | Run |
+|---|---|---|
+| Complete native suite, desktop, recovery, installed wheel and old/new native media | 596 run; 595 passed; one separate browser-only skip; zero errors/failures | [40130150118](https://github.com/oyzitjfzj/Ad/actions/runs/40130150118) |
+| Installed Blender 4.5.15 CGI and measured occluded planar insertion | Both physical 24-frame movies produced; complete remote bytes decoded again after download; original audio PCM identical | [40130150118](https://github.com/oyzitjfzj/Ad/actions/runs/40130150118) |
+| Actual Chromium mobile acceptance on same application code | Succeeded | [40129388875](https://github.com/oyzitjfzj/Ad/actions/runs/40129388875) |
+| Source-custody / real OTIO / minimal security | All succeeded; overlap the full suite | [custody](https://github.com/oyzitjfzj/Ad/actions/runs/40129388794), [OTIO](https://github.com/oyzitjfzj/Ad/actions/runs/40129388805), [security](https://github.com/oyzitjfzj/Ad/actions/runs/40129388834) |
+
+[Actual release artifact](https://github.com/oyzitjfzj/Ad/actions/runs/40130150118/artifacts/12574054905),
+SHA256 `55ffc414d6e44d4aae6c8e658302821b5b768d66a52920f22bd8ca7dced042e9`.
+CGI movie SHA256 `644458f3362752476b8dff6317bc61dc83093d44816db42dc5ff6c9299444b9c`;
+tracked movie SHA256 `ba5aaf38fb30c519e76cdf6ca4e7ab740499b0f9355ccab1304266bc58291f6c`.
+No real human-performance model inference or independent aesthetic approval is
+implied by these successful technical checks.

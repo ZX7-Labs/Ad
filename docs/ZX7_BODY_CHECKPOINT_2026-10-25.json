@@ -33,43 +33,64 @@
     "notes": "Optional native/desktop/browser cases absent locally; matching GitHub native runner must exercise them."
   },
   "remote_ci": {
-    "code_commit": "2ed97ef169eefcacd77aa4054bc58ff1345bc957",
-    "status": "six matching checks succeeded; additional installed CGI runner still in progress",
+    "code_commit": "a06bdbe2dbec9a469bd05c12947138ae115bbc63",
+    "status": "complete matching integrated native acceptance succeeded; browser/source/OTIO/security also succeeded on identical application code",
     "native": {
-      "run_id": 40129388756,
+      "run_id": 40130150118,
       "conclusion": "success",
+      "source_commit": "a06bdbe2dbec9a469bd05c12947138ae115bbc63",
       "tests_run": 596,
       "tests_passed": 595,
       "tests_skipped": 1,
+      "tests_failed": 0,
+      "tests_errors": 0,
+      "skip_reason": "Separate actual Chromium acceptance",
       "separately_installed_wheel_native_render": "passed",
-      "artifact_id": 12575016376,
-      "artifact_sha256": "28779ba11331ff0a21dee3f42477af74af581ba8e3f5f8ba88063a8a88333add"
+      "artifact_id": 12574054905,
+      "artifact_sha256": "55ffc414d6e44d4aae6c8e658302821b5b768d66a52920f22bd8ca7dced042e9",
+      "downloaded_actual_cgi_and_tracking_movies_fully_decoded_again": true
     },
     "actual_mobile_browser": {
       "run_id": 40129388875,
-      "conclusion": "success"
+      "conclusion": "success",
+      "source_commit": "2ed97ef169eefcacd77aa4054bc58ff1345bc957"
     },
     "source_custody": {
       "run_id": 40129388794,
-      "conclusion": "success"
+      "conclusion": "success",
+      "source_commit": "2ed97ef169eefcacd77aa4054bc58ff1345bc957"
     },
     "otio": {
       "run_id": 40129388805,
-      "conclusion": "success"
+      "conclusion": "success",
+      "source_commit": "2ed97ef169eefcacd77aa4054bc58ff1345bc957"
     },
     "security": {
       "run_id": 40129388834,
-      "conclusion": "success"
+      "conclusion": "success",
+      "source_commit": "2ed97ef169eefcacd77aa4054bc58ff1345bc957"
     },
     "source_inventory": {
-      "run_id": 40129388748,
+      "run_id": 40130150061,
       "conclusion": "success"
     },
     "installed_cgi_vfx": {
-      "run_id": 40129388910,
-      "status": "in_progress",
-      "conclusion": null
-    }
+      "run_id": 40130150118,
+      "conclusion": "success",
+      "source_commit": "a06bdbe2dbec9a469bd05c12947138ae115bbc63",
+      "cgi_sha256": "644458f3362752476b8dff6317bc61dc83093d44816db42dc5ff6c9299444b9c",
+      "tracked_vfx_sha256": "ba5aaf38fb30c519e76cdf6ca4e7ab740499b0f9355ccab1304266bc58291f6c",
+      "actual_cgi_frames": 24,
+      "actual_tracked_frames": 24,
+      "original_audio_decoded_pcm_identical": true,
+      "human_acting_generation_proven": false,
+      "general_3d_camera_tracking_proven": false,
+      "autonomous_creative_brain_used": false,
+      "proof_scope": "Actual native CGI and planar VFX execution, not world-class artistic approval"
+    },
+    "application_code_commit": "2ed97ef169eefcacd77aa4054bc58ff1345bc957",
+    "application_module_bytes_unchanged_by_workflow_consolidation": true,
+    "focused_checks_overlap_full_suite": true
   },
   "still_unverified": [
     "actual GPU-conditioned human video inference",
@@ -79,7 +100,7 @@
   ],
   "keep_existing_pr_draft": true,
   "merge_main_authorized": false,
-  "verified_code_commit": "2ed97ef169eefcacd77aa4054bc58ff1345bc957",
+  "verified_code_commit": "a06bdbe2dbec9a469bd05c12947138ae115bbc63",
   "local_installed_wheel_native_proof": {
     "module_bytes_match_published_source": true,
     "cgi_sha256": "d5c58729a37396c1017478b42ec7bd75472990f684d916c741c6c710a6800943",
