@@ -61,6 +61,8 @@ class DurableStageStore:
 
     def save(self, name, immutable_input, model_output):
         path=self._path(name,immutable_input)
+        if self.root.is_symlink() or path.is_symlink():
+            raise ValueError("Model checkpoint output cannot be a symbolic link")
         self.root.mkdir(parents=True,exist_ok=True)
         record={"schema":1,"stage":name,
                 "input_sha256":fingerprint(immutable_input),
