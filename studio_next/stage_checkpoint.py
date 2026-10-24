@@ -83,6 +83,12 @@ class DurableStageStore:
                         or path.read_text(encoding="utf-8")!=blob):
                     raise ValueError(
                         "Another model stage output already owns these original inputs")
+            if hasattr(os,"O_DIRECTORY"):
+                directory=os.open(self.root,os.O_RDONLY|os.O_DIRECTORY)
+                try:
+                    os.fsync(directory)
+                finally:
+                    os.close(directory)
         finally:
             if os.path.exists(tmp):
                 os.unlink(tmp)
