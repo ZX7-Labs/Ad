@@ -80,6 +80,23 @@ class IndependentLocalCreativeServiceTests(unittest.TestCase):
                 self.assertEqual(owner.inspect("film-a")["attempts"],2)
             finally:owner.close()
 
+    def test_studio_host_denies_linked_owner_workspaces(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder)
+            approved=root/"real-studio"
+            approved.mkdir()
+            linked=root/"external"
+            linked.symlink_to(approved,target_is_directory=True)
+            with self.assertRaisesRegex(ValueError,"filesystem link"):
+                LocalBodyCoordinator(linked,execute=lambda p,w:{"status":"blocked"})
+            for name in ("body-service.lock","body-jobs.sqlite3","projects"):
+                with self.subTest(name=name):
+                    alias=approved/name
+                    alias.symlink_to(root/"other-artist-files")
+                    with self.assertRaisesRegex(ValueError,"filesystem link"):
+                        LocalBodyCoordinator(approved,execute=lambda p,w:{"status":"blocked"})
+                    alias.unlink()
+
     def test_one_process_owns_same_original_workspace_at_a_time(self):
         with tempfile.TemporaryDirectory() as root:
             first=LocalBodyCoordinator(root,execute=lambda ir,path:{
