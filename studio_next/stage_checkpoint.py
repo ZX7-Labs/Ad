@@ -55,7 +55,7 @@ class DurableStageStore:
         return output
 
     def save(self, name, immutable_input, model_output):
-        path=self._path(name)
+        path=self._path(name,immutable_input)
         self.root.mkdir(parents=True,exist_ok=True)
         record={"schema":1,"stage":name,
                 "input_sha256":fingerprint(immutable_input),
