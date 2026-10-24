@@ -237,5 +237,6 @@ def render_actual_generated_scene(job,scene_folder,*,deployment_root="models/cre
             "workflow_sha256":workflow_sha,
             "full_original_video_and_sound_decoded":True,
             "human_cinematic_performance_approved":False,
-            "generated_with_actual_self_hosted_model":True}
+            "generated_with_actual_self_hosted_model":client is None,
+            "original_model_inference_independently_certified":False}
 
