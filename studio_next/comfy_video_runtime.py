@@ -94,7 +94,7 @@ def _approved_graph(config_root, job):
         ref["inputs"][n["key"]]=job[field]
     if not isinstance(desc.get("output_node"),str) or desc["output_node"] not in graph:
         raise ValueError("Model's video Save node is unregistered")
-    return graph,desc,hashlib.sha256(proof.read_bytes()+binds.read_bytes()).hexdigest()
+    return graph,desc,hashlib.sha256(graph_bytes+bindings_bytes).hexdigest()
 
 
 class LocalComfyVideoClient:
