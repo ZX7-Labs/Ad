@@ -66,8 +66,12 @@ def _approved_graph(config_root, job):
         raise ValueError("Locally installed video model configuration not present")
     proof=target/"workflow.json"
     binds=target/"bindings.json"
+    if proof.is_symlink() or binds.is_symlink():
+        raise ValueError("Owner-installed video workflow cannot be a symbolic link")
     if not proof.is_file() or not binds.is_file():
         raise ValueError("Real ComfyUI API workflow and its model bindings required")
+    if proof.stat().st_size>8*1024*1024 or binds.stat().st_size>256*1024:
+        raise ValueError("Owner-installed video workflow exceeds bounded source size")
     graph_bytes=proof.read_bytes()
     graph=json.loads(graph_bytes)
     bindings_bytes=binds.read_bytes()
