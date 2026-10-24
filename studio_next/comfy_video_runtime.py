@@ -224,6 +224,11 @@ def render_actual_generated_scene(job,scene_folder,*,deployment_root="models/cre
             raise ValueError("Original returned GPU video bytes changed during decode")
         with stage_path.open("rb") as completed:
             os.fsync(completed.fileno())
+        # Re-evaluate the installed native workflow after its potentially
+        # long GPU run. A changed original source does not earn a verified film.
+        _,_,current_workflow_sha=_approved_graph(deployment_root,job)
+        if current_workflow_sha!=workflow_sha:
+            raise ValueError("Installed original generator workflow changed during render")
         # This is a same-filesystem exclusive publish, not overwrite of an
         # unverified or competing model/video editor output.
         os.link(stage_path,path)
