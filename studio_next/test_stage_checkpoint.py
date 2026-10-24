@@ -61,6 +61,23 @@ class DurableArtStageTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,"digest"):
                 state.find("s1",{"scene":1})
 
+    def test_foreign_model_checkpoint_symlink_is_never_loaded_or_modified(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder)
+            state=DurableStageStore(root/"owner-artifacts")
+            input_data={"original":"one private creator"}
+            exposed=state._path("scene_007",input_data)
+            state.root.mkdir()
+            other=root/"independent-editor.json"
+            other.write_bytes(b"do-not-change-existing-editor-data")
+            exposed.symlink_to(other)
+            with self.assertRaisesRegex(ValueError,"symbolic link"):
+                state.find("scene_007",input_data)
+            with self.assertRaisesRegex(ValueError,"symbolic link"):
+                state.save("scene_007",input_data,{"shot":"untrusted"})
+            self.assertEqual(other.read_bytes(),
+                             b"do-not-change-existing-editor-data")
+
     def test_cannot_escape_checkpoint_directory(self):
         with tempfile.TemporaryDirectory() as root:
             state=DurableStageStore(root)
