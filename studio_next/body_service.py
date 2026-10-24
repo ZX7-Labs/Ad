@@ -107,6 +107,8 @@ class LocalBodyCoordinator:
         self._reconcile_orphaned_work_on_exclusive_startup()
 
     def _connect(self):
+        if self.database.is_symlink():
+            raise ValueError("Original host production database was replaced by a link")
         return connect_durable_database(self.database)
 
     def _reconcile_orphaned_work_on_exclusive_startup(self):
