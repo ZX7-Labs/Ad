@@ -132,8 +132,9 @@ class LocalComfyVideoClient:
     def wait(self,prompt_id,output_node,*,poll_seconds=3,max_seconds=1800,sleep=None):
         sleeper=sleep or time.sleep
         deadline=time.monotonic()+max_seconds
-        if not isinstance(prompt_id,str) or not prompt_id:
-            raise ValueError("Only an actual submitted ComfyUI job can be waited on")
+        if (not isinstance(prompt_id,str) or
+                not _PROMPT_ID.fullmatch(prompt_id)):
+            raise ValueError("Original generation ID must be a bounded path-safe token")
         while time.monotonic()<deadline:
             history=self.call("GET","/history/"+prompt_id)
             if isinstance(history,dict) and prompt_id in history:
