@@ -1,7 +1,7 @@
 import importlib.util
 import unittest
-from .body_animation import curve_value, validate_curve
-from .body_pixel_math import BASE_VARIABLES, PixelExpression
+from studio_next.body_animation import curve_value, validate_curve
+from studio_next.body_pixel_math import BASE_VARIABLES, PixelExpression
 
 
 class ArtistControlMathTests(unittest.TestCase):

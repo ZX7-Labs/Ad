@@ -29,6 +29,7 @@ _SOURCE_FIELDS={
     "body.film_thumbnail":("source_film",),
     "body.asset_vault":("source",),
     "body.composite_mix":("plan",),
+    "body.visual_graph":("plan",),
     "body.film_finish":("plan",),
     "body.color_lut":("plan",),
     "body.full_decode":("source",),

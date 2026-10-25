@@ -10,6 +10,7 @@ import json
 import math
 import re
 from .blender_scene import _MATERIAL_SCALARS,_CLOTH_FLOATS,_CLOTH_CONTACT
+from .body_visual_contract import visual_graph_contract
 
 
 def obj(required, optional=None):
@@ -64,6 +65,7 @@ _SEQUENCE = obj({"frame_rate": RATE, "frame_size": obj({"width": SIZE, "height":
                        "end_frame": SIZE, "audio": SOUND}), minItems=1, maxItems=128)})
 
 _SCHEMAS = {
+    "body.visual_graph": ("plan", visual_graph_contract()),
     "body.composite_mix": ("plan", obj({
         "canvas": obj({"width": SIZE, "height": SIZE, "fps": SIZE,
                        "duration": POSITIVE, "background": COLOR}, {
@@ -307,6 +309,9 @@ def validate_document(tool_id, document,input_name=None):
     if contract is None:
         return False
     _validate(document, contract["json_schema"], "")
+    if tool_id == "body.visual_graph":
+        from .body_visual_graph import validate_graph
+        validate_graph(document)
     return True
 
 

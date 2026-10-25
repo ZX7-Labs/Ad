@@ -28,6 +28,7 @@ from .body_sequence_otio import export_verified_sequence_otio,import_verified_se
 from .creative_asset_ops import rasterize_original_svg,extract_director_selected_frame
 from .native_body_engines import render_original_blender,render_original_motion
 from .body_cgi import render_cgi_plan
+from .body_visual_render import render_visual_graph
 from .body_planar import render_planar_insert
 from .delivery_audit import audit_delivered_movie,_probe_details
 from .durable_graph import DurableFilmGraph,execute_durable_film_graph
@@ -156,6 +157,8 @@ def _trusted_body_revision(tool_id):
         "body.film_thumbnail":["creative_asset_ops.py","delivery_audit.py"],
         "body.asset_vault":["media_vault.py"],
         "body.composite_mix":["composite_mix.py","media_vault.py","production_qc.py"],
+        "body.visual_graph":["body_visual_graph.py","body_visual_render.py","body_visual_contract.py",
+                             "body_pixel_math.py","body_animation.py","composite_mix.py","media_vault.py","production_qc.py"],
         "body.film_finish":["film_finishing.py","media_vault.py","composite_mix.py","production_qc.py"],
         "body.color_lut":["body_color_pipeline.py","media_vault.py","delivery_audit.py","composite_mix.py","production_qc.py"],
         "body.full_decode":["production_qc.py","delivery_audit.py"],
@@ -192,6 +195,7 @@ def _trusted_body_revision(tool_id):
         "body.film_thumbnail":["ffmpeg","ffprobe"],
         "body.asset_vault":[],
         "body.composite_mix":["ffmpeg","ffprobe"],
+        "body.visual_graph":["ffmpeg","ffprobe"],
         "body.film_finish":["ffmpeg","ffprobe"],
         "body.color_lut":["ffmpeg","ffprobe"],
         "body.full_decode":["ffmpeg","ffprobe"],
@@ -229,6 +233,7 @@ def _trusted_body_revision(tool_id):
         h.update(json.dumps({"command":cmd,"binary_path":str(file),
               "size":stat.st_size,"mtime_ns":stat.st_mtime_ns},sort_keys=True).encode())
     runtime_libraries={"body.planar_insert":("opencv-python-headless","numpy"),
+                       "body.visual_graph":("numpy","Pillow"),
                        "body.motion2d":("numpy","Pillow","fonttools","supertonic"),
                        "body.otio":("opentimelineio",),
                        "body.otio_owned_export":("opentimelineio",),
@@ -304,6 +309,12 @@ def body_catalog(workspace,*,vault_root=None):
     def inspect(inputs):
         path=_path_within(root,inputs["source"],exists=True)
         return _witness(path)
+
+    def render_visual(inputs):
+        plan=_path_within(root,inputs["plan"],exists=True)
+        target=_body_output(root,inputs["out"],allowed=(".png",".mov"))
+        return _commit_actual_body_output(target,lambda staged:
+            render_visual_graph(plan,root,vault.root,staged))
 
     def inspect_voices(inputs):
         from .voice_contract import voice_inventory
@@ -728,6 +739,11 @@ def body_catalog(workspace,*,vault_root=None):
         "Actual physical rights-verified layered FFmpeg compositor from model-owned canvas",
         "write",bool(shutil.which("ffmpeg") and shutil.which("ffprobe")),
         ["plan","out"],composite)
+    add("body.visual_graph","editable native photo, motion graphic and VFX pixel graph",
+        "Authored mathematical pixels, masks, original-frame curves, inverse spatial sampling, convolution and alpha compositing; "
+        "float32 linear-sRGB internals, sealed image/video sources, exact 8-bit RGBA PNG/MOV export; separate editable audio",
+        "write",bool(video_io and all(importlib.util.find_spec(name) is not None for name in ("numpy","PIL"))),
+        ["plan","out"],render_visual)
     add("body.exr_checkpoint","durable original-frame 32float VFX render and exact verified resume",
         "Original Blender Cycles CPU shot with per-frame EXR hash+decoder checkpoints; never a GPU farm",
         "write",bool(shutil.which("blender") and
@@ -853,7 +869,7 @@ def _require_authentic_generated_media_lineage(film_ir):
     # A legacy rights label, raw SVG, or extracted image cannot manufacture
     # generated-original rights. Only trusted originating renderers or editors
     # which themselves require MediaVault source custody may be archived.
-    trusted_producers={"body.blender3d","body.motion2d",
+    trusted_producers={"body.blender3d","body.motion2d","body.visual_graph",
                        "body.exr_passes","body.exr_checkpoint",
                        "body.aces2_movie",
                        "body.render_edit_owned",
