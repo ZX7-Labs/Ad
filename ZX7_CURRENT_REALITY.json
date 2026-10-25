@@ -196,8 +196,15 @@
     "actual_cloth_morph_and_liquid_verified_locally": true,
     "installed_package_verified_locally": true,
     "liquid_minimum_blender_version": "4.5",
-    "remote_matching_ci": "pending",
+    "remote_matching_ci": "succeeded",
     "whole_studio_release_complete": false,
-    "live_creative_model_inference": false
+    "live_creative_model_inference": false,
+    "verified_source_commit": "c769f4d1ce7d4e9b328154d80eee86fe8fcd3285",
+    "native_run": 40170795068,
+    "native_tests_run": 620,
+    "native_tests_passed": 619,
+    "native_browser_only_skip": 1,
+    "installed_native_cloth_morph_liquid_verified": true,
+    "exact_geometry_and_bounded_rgb_agreement_verified": true
   }
 }
