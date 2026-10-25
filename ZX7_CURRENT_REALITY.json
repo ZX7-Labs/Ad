@@ -180,8 +180,14 @@
     "public_tool": "body.cgi_shot",
     "actual_native_physics_and_render_controls_verified_locally": true,
     "separately_installed_package_verified_locally": true,
-    "remote_matching_source_ci": "pending",
+    "remote_matching_source_ci": "succeeded",
     "production_release_approved": false,
-    "live_creative_model_inference": false
+    "live_creative_model_inference": false,
+    "verified_source_commit": "6ebad3ac077cec8e1da80ef745f7867405508cef",
+    "native_run": 40165711237,
+    "native_tests_run": 606,
+    "native_tests_passed": 605,
+    "native_tests_skipped": 1,
+    "actual_installed_physical_cgi_controls_verified": true
   }
 }
