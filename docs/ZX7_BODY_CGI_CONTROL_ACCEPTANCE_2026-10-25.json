@@ -4,13 +4,13 @@
   "based_on_commit": "c046b7dccc922baa3d96b97861b9464ca4508f95",
   "implementation_document": "docs/BODY_CGI_CONTROLS_2026-10-25.md",
   "local_verification": {
-    "tests_run": 604,
-    "tests_passed": 562,
+    "tests_run": 606,
+    "tests_passed": 564,
     "tests_skipped": 42,
     "tests_failed": 0,
     "tests_errors": 0,
-    "log_sha256": "91319c62f277b6ebd16cf590f7d3e53bda1c5cedaeb20d3525da34a9a7cee5df",
-    "native_blender_4_5_15_contracts_and_pixels": "8 tests passed",
+    "log_sha256": "622ac77c4ba115a7d6ab92fe43ad23b9556716e182be5aae8f08aa4a18b6658f",
+    "native_blender_4_5_15_contracts_and_pixels": "final full suite includes all ten CGI control tests",
     "native_blender_4_0_2_controls_acceptance": "1 test passed",
     "separately_installed_wheel_native_proof": {
       "all_checks_passed": true,
@@ -27,6 +27,19 @@
       "movie_sha256": "e111ca2bf61ca8e0da257394ff3825bcb593c6da8e48798d5adca61188adcb28",
       "live_creative_model_used": false,
       "premium_artist_approval": false
+    },
+    "installed_production_module_bytes_match_checkout": true,
+    "lease_regression": "5 lease tests passed; original-expiry blocking repeated 12 times with controlled clock and real SQLite",
+    "advanced_unblurred_exr": {
+      "actual_whole_and_chunked_render": true,
+      "frame_6_vector_nonzero_components": {
+        "ViewLayer.Vector.W": 148,
+        "ViewLayer.Vector.X": 148,
+        "ViewLayer.Vector.Y": 148,
+        "ViewLayer.Vector.Z": 148
+      },
+      "whole_sha256": "bbf0659e51aecfe694f87b25f346f5963c8e4d2dd8cc78c725aa32f275908480",
+      "chunked_sha256": "9653ca5d07c0ca440a713d06082cc52a6f8e283cf6b2420730929912d2d45b86"
     }
   },
   "remote_ci": {
@@ -48,5 +61,13 @@
     "full 3D camera solve and broader compositing scope",
     "verified local GPU and real model-generated actor/video footage",
     "independent professional creative quality and varied full commissions"
-  ]
+  ],
+  "production_code_commit": "90c6a685064fec6ec6c77bb838561fa3aa499d34",
+  "resolved_ci_failure": {
+    "run_id": 40165480450,
+    "source_commit": "90c6a685064fec6ec6c77bb838561fa3aa499d34",
+    "cause": "An existing lease test assumed a 160ms lease survives free-runner scheduling after a fixed sleep.",
+    "correction": "Observe real successful SQLite renewals with a controlled clock, then verify competing ownership is blocked; observe substitution checks with events. No lease production code or ownership assertion removed.",
+    "rerun_status": "pending updated test commit"
+  }
 }

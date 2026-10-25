@@ -15,8 +15,8 @@ from studio_next.registry import ToolCatalog
 
 
 class PhysicalLongRenderLeaseTests(unittest.TestCase):
-    def setup_store(self,root,seconds=.16):
-        store=DurableFilmGraph(Path(root)/"production.sqlite3")
+    def setup_store(self,root,seconds=.16,*,clock=None):
+        store=DurableFilmGraph(Path(root)/"production.sqlite3",clock=clock)
         status,_,owner=store.start_or_reuse("film","shot_a","source-fingerprint",
             trusted_idempotent=True,existing_result_verifier=lambda output:True,
             lease_seconds=seconds)
@@ -25,24 +25,41 @@ class PhysicalLongRenderLeaseTests(unittest.TestCase):
 
     def test_rerun_blocked_after_original_fixed_lease_duration(self):
         with tempfile.TemporaryDirectory() as root:
-            store,owner=self.setup_store(root)
+            # Real SQLite custody with a controlled clock. A free CI runner
+            # may preempt both threads for longer than this tiny test lease;
+            # wall time after sleep cannot distinguish that from a lost pulse.
+            now=[1000.0];clock_lock=threading.RLock()
+            store,owner=self.setup_store(root,clock=lambda:now[0])
+            renewed=threading.Event();pulses=[]
+            actual_renew=store.renew_running_lease
+            def observed_renew(*args,**kwargs):
+                with clock_lock:
+                    now[0]+=.05
+                    success=actual_renew(*args,**kwargs)
+                    if success:
+                        pulses.append(now[0])
+                        if len(pulses)>=5:renewed.set()
+                    return success
             heart=RunningStageHeartbeat(store,"film","shot_a","source-fingerprint",
                 owner,lease_seconds=.16)
-            heart.start()
-            try:
-                time.sleep(.4) # original 160ms lease would have expired twice
-                with self.assertRaisesRegex(RecoveryBlocked,"active scene lease"):
-                    store.start_or_reuse("film","shot_a","source-fingerprint",
-                        trusted_idempotent=True,existing_result_verifier=lambda _:True,
-                        lease_seconds=.16)
-                heart.stop()
-                store.complete("film","shot_a","source-fingerprint",owner,
-                               {"asset":"genuinely-finished-physical-media"})
-                self.assertEqual(store.inspect("film")[0]["status"],"completed")
-                self.assertFalse(store.renew_running_lease(
-                    "film","shot_a","source-fingerprint",owner,.16))
-            finally:
-                heart.abort()
+            with patch.object(store,"renew_running_lease",side_effect=observed_renew):
+                heart.start()
+                try:
+                    self.assertTrue(renewed.wait(5),"No repeated successful real SQLite renewals")
+                    with clock_lock:
+                        self.assertGreater(now[0],1000.16)
+                        with self.assertRaisesRegex(RecoveryBlocked,"active scene lease"):
+                            store.start_or_reuse("film","shot_a","source-fingerprint",
+                                trusted_idempotent=True,existing_result_verifier=lambda _:True,
+                                lease_seconds=.16)
+                    heart.stop()
+                    store.complete("film","shot_a","source-fingerprint",owner,
+                                   {"asset":"genuinely-finished-physical-media"})
+                    self.assertEqual(store.inspect("film")[0]["status"],"completed")
+                    self.assertFalse(store.renew_running_lease(
+                        "film","shot_a","source-fingerprint",owner,.16))
+                finally:
+                    heart.abort()
 
     def test_crash_lost_heartbeat_allows_safe_idempotent_recovery(self):
         with tempfile.TemporaryDirectory() as root:
@@ -70,14 +87,21 @@ class PhysicalLongRenderLeaseTests(unittest.TestCase):
             store,owner=self.setup_store(root,seconds=.14)
             heart=RunningStageHeartbeat(store,"film","shot_a","source-fingerprint",
                 owner,lease_seconds=.14)
-            heart.start()
-            # Simulate administrative cancellation/replacement: original
-            # thread must never take back ownership of a different attempt.
-            with store._connect() as db:
-                db.execute("UPDATE node_results SET owner='other-worker',lease_until=0")
-            time.sleep(.09)
-            with self.assertRaisesRegex(RecoveryBlocked,"lost its durable lease"):
-                heart.stop()
+            observed_loss=threading.Event();actual_renew=store.renew_running_lease
+            def observe_loss(*args,**kwargs):
+                success=actual_renew(*args,**kwargs)
+                if not success:observed_loss.set()
+                return success
+            with patch.object(store,"renew_running_lease",side_effect=observe_loss):
+                heart.start()
+                try:
+                    # Original thread must never reclaim another attempt.
+                    with store._connect() as db:
+                        db.execute("UPDATE node_results SET owner='other-worker',lease_until=0")
+                    self.assertTrue(observed_loss.wait(5),"Owner loss was never checked")
+                    with self.assertRaisesRegex(RecoveryBlocked,"lost its durable lease"):
+                        heart.stop()
+                finally:heart.abort()
             self.assertFalse(store.renew_running_lease(
                 "film","shot_a","source-fingerprint",owner,.14))
 

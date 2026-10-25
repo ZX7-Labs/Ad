@@ -114,3 +114,5 @@ acceptance is separate from skilled human evaluation of a finished film.
 No local creative LLM/VLM, text-to-video model, voice inference or independent
 professional film-quality comparison is claimed for this engineering change.
 The universal studio remains incomplete; keep the existing PR draft/unmerged.
+
+The initial remote minimal-dependency job exposed a pre-existing 160ms lease-test scheduling race. Its regression now observes real SQLite renewals against a controlled clock and uses signals for owner-loss observation. Production lease behavior and the duplicate-render rejection assertion are unchanged. Matching rerun outcomes are in the checkpoint.
