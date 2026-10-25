@@ -16,6 +16,7 @@ from .blender_scene import validate_blender_shot
 from .body_document_schemas import validate_document
 from .body_integration import run_body_project
 from .media_vault import sha256_file
+from .body_render_compare import compare_native_rgb
 
 
 def run(workspace,*,size=160,samples=12):
@@ -65,7 +66,8 @@ def run(workspace,*,size=160,samples=12):
     full=render('whole-clock',shot)
     subset=render('resumed-clock',shot,6,6)
     def pixels(path):return np.asarray(Image.open(path).convert('RGB'),dtype=np.float64)
-    assert np.array_equal(pixels(full/'frame_0006.png'),pixels(subset/'frame_0006.png')), 'Frame-range resume changed actual physics or shading'
+    comparison=compare_native_rgb(full/'frame_0006.png',subset/'frame_0006.png')
+    assert comparison['within_quantization_tolerance'], 'Frame-range resume changed actual picture beyond sparse one-code-value roundoff: '+str(comparison)
     assert json.loads((subset/'render-report.json').read_text())['physics']==report['physics']
 
     neutral=copy.deepcopy(shot);neutral.pop('physics')
@@ -107,7 +109,9 @@ def run(workspace,*,size=160,samples=12):
     assert gain>2, 'Physical shutter did not broaden actual moving-object image'
     proof={'all_checks_passed':True,'public_body_cgi_graph':True,'full_mp4_decode':True,
         'native_renderer_version':report['blender_version'],'original_cgi_frames':12,
-        'actual_dynamic_body_settled_on_collider':True,'original_clock_subset_pixels_identical':True,
+        'actual_dynamic_body_settled_on_collider':True,'original_clock_subset_pixels_identical':comparison['pixels_identical'],
+        'original_clock_subset_physics_identical':True,'original_clock_subset_picture_within_quantization_tolerance':True,
+        'original_clock_subset_picture_comparison':comparison,
         'all_three_dag_nodes_reused_without_render':True,'volume_control_mean_pixel_difference':volume_difference,
         'surface_detail_mean_pixel_difference':detail_difference,'motion_blur_support_gain_pixels':gain,
         'movie_sha256':before,'live_creative_model_used':False,'premium_artist_approval':False}

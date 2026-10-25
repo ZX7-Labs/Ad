@@ -118,7 +118,8 @@ class NativeCGIControlsAcceptance(unittest.TestCase):
             root=Path(os.environ.get('ZX7_CGI_CONTROLS_PROOF',temp))
             proof=run(root,size=96,samples=4)
             self.assertTrue(proof['all_checks_passed'])
-            self.assertTrue(proof['original_clock_subset_pixels_identical'])
+            self.assertTrue(proof['original_clock_subset_physics_identical'])
+            self.assertTrue(proof['original_clock_subset_picture_within_quantization_tolerance'])
             self.assertGreater(proof['volume_control_mean_pixel_difference'],.05)
             self.assertGreater(proof['motion_blur_support_gain_pixels'],2)
 

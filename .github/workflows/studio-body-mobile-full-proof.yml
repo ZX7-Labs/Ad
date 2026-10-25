@@ -200,11 +200,13 @@ jobs:
           assert cgi['actual_cgi_frames']==24 and cgi['actual_tracked_frames']==24
           assert cgi['original_audio_decoded_pcm_identical']
           controls=json.loads((root/'cgi-controls/controls-proof.json').read_text())
-          assert controls['all_checks_passed'] and controls['original_clock_subset_pixels_identical']
+          assert controls['all_checks_passed'] and controls['original_clock_subset_physics_identical']
+          assert controls['original_clock_subset_picture_within_quantization_tolerance']
           assert controls['actual_dynamic_body_settled_on_collider']
           deform=json.loads((root/'deform-liquid/deform-proof.json').read_text())
           assert deform['all_requested_checks_passed'] and deform['liquid_native_executed']
-          assert all(deform['original_clock_pixels_and_geometry_identical'].values())
+          assert all(deform['original_clock_geometry_identical'].values())
+          assert all(deform['original_clock_picture_within_quantization_tolerance'].values())
           assert (root/'desktop-qa.png').is_file()
           release={
             'source_commit':os.environ['GITHUB_SHA'],

@@ -91,8 +91,11 @@ The real native proof checks:
   three nodes reused on retry without changing movie bytes or modification time.
 - A sphere falling from z=2 and settling on an actual floor collider near z=0.4.
 - The same original frame rendered in a full sequence and a cold frame subset:
-  decoded RGB pixels and solver trajectories must match exactly. PNG container
-  metadata such as render time is not compared as picture content.
+  native solver trajectories (including hashes of every baked pose matrix)
+  must match exactly. RGB may differ by at most one 8-bit code value in no
+  more than 0.1% of pixels; both the measured difference and whether pixels
+  are truly identical are recorded. PNG container metadata such as render
+  time is not compared as picture content.
 - Separate renders with changed volume density and surface detail must have
   measured pixel differences.
 - An independent self-lit moving-object experiment must have a wider rendered

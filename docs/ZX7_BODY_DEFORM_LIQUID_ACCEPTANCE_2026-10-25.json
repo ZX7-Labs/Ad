@@ -11,12 +11,12 @@
     "typed model-facing scene controls; no arbitrary simulation code"
   ],
   "local_verification": {
-    "tests_run": 614,
-    "tests_passed": 572,
+    "tests_run": 620,
+    "tests_passed": 578,
     "tests_skipped": 42,
     "tests_failed": 0,
     "tests_errors": 0,
-    "log_sha256": "58f9415ac23127070cb59390c9173befe9615b4e986a18687648d0ad2edfe11b",
+    "log_sha256": "fa00a9bf14208177b9704442385746c63a7432b755910eff2b0141413bc09cb6",
     "blender_4_0_cloth_morph_contract_tests": 8,
     "blender_4_0_liquid": "reproduced native abort, then verified graceful rejection before native initialization",
     "separately_installed_production_module_bytes_match": true,
@@ -59,7 +59,110 @@
         "ViewLayer.Vector.Y": 478,
         "ViewLayer.Vector.Z": 478
       }
-    }
+    },
+    "final_installed_production_module_bytes_match": true,
+    "public_model_interface": {
+      "installed_model_facing_controls_discoverable": true,
+      "all_three_typed_plans_authored_through_live_signal": {
+        "cloth_drape_shot": "bede3fcebb1f35bc749cfed25e5083328f918c531434fb6e57a8586301771392",
+        "mesh_morph_shot": "1c8c74a037f8fbcb10a0e3ccedcc519e3f5ffcff2991a1f5d2ac0cefaee9dfb5",
+        "liquid_impact_shot": "71bc9e9d702c96c68b472d20c68f6b985f973e0588adffddfe7e050c13ee39c7"
+      },
+      "authoring_does_not_claim_rendering": true,
+      "live_creative_model_inference": false
+    },
+    "unsupported_liquid_public_api": {
+      "status": "blocked",
+      "project_key": "5f6957cf66804df12ae7eecc2440681944743d89997a2bc53f90338d72e1bc3a",
+      "completed": [],
+      "reused": [],
+      "trace": [],
+      "errors": [
+        "Production step liquid: RuntimeError: Native liquid simulation requires a verified Blender 4.5 or newer runtime"
+      ],
+      "video_proven": false,
+      "disclaimer": "This is tool graph custody. Actual final MP4 + audio + creative approval need independent checks."
+    },
+    "additional_setup_preflight_tests": 10,
+    "native_quantization_and_simulation_tests": 24,
+    "cpu_2_core_simulation_proof": {
+      "all_requested_checks_passed": true,
+      "native_renderer": "4.5.15 LTS",
+      "public_body_graph_render_decode_and_custody": true,
+      "all_nodes_reused": 9,
+      "cloth_maximum_vertex_displacement": 1.6471314925648812,
+      "cloth_pins_preserved": true,
+      "cloth_collision_lift": 0.22176798433065414,
+      "independent_shape_key_interpolation_preserved": true,
+      "original_clock_pixels_and_geometry_identical": {
+        "cloth": true,
+        "morph": true,
+        "liquid": true
+      },
+      "original_clock_geometry_identical": {
+        "cloth": true,
+        "morph": true,
+        "liquid": true
+      },
+      "original_clock_picture_within_quantization_tolerance": {
+        "cloth": true,
+        "morph": true,
+        "liquid": true
+      },
+      "original_clock_picture_comparisons": {
+        "cloth": {
+          "pixels_identical": true,
+          "within_quantization_tolerance": true,
+          "max_channel_difference": 0,
+          "mean_absolute_channel_difference": 0.0,
+          "differing_pixels": 0,
+          "total_pixels": 16384,
+          "differing_pixel_fraction": 0.0,
+          "allowed_channel_difference": 1,
+          "allowed_pixel_fraction": 0.001
+        },
+        "morph": {
+          "pixels_identical": true,
+          "within_quantization_tolerance": true,
+          "max_channel_difference": 0,
+          "mean_absolute_channel_difference": 0.0,
+          "differing_pixels": 0,
+          "total_pixels": 16384,
+          "differing_pixel_fraction": 0.0,
+          "allowed_channel_difference": 1,
+          "allowed_pixel_fraction": 0.001
+        },
+        "liquid": {
+          "pixels_identical": true,
+          "within_quantization_tolerance": true,
+          "max_channel_difference": 0,
+          "mean_absolute_channel_difference": 0.0,
+          "differing_pixels": 0,
+          "total_pixels": 16384,
+          "differing_pixel_fraction": 0.0,
+          "allowed_channel_difference": 1,
+          "allowed_pixel_fraction": 0.001
+        }
+      },
+      "liquid_requested": true,
+      "liquid_native_executed": true,
+      "liquid": {
+        "native_mesh_cache_frames": 12,
+        "varying_topology": true,
+        "gravity_changed_actual_surface": true,
+        "viscosity_changed_actual_mesh": true
+      },
+      "movie_sha256": {
+        "cloth": "e0af802017cd0f74d06d1d0ecdcfb18de850512fe99b953cb534114733bf3856",
+        "morph": "789a84900586aba000961659b421613ef0c8e58b3a35ca69048b05afa5b4baa9",
+        "liquid": "f07e4178822b24d25c4ba46d80db5eca007c57272ec08f82f6feff45547cd2a0"
+      },
+      "live_creative_model_used": false,
+      "premium_film_quality_approved": false
+    },
+    "installed_proof_source_before_comparison_refinement": "9265c88ce67969da642b5d17ff4af722bfe2e0e4",
+    "final_installed_validation_after_comparison_refinement": "pending",
+    "rigid_all_frame_pose_hash_added": true
   },
   "remote_ci": {
     "status": "pending exact source commit"
@@ -74,5 +177,29 @@
     "liquid velocity-aware motion blur and EXR motion vectors",
     "persistent cross-host fluid simulation cache and distributed recovery",
     "authorized GPU/model inference and independent professional creative quality"
-  ]
+  ],
+  "implementation_source_commit": "9265c88ce67969da642b5d17ff4af722bfe2e0e4",
+  "resolved_ci_numerical_difference": {
+    "failed_run_id": 40169502725,
+    "failed_source_commit": "9265c88ce67969da642b5d17ff4af722bfe2e0e4",
+    "all_module_suite_in_failed_run": {
+      "run": 615,
+      "passed": 614,
+      "browser_only_skip": 1
+    },
+    "actual_pixel_comparison": {
+      "pixels_identical": false,
+      "within_quantization_tolerance": true,
+      "max_channel_difference": 1,
+      "mean_absolute_channel_difference": 2.0345052083333332e-05,
+      "differing_pixels": 1,
+      "total_pixels": 16384,
+      "differing_pixel_fraction": 6.103515625e-05,
+      "allowed_channel_difference": 1,
+      "allowed_pixel_fraction": 0.001
+    },
+    "native_control_report_difference": "requested render range only; physics/camera controls equal",
+    "correction": "Exact all-frame rigid-pose digest and deform geometry; bounded one-code-value difference in <=0.1% pixels; truly identical pixels reported separately",
+    "rerun_status": "pending matching updated source"
+  }
 }

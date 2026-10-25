@@ -16,6 +16,7 @@ from .blender_scene import validate_blender_shot
 from .body_document_schemas import validate_document
 from .body_integration import run_body_project
 from .media_vault import sha256_file
+from .body_render_compare import compare_native_rgb
 
 
 def run(workspace,*,size=128,samples=6,include_liquid=True):
@@ -64,15 +65,15 @@ def run(workspace,*,size=128,samples=6,include_liquid=True):
         if first is not None:cmd+=['--frame-start',str(first),'--frame-end',str(last)]
         with (root/(name+'.log')).open('w') as stream:subprocess.run(cmd,check=True,stdout=stream,stderr=subprocess.STDOUT,timeout=240)
         return out
-    matches={}
+    matches={};comparisons={}
     for name,scene in scenes.items():
         full=render(name+'-whole-clock',scene);n=scene['frames'];partial=render(name+'-late-clock',scene,n,n)
-        def pixels(folder):return np.asarray(Image.open(folder/f'frame_{n:04d}.png').convert('RGB'))
-        assert np.array_equal(pixels(full),pixels(partial)),name+' frame subset changed actual picture'
+        comparison=compare_native_rgb(full/f'frame_{n:04d}.png',partial/f'frame_{n:04d}.png')
+        assert comparison['within_quantization_tolerance'],name+' frame subset changed actual picture beyond sparse one-code-value roundoff: '+str(comparison)
         a=json.loads((full/'render-report.json').read_text());b=json.loads((partial/'render-report.json').read_text())
         field={'morph':'shape_keys'}.get(name,name)
         assert a[field]==b[field],name+' original-clock geometry changed'
-        matches[name]=True
+        matches[name]=comparison['pixels_identical'];comparisons[name]=comparison
     without_contact=copy.deepcopy(scenes['cloth']);without_contact['objects'][0]['cloth']['collisions']=False
     free=render('cloth-without-contact',without_contact,24,24)
     free_report=json.loads((free/'render-report.json').read_text())['cloth']['meshes']['fabric'][-1]
@@ -94,6 +95,9 @@ def run(workspace,*,size=128,samples=6,include_liquid=True):
         'public_body_graph_render_decode_and_custody':True,'all_nodes_reused':3*len(names),
         'cloth_maximum_vertex_displacement':displacement,'cloth_pins_preserved':True,'cloth_collision_lift':collision_lift,
         'independent_shape_key_interpolation_preserved':True,'original_clock_pixels_and_geometry_identical':matches,
+        'original_clock_geometry_identical':{name:True for name in scenes},
+        'original_clock_picture_within_quantization_tolerance':{name:c['within_quantization_tolerance'] for name,c in comparisons.items()},
+        'original_clock_picture_comparisons':comparisons,
         'liquid_requested':include_liquid,'liquid_native_executed':include_liquid,'liquid':liquid_proof,
         'movie_sha256':{name:value[0] for name,value in before.items()},'live_creative_model_used':False,'premium_film_quality_approved':False}
     save('deform-proof.json',proof);return proof

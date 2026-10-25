@@ -804,8 +804,10 @@ def render_blender_shot(job, out: Path, *, verified_assets_root=None,
                 obj.keyframe_insert(data_path="location",frame=frame);obj.keyframe_insert(data_path="rotation_quaternion",frame=frame)
             _set_interpolation(obj,"LINEAR")
         selected=sorted({1,max(1,job["frames"]//2),job["frames"]})
+        import hashlib,struct
         physics_report={"solver":"Blender Bullet rigid body; integer-frame pose bake",
             "original_clock_frames":job["frames"],"dynamic_objects":len(dynamic),
+            "all_frame_pose_sha256":{name:hashlib.sha256(b"".join(struct.pack("<16f",*(value for row in matrix for value in row)) for matrix in values)).hexdigest() for name,values in poses.items()},
             "positions":{name:[{"frame":f,"location":list(values[f-1].to_translation())} for f in selected] for name,values in poses.items()}}
         scene.frame_start=1 if frame_start is None else frame_start
         scene.frame_end=job["frames"] if frame_end is None else frame_end
