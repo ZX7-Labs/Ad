@@ -65,7 +65,10 @@ caches, domain coupling and distributed simulation recovery are not supplied.
 
 The inspected distro Blender 4.0.2 liquid bake aborted inside native Mantaflow
 Python initialization. The adapter now rejects liquid scenes on Blender <4.5
-before initializing a scene or entering that bake. Native cloth/morph paths
+before initializing a scene or entering that bake. The public MP4 adapter
+also probes the runtime before launching Blender and returns the actionable
+setup error through the normal BODY job result, rather than only a child
+process failure. Native cloth/morph paths
 retain separate Blender 4.0 acceptance. The installed-package liquid gate uses
 the existing pinned Blender 4.5.15 LTS distribution.
 

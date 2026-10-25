@@ -79,6 +79,16 @@ class DeformContracts(unittest.TestCase):
                 render_blender_shot(fixture('liquid_impact_shot.json'),out)
             self.assertFalse(out.exists())
 
+    def test_public_mp4_adapter_reports_liquid_setup_before_launch(self):
+        from studio_next.native_body_engines import render_original_blender
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);p=root/'scene.json';p.write_text(json.dumps(fixture('liquid_impact_shot.json')))
+            with patch('shutil.which',return_value='/installed/native'),patch('subprocess.check_output',return_value='Blender 4.0.2\n'),patch('subprocess.run') as launched:
+                with self.assertRaisesRegex(RuntimeError,'Blender 4.5'):
+                    render_original_blender(p,root/'never-created.mp4')
+                launched.assert_not_called()
+            self.assertFalse((root/'never-created.mp4').exists())
+
 
 @unittest.skipUnless(shutil.which('blender') and shutil.which('ffmpeg') and shutil.which('ffprobe') and importlib.util.find_spec('numpy') and importlib.util.find_spec('PIL'),
                      'Real Blender, FFmpeg, numpy and Pillow required')

@@ -10,6 +10,7 @@ from __future__ import annotations
 from .voice_contract import valid_voice_id, validate_voice_settings
 
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -30,6 +31,13 @@ def render_original_blender(scene_file,video_target,*,trusted_asset_root=None,
     destination=Path(video_target)
     if destination.exists() or destination.suffix.lower()!=".mp4":
         raise ValueError("Only a new real 3D MP4 may be produced")
+    if any("liquid_domain" in obj for obj in job["objects"]):
+        # Surface an actionable public BODY setup error, not only a child
+        # process exit status. The native renderer independently repeats it.
+        version=subprocess.check_output(["blender","--version"],text=True,timeout=15)
+        match=re.search(r"\bBlender (\d+)\.(\d+)\.(\d+)\b",version)
+        if match is None or tuple(map(int,match.groups()))<(4,5,0):
+            raise RuntimeError("Native liquid simulation requires a verified Blender 4.5 or newer runtime")
     destination.parent.mkdir(parents=True,exist_ok=True)
     run=runner or subprocess.run
     with tempfile.TemporaryDirectory(prefix="zx7-original-blender-") as temp:
