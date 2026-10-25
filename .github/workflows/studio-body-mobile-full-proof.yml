@@ -117,6 +117,7 @@ jobs:
           ZX7_COLOR_VFX_PROOF: ${{ github.workspace }}/output/body-release-proof/color-vfx-proven
           ZX7_EXR_VFX_PROOF: ${{ github.workspace }}/output/body-release-proof/linear-exr-proven
           ZX7_OBSERVATION_PROOF: ${{ github.workspace }}/output/body-release-proof/actual-director-review
+          ZX7_CGI_CONTROLS_PROOF: ${{ github.workspace }}/output/body-release-proof/cgi-controls-core
         run: |
           mkdir -p output/body-release-proof
           python -m compileall -q studio_next motion_studio
@@ -171,6 +172,8 @@ jobs:
         run: |
           "$RUNNER_TEMP/zx7-body-installed/bin/python" -u -m studio_next.body_cgi_proof \
             --workspace "$GITHUB_WORKSPACE/output/body-release-proof/cgi-vfx" --size 384 --frames 24 --samples 16
+          "$RUNNER_TEMP/zx7-body-installed/bin/python" -u -m studio_next.body_cgi_controls_proof \
+            --workspace "$GITHUB_WORKSPACE/output/body-release-proof/cgi-controls" --size 128 --samples 8
       - name: Save exact release evidence without certifying artistic quality
         run: |
           python - <<'PY'
@@ -193,6 +196,9 @@ jobs:
           cgi=json.loads((root/'cgi-vfx/native-proof.json').read_text())
           assert cgi['actual_cgi_frames']==24 and cgi['actual_tracked_frames']==24
           assert cgi['original_audio_decoded_pcm_identical']
+          controls=json.loads((root/'cgi-controls/controls-proof.json').read_text())
+          assert controls['all_checks_passed'] and controls['original_clock_subset_pixels_identical']
+          assert controls['actual_dynamic_body_settled_on_collider']
           assert (root/'desktop-qa.png').is_file()
           release={
             'source_commit':os.environ['GITHUB_SHA'],
@@ -207,6 +213,7 @@ jobs:
             'actual_pause_restart_and_original_job_resume':True,
             'separately_installed_wheel_native_2d_3d_audio_otio_mp4':True,
             'installed_pbr_cgi_and_planar_occluded_vfx':cgi,
+            'installed_native_cgi_controls':controls,
             'sqlite_runtime':sqlite3.sqlite_version,
             'gpu_video_generation_verified':False,
             'independent_premium_artist_or_original_fold_film_proven':False,

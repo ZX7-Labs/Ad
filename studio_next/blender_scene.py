@@ -21,7 +21,15 @@ _MAPS = frozenset({"base_color_texture", "roughness_texture", "metallic_texture"
                    "normal_texture", "emission_texture"})
 _PBR = {"transmission":(0,1),"ior":(1,4),"coat":(0,1),
         "coat_roughness":(0,1),"sheen":(0,1),"emission_strength":(0,100000),
-        "normal_strength":(0,10)}
+        "normal_strength":(0,10),"anisotropic":(0,1),
+        "anisotropic_rotation":(0,1),"subsurface":(0,1),
+        "subsurface_scale":(.000001,1000),"coat_ior":(1,4),
+        "sheen_roughness":(0,1)}
+_BOUNCES = frozenset({"max_bounces","diffuse_bounces","glossy_bounces",
+                     "transmission_bounces","volume_bounces","transparent_max_bounces"})
+_COLLISIONS = frozenset({"BOX","SPHERE","CAPSULE","CYLINDER","CONE","CONVEX_HULL","MESH"})
+_MATERIAL_SCALARS = {"metallic":(0,1),"roughness":(.001,1),
+                    **{key:value for key,value in _PBR.items() if key!="normal_strength"}}
 
 
 class Invalid3DShot(ValueError):
@@ -81,6 +89,96 @@ def _transform(o, label, frames):
           label+" unsupported interpolation")
 
 
+def _validate_render_controls(settings):
+    _strict(settings,set(),_BOUNCES|{"seed","adaptive_threshold","motion_blur",
+            "view_transform","exposure"},"render_settings")
+    for key in _BOUNCES:
+        if key in settings:
+            _need(type(settings[key]) is int and 0<=settings[key]<=1024,
+                  key+" must be an integer between 0 and 1024")
+    if "seed" in settings:
+        _need(type(settings["seed"]) is int and 0<=settings["seed"]<2**31,"Invalid render seed")
+    if "adaptive_threshold" in settings:
+        _num(settings["adaptive_threshold"],"adaptive_threshold",0,1)
+    if "motion_blur" in settings:
+        spec=_strict(settings["motion_blur"],{"shutter","position"},set(),"motion_blur")
+        _num(spec["shutter"],"motion blur shutter",.000001,2)
+        _need(spec["position"] in ("START","CENTER","END"),"Invalid shutter position")
+    if "view_transform" in settings:
+        _need(settings["view_transform"] in ("AgX","Standard","Filmic","Raw"),"Unsupported view transform")
+    if "exposure" in settings:_num(settings["exposure"],"exposure",-32,32)
+
+
+def _validate_surface_detail(m,label):
+    if "subsurface_radius" in m:_vec(m["subsurface_radius"],3,label+".subsurface_radius",0,1000)
+    if "surface_noise" in m:
+        n=_strict(m["surface_noise"],{"scale","detail","roughness","distortion","mapping_scale"},
+                  {"bump","roughness_range","color_range"},label+".surface_noise")
+        _num(n["scale"],"noise scale",.000001,1e6)
+        _num(n["detail"],"noise detail",0,15)
+        _num(n["roughness"],"noise roughness",0,1)
+        _num(n["distortion"],"noise distortion",-1000,1000)
+        _vec(n["mapping_scale"],3,"noise mapping scale",.000001,1e6)
+        _need(any(k in n for k in ("bump","roughness_range","color_range")),"Noise must control an authored surface property")
+        if "bump" in n:
+            b=_strict(n["bump"],{"strength","distance"},set(),"surface bump")
+            _num(b["strength"],"bump strength",0,1);_num(b["distance"],"bump distance",0,1000)
+        if "roughness_range" in n:
+            _vec(n["roughness_range"],2,"noise roughness range",.001,1)
+            _need("roughness_texture" not in m,"Choose a roughness map or procedural roughness, not an ignored input")
+        if "color_range" in n:
+            _need(isinstance(n["color_range"],list) and len(n["color_range"])==2,"Noise color range needs two RGBA colors")
+            for color in n["color_range"]:_vec(color,4,"noise color",0,1)
+            _need("base_color_texture" not in m,"Choose a color map or procedural color, not an ignored input")
+    if "volume" in m:
+        v=_strict(m["volume"],set(),{"absorption","scatter"},label+".volume")
+        _need(bool(v),"Volume needs absorption or scatter")
+        for key,spec in v.items():
+            _strict(spec,{"color","density"}|({"anisotropy"} if key=="scatter" else set()),set(),"volume "+key)
+            _vec(spec["color"],3,"volume color",0,1);_num(spec["density"],"volume density",0,1000)
+            if key=="scatter":_num(spec["anisotropy"],"volume anisotropy",-.99,.99)
+
+
+def _set_interpolation(owner,kind):
+    """Handle both legacy Blender actions and 4.4+ slotted actions."""
+    if not owner.animation_data or not owner.animation_data.action:return
+    action=owner.animation_data.action
+    curves=list(action.fcurves) if hasattr(action,"fcurves") else [
+        curve for layer in action.layers for strip in layer.strips
+        for bag in strip.channelbags for curve in bag.fcurves]
+    _need(bool(curves),"Installed Blender exposes no editable animation curves")
+    for curve in curves:
+        for point in curve.keyframe_points:point.interpolation=kind
+
+
+def _validate_physics(job):
+    bodies=[o for o in job["objects"] if "rigid_body" in o]
+    if "physics" not in job:
+        _need(not bodies,"Rigid bodies require explicit physics world settings")
+        return
+    p=_strict(job["physics"],{"gravity","substeps_per_frame","solver_iterations"},set(),"physics")
+    _vec(p["gravity"],3,"gravity",-10000,10000)
+    for key in ("substeps_per_frame","solver_iterations"):
+        _need(type(p[key]) is int and 1<=p[key]<=1000,key+" must be 1..1000")
+    _need(bool(bodies),"Physics world has no rigid bodies")
+    for o in bodies:
+        _need(o["type"] not in ("empty","licensed_glb") and "parent" not in o,
+              "Rigid bodies require an explicit unparented mesh")
+        s=_strict(o["rigid_body"],{"type","collision_shape","mass","friction","restitution",
+                  "linear_damping","angular_damping","collision_margin","kinematic"},set(),"rigid_body")
+        _need(s["type"] in ("ACTIVE","PASSIVE") and s["collision_shape"] in _COLLISIONS,
+              "Unsupported rigid body type/collision shape")
+        _need(not (s["type"]=="ACTIVE" and s["collision_shape"]=="MESH"),
+              "Active concave MESH simulation is unsupported; use a convex collider")
+        _num(s["mass"],"rigid body mass",.001,1e7)
+        _num(s["friction"],"rigid body friction",0,10)
+        for key in ("restitution","linear_damping","angular_damping","collision_margin"):
+            _num(s[key],"rigid body "+key,0,1)
+        _need(type(s["kinematic"]) is bool,"kinematic must be boolean")
+        _need(not o.get("animate") or s["kinematic"],"Simulated transforms cannot also be authored animation")
+        _need("scale" not in o.get("animate",{}),"Animated collider scale is unsupported")
+
+
 def _asset(name, root, label, suffixes):
     _need(isinstance(name,str) and name and len(name)<512 and "\\" not in name
           and ":" not in name and not Path(name).is_absolute()
@@ -120,10 +218,10 @@ def lathe_geometry(profile,segments,caps):
     return vertices,faces,uvs
 
 
-def validate_blender_shot(job, *, verified_assets_root=None):
+def validate_blender_shot(job, *, verified_assets_root=None, require_vector_passes=False):
     """Validate all paths, geometry and animation before Blender gets commands."""
     _strict(job,{"shot_id","width","height","fps","frames","camera","world",
-                 "materials","objects","lights"}, {"samples","denoise"}, "3D film shot")
+                 "materials","objects","lights"}, {"samples","denoise","render_settings","physics"}, "3D film shot")
     _need(isinstance(job["shot_id"],str) and 0<len(job["shot_id"])<100,
           "Shot ID required")
     _need(all(x.isalnum() or x in "._-" for x in job["shot_id"]),
@@ -134,6 +232,9 @@ def validate_blender_shot(job, *, verified_assets_root=None):
     frames=_int(job["frames"],"frames")
     _int(job.get("samples",8),"cycles CPU samples")
     _need(type(job.get("denoise",False)) is bool,"denoise must be boolean")
+    if "render_settings" in job:_validate_render_controls(job["render_settings"])
+    _need(not (require_vector_passes and "motion_blur" in job.get("render_settings",{})),
+          "Vector-pass EXR requires an unblurred render; Blender suppresses vectors with physical motion blur")
     _strict(job["world"],{"color","strength"},{"environment_texture","environment_rotation_degrees"},"world")
     _vec(job["world"]["color"],3,"world.color",0,1)
     _num(job["world"]["strength"],"world.strength",0,100)
@@ -143,7 +244,7 @@ def validate_blender_shot(job, *, verified_assets_root=None):
         _need("environment_texture" in job["world"],"Environment rotation requires a texture")
         _num(job["world"]["environment_rotation_degrees"],"environment rotation",-36000,36000)
     cam=_strict(job["camera"],{"location","target","lens_mm"},
-                {"animate_location","animate_target","depth_of_field","animate_lens_mm","animate_focus_distance"}, "camera")
+                {"animate_location","animate_target","depth_of_field","animate_lens_mm","animate_focus_distance","interpolation","sensor_width_mm","shift_x","shift_y"}, "camera")
     _vec(cam["location"],3,"camera.location")
     _vec(cam["target"],3,"camera.target")
     _need(cam["location"]!=cam["target"],"Camera cannot look at its own origin")
@@ -153,9 +254,17 @@ def validate_blender_shot(job, *, verified_assets_root=None):
     if "animate_target" in cam:
         _keyframes(cam["animate_target"],"camera.animate_target",frames,3)
     if "depth_of_field" in cam:
-        _strict(cam["depth_of_field"],{"focus_distance","fstop"},set(),"depth_of_field")
+        _strict(cam["depth_of_field"],{"focus_distance","fstop"},{"focus_object","aperture_blades","aperture_ratio","aperture_rotation_degrees"},"depth_of_field")
         _num(cam["depth_of_field"]["focus_distance"],"focus_distance",.001,10000)
         _num(cam["depth_of_field"]["fstop"],"fstop",.1,100)
+        dof=cam["depth_of_field"]
+        if "aperture_blades" in dof:_need(type(dof["aperture_blades"]) is int and (dof["aperture_blades"]==0 or 3<=dof["aperture_blades"]<=16),"Invalid aperture blade count")
+        if "aperture_ratio" in dof:_num(dof["aperture_ratio"],"aperture_ratio",.01,100)
+        if "aperture_rotation_degrees" in dof:_num(dof["aperture_rotation_degrees"],"aperture_rotation_degrees",-36000,36000)
+        _need(not ("focus_object" in dof and "animate_focus_distance" in cam),"Object focus and distance animation cannot compete")
+    _need(cam.get("interpolation","BEZIER") in ("LINEAR","BEZIER","CONSTANT"),"Invalid camera interpolation")
+    for key,low,high in (("sensor_width_mm",1,1000),("shift_x",-10,10),("shift_y",-10,10)):
+        if key in cam:_num(cam[key],key,low,high)
     for key,low,high in (("animate_lens_mm",1,300),("animate_focus_distance",.001,10000)):
         if key not in cam:continue
         if key=="animate_focus_distance":_need("depth_of_field" in cam,"Animated focus requires depth of field")
@@ -166,7 +275,7 @@ def validate_blender_shot(job, *, verified_assets_root=None):
     matids=set()
     for i,m in enumerate(mats):
         lab=f"material[{i}]"
-        _strict(m,{"id","color","metallic","roughness"},set(_PBR)|_MAPS|{"emission_color","texture_alpha"},lab)
+        _strict(m,{"id","color","metallic","roughness"},set(_PBR)|_MAPS|{"emission_color","texture_alpha","subsurface_radius","surface_noise","volume","animate","interpolation"},lab)
         _need(isinstance(m["id"],str) and m["id"].strip() and m["id"] not in matids,
               lab+" material ID duplicated/missing")
         matids.add(m["id"])
@@ -175,6 +284,22 @@ def validate_blender_shot(job, *, verified_assets_root=None):
         _num(m["roughness"],lab+".roughness",.001,1)
         for key,(low,high) in _PBR.items():
             if key in m:_num(m[key],lab+"."+key,low,high)
+        _validate_surface_detail(m,lab)
+        _need(m.get("interpolation","BEZIER") in ("LINEAR","BEZIER","CONSTANT"),"Invalid material interpolation")
+        animation=m.get("animate",{})
+        _need(isinstance(animation,dict) and set(animation).issubset(set(_MATERIAL_SCALARS)|{"color","emission_color"}),"Unsupported material animation")
+        for key,curve in animation.items():
+            dims=4 if key=="color" else 3 if key=="emission_color" else 1
+            _keyframes(curve,lab+".animate."+key,frames,dims)
+            for point in curve:
+                low,high=_MATERIAL_SCALARS.get(key,(0,1))
+                _vec(point["value"],dims,"material animated value",low,high)
+            if key in ("color","roughness"):
+                _need(("base_color_texture" if key=="color" else "roughness_texture") not in m and
+                    ("color_range" if key=="color" else "roughness_range") not in m.get("surface_noise",{}),
+                    "Animated material input cannot be overridden by a texture")
+            if key=="emission_color":_need("emission_texture" not in m,"Animated emission cannot be overridden by a texture")
+            if key=="metallic":_need("metallic_texture" not in m,"Animated metal cannot be overridden by a texture")
         if "emission_color" in m:_vec(m["emission_color"],3,lab+".emission_color",0,1)
         if "texture_alpha" in m:
             _need(type(m["texture_alpha"]) is bool and "base_color_texture" in m,lab+" texture alpha needs a color texture")
@@ -186,7 +311,7 @@ def validate_blender_shot(job, *, verified_assets_root=None):
     for i,o in enumerate(objects):
         lab=f"object[{i}]"
         _strict(o,{"id","type","material","location","rotation_degrees","scale"},
-                {"animate","vertices","faces","asset","rights","uvs","profile","segments","caps","modifiers","parent","interpolation"},lab)
+                {"animate","vertices","faces","asset","rights","uvs","profile","segments","caps","modifiers","parent","interpolation","rigid_body"},lab)
         _need(isinstance(o["id"],str) and o["id"].strip()
               and o["id"] not in objects_seen,lab+" ID duplicated/missing")
         objects_seen.add(o["id"])
@@ -261,13 +386,17 @@ def validate_blender_shot(job, *, verified_assets_root=None):
         while parent is not None:
             _need(isinstance(parent,str) and parent in parents and parent not in seen,"Unknown or cyclic object parent")
             seen.add(parent);parent=parents[parent]
+    if "focus_object" in cam.get("depth_of_field",{}):
+        focus=cam["depth_of_field"]["focus_object"]
+        _need(isinstance(focus,str) and focus in parents,"Unknown camera focus object")
+    _validate_physics(job)
     lights=job["lights"]
     _need(isinstance(lights,list) and lights,"Director must specify actual light rig")
     lightids=set()
     for i,l in enumerate(lights):
         lab=f"light[{i}]"
         _strict(l,{"id","type","location","rotation_degrees","energy","color"},
-                {"size","size_y","shape"},lab)
+                {"size","size_y","shape","animate","animate_energy","animate_color","interpolation"},lab)
         _need(isinstance(l["id"],str) and l["id"] and l["id"] not in lightids,
               lab+" duplicate light")
         lightids.add(l["id"])
@@ -276,6 +405,14 @@ def validate_blender_shot(job, *, verified_assets_root=None):
         _vec(l["rotation_degrees"],3,lab+".rotation")
         _num(l["energy"],lab+".energy",0,10000000)
         _vec(l["color"],3,lab+".color",0,1)
+        animation=l.get("animate",{})
+        _need(isinstance(animation,dict) and set(animation).issubset({"location","rotation_degrees"}),"Unsupported light transform animation")
+        for key,curve in animation.items():_keyframes(curve,lab+".animate."+key,frames,3)
+        _need(l.get("interpolation","BEZIER") in ("LINEAR","BEZIER","CONSTANT"),"Invalid light interpolation")
+        for key,dims,high in (("animate_energy",1,1e7),("animate_color",3,1)):
+            if key in l:
+                _keyframes(l[key],lab+"."+key,frames,dims)
+                for point in l[key]:_vec(point["value"],dims,lab+"."+key,0,high)
         if "size" in l:
             _num(l["size"],lab+".size",.01,10000)
         if "shape" in l:
@@ -289,7 +426,7 @@ def validate_blender_shot(job, *, verified_assets_root=None):
 def render_blender_shot(job, out: Path, *, verified_assets_root=None,
                         original_exr_passes=False, frame_start=None, frame_end=None):
     """This entry point must run under installed Blender, never eval model code."""
-    validate_blender_shot(job,verified_assets_root=verified_assets_root)
+    validate_blender_shot(job,verified_assets_root=verified_assets_root,require_vector_passes=original_exr_passes)
     # Validate the ACTUAL full authored scene before building any subset.
     # This changes execution granularity, never the artist's animation clock.
     if frame_start is not None or frame_end is not None:
@@ -305,6 +442,21 @@ def render_blender_shot(job, out: Path, *, verified_assets_root=None,
     scene.render.engine="CYCLES"
     scene.cycles.device="CPU"
     scene.cycles.samples=job.get("samples",8)
+    if hasattr(scene.cycles,"use_denoising"):scene.cycles.use_denoising=job.get("denoise",False)
+    settings=job.get("render_settings",{})
+    for key in _BOUNCES|{"seed"}:
+        if key in settings:setattr(scene.cycles,key,settings[key])
+    if "adaptive_threshold" in settings:
+        scene.cycles.use_adaptive_sampling=True
+        scene.cycles.adaptive_threshold=settings["adaptive_threshold"]
+    if "motion_blur" in settings:
+        scene.render.use_motion_blur=True
+        scene.render.motion_blur_shutter=settings["motion_blur"]["shutter"]
+        scene.cycles.motion_blur_position=settings["motion_blur"]["position"]
+    if "view_transform" in settings:
+        try:scene.view_settings.view_transform=settings["view_transform"]
+        except TypeError as exc:raise Invalid3DShot("Requested view transform unavailable in installed Blender") from exc
+    if "exposure" in settings:scene.view_settings.exposure=settings["exposure"]
     # Ubuntu free CPU builds may not include OpenImageDenoiser; do not require it.
     for view_layer in scene.view_layers:
         if hasattr(view_layer, "cycles") and hasattr(view_layer.cycles, "use_denoising"):
@@ -351,16 +503,31 @@ def render_blender_shot(job, out: Path, *, verified_assets_root=None,
         principled.inputs["Base Color"].default_value=raw["color"]
         principled.inputs["Metallic"].default_value=raw["metallic"]
         principled.inputs["Roughness"].default_value=raw["roughness"]
-        slots={"transmission":("Transmission Weight","Transmission"),"ior":("IOR",),
+        slots={"color":("Base Color",),"metallic":("Metallic",),"roughness":("Roughness",),
+               "emission_color":("Emission Color","Emission"),
+               "transmission":("Transmission Weight","Transmission"),"ior":("IOR",),
                "coat":("Coat Weight","Clearcoat"),"coat_roughness":("Coat Roughness","Clearcoat Roughness"),
-               "sheen":("Sheen Weight","Sheen"),"emission_strength":("Emission Strength",)}
+               "sheen":("Sheen Weight","Sheen"),"emission_strength":("Emission Strength",),
+               "anisotropic":("Anisotropic IOR Level","Anisotropic"),
+               "anisotropic_rotation":("Anisotropic Rotation",),
+               "subsurface":("Subsurface Weight","Subsurface"),
+               "subsurface_scale":("Subsurface Scale",),"coat_ior":("Coat IOR",),
+               "sheen_roughness":("Sheen Roughness",)}
         def socket(names):
             for name in names:
                 if name in principled.inputs:return principled.inputs[name]
             raise Invalid3DShot("Installed Blender lacks requested Principled input: "+str(names))
         for key,names in slots.items():
-            if key in raw:socket(names).default_value=raw[key]
+            if key in raw and key not in ("color","emission_color"):socket(names).default_value=raw[key]
+        if "subsurface_radius" in raw:socket(("Subsurface Radius",)).default_value=raw["subsurface_radius"]
         if "emission_color" in raw:socket(("Emission Color","Emission")).default_value=(*raw["emission_color"],1)
+        for key,curve in raw.get("animate",{}).items():
+            target_input=socket(slots[key])
+            for point in curve:
+                value=point["value"]
+                target_input.default_value=(*value,1) if key=="emission_color" else value if key=="color" else value[0]
+                target_input.keyframe_insert(data_path="default_value",frame=point["frame"])
+        _set_interpolation(m.node_tree,raw.get("interpolation","BEZIER"))
         for key in _MAPS:
             if key not in raw:continue
             tex=m.node_tree.nodes.new("ShaderNodeTexImage")
@@ -376,6 +543,44 @@ def render_blender_shot(job, out: Path, *, verified_assets_root=None,
                 m.node_tree.links.new(normal.outputs["Normal"],socket(("Normal",)))
             else:m.node_tree.links.new(tex.outputs["Color"],socket(target[key]))
             if key=="base_color_texture" and raw.get("texture_alpha",False):m.node_tree.links.new(tex.outputs["Alpha"],socket(("Alpha",)))
+        if "surface_noise" in raw:
+            spec=raw["surface_noise"];nodes=m.node_tree.nodes;links=m.node_tree.links
+            coords=nodes.new("ShaderNodeTexCoord");mapping=nodes.new("ShaderNodeMapping")
+            mapping.inputs["Scale"].default_value=spec["mapping_scale"]
+            links.new(coords.outputs["Object"],mapping.inputs["Vector"])
+            noise=nodes.new("ShaderNodeTexNoise")
+            for field in ("scale","detail","roughness","distortion"):
+                noise.inputs[field.title()].default_value=spec[field]
+            links.new(mapping.outputs["Vector"],noise.inputs["Vector"])
+            if "roughness_range" in spec:
+                remap=nodes.new("ShaderNodeMapRange");remap.inputs["To Min"].default_value=spec["roughness_range"][0];remap.inputs["To Max"].default_value=spec["roughness_range"][1]
+                links.new(noise.outputs["Fac"],remap.inputs["Value"]);links.new(remap.outputs["Result"],socket(("Roughness",)))
+            if "color_range" in spec:
+                ramp=nodes.new("ShaderNodeValToRGB")
+                for element,color in zip(ramp.color_ramp.elements,spec["color_range"]):element.color=color
+                links.new(noise.outputs["Fac"],ramp.inputs["Fac"]);links.new(ramp.outputs["Color"],socket(("Base Color",)))
+            if "bump" in spec:
+                bump=nodes.new("ShaderNodeBump")
+                for key in ("strength","distance"):bump.inputs[key.title()].default_value=spec["bump"][key]
+                links.new(noise.outputs["Fac"],bump.inputs["Height"])
+                # Layer the procedural microdetail over any attested normal map.
+                normal_input=socket(("Normal",))
+                if normal_input.is_linked:links.new(normal_input.links[0].from_socket,bump.inputs["Normal"])
+                links.new(bump.outputs["Normal"],normal_input)
+        if "volume" in raw:
+            shaders=[]
+            for kind,spec in raw["volume"].items():
+                node=m.node_tree.nodes.new("ShaderNodeVolumeAbsorption" if kind=="absorption" else "ShaderNodeVolumeScatter")
+                node.inputs["Color"].default_value=(*spec["color"],1);node.inputs["Density"].default_value=spec["density"]
+                if kind=="scatter":node.inputs["Anisotropy"].default_value=spec["anisotropy"]
+                shaders.append(node.outputs["Volume"])
+            if len(shaders)==2:
+                mix=m.node_tree.nodes.new("ShaderNodeAddShader")
+                for index,shader in enumerate(shaders):m.node_tree.links.new(shader,mix.inputs[index])
+                volume=mix.outputs[0]
+            else:volume=shaders[0]
+            output=next(n for n in m.node_tree.nodes if n.type=="OUTPUT_MATERIAL")
+            m.node_tree.links.new(volume,output.inputs["Volume"])
         materials[raw["id"]]=m
 
     def animate_transform(obj, data):
@@ -385,9 +590,7 @@ def render_blender_shot(job, out: Path, *, verified_assets_root=None,
                 v=p["value"]
                 setattr(obj,attr,tuple(radians(x) for x in v) if name=="rotation_degrees" else v)
                 obj.keyframe_insert(data_path=attr,frame=p["frame"])
-        for fcurve in (obj.animation_data.action.fcurves if obj.animation_data and
-                       hasattr(obj.animation_data.action,"fcurves") else []):
-            for kp in fcurve.keyframe_points:kp.interpolation=data.get("interpolation","BEZIER")
+        _set_interpolation(obj,data.get("interpolation","BEZIER"))
 
     directed_objects={}
     for raw in job["objects"]:
@@ -447,6 +650,47 @@ def render_blender_shot(job, out: Path, *, verified_assets_root=None,
     for raw in job["objects"]:
         if "parent" in raw:directed_objects[raw["id"]].parent=directed_objects[raw["parent"]]
 
+    physics_report=None
+    if "physics" in job:
+        # Evaluate the REAL Bullet world on the original shot clock, then bake
+        # dynamic poses. A resumed frame subset sees the same history and
+        # subframe motion blur can interpolate the resulting native poses.
+        scene.frame_set(1)
+        dynamic=[]
+        for raw in job["objects"]:
+            if "rigid_body" not in raw:continue
+            obj=directed_objects[raw["id"]];spec=raw["rigid_body"]
+            bpy.ops.object.select_all(action="DESELECT");obj.select_set(True);bpy.context.view_layer.objects.active=obj
+            bpy.ops.object.transform_apply(location=False,rotation=False,scale=True)
+            bpy.ops.rigidbody.object_add()
+            for key,value in spec.items():setattr(obj.rigid_body,key,value)
+            obj.rigid_body.use_margin=True
+            if spec["type"]=="ACTIVE" and not spec["kinematic"]:dynamic.append(obj)
+        scene.gravity=job["physics"]["gravity"]
+        world_physics=scene.rigidbody_world
+        world_physics.substeps_per_frame=job["physics"]["substeps_per_frame"]
+        world_physics.solver_iterations=job["physics"]["solver_iterations"]
+        world_physics.point_cache.frame_start=1;world_physics.point_cache.frame_end=job["frames"]
+        scene.frame_start=1;scene.frame_end=job["frames"]
+        poses={obj.name:[] for obj in dynamic}
+        for frame in range(1,job["frames"]+1):
+            scene.frame_set(frame);depsgraph=bpy.context.evaluated_depsgraph_get()
+            for obj in dynamic:poses[obj.name].append(obj.evaluated_get(depsgraph).matrix_world.copy())
+        world_physics.enabled=False
+        for obj in dynamic:
+            bpy.ops.object.select_all(action="DESELECT");obj.select_set(True);bpy.context.view_layer.objects.active=obj
+            bpy.ops.rigidbody.object_remove();obj.rotation_mode="QUATERNION"
+            for frame,matrix in enumerate(poses[obj.name],1):
+                obj.location=matrix.to_translation();obj.rotation_quaternion=matrix.to_quaternion()
+                obj.keyframe_insert(data_path="location",frame=frame);obj.keyframe_insert(data_path="rotation_quaternion",frame=frame)
+            _set_interpolation(obj,"LINEAR")
+        selected=sorted({1,max(1,job["frames"]//2),job["frames"]})
+        physics_report={"solver":"Blender Bullet rigid body; integer-frame pose bake",
+            "original_clock_frames":job["frames"],"dynamic_objects":len(dynamic),
+            "positions":{name:[{"frame":f,"location":list(values[f-1].to_translation())} for f in selected] for name,values in poses.items()}}
+        scene.frame_start=1 if frame_start is None else frame_start
+        scene.frame_end=job["frames"] if frame_end is None else frame_end
+
     for spec in job["lights"]:
         light_data=bpy.data.lights.new(spec["id"],spec["type"])
         light_data.energy=spec["energy"]
@@ -459,6 +703,12 @@ def render_blender_shot(job, out: Path, *, verified_assets_root=None,
         scene.collection.objects.link(light_obj)
         light_obj.location=spec["location"]
         light_obj.rotation_euler=[radians(x) for x in spec["rotation_degrees"]]
+        animate_transform(light_obj,spec)
+        for field,prop in (("animate_energy","energy"),("animate_color","color")):
+            for point in spec.get(field,[]):
+                setattr(light_data,prop,point["value"][0] if prop=="energy" else point["value"])
+                light_data.keyframe_insert(data_path=prop,frame=point["frame"])
+        _set_interpolation(light_data,spec.get("interpolation","BEZIER"))
 
     cam_data=bpy.data.cameras.new("ZX7 camera")
     cam=bpy.data.objects.new("ZX7 directed camera",cam_data)
@@ -466,6 +716,8 @@ def render_blender_shot(job, out: Path, *, verified_assets_root=None,
     scene.camera=cam
     cam.location=job["camera"]["location"]
     cam_data.lens=job["camera"]["lens_mm"]
+    for source,target_attr in (("sensor_width_mm","sensor_width"),("shift_x","shift_x"),("shift_y","shift_y")):
+        if source in job["camera"]:setattr(cam_data,target_attr,job["camera"][source])
     for key in job["camera"].get("animate_lens_mm",[]):
         cam_data.lens=key["value"][0];cam_data.keyframe_insert(data_path="lens",frame=key["frame"])
     target=bpy.data.objects.new("ZX7 director target",None)
@@ -484,13 +736,36 @@ def render_blender_shot(job, out: Path, *, verified_assets_root=None,
         cam_data.dof.use_dof=True
         cam_data.dof.focus_distance=spec["focus_distance"]
         cam_data.dof.aperture_fstop=spec["fstop"]
+        if "focus_object" in spec:cam_data.dof.focus_object=directed_objects[spec["focus_object"]]
+        for source,target_attr in (("aperture_blades","aperture_blades"),("aperture_ratio","aperture_ratio"),("aperture_rotation_degrees","aperture_rotation")):
+            if source in spec:setattr(cam_data.dof,target_attr,radians(spec[source]) if source.endswith("degrees") else spec[source])
         for key in job["camera"].get("animate_focus_distance",[]):
             cam_data.dof.focus_distance=key["value"][0];cam_data.dof.keyframe_insert(data_path="focus_distance",frame=key["frame"])
+    for owner in (cam,target,cam_data):_set_interpolation(owner,job["camera"].get("interpolation","BEZIER"))
     out=Path(out)
     out.mkdir(parents=True,exist_ok=True)
     scene.render.filepath=str(out/"frame_")
+    scene.frame_set(scene.frame_start)
     bpy.ops.render.render(animation=True)
-    return {"shot_id":job["shot_id"],"frames":job["frames"],"fps":job["fps"],
+    report={"blender_version":bpy.app.version_string,"cycles_device":scene.cycles.device,
+            "samples":scene.cycles.samples,"denoise_requested":job.get("denoise",False),
+            "motion_blur_enabled":scene.render.use_motion_blur,
+            "shutter_frames":scene.render.motion_blur_shutter,
+            "view_transform":scene.view_settings.view_transform,
+            "display_exposure":scene.view_settings.exposure,
+            "camera":{"lens_mm":cam_data.lens,"sensor_width_mm":cam_data.sensor_width,
+                "shift_x":cam_data.shift_x,"shift_y":cam_data.shift_y,"dof_enabled":cam_data.dof.use_dof,
+                "focus_object":cam_data.dof.focus_object.name if cam_data.dof.focus_object else None,
+                "aperture_blades":cam_data.dof.aperture_blades,"aperture_ratio":cam_data.dof.aperture_ratio},
+            "animated_materials":[m["id"] for m in job["materials"] if m.get("animate")],
+            "animated_lights":[l["id"] for l in job["lights"] if any(l.get(k) for k in ("animate","animate_energy","animate_color"))],
+            "rendered_range":[scene.frame_start,scene.frame_end],
+            "bounces":{key:getattr(scene.cycles,key) for key in sorted(_BOUNCES)},
+            "procedural_materials":[m["id"] for m in job["materials"] if "surface_noise" in m],
+            "volume_materials":[m["id"] for m in job["materials"] if "volume" in m],
+            "physics":physics_report}
+    (out/"render-report.json").write_text(json.dumps(report,indent=2)+"\n")
+    return {"shot_id":job["shot_id"],"frames":job["frames"],"fps":job["fps"],"native_controls":report,
             "format":("scene-linear multilayer 32-bit float OpenEXR RGBA, depth, normal and vector"
                       if original_exr_passes else
                       "PNG sequence; video encoding requires reviewed FFmpeg adapter"),

@@ -174,5 +174,14 @@
     "native_tests_passed": 595,
     "native_browser_only_skip": 1,
     "actual_installed_package_cgi_and_planar_media_verified": true
+  },
+  "canonical_2026_10_25_cgi_controls": {
+    "source_of_truth": "docs/ZX7_BODY_CGI_CONTROL_ACCEPTANCE_2026-10-25.json",
+    "public_tool": "body.cgi_shot",
+    "actual_native_physics_and_render_controls_verified_locally": true,
+    "separately_installed_package_verified_locally": true,
+    "remote_matching_source_ci": "pending",
+    "production_release_approved": false,
+    "live_creative_model_inference": false
   }
 }

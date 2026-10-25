@@ -607,8 +607,11 @@ def body_catalog(workspace,*,vault_root=None):
     def cgi_shot(inputs):
         plan=_path_within(root,inputs["plan"],exists=True)
         dest=_body_output(root,inputs["out"],allowed=(".mp4",))
-        return _commit_actual_body_output(dest,lambda stage:
-            render_cgi_plan(plan,root,vault.root,stage))
+        measured={}
+        def produce(stage):measured.update(render_cgi_plan(plan,root,vault.root,stage))
+        receipt=_commit_actual_body_output(dest,produce)
+        return {**receipt,**{k:v for k,v in measured.items() if k not in ("path","sha256")},
+                "native_controls_observed_in_this_invocation":bool(measured)}
 
     def planar_insert(inputs):
         plan=_path_within(root,inputs["plan"],exists=True)
@@ -753,7 +756,7 @@ def body_catalog(workspace,*,vault_root=None):
         "write",bool(shutil.which("blender") and video_io),
         ["scene_json","out"],render3d)
     add("body.cgi_shot","source-attested product CGI and PBR scene rendering",
-        "Sealed real texture/GLB assets; authored glass, coats, normal maps, UV meshes, radial products, hierarchy, camera/focus animation and optional denoising; actual Blender Cycles CPU",
+        "Sealed texture/GLB assets; PBR and procedural microdetail, absorption/scattering, object-focus optics, authored shutter/bounces, native rigid-body pose baking on original clock; Blender Cycles CPU",
         "write",bool(shutil.which("blender") and video_io),["plan","out"],cgi_shot)
     add("body.planar_insert","measured planar tracking and corner-pin VFX",
         "SIFT/RANSAC original reference-to-frame motion; premultiplied-alpha perspective insertion, owned foreground mattes and bitstream-preserved sound; fails on track loss, not 3D camera solve",

@@ -9,6 +9,7 @@ import hashlib
 import json
 import math
 import re
+from .blender_scene import _MATERIAL_SCALARS
 
 
 def obj(required, optional=None):
@@ -175,13 +176,44 @@ _UV=array(number(-10000,10000),minItems=2,maxItems=2)
 _PBR_OPTIONS={"transmission":number(0,1),"ior":number(1,4),"coat":number(0,1),"coat_roughness":number(0,1),
     "sheen":number(0,1),"emission_color":_RGB,"emission_strength":number(0,100000),"normal_strength":number(0,10),
     "texture_alpha":{"type":"boolean"},**{key:TEXT for key in ("base_color_texture","roughness_texture","metallic_texture","normal_texture","emission_texture")}}
+_RIGID=obj({"type":choice("ACTIVE","PASSIVE"),
+    "collision_shape":choice("BOX","SPHERE","CAPSULE","CYLINDER","CONE","CONVEX_HULL","MESH"),
+    "mass":number(.001,1e7),"friction":number(0,10),"restitution":number(0,1),
+    "linear_damping":number(0,1),"angular_damping":number(0,1),"collision_margin":number(0,1),
+    "kinematic":{"type":"boolean"}})
+_ANIMATION["rigid_body"]=_RIGID
+_PBR_OPTIONS.update({"anisotropic":number(0,1),"anisotropic_rotation":number(0,1),
+    "subsurface":number(0,1),"subsurface_scale":number(.000001,1000),
+    "subsurface_radius":array(number(0,1000),minItems=3,maxItems=3),
+    "coat_ior":number(1,4),"sheen_roughness":number(0,1),
+    "surface_noise":obj({"scale":number(.000001,1e6),"detail":number(0,15),"roughness":number(0,1),
+        "distortion":number(-1000,1000),"mapping_scale":array(number(.000001,1e6),minItems=3,maxItems=3)},
+        {"bump":obj({"strength":number(0,1),"distance":number(0,1000)}),
+         "roughness_range":array(number(.001,1),minItems=2,maxItems=2),
+         "color_range":array(_VEC4,minItems=2,maxItems=2)}),
+    "volume":obj({}, {"absorption":obj({"color":_RGB,"density":number(0,1000)}),
+                      "scatter":obj({"color":_RGB,"density":number(0,1000),"anisotropy":number(-.99,.99)})})})
+_PBR_OPTIONS.update({"interpolation":choice("LINEAR","BEZIER","CONSTANT"),"animate":obj({}, {
+    **{key:array(obj({"frame":SIZE,"value":array(number(low,high),minItems=1,maxItems=1)}),minItems=1)
+       for key,(low,high) in _MATERIAL_SCALARS.items()},
+    "color":array(obj({"frame":SIZE,"value":_VEC4}),minItems=1),
+    "emission_color":array(obj({"frame":SIZE,"value":_RGB}),minItems=1)})})
+_RENDER_SETTINGS=obj({}, {"seed":number(0,2**31-1,integer=True),"adaptive_threshold":number(0,1),
+    "motion_blur":obj({"shutter":number(.000001,2),"position":choice("START","CENTER","END")}),
+    "view_transform":choice("AgX","Standard","Filmic","Raw"),"exposure":number(-32,32),
+    **{key:number(0,1024,integer=True) for key in ("max_bounces","diffuse_bounces","glossy_bounces",
+         "transmission_bounces","volume_bounces","transparent_max_bounces")}})
 _OBJECT_BASE={"id":TEXT,"material":TEXT,**_TRANSFORM}
 _BLENDER=obj({"shot_id":TEXT,"width":SIZE,"height":SIZE,"fps":SIZE,"frames":SIZE,
     "world":obj({"color":_RGB,"strength":number(0,100)},
         {"environment_texture":TEXT,"environment_rotation_degrees":number(-36000,36000)}),
     "camera":obj({"location":_VEC3,"target":_VEC3,"lens_mm":number(1,300)},
         {"animate_location":_CURVE,"animate_target":_CURVE,
-         "depth_of_field":obj({"focus_distance":number(.001,10000),"fstop":number(.1,100)}),
+         "depth_of_field":obj({"focus_distance":number(.001,10000),"fstop":number(.1,100)},
+             {"focus_object":TEXT,"aperture_blades":{"oneOf":[choice(0),number(3,16,integer=True)]},
+              "aperture_ratio":number(.01,100),"aperture_rotation_degrees":number(-36000,36000)}),
+         "interpolation":choice("LINEAR","BEZIER","CONSTANT"),"sensor_width_mm":number(1,1000),
+         "shift_x":number(-10,10),"shift_y":number(-10,10),
          "animate_lens_mm":array(obj({"frame":SIZE,"value":array(number(1,300),minItems=1,maxItems=1)}),minItems=1),
          "animate_focus_distance":array(obj({"frame":SIZE,"value":array(number(.001,10000),minItems=1,maxItems=1)}),minItems=1)}),
     "materials":array(obj({"id":TEXT,"color":_VEC4,"metallic":number(0,1),"roughness":number(.001,1)},_PBR_OPTIONS),minItems=1),
@@ -196,7 +228,13 @@ _BLENDER=obj({"shot_id":TEXT,"width":SIZE,"height":SIZE,"fps":SIZE,"frames":SIZE
              "rights":choice("owner_supplied","appropriately_licensed")},_ANIMATION)]},minItems=1),
     "lights":array(obj({"id":TEXT,"type":choice("AREA","POINT","SUN","SPOT"),
         "location":_VEC3,"rotation_degrees":_VEC3,"energy":number(0,1e7),"color":_RGB},
-        {"size":number(.01,10000),"size_y":number(.01,10000),"shape":choice("DISK","SQUARE","RECTANGLE","ELLIPSE")}),minItems=1)}, {"samples":SIZE,"denoise":{"type":"boolean"}})
+        {"size":number(.01,10000),"size_y":number(.01,10000),"shape":choice("DISK","SQUARE","RECTANGLE","ELLIPSE"),
+         "interpolation":choice("LINEAR","BEZIER","CONSTANT"),"animate":obj({}, {key:_CURVE for key in ("location","rotation_degrees")}),
+         "animate_energy":array(obj({"frame":SIZE,"value":array(number(0,1e7),minItems=1,maxItems=1)}),minItems=1),
+         "animate_color":array(obj({"frame":SIZE,"value":_RGB}),minItems=1)}),minItems=1)},
+    {"samples":SIZE,"denoise":{"type":"boolean"},"render_settings":_RENDER_SETTINGS,
+     "physics":obj({"gravity":array(number(-10000,10000),minItems=3,maxItems=3),
+         "substeps_per_frame":number(1,1000,integer=True),"solver_iterations":number(1,1000,integer=True)})})
 for _tool in ("body.blender3d","body.exr_passes","body.exr_checkpoint"):
     _SCHEMAS[_tool]=("scene_json",_BLENDER)
 _SCHEMAS["body.cgi_shot"]=("plan",obj({"scene":_BLENDER,

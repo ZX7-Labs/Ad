@@ -130,7 +130,7 @@ def render_resumable_exr_passes(scene_file,workspace,output,*,chunk_frames=1,
     if not shutil.which("blender") or importlib.util.find_spec("OpenEXR") is None:
         raise RuntimeError("Actual Blender CPU and native OpenEXR 3.3+ required")
     scene=json.loads(source.read_text(encoding="utf-8"))
-    validate_blender_shot(scene)
+    validate_blender_shot(scene,require_vector_passes=True)
     if any(obj["type"]=="licensed_glb" for obj in scene["objects"]):
         raise ValueError("Imported geometry must have verified independent GLB custody")
     count=scene["frames"]

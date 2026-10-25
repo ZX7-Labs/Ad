@@ -142,7 +142,7 @@ def render_original_exr_passes(scene_file,workspace,output,*,assets_root=None):
             or destination.exists()):
         raise ValueError("Original 3D VFX project must stay inside workspace and create a new ZIP")
     job=json.loads(original.read_text(encoding="utf-8"))
-    validate_blender_shot(job,verified_assets_root=assets_root)
+    validate_blender_shot(job,verified_assets_root=assets_root,require_vector_passes=True)
     # This specialist pass refuses external 3D assets with an unverified
     # textual rights claim until the GLB asset's CAS custody is fully wired.
     if any(item["type"]=="licensed_glb" for item in job["objects"]):

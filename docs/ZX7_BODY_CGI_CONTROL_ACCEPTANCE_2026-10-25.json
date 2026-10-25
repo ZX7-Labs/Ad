@@ -1,0 +1,52 @@
+{
+  "date": "2026-10-25",
+  "branch": "zx7-body/mobile-operator-20261021",
+  "based_on_commit": "c046b7dccc922baa3d96b97861b9464ca4508f95",
+  "implementation_document": "docs/BODY_CGI_CONTROLS_2026-10-25.md",
+  "local_verification": {
+    "tests_run": 604,
+    "tests_passed": 562,
+    "tests_skipped": 42,
+    "tests_failed": 0,
+    "tests_errors": 0,
+    "log_sha256": "91319c62f277b6ebd16cf590f7d3e53bda1c5cedaeb20d3525da34a9a7cee5df",
+    "native_blender_4_5_15_contracts_and_pixels": "8 tests passed",
+    "native_blender_4_0_2_controls_acceptance": "1 test passed",
+    "separately_installed_wheel_native_proof": {
+      "all_checks_passed": true,
+      "public_body_cgi_graph": true,
+      "full_mp4_decode": true,
+      "native_renderer_version": "4.5.15 LTS",
+      "original_cgi_frames": 12,
+      "actual_dynamic_body_settled_on_collider": true,
+      "original_clock_subset_pixels_identical": true,
+      "all_three_dag_nodes_reused_without_render": true,
+      "volume_control_mean_pixel_difference": 0.2753092447916667,
+      "surface_detail_mean_pixel_difference": 2.8359578450520835,
+      "motion_blur_support_gain_pixels": 29,
+      "movie_sha256": "e111ca2bf61ca8e0da257394ff3825bcb593c6da8e48798d5adca61188adcb28",
+      "live_creative_model_used": false,
+      "premium_artist_approval": false
+    }
+  },
+  "remote_ci": {
+    "status": "pending exact source commit"
+  },
+  "capability_scope": [
+    "authored Cycles light transport and physical shutter",
+    "procedural microdetail and absorption/scattering volumes",
+    "material and light keyframe animation",
+    "object-focus and aperture optics",
+    "native Bullet rigid body with original-clock dynamic pose bake"
+  ],
+  "live_creative_model_used": false,
+  "whole_studio_production_complete": false,
+  "independent_professional_quality_approved": false,
+  "keep_pr_draft_and_main_untouched": true,
+  "remaining": [
+    "fluid/cloth/soft-body/fracture simulation and rigged acting",
+    "full 3D camera solve and broader compositing scope",
+    "verified local GPU and real model-generated actor/video footage",
+    "independent professional creative quality and varied full commissions"
+  ]
+}

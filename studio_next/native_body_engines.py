@@ -41,6 +41,9 @@ def render_original_blender(scene_file,video_target,*,trusted_asset_root=None,
         if trusted_asset_root is not None:
             cmd+=["--assets-root",str(Path(trusted_asset_root).resolve())]
         run(cmd,check=True,timeout=3600)
+        report_file=frame_root/"render-report.json"
+        if not report_file.is_file():raise RuntimeError("Native CGI renderer produced no physical controls receipt")
+        native_controls=json.loads(report_file.read_text())
         image_files=list(frame_root.glob("frame_*.png"))
         if len(image_files)!=job["frames"]:
             raise RuntimeError("Blender did not actually encode the artist-approved frame count")
@@ -59,6 +62,7 @@ def render_original_blender(scene_file,video_target,*,trusted_asset_root=None,
     return {"created_original_3d_video":True,"movie":str(destination),
             "actual_seconds":media["seconds"],"shot_id":job["shot_id"],
             "director_approved_frames":job["frames"],
+            "native_controls":native_controls,
             "filmic_quality_reviewed":False}
 
 

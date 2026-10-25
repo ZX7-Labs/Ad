@@ -49,7 +49,7 @@ def render_cgi_plan(plan_file,workspace,vault_root,output):
                     raise ValueError('GLB scene label differs from the authenticated source rights')
         frozen_scene=private/'scene.json';frozen_scene.write_text(json.dumps(scene))
         encoded=private/'cgi.mp4'
-        render_original_blender(frozen_scene,encoded,trusted_asset_root=asset_root)
+        native=render_original_blender(frozen_scene,encoded,trusted_asset_root=asset_root)
         check=full_decode_inspection(encoded,expected={'width':scene['width'],'height':scene['height'],
             'duration_seconds':scene['frames']/scene['fps'],'require_audio':False})
         if not check['technical_delivery_verified']:raise RuntimeError('CGI output failed actual decoder')
@@ -64,4 +64,5 @@ def render_cgi_plan(plan_file,workspace,vault_root,output):
     return {'path':str(output),'sha256':sha256_file(output),'original_plan_sha256':plan_hash,
         'source_assets':len(named),'sealed_source_custody_during_render':True,
         'actual_native_cgi_rendered':True,'complete_decoder_verified':True,
+        'native_controls':native['native_controls'],
         'aesthetic_quality_approved':False}
