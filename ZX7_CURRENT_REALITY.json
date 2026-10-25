@@ -208,19 +208,25 @@
     "exact_geometry_and_bounded_rgb_agreement_verified": true
   },
   "canonical_2026_10_25_native_creative_control": {
-    "source_of_truth": "docs/BODY_NATIVE_CREATIVE_CONTROL_2026-10-25.md",
+    "source_of_truth": "docs/ZX7_BODY_NATIVE_VISUAL_ACCEPTANCE_2026-10-25.json",
     "branch": "zx7-body/mobile-operator-20261021",
     "native_visual_graph_connected": true,
     "immutable_project_property_revisions": true,
     "ai_can_modify_body_implementation": false,
     "focused_tests_passed_after_restore": 52,
-    "full_suite_for_this_change_verified": false,
-    "installed_package_for_this_change_verified": false,
+    "full_suite_for_this_change_verified": true,
+    "installed_package_for_this_change_verified": true,
     "live_creative_model_inference_performed": false,
     "production_release_approved": false,
     "independent_artistic_quality_approved": false,
     "float32_exr_input_output_verified": true,
     "original_clock_rgba_excerpt_exact": true,
-    "native_visual_graph_verified_reused_stages": 8
+    "native_visual_graph_verified_reused_stages": 8,
+    "verified_source_commit": "58c74867eced01712a0728596330dfa65eb2e59a",
+    "matching_native_run": "https://github.com/oyzitjfzj/Ad/actions/runs/40229772599",
+    "native_tests_run": 647,
+    "native_tests_passed": 646,
+    "native_tests_skipped_separate_browser": 1,
+    "whole_studio_complete": false
   }
 }

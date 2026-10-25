@@ -102,3 +102,20 @@ Final-source full-suite and remote CI evidence will be recorded separately.
 
 Research informs numerical implementation; no third-party creative example or
 finished template is embedded as an artistic default.
+
+## Final exact-source native acceptance
+
+Source `58c74867eced01712a0728596330dfa65eb2e59a` passed the complete native
+GitHub run [40229772599](https://github.com/oyzitjfzj/Ad/actions/runs/40229772599):
+647 cases, 646 passed, one separately exercised browser skip, zero failures/errors.
+The installed wheel passed both the new eight-stage editable visual graph proof
+and the existing real 2D/3D/audio/OTIO, CGI/tracked VFX, controls, cloth/morph/liquid
+proofs. The clean-run result is the final full-suite acceptance; a local run had
+previously stalled in an existing HTTP sensory test, which passed on its own.
+That stalled local run is not counted as a passing suite.
+
+[Exact receipts and remaining limits](ZX7_BODY_NATIVE_VISUAL_ACCEPTANCE_2026-10-25.json)
+retain source identity, installed-module hashes, original-clock RGBA and float
+proofs, artifact digest and the unchanged full-studio/creative-quality boundary.
+The source inventory covered all 375 tracked files (234 Python), with no parse
+blocker; this is not a completed manual security review.
