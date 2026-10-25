@@ -36,6 +36,9 @@ Do not falsely claim either. Preserve ambitious ideas when a resource is absent.
 Return JSON only: {action, arguments, reason}. Actions and exact arguments:
 discover:{capability?,cursor?,limit?,include_unavailable?}; describe:{tool_id};
 preflight:{tool_id,inputs}; assets:{}; author_plan:{tool_id,document,input_name?};
+inspect_plan:{sha256,pointer?}; revise_plan:{tool_id,base_sha256,operations,input_name?};
+Revision operations edit creative JSON only: {op:add|replace|test,path,value} or
+{op:remove,path}, with JSON Pointer paths. The original remains unchanged.
 submit:{film_ir}; observe:{job_id}; wait:{job_id,seconds};
 read:{tool_id,inputs} for registered READ tools only;
 read_picture:{job_id,path}; finish:{summary}; question:{question}.
@@ -174,13 +177,14 @@ class CreativeSessions:
         if action=="discover":return signal.discover(workspace,**args)
         if action=="describe":return signal.describe(workspace,**args)
         if action=="preflight":return signal.preflight(workspace,**args)
+        if action=="inspect_plan":return signal.inspect_plan(workspace,**args)
         if action=="assets" and not args:return self._assets(workspace)
         if action=="recall" and set(args)=={"offset","limit"}:
             offset=args["offset"];limit=args["limit"]
             if type(offset) is not int or offset<0 or type(limit) is not int or not 1<=limit<=4:
                 raise ValueError("Recall requires a nonnegative offset and limit 1..4")
             return {"events":state["events"][offset:offset+limit],"offset":offset}
-        if action in ("author_plan","submit"):
+        if action in ("author_plan","revise_plan","submit"):
             if "workspace_id" in args:
                 raise ValueError("Session workspace is assigned by the host")
             if action=="submit":
@@ -241,7 +245,7 @@ class CreativeSessions:
             state["status"]="running"; self._save(state)
             signal=LiveBodySignal(self.coordinator,authority=BodyAuthority(
                 workspace_ids=frozenset({state["workspace_id"]}),
-                fact_ids=frozenset(state["facts"]),operations=frozenset({"author_plan","submit"}),
+                fact_ids=frozenset(state["facts"]),operations=frozenset({"author_plan","revise_plan","submit"}),
                 tool_access=frozenset({"read","write"})))
             while len(state["events"])<state["turn_limit"]:
                 if self._stopped(identity):

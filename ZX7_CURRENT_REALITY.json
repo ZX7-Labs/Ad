@@ -206,5 +206,18 @@
     "native_browser_only_skip": 1,
     "installed_native_cloth_morph_liquid_verified": true,
     "exact_geometry_and_bounded_rgb_agreement_verified": true
+  },
+  "canonical_2026_10_25_native_creative_control": {
+    "source_of_truth": "docs/BODY_NATIVE_CREATIVE_CONTROL_2026-10-25.md",
+    "branch": "zx7-body/mobile-operator-20261021",
+    "native_visual_graph_connected": true,
+    "immutable_project_property_revisions": true,
+    "ai_can_modify_body_implementation": false,
+    "focused_tests_passed_after_restore": 47,
+    "full_suite_for_this_change_verified": false,
+    "installed_package_for_this_change_verified": false,
+    "live_creative_model_inference_performed": false,
+    "production_release_approved": false,
+    "independent_artistic_quality_approved": false
   }
 }

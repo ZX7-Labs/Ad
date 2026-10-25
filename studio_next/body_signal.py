@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import stat
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -22,7 +23,7 @@ from .body_sensory import sense_body_job
 from .film_ir import validate_film_ir
 from .body_document_schemas import validate_document
 
-_ACTIONS=frozenset({"author_plan","submit","pause","cancel","resume","retry"})
+_ACTIONS=frozenset({"author_plan","revise_plan","submit","pause","cancel","resume","retry"})
 _ACCESS=frozenset({"read","write","network","paid"})
 # Legacy edit/OTIO accept owner-supplied textual rights labels without real
 # MediaVault custody. Retain them for explicit historical migration, never
@@ -55,7 +56,7 @@ class BodyAuthority:
             not isinstance(self.tool_access,frozenset) or
             not self.tool_access or not self.tool_access.issubset(_ACCESS)):
             raise ValueError("Only narrow host-issued BODY authority is valid")
-        if (("submit" in self.operations or "author_plan" in self.operations)
+        if (bool(self.operations & {"submit","author_plan","revise_plan"})
                 and "write" not in self.tool_access):
             raise ValueError("Studio source creation requires host-issued write access")
 
@@ -66,7 +67,7 @@ class LiveBodySignal:
     This deliberately REUSES one trusted catalog, native persistence, native
     source validation and sense_body_job rather than forked implementations.
     """
-    VERSION="zx7-body-signal/2"
+    VERSION="zx7-body-signal/3"
 
     def __init__(self,coordinator,*,authority:BodyAuthority,
                  catalog_factory:Callable|None=None):
@@ -95,6 +96,7 @@ class LiveBodySignal:
             allowed_access=self._authority.tool_access)
         signatures={
             "author_plan":["workspace_id","tool_id","document"],
+            "revise_plan":["workspace_id","tool_id","base_sha256","operations"],
             "submit":["workspace_id","film_ir"],
             "pause":["job_id"],"cancel":["job_id"],
             "resume":["job_id"],"retry":["job_id"]}
@@ -212,6 +214,47 @@ class LiveBodySignal:
             "film_physically_rendered":False,
             "independent_artistic_quality_approved":False}
 
+    def _read_original_plan(self,workspace_id,digest):
+        if not isinstance(digest,str) or len(digest)!=64 or any(c not in "0123456789abcdef" for c in digest):
+            raise BodyCommandRejected("Creative document identity must be a SHA256")
+        directory=self._workspace(workspace_id)/"brain-authored"
+        path=directory/(digest+".json")
+        if directory.is_symlink() or path.is_symlink():raise PermissionError("Creative document cannot follow symbolic links")
+        folder_fd=os.open(directory,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+        try:
+            fd=os.open(path.name,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK,dir_fd=folder_fd)
+            with os.fdopen(fd,"rb") as stream:
+                if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):raise PermissionError("Creative plan must be a regular file")
+                raw=stream.read(262145)
+        finally:os.close(folder_fd)
+        if len(raw)>262144 or hashlib.sha256(raw).hexdigest()!=digest:
+            raise BodyCommandRejected("Original creative document changed or exceeds its budget")
+        return json.loads(raw)
+
+    def inspect_plan(self,workspace_id,sha256,*,pointer=""):
+        if "read" not in self._authority.tool_access:raise PermissionError("Host did not authorize creative document inspection")
+        from .body_project_revision import selected_value
+        try:value=selected_value(self._read_original_plan(workspace_id,sha256),pointer)
+        except ValueError as exc:raise BodyCommandRejected(str(exc)) from exc
+        raw=json.dumps(value,ensure_ascii=False,allow_nan=False).encode()
+        if len(raw)>16384:
+            return {"sha256":sha256,"pointer":pointer,"value_omitted":True,"encoded_bytes":len(raw),
+                    "select_a_more_specific_pointer":True,"child_keys":list(value)[:200] if isinstance(value,dict) else None,
+                    "item_count":len(value) if isinstance(value,(dict,list)) else None}
+        return {"sha256":sha256,"pointer":pointer,"value":value,"value_omitted":False}
+
+    def _revise_original_plan(self,arguments):
+        from .body_project_revision import revise_document
+        original=self._read_original_plan(arguments["workspace_id"],arguments["base_sha256"])
+        try:revised=revise_document(original,arguments["operations"])
+        except ValueError as exc:raise BodyCommandRejected(str(exc)) from exc
+        request={"workspace_id":arguments["workspace_id"],"tool_id":arguments["tool_id"],"document":revised}
+        if "input_name" in arguments:request["input_name"]=arguments["input_name"]
+        result=self._author_original_plan(request)
+        return {**result,"base_sha256":arguments["base_sha256"],"original_document_preserved":True,
+                "changed_paths":[op["path"] for op in arguments["operations"] if op["op"]!="test"],
+                "body_implementation_changed":False}
+
     def observe(self,job_id,*,include_artifacts=False,max_stages=16):
         if type(include_artifacts) is not bool:
             raise BodyCommandRejected("Artifact detail must be a boolean")
@@ -242,12 +285,15 @@ class LiveBodySignal:
             raise BodyCommandRejected("Typed BODY command object required")
         expected=({"film_ir","workspace_id"} if action=="submit" else
                   {"workspace_id","tool_id","document"} if action=="author_plan"
+                  else {"workspace_id","tool_id","base_sha256","operations"} if action=="revise_plan"
                   else {"job_id"})
         if (set(arguments)!=expected and not (
-                action=="author_plan" and set(arguments)==expected|{"input_name"})):
+                action in ("author_plan","revise_plan") and set(arguments)==expected|{"input_name"})):
             raise BodyCommandRejected("Unapproved BODY command argument fields")
         if action=="author_plan":
             return self._author_original_plan(arguments)
+        if action=="revise_plan":
+            return self._revise_original_plan(arguments)
         if action=="submit":
             workspace_id=arguments["workspace_id"]
             self._workspace(workspace_id)
