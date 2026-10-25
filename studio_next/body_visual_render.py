@@ -1,7 +1,7 @@
 """Sealed media I/O for native editable visual graphs.
 
-Pixel math is BODY code. Current deliveries are sRGB PNG and lossless RGBA
-PNG-in-MOV. Audio stays on separate editable tracks. These are not HDR masters.
+Pixel math is BODY code. Deliveries are sRGB PNG, lossless RGBA PNG-in-MOV,
+and lossless float32 EXR stills. Audio stays on separate editable tracks.
 """
 from __future__ import annotations
 import hashlib
@@ -39,14 +39,18 @@ class SealedGraphSources:
             p=node["params"];media=p["media"]
             original=_exact_media(media,vault,root,need="visual source")
             record=vault.inspect(media["asset_id"],attestation_id=media["attestation_id"])
-            allowed={"image":{"image/png","image/jpeg"},"video":{"video/mp4","video/quicktime","video/webm"}}
+            allowed={"image":{"image/png","image/jpeg","image/x-exr"},"video":{"video/mp4","video/quicktime","video/webm"}}
             if record["mime"] not in allowed[p["kind"]]:raise ValueError("Graph source kind differs from attested media")
             self.originals[str(original)]=media["asset_id"]
             frozen=sealed_attested_original(vault,media["asset_id"],media["attestation_id"],private,self.snapshots)
             self.sources[name]=(frozen,media,p["color_space"])
             if p["kind"]=="image":
-                if p["color_space"]!="srgb":raise ValueError("Raster source requires sRGB or embedded ICC conversion")
-                self._check_image(frozen);self.frames[name]={0:frozen};continue
+                if record["mime"]=="image/x-exr":
+                    if p["color_space"]!="linear_srgb":raise ValueError("EXR input must declare linear_srgb and alpha association")
+                else:
+                    if p["color_space"]!="srgb":raise ValueError("Raster source requires sRGB or embedded ICC conversion")
+                    self._check_image(frozen)
+                self.frames[name]={0:frozen};continue
             meta=_probe(frozen);w,h=meta["width"],meta["height"]
             if w*h>budget.max_pixels:raise ValueError("Source video exceeds host pixel budget")
             pixel_format=meta.get("pix_fmt","")
@@ -94,7 +98,14 @@ class SealedGraphSources:
         key=(name,frame)
         if self.last is not None and self.last[0]==key:return self.last[1]
         if frame not in self.frames[name]:raise ValueError("Source frame is outside the verified render interval")
-        path=self.frames[name][frame];self._check_image(path)
+        path=self.frames[name][frame]
+        if self.sources[name][2]=="linear_srgb":
+            from .body_visual_exr import read_float_rgba
+            p=self.graph.nodes[name]["params"]
+            result=read_float_rgba(path,budget=self.graph.budget,alpha_mode=p["alpha_mode"],channels=p.get("channels"))
+            self.last=(key,result)
+            return result
+        self._check_image(path)
         with Image.open(path) as image:
             rgba=image.convert("RGBA");icc=image.info.get("icc_profile")
             if icc:
@@ -120,9 +131,13 @@ def render_visual_graph(plan_file,workspace,vault_root,output,*,budget=None):
     root,plan_file,output=Path(workspace).resolve(),Path(plan_file).resolve(),Path(output).resolve()
     if not plan_file.is_relative_to(root) or not output.is_relative_to(root) or output.exists():
         raise ValueError("Visual graph requires original workspace plan and new output")
-    if plan_file.stat().st_size>16777216:raise ValueError("Visual graph exceeds host input size budget")
-    plan_sha=sha256_file(plan_file);graph=VisualGraph(json.loads(plan_file.read_text()),budget=budget)
-    selection=graph.plan["render"];suffix={"png":".png","rgba_mov":".mov"}[selection["format"]]
+    # Bind the receipt to exactly the bytes parsed, rather than hashing and
+    # reopening a mutable file. A concurrent source swap must not substitute
+    # different creative directions between those two operations.
+    with plan_file.open("rb") as stream:raw_plan=stream.read(16777217)
+    if len(raw_plan)>16777216:raise ValueError("Visual graph exceeds host input size budget")
+    plan_sha=hashlib.sha256(raw_plan).hexdigest();graph=VisualGraph(json.loads(raw_plan),budget=budget)
+    selection=graph.plan["render"];suffix={"png":".png","rgba_mov":".mov","exr32":".exr"}[selection["format"]]
     if output.suffix.lower()!=suffix:raise ValueError("Output suffix differs from authored format")
     if graph.canvas["width"]*graph.canvas["height"]*4*selection["frame_count"]>graph.budget.max_decode_bytes:
         raise ValueError("Output verification exceeds host decode storage budget")
@@ -143,7 +158,13 @@ def render_visual_graph(plan_file,workspace,vault_root,output,*,budget=None):
                         stdin=subprocess.PIPE,stdout=subprocess.DEVNULL,stderr=log)
                 started=time.monotonic()
                 for frame in range(first,first+count):
-                    pixels,outside=rgba8(graph.frame(frame,source_provider=sources));clipped+=outside
+                    floating=graph.frame(frame,source_provider=sources)
+                    if selection["format"]=="exr32":
+                        from .body_visual_exr import write_float_rgba
+                        write_float_rgba(stage,floating,plan_sha256=plan_sha,budget=graph.budget)
+                        digests.append(hashlib.sha256(floating.tobytes()).hexdigest())
+                        continue
+                    pixels,outside=rgba8(floating);clipped+=outside
                     data=pixels.tobytes();digests.append(hashlib.sha256(data).hexdigest())
                     if encoder is None:
                         metadata=PngImagePlugin.PngInfo();metadata.add_text("zx7_graph_sha256",plan_sha);metadata.add(b"sRGB",b"\x00")
@@ -162,7 +183,7 @@ def render_visual_graph(plan_file,workspace,vault_root,output,*,budget=None):
                 image.load()
                 if hashlib.sha256(image.convert("RGBA").tobytes()).hexdigest()!=digests[0]:
                     raise RuntimeError("Exported PNG differs from rendered pixels")
-        else:
+        elif selection["format"]=="rgba_mov":
             check=full_decode_inspection(stage,expected={"width":graph.canvas["width"],"height":graph.canvas["height"],
                 "duration_seconds":float(count/graph.fps),"require_audio":False})
             if not check["technical_delivery_verified"] or check["audio_present"]:raise RuntimeError("Visual motion failed full decode")
@@ -182,6 +203,7 @@ def render_visual_graph(plan_file,workspace,vault_root,output,*,budget=None):
     return {"path":str(output),"sha256":sha256_file(output),"bytes":output.stat().st_size,
         "plan_sha256":plan_sha,"original_first_frame":first,"frames":count,"decoded_rgba_exact":True,
         "rendered_frame_pixel_sha256":digests,"working_precision":"float32_linear_srgb_associated_alpha",
-        "delivery_precision":"8bit_srgb_straight_rgba","explicitly_clipped_rgb_components":clipped,
+        "delivery_precision":"float32_linear_srgb_associated_rgba" if selection["format"]=="exr32" else "8bit_srgb_straight_rgba",
+        "explicitly_clipped_rgb_components":clipped,
         "audio_policy":"separate_editable_tracks","source_assets":len(sources.sources),
         "project_node_fingerprints":graph.node_fingerprints(),"aesthetic_quality_approved":False}

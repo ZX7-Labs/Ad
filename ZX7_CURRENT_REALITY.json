@@ -213,11 +213,14 @@
     "native_visual_graph_connected": true,
     "immutable_project_property_revisions": true,
     "ai_can_modify_body_implementation": false,
-    "focused_tests_passed_after_restore": 47,
+    "focused_tests_passed_after_restore": 52,
     "full_suite_for_this_change_verified": false,
     "installed_package_for_this_change_verified": false,
     "live_creative_model_inference_performed": false,
     "production_release_approved": false,
-    "independent_artistic_quality_approved": false
+    "independent_artistic_quality_approved": false,
+    "float32_exr_input_output_verified": true,
+    "original_clock_rgba_excerpt_exact": true,
+    "native_visual_graph_verified_reused_stages": 8
   }
 }

@@ -75,6 +75,16 @@ class NativePixelGraphTests(unittest.TestCase):
             uniforms={"frequency":linear(3,31)})]))
         self.assertGreater(float(np.mean(np.abs(graph.frame(0)-graph.frame(7)))),.08)
 
+    def test_signed_rgb_kernel_keeps_independent_alpha(self):
+        import numpy as np
+        nodes=[field("dot","1","0","0","where((x-3.5)**2+(y-3.5)**2 < 1,1,0)"),
+            {"id":"detail","op":"convolve","inputs":{"image":"dot"},"params":{
+                "kernel_x":[-1,3,-1],"kernel_y":[1],"divisor":1,"border":"transparent","channels":"rgb"}}]
+        actual=VisualGraph(plan(nodes)).frame(0)
+        self.assertEqual(float(actual[3,3,0]),3)
+        self.assertEqual(float(actual[3,2,0]),-1)
+        self.assertEqual(int(np.count_nonzero(actual[...,3])),1)
+
     def test_branch_revision_reports_only_changed_dependencies(self):
         nodes=[field("left","u"),field("right","v"),{"id":"combined","op":"over",
             "inputs":{"foreground":"left","background":"right"},"params":{"opacity":.5}}]
@@ -168,6 +178,28 @@ class RealVisualGraphTests(unittest.TestCase):
             self.assertNotEqual(first["sha256"],revised["sha256"])
             self.assertEqual(Path(first["path"]).read_bytes(),old)
             with self.assertRaises(ValueError):self.render(root,doc,"original")
+
+    def test_receipt_binds_the_exact_plan_bytes_parsed_under_a_file_swap(self):
+        from PIL import Image
+        from studio_next.body_visual_render import render_visual_graph
+        from studio_next.media_vault import sha256_file
+        import hashlib
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);p=root/"original.json"
+            original=json.dumps(plan([field("paint","1","0","0")])).encode()
+            alternate=json.dumps(plan([field("paint","0","0","1")])).encode()
+            p.write_bytes(original);calls=[]
+            def racing_hash(path):
+                if Path(path)==p:
+                    calls.append(path)
+                    if len(calls)==1:
+                        digest=sha256_file(path);p.write_bytes(alternate);return digest
+                    p.write_bytes(original)
+                return sha256_file(path)
+            with patch('studio_next.body_visual_render.sha256_file',racing_hash):
+                result=render_visual_graph(p,root,root/'vault',root/'bound.png')
+            self.assertEqual(result['plan_sha256'],hashlib.sha256(original).hexdigest())
+            with Image.open(result['path']) as image:self.assertEqual(image.getpixel((3,3)),(255,0,0,255))
 
     def test_model_facing_author_submit_render_and_generated_custody(self):
         from studio_next.body_service import LocalBodyCoordinator

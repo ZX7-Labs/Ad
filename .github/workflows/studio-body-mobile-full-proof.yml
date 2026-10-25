@@ -168,6 +168,11 @@ jobs:
           PY
           tar --no-same-owner -xf "$RUNNER_TEMP/blender.tar.xz" -C "$RUNNER_TEMP"
           echo "$RUNNER_TEMP/blender-4.5.15-linux-x64" >> "$GITHUB_PATH"
+      - name: Installed native editable visual graph retains original RGBA, float EXR and durable source custody
+        working-directory: ${{ runner.temp }}
+        run: |
+          "$RUNNER_TEMP/zx7-body-installed/bin/python" -I -u -m studio_next.body_visual_proof \
+            --workspace "$GITHUB_WORKSPACE/output/body-release-proof/native-visual-graph"
       - name: Installed public BODY actually renders CGI and tracked occluded VFX
         working-directory: ${{ runner.temp }}
         run: |
@@ -207,6 +212,10 @@ jobs:
           assert deform['all_requested_checks_passed'] and deform['liquid_native_executed']
           assert all(deform['original_clock_geometry_identical'].values())
           assert all(deform['original_clock_picture_within_quantization_tolerance'].values())
+          visual=json.loads((root/'native-visual-graph/visual-proof.json').read_text())
+          assert visual['all_checks_passed'] and visual['original_clock_excerpt_rgba_identical']
+          assert visual['float32_rgba_exact'] and visual['generated_float_source_custody_verified']
+          assert visual['reused_verified_stages']==8
           assert (root/'desktop-qa.png').is_file()
           release={
             'source_commit':os.environ['GITHUB_SHA'],
@@ -223,6 +232,7 @@ jobs:
             'installed_pbr_cgi_and_planar_occluded_vfx':cgi,
             'installed_native_cgi_controls':controls,
             'installed_native_deform_and_liquid':deform,
+            'installed_native_editable_visual_graph':visual,
             'sqlite_runtime':sqlite3.sqlite_version,
             'gpu_video_generation_verified':False,
             'independent_premium_artist_or_original_fold_film_proven':False,

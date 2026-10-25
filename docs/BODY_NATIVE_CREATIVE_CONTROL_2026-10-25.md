@@ -28,8 +28,8 @@ looks. Graph branches and numeric curves remain editable project data.
 - Sealed, rights-attested image/video inputs. Exact source frame selection
   supports reverse, hold and reordering. Source files are reverified before
   atomic no-overwrite publication.
-- Current baseline deliveries are actual pixel-verified sRGB PNG or lossless
-  RGBA PNG-in-MOV. Audio remains on the existing independently editable audio
+- Current deliveries are actual pixel-verified sRGB PNG, lossless RGBA
+  PNG-in-MOV and lossless float32 linear-sRGB EXR stills. Audio remains on the existing independently editable audio
   tracks; no soundtrack is silently invented or copied through a retime.
 - Existing discovery, typed authoring, durable graph execution and generated
   media custody expose the new operation to the model-facing BODY interface.
@@ -54,22 +54,30 @@ claimed as a result for this code. New source is saved incrementally on the
 existing GitHub development branch; main is unchanged.
 
 The reconstructed controls, graph, project revision, BODY signal, creative
-session, capability discovery and integration modules passed **47 focused
-tests** locally. Actual native tests cover analytically known compositing
+session, capability discovery and integration modules passed **52 focused
+tests** locally (including native float EXR and independent RGB/alpha filtering). Actual native tests cover analytically known compositing
 pixels, subpixel alpha, convolution, new pixel formulas, source mutation,
 RGBA video reverse/hold, excerpt frame identity, model-facing author/submit,
 generated output custody, scoped project revision and preservation of originals.
 The caller in these tests is a deterministic test program, **not LLM inference**.
-Full-suite, installed-package and higher-depth evidence must be recorded
-separately when those checks finish.
+A native public-tool acceptance graph physically rendered motion, an original-clock
+excerpt, a float master and an image, registered their generated source custody,
+and then reused all eight verified stages. Decoded RGBA and float32 EXR match
+the original mathematical data exactly. The independently installed wheel also passed the eight-stage native graph proof,
+with exact original-clock RGBA and floating pixels. A minimal installation
+correctly reports missing numeric/image engines as needs_setup. A subsequent
+adversarial file-swap check binds the plan receipt to the exact bytes parsed.
+Final-source full-suite and remote CI evidence will be recorded separately.
 
 ## Actual remaining limitations
 
 - This is not all professional design/photo/NLE/VFX/CGI/audio functionality.
   Existing adapters still have narrower controls. The new graph does not
   automatically expose the entirety of Blender or any other engine.
-- The baseline source/video export path is 8-bit SDR. It must not be described
-  as an HDR master. Additional float EXR work is separate until tested.
+- PNG/MOV video source and export paths remain 8-bit SDR. Float32 EXR still
+  input/output preserves extended and negative RGB, supports explicit source
+  channel selection and alpha association, and is tested with OpenEXR 3.5.2.
+  This does not add float video, HDR display delivery or deep compositing.
 - CPU graph execution is not a measured GPU compositor, real-time playback
   engine, temporal denoiser, optical-flow solver, full paint/text system,
   character rig, smoke/fire simulator or complete DAW.

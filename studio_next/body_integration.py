@@ -84,6 +84,8 @@ def _witness(file):
                     "audio_present":meta["audio_stream_present"]})
     elif f.suffix.lower()==".png":
         verify_media_container(f,"image/png")
+    elif f.suffix.lower()==".exr":
+        verify_media_container(f,"image/x-exr")
     elif f.suffix.lower()==".zip":
         verify_exr_bundle(f)
     elif f.suffix.lower()==".zxreview":
@@ -124,6 +126,12 @@ def _verify_witness(result):
             return True
         except (OSError,ValueError,RuntimeError):
             return False
+    if p.suffix.lower()==".exr":
+        try:
+            verify_media_container(p,"image/x-exr")
+            return True
+        except (OSError,ValueError,RuntimeError):
+            return False
     if p.suffix.lower()==".otio":
         try:
             import opentimelineio as otio
@@ -157,7 +165,7 @@ def _trusted_body_revision(tool_id):
         "body.film_thumbnail":["creative_asset_ops.py","delivery_audit.py"],
         "body.asset_vault":["media_vault.py"],
         "body.composite_mix":["composite_mix.py","media_vault.py","production_qc.py"],
-        "body.visual_graph":["body_visual_graph.py","body_visual_render.py","body_visual_contract.py",
+        "body.visual_graph":["body_visual_graph.py","body_visual_render.py","body_visual_contract.py","body_visual_exr.py",
                              "body_pixel_math.py","body_animation.py","composite_mix.py","media_vault.py","production_qc.py"],
         "body.film_finish":["film_finishing.py","media_vault.py","composite_mix.py","production_qc.py"],
         "body.color_lut":["body_color_pipeline.py","media_vault.py","delivery_audit.py","composite_mix.py","production_qc.py"],
@@ -233,7 +241,7 @@ def _trusted_body_revision(tool_id):
         h.update(json.dumps({"command":cmd,"binary_path":str(file),
               "size":stat.st_size,"mtime_ns":stat.st_mtime_ns},sort_keys=True).encode())
     runtime_libraries={"body.planar_insert":("opencv-python-headless","numpy"),
-                       "body.visual_graph":("numpy","Pillow"),
+                       "body.visual_graph":("numpy","Pillow","OpenEXR"),
                        "body.motion2d":("numpy","Pillow","fonttools","supertonic"),
                        "body.otio":("opentimelineio",),
                        "body.otio_owned_export":("opentimelineio",),
@@ -312,7 +320,7 @@ def body_catalog(workspace,*,vault_root=None):
 
     def render_visual(inputs):
         plan=_path_within(root,inputs["plan"],exists=True)
-        target=_body_output(root,inputs["out"],allowed=(".png",".mov"))
+        target=_body_output(root,inputs["out"],allowed=(".png",".mov",".exr"))
         return _commit_actual_body_output(target,lambda staged:
             render_visual_graph(plan,root,vault.root,staged))
 
@@ -669,7 +677,7 @@ def body_catalog(workspace,*,vault_root=None):
         source=Path(proof["path"]).resolve()
         if not source.is_relative_to(root):
             raise ValueError("Only genuine media from this original workspace")
-        supported={".mp4":"video/mp4",".png":"image/png",
+        supported={".mp4":"video/mp4",".png":"image/png",".exr":"image/x-exr",
                    ".mov":"video/quicktime",".webm":"video/webm",
                    ".zip":"application/x-zx7-exr-bundle"}
         mime=supported.get(source.suffix.lower())
@@ -741,7 +749,7 @@ def body_catalog(workspace,*,vault_root=None):
         ["plan","out"],composite)
     add("body.visual_graph","editable native photo, motion graphic and VFX pixel graph",
         "Authored mathematical pixels, masks, original-frame curves, inverse spatial sampling, convolution and alpha compositing; "
-        "float32 linear-sRGB internals, sealed image/video sources, exact 8-bit RGBA PNG/MOV export; separate editable audio",
+        "float32 linear-sRGB internals, sealed sources, exact RGBA PNG/MOV or float32 EXR (requires OpenEXR 3.3+); separate editable audio",
         "write",bool(video_io and all(importlib.util.find_spec(name) is not None for name in ("numpy","PIL"))),
         ["plan","out"],render_visual)
     add("body.exr_checkpoint","durable original-frame 32float VFX render and exact verified resume",

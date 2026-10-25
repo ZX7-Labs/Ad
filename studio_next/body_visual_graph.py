@@ -69,10 +69,11 @@ def validate_graph(plan,*,budget=None):
     _exact(r,("first_frame","frame_count","format","rgb_range","audio"),"Render")
     first=_integer(r["first_frame"],"first_frame");length=_integer(r["frame_count"],"frame_count",1)
     if first+length>count:raise ValueError("Render interval exceeds the original project clock")
-    if r["format"] not in ("png","rgba_mov") or (r["format"]=="png" and length!=1):
-        raise ValueError("PNG is one chosen frame; rgba_mov preserves a chosen interval")
-    if r["rgb_range"]!="clip_to_sdr" or r["audio"]!="separate_tracks":
-        raise ValueError("Explicit SDR export and separate-track audio decisions required")
+    if r["format"] not in ("png","rgba_mov","exr32") or (r["format"] in ("png","exr32") and length!=1):
+        raise ValueError("Still images select one frame; rgba_mov preserves an interval")
+    expected_range="preserve_float" if r["format"]=="exr32" else "clip_to_sdr"
+    if r["rgb_range"]!=expected_range or r["audio"]!="separate_tracks":
+        raise ValueError("Export range and separate-track audio decisions must match the format")
     if not isinstance(plan["nodes"],list) or not 1<=len(plan["nodes"])<=budget.max_nodes:
         raise ValueError("Graph is empty or exceeds host node budget")
     indexed,compiled={},{};work=0
@@ -89,10 +90,19 @@ def validate_graph(plan,*,budget=None):
         expressions={}
         if op=="source":
             if inputs:raise ValueError("Source nodes do not consume graph inputs")
-            _exact(p,("media","kind","color_space","frame"),"Source")
+            _exact(p,("media","kind","color_space","frame"),"Source",("alpha_mode","channels"))
             _exact(p["media"],("source","asset_id","attestation_id"),"Source custody")
-            if p["kind"] not in ("image","video") or p["color_space"] not in ("srgb","bt709"):
+            if p["kind"] not in ("image","video") or p["color_space"] not in ("srgb","bt709","linear_srgb"):
                 raise ValueError("Source requires declared kind and supported transfer function")
+            if p["color_space"]=="linear_srgb":
+                if p["kind"]!="image" or p.get("alpha_mode") not in ("straight","associated"):
+                    raise ValueError("Float EXR source requires explicit alpha association")
+                if "channels" in p:
+                    _exact(p["channels"],_CHANNELS,"EXR channel selection")
+                    if any(not isinstance(v,str) or not 1<=len(v)<=255 for v in p["channels"].values()):
+                        raise ValueError("Invalid EXR channel name")
+            elif "channels" in p or "alpha_mode" in p:
+                raise ValueError("Explicit channel/alpha declarations belong to float EXR sources")
             validate_curve(p["frame"])
             if p["kind"]=="image" and p["frame"]!=0:raise ValueError("Still images have only frame zero")
         elif op in ("expression","remap"):
@@ -118,7 +128,9 @@ def validate_graph(plan,*,budget=None):
             _exact(p,("opacity",),"Over controls");validate_curve(p["opacity"])
         elif op=="convolve":
             _exact(inputs,("image",),"Convolution inputs")
-            _exact(p,("kernel_x","kernel_y","divisor","border"),"Convolution controls")
+            _exact(p,("kernel_x","kernel_y","divisor","border"),"Convolution controls",("channels",))
+            if p.get("channels","rgba") not in ("rgb","rgba"):
+                raise ValueError("Convolution channels must be rgb or rgba")
             for key in ("kernel_x","kernel_y"):
                 values=p[key]
                 if not isinstance(values,list) or not len(values) or len(values)%2!=1 or len(values)>budget.max_kernel_side:
@@ -258,6 +270,7 @@ class VisualGraph:
                 divisor=curve_value(p["divisor"],frame_index)
                 if not math.isfinite(divisor) or divisor==0:raise ValueError("Convolution divisor must be finite and nonzero")
                 rgba=_convolve(inputs["image"],kernels,p["border"])/divisor
+                if p.get("channels","rgba")=="rgb":rgba[...,3]=inputs["image"][...,3]
             if not np.all(np.isfinite(rgba)) or np.min(rgba[...,3])< -1e-6 or np.max(rgba[...,3])>1+1e-6:
                 raise ValueError("Node "+name+" produced invalid finite RGBA/alpha")
             rgba=np.asarray(rgba,dtype=np.float32);rgba[...,3]=np.clip(rgba[...,3],0,1)

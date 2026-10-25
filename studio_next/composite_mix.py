@@ -439,7 +439,7 @@ def actual_composite_command(plan,workspace,vault,out):
 _SUFFIX_BY_MIME={
     "video/mp4":".mp4","video/quicktime":".mov","video/webm":".webm",
     "audio/wav":".wav","audio/mpeg":".mp3","audio/flac":".flac",
-    "image/png":".png","image/jpeg":".jpg","image/webp":".webp"
+    "image/png":".png","image/jpeg":".jpg","image/webp":".webp","image/x-exr":".exr"
 }
 
 
