@@ -118,6 +118,7 @@ jobs:
           ZX7_EXR_VFX_PROOF: ${{ github.workspace }}/output/body-release-proof/linear-exr-proven
           ZX7_OBSERVATION_PROOF: ${{ github.workspace }}/output/body-release-proof/actual-director-review
           ZX7_CGI_CONTROLS_PROOF: ${{ github.workspace }}/output/body-release-proof/cgi-controls-core
+          ZX7_DEFORM_PROOF: ${{ github.workspace }}/output/body-release-proof/cloth-morph-core
         run: |
           mkdir -p output/body-release-proof
           python -m compileall -q studio_next motion_studio
@@ -174,6 +175,8 @@ jobs:
             --workspace "$GITHUB_WORKSPACE/output/body-release-proof/cgi-vfx" --size 384 --frames 24 --samples 16
           "$RUNNER_TEMP/zx7-body-installed/bin/python" -u -m studio_next.body_cgi_controls_proof \
             --workspace "$GITHUB_WORKSPACE/output/body-release-proof/cgi-controls" --size 128 --samples 8
+          "$RUNNER_TEMP/zx7-body-installed/bin/python" -u -m studio_next.body_deform_proof \
+            --workspace "$GITHUB_WORKSPACE/output/body-release-proof/deform-liquid" --size 128 --samples 6
       - name: Save exact release evidence without certifying artistic quality
         run: |
           python - <<'PY'
@@ -199,6 +202,9 @@ jobs:
           controls=json.loads((root/'cgi-controls/controls-proof.json').read_text())
           assert controls['all_checks_passed'] and controls['original_clock_subset_pixels_identical']
           assert controls['actual_dynamic_body_settled_on_collider']
+          deform=json.loads((root/'deform-liquid/deform-proof.json').read_text())
+          assert deform['all_requested_checks_passed'] and deform['liquid_native_executed']
+          assert all(deform['original_clock_pixels_and_geometry_identical'].values())
           assert (root/'desktop-qa.png').is_file()
           release={
             'source_commit':os.environ['GITHUB_SHA'],
@@ -214,6 +220,7 @@ jobs:
             'separately_installed_wheel_native_2d_3d_audio_otio_mp4':True,
             'installed_pbr_cgi_and_planar_occluded_vfx':cgi,
             'installed_native_cgi_controls':controls,
+            'installed_native_deform_and_liquid':deform,
             'sqlite_runtime':sqlite3.sqlite_version,
             'gpu_video_generation_verified':False,
             'independent_premium_artist_or_original_fold_film_proven':False,

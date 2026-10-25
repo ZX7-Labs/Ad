@@ -9,7 +9,7 @@ import hashlib
 import json
 import math
 import re
-from .blender_scene import _MATERIAL_SCALARS
+from .blender_scene import _MATERIAL_SCALARS,_CLOTH_FLOATS,_CLOTH_CONTACT
 
 
 def obj(required, optional=None):
@@ -182,6 +182,20 @@ _RIGID=obj({"type":choice("ACTIVE","PASSIVE"),
     "linear_damping":number(0,1),"angular_damping":number(0,1),"collision_margin":number(0,1),
     "kinematic":{"type":"boolean"}})
 _ANIMATION["rigid_body"]=_RIGID
+_CLOTH=obj({**{key:number(lo,hi) for key,(lo,hi) in _CLOTH_FLOATS.items()},
+    "quality":number(1,80,integer=True),"pins":array(obj({"vertex":number(0,integer=True),"weight":number(0,1)})),
+    "collisions":{"type":"boolean"},"collision_distance":number(.001,1),"collision_quality":number(1,80,integer=True),
+    "self_collision":{"type":"boolean"},"self_distance":number(.001,.1),"self_friction":number(0,80)})
+_SHAPE_KEYS=array(obj({"id":TEXT,"vertices":array(_VEC3,minItems=3),"value":number(0,1)},
+    {"animate":array(obj({"frame":SIZE,"value":array(number(0,1),minItems=1,maxItems=1)}),minItems=1),
+     "interpolation":choice("LINEAR","BEZIER","CONSTANT")}),minItems=1)
+_ANIMATION.update({"cloth_collision":obj({key:number(lo,hi) for key,(lo,hi) in _CLOTH_CONTACT.items()}),
+    "liquid_domain":obj({"resolution":number(6,512,integer=True),"mesh_scale":number(1,4,integer=True),
+        "particle_radius":number(.01,10),"time_scale":number(.0001,10),"flip_ratio":number(0,1),"viscosity":number(0,10)}),
+    "liquid_flow":obj({"behavior":choice("GEOMETRY","INFLOW","OUTFLOW"),"surface_distance":number(0,10),
+        "velocity":array(number(-1000,1000),minItems=3,maxItems=3)}),
+    "liquid_obstacle":obj({"surface_distance":number(0,10),"planar":{"type":"boolean"}})})
+_ANIMATION['liquid_domain']['description']='Native liquid mesh baking requires Blender 4.5+. This adapter does not provide variable-topology velocity-aware motion blur or EXR vector passes.'
 _PBR_OPTIONS.update({"anisotropic":number(0,1),"anisotropic_rotation":number(0,1),
     "subsurface":number(0,1),"subsurface_scale":number(.000001,1000),
     "subsurface_radius":array(number(0,1000),minItems=3,maxItems=3),
@@ -221,7 +235,7 @@ _BLENDER=obj({"shot_id":TEXT,"width":SIZE,"height":SIZE,"fps":SIZE,"frames":SIZE
         obj({**_OBJECT_BASE,"type":choice("cube","uv_sphere","ico_sphere","cylinder","cone","torus","plane","empty")},_ANIMATION),
         obj({**_OBJECT_BASE,"type":choice("custom_mesh"),"vertices":array(_VEC3,minItems=3),
              "faces":array(array(number(0,integer=True),minItems=3),minItems=1)},
-            {**_ANIMATION,"uvs":array(array(_UV,minItems=3),minItems=1)}),
+            {**_ANIMATION,"uvs":array(array(_UV,minItems=3),minItems=1),"cloth":_CLOTH,"shape_keys":_SHAPE_KEYS}),
         obj({**_OBJECT_BASE,"type":choice("lathe"),"profile":array(array(number(-1e7,1e7),minItems=2,maxItems=2),minItems=2,maxItems=512),
             "segments":number(8,512,integer=True),"caps":{"type":"boolean"}},_ANIMATION),
         obj({**_OBJECT_BASE,"type":choice("licensed_glb"),"asset":TEXT,
@@ -233,7 +247,7 @@ _BLENDER=obj({"shot_id":TEXT,"width":SIZE,"height":SIZE,"fps":SIZE,"frames":SIZE
          "animate_energy":array(obj({"frame":SIZE,"value":array(number(0,1e7),minItems=1,maxItems=1)}),minItems=1),
          "animate_color":array(obj({"frame":SIZE,"value":_RGB}),minItems=1)}),minItems=1)},
     {"samples":SIZE,"denoise":{"type":"boolean"},"render_settings":_RENDER_SETTINGS,
-     "physics":obj({"gravity":array(number(-10000,10000),minItems=3,maxItems=3),
+     "physics":obj({"gravity":array(number(-10000,10000),minItems=3,maxItems=3)}, {
          "substeps_per_frame":number(1,1000,integer=True),"solver_iterations":number(1,1000,integer=True)})})
 for _tool in ("body.blender3d","body.exr_passes","body.exr_checkpoint"):
     _SCHEMAS[_tool]=("scene_json",_BLENDER)

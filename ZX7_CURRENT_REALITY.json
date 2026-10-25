@@ -189,5 +189,15 @@
     "native_tests_passed": 605,
     "native_tests_skipped": 1,
     "actual_installed_physical_cgi_controls_verified": true
+  },
+  "canonical_2026_10_25_deform_liquid": {
+    "source_of_truth": "docs/ZX7_BODY_DEFORM_LIQUID_ACCEPTANCE_2026-10-25.json",
+    "public_operation": "body.cgi_shot",
+    "actual_cloth_morph_and_liquid_verified_locally": true,
+    "installed_package_verified_locally": true,
+    "liquid_minimum_blender_version": "4.5",
+    "remote_matching_ci": "pending",
+    "whole_studio_release_complete": false,
+    "live_creative_model_inference": false
   }
 }

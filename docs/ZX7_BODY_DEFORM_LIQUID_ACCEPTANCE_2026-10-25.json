@@ -1,0 +1,78 @@
+{
+  "date": "2026-10-25",
+  "branch": "zx7-body/mobile-operator-20261021",
+  "based_on_commit": "75ee11a1928ed4f9f096136f2b690e293f8fe9c5",
+  "implementation_document": "docs/BODY_CLOTH_MORPH_LIQUID_2026-10-25.md",
+  "scope": [
+    "native cloth with weighted pins and contact",
+    "topology-preserving independently animated shape keys",
+    "native Mantaflow liquid mesh, source/obstacle and viscosity controls",
+    "original-clock complete and late-frame rendering",
+    "typed model-facing scene controls; no arbitrary simulation code"
+  ],
+  "local_verification": {
+    "tests_run": 614,
+    "tests_passed": 572,
+    "tests_skipped": 42,
+    "tests_failed": 0,
+    "tests_errors": 0,
+    "log_sha256": "58f9415ac23127070cb59390c9173befe9615b4e986a18687648d0ad2edfe11b",
+    "blender_4_0_cloth_morph_contract_tests": 8,
+    "blender_4_0_liquid": "reproduced native abort, then verified graceful rejection before native initialization",
+    "separately_installed_production_module_bytes_match": true,
+    "installed_blender_4_5_15_proof": {
+      "all_requested_checks_passed": true,
+      "native_renderer": "4.5.15 LTS",
+      "public_body_graph_render_decode_and_custody": true,
+      "all_nodes_reused": 9,
+      "cloth_maximum_vertex_displacement": 1.6471314925648812,
+      "cloth_pins_preserved": true,
+      "cloth_collision_lift": 0.22176798433065414,
+      "independent_shape_key_interpolation_preserved": true,
+      "original_clock_pixels_and_geometry_identical": {
+        "cloth": true,
+        "morph": true,
+        "liquid": true
+      },
+      "liquid_requested": true,
+      "liquid_native_executed": true,
+      "liquid": {
+        "native_mesh_cache_frames": 12,
+        "varying_topology": true,
+        "gravity_changed_actual_surface": true,
+        "viscosity_changed_actual_mesh": true
+      },
+      "movie_sha256": {
+        "cloth": "e96d1786754a0ac7184ebd25cd8ae5ac76a4af8d659ee42dd5e084c57156cad2",
+        "morph": "43ea5c29cb56b93c1299b87b3b00b09e6a00df671af1cf90bec5d3c32cc4d249",
+        "liquid": "9a491864657381d5d31c2b6076e06cd23043473859895a8439c70dd76babec04"
+      },
+      "live_creative_model_used": false,
+      "premium_film_quality_approved": false
+    },
+    "actual_cloth_exr_passes": {
+      "actual_32bit_cloth_exr": true,
+      "original_frames": 24,
+      "nonzero_deform_vectors": {
+        "ViewLayer.Vector.W": 478,
+        "ViewLayer.Vector.X": 478,
+        "ViewLayer.Vector.Y": 478,
+        "ViewLayer.Vector.Z": 478
+      }
+    }
+  },
+  "remote_ci": {
+    "status": "pending exact source commit"
+  },
+  "whole_studio_release_complete": false,
+  "live_creative_model_inference": false,
+  "independent_premium_film_approval": false,
+  "keep_pr_draft_and_main_untouched": true,
+  "remaining": [
+    "smoke/fire gas, soft-body and fracture simulation",
+    "skeletal rigs, skinning and facial performance",
+    "liquid velocity-aware motion blur and EXR motion vectors",
+    "persistent cross-host fluid simulation cache and distributed recovery",
+    "authorized GPU/model inference and independent professional creative quality"
+  ]
+}

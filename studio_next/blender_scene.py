@@ -30,6 +30,13 @@ _BOUNCES = frozenset({"max_bounces","diffuse_bounces","glossy_bounces",
 _COLLISIONS = frozenset({"BOX","SPHERE","CAPSULE","CYLINDER","CONE","CONVEX_HULL","MESH"})
 _MATERIAL_SCALARS = {"metallic":(0,1),"roughness":(.001,1),
                     **{key:value for key,value in _PBR.items() if key!="normal_strength"}}
+_CLOTH_FLOATS = {"mass":(.001,100),"air_damping":(0,10),
+    **{key:(0,10000) for key in ("tension_stiffness","compression_stiffness","shear_stiffness","bending_stiffness")},
+    **{key:(0,50) for key in ("tension_damping","compression_damping","shear_damping","pin_stiffness")},
+    "bending_damping":(0,1000)}
+_CLOTH_CONTACT = {"thickness_outer":(.001,1),"thickness_inner":(.001,1),
+                  "damping":(0,1),"cloth_friction":(0,80)}
+_LIQUID_FIELDS = frozenset({"liquid_domain","liquid_flow","liquid_obstacle"})
 
 
 class Invalid3DShot(ValueError):
@@ -139,7 +146,7 @@ def _validate_surface_detail(m,label):
             if key=="scatter":_num(spec["anisotropy"],"volume anisotropy",-.99,.99)
 
 
-def _set_interpolation(owner,kind):
+def _set_interpolation(owner,kind,*,data_path=None):
     """Handle both legacy Blender actions and 4.4+ slotted actions."""
     if not owner.animation_data or not owner.animation_data.action:return
     action=owner.animation_data.action
@@ -148,19 +155,23 @@ def _set_interpolation(owner,kind):
         for bag in strip.channelbags for curve in bag.fcurves]
     _need(bool(curves),"Installed Blender exposes no editable animation curves")
     for curve in curves:
+        if data_path is not None and curve.data_path!=data_path:continue
         for point in curve.keyframe_points:point.interpolation=kind
 
 
 def _validate_physics(job):
     bodies=[o for o in job["objects"] if "rigid_body" in o]
+    simulated=[o for o in job["objects"] if "cloth" in o or "liquid_domain" in o]
     if "physics" not in job:
-        _need(not bodies,"Rigid bodies require explicit physics world settings")
+        _need(not bodies and not simulated,"Simulations require explicit physics world settings")
         return
-    p=_strict(job["physics"],{"gravity","substeps_per_frame","solver_iterations"},set(),"physics")
+    p=_strict(job["physics"],{"gravity"},{"substeps_per_frame","solver_iterations"},"physics")
     _vec(p["gravity"],3,"gravity",-10000,10000)
-    for key in ("substeps_per_frame","solver_iterations"):
-        _need(type(p[key]) is int and 1<=p[key]<=1000,key+" must be 1..1000")
-    _need(bool(bodies),"Physics world has no rigid bodies")
+    if bodies:
+        for key in ("substeps_per_frame","solver_iterations"):
+            _need(type(p.get(key)) is int and 1<=p[key]<=1000,key+" must be 1..1000 for rigid bodies")
+    else:_need(set(p)=={"gravity"},"Rigid solver settings require actual rigid bodies")
+    _need(bool(bodies or simulated),"Physics world has no simulated objects")
     for o in bodies:
         _need(o["type"] not in ("empty","licensed_glb") and "parent" not in o,
               "Rigid bodies require an explicit unparented mesh")
@@ -177,6 +188,92 @@ def _validate_physics(job):
         _need(type(s["kinematic"]) is bool,"kinematic must be boolean")
         _need(not o.get("animate") or s["kinematic"],"Simulated transforms cannot also be authored animation")
         _need("scale" not in o.get("animate",{}),"Animated collider scale is unsupported")
+
+
+def _closed_mesh(o):
+    if o["type"]=="lathe":return o["caps"]
+    if o["type"]=="custom_mesh":
+        edges={}
+        for face in o["faces"]:
+            for a,b in zip(face,face[1:]+face[:1]):
+                key=tuple(sorted((a,b)));edges[key]=edges.get(key,0)+1
+        return bool(edges) and all(n==2 for n in edges.values())
+    return o["type"] not in ("plane","empty","licensed_glb")
+
+
+def _validate_deformable_objects(job,*,require_vector_passes):
+    domains=[];flows=[]
+    for o in job["objects"]:
+        label="object "+o["id"]
+        if "shape_keys" in o:
+            _need(o["type"]=="custom_mesh" and not any(k in o for k in {"cloth","rigid_body"}|_LIQUID_FIELDS),
+                  "Shape keys require explicit mesh topology without a competing simulation")
+            keys=o["shape_keys"];_need(isinstance(keys,list) and keys,"Shape keys missing")
+            ids={"Basis"}
+            for key in keys:
+                _strict(key,{"id","vertices","value"},{"animate","interpolation"},"shape key")
+                _need(isinstance(key["id"],str) and key["id"].strip() and key["id"] not in ids,"Duplicate or reserved shape key ID")
+                ids.add(key["id"])
+                _need(isinstance(key["vertices"],list) and len(key["vertices"])==len(o["vertices"]),"Shape key must preserve original vertex count and order")
+                for v in key["vertices"]:_vec(v,3,"shape key vertex")
+                _num(key["value"],"shape key weight",0,1)
+                _need(key.get("interpolation","BEZIER") in ("LINEAR","BEZIER","CONSTANT"),"Unsupported shape interpolation")
+                if "animate" in key:
+                    _keyframes(key["animate"],"shape weight",job["frames"],1)
+                    for p in key["animate"]:_vec(p["value"],1,"shape weight",0,1)
+        if "cloth" in o:
+            _need(o["type"]=="custom_mesh" and "parent" not in o and "rigid_body" not in o and not o.get("animate")
+                  and not any(k in o for k in _LIQUID_FIELDS|{"cloth_collision"}),
+                  "Cloth requires an unparented explicit mesh without competing transforms or simulation")
+            c=_strict(o["cloth"],set(_CLOTH_FLOATS)|{"quality","pins","collisions","collision_distance","collision_quality","self_collision","self_distance","self_friction"},set(),"cloth")
+            for key,(lo,hi) in _CLOTH_FLOATS.items():_num(c[key],"cloth "+key,lo,hi)
+            for key in ("quality","collision_quality"):
+                _need(type(c[key]) is int and 1<=c[key]<=80,"Invalid cloth solver quality")
+            for key in ("collisions","self_collision"):_need(type(c[key]) is bool,"Cloth collision flags must be boolean")
+            _num(c["collision_distance"],"cloth collision distance",.001,1)
+            _num(c["self_distance"],"cloth self distance",.001,.1);_num(c["self_friction"],"cloth self friction",0,80)
+            _need(isinstance(c["pins"],list),"Cloth pins must be explicit")
+            pins=set()
+            for pin in c["pins"]:
+                _strict(pin,{"vertex","weight"},set(),"cloth pin")
+                _need(type(pin["vertex"]) is int and 0<=pin["vertex"]<len(o["vertices"]) and pin["vertex"] not in pins,"Invalid or duplicate cloth pin")
+                pins.add(pin["vertex"]);_num(pin["weight"],"pin weight",0,1)
+        if "cloth_collision" in o:
+            _need(o["type"] not in ("empty","licensed_glb") and "cloth" not in o and not any(k in o for k in _LIQUID_FIELDS),"Cloth collider needs explicit mesh geometry")
+            c=_strict(o["cloth_collision"],set(_CLOTH_CONTACT),set(),"cloth_collision")
+            for key,(lo,hi) in _CLOTH_CONTACT.items():_num(c[key],"cloth collider "+key,lo,hi)
+        roles=set(o)&_LIQUID_FIELDS
+        _need(len(roles)<=1,"Each object can have only one liquid role")
+        if roles:
+            _need(o["type"] not in ("empty","licensed_glb") and "parent" not in o and
+                  not any(k in o for k in ("cloth","rigid_body","shape_keys","cloth_collision")),"Liquid role needs an explicit unparented mesh without competing simulation")
+            _need("scale" not in o.get("animate",{}),"Animated fluid scale is unsupported")
+        if "liquid_domain" in o:
+            domains.append(o)
+            _need(o["type"]=="cube" and not o.get("animate") and not o.get("modifiers"),"Liquid domain must be an unmodified static box")
+            d=_strict(o["liquid_domain"],{"resolution","mesh_scale","particle_radius","time_scale","flip_ratio","viscosity"},set(),"liquid domain")
+            _need(type(d["resolution"]) is int and 6<=d["resolution"]<=512,"Liquid grid resolution must be 6..512")
+            _need(type(d["mesh_scale"]) is int and 1<=d["mesh_scale"]<=4,"Liquid mesh scale must be 1..4")
+            _num(d["particle_radius"],"liquid particle radius",.01,10)
+            _num(d["time_scale"],"liquid time scale",.0001,10);_num(d["flip_ratio"],"FLIP ratio",0,1)
+            _num(d["viscosity"],"liquid viscosity",0,10)
+        if "liquid_flow" in o:
+            flows.append(o);f=_strict(o["liquid_flow"],{"behavior","surface_distance","velocity"},set(),"liquid flow")
+            _need(f["behavior"] in ("GEOMETRY","INFLOW","OUTFLOW"),"Unknown liquid flow behavior")
+            _need(_closed_mesh(o),"Liquid flow source must be a closed mesh")
+            _num(f["surface_distance"],"liquid surface distance",0,10);_vec(f["velocity"],3,"liquid velocity",-1000,1000)
+            _need(f["behavior"]!="GEOMETRY" or not o.get("animate"),"Initial geometry emits once; moving liquid sources require INFLOW")
+            _need(f["behavior"]!="OUTFLOW" or f["velocity"]==[0,0,0],"Outflow removes liquid rather than injecting velocity")
+        if "liquid_obstacle" in o:
+            f=_strict(o["liquid_obstacle"],{"surface_distance","planar"},set(),"liquid obstacle")
+            _num(f["surface_distance"],"liquid obstacle distance",0,10)
+            _need(type(f["planar"]) is bool and (f["planar"] or _closed_mesh(o)),"Choose a planar obstacle or closed collision mesh")
+    if domains or flows or any("liquid_obstacle" in o for o in job["objects"]):
+        _need(len(domains)==1 and any(f["liquid_flow"]["behavior"]!="OUTFLOW" for f in flows),"One liquid domain and an actual liquid source are required per shot")
+        _need(not require_vector_passes,"Variable-topology liquid requires velocity-aware EXR passes; this adapter does not supply them")
+        _need("motion_blur" not in job.get("render_settings",{}),"Variable-topology liquid shutter blur requires an unsupported velocity-aware render")
+    _need(not any("cloth_collision" in o for o in job["objects"]) or any("cloth" in o for o in job["objects"]),
+          "Cloth collision controls require an actual cloth simulation")
 
 
 def _asset(name, root, label, suffixes):
@@ -311,7 +408,7 @@ def validate_blender_shot(job, *, verified_assets_root=None, require_vector_pass
     for i,o in enumerate(objects):
         lab=f"object[{i}]"
         _strict(o,{"id","type","material","location","rotation_degrees","scale"},
-                {"animate","vertices","faces","asset","rights","uvs","profile","segments","caps","modifiers","parent","interpolation","rigid_body"},lab)
+                {"animate","vertices","faces","asset","rights","uvs","profile","segments","caps","modifiers","parent","interpolation","rigid_body","cloth","cloth_collision","shape_keys"}|_LIQUID_FIELDS,lab)
         _need(isinstance(o["id"],str) and o["id"].strip()
               and o["id"] not in objects_seen,lab+" ID duplicated/missing")
         objects_seen.add(o["id"])
@@ -389,6 +486,7 @@ def validate_blender_shot(job, *, verified_assets_root=None, require_vector_pass
     if "focus_object" in cam.get("depth_of_field",{}):
         focus=cam["depth_of_field"]["focus_object"]
         _need(isinstance(focus,str) and focus in parents,"Unknown camera focus object")
+    _validate_deformable_objects(job,require_vector_passes=require_vector_passes)
     _validate_physics(job)
     lights=job["lights"]
     _need(isinstance(lights,list) and lights,"Director must specify actual light rig")
@@ -437,6 +535,12 @@ def render_blender_shot(job, out: Path, *, verified_assets_root=None,
     from math import radians
     from mathutils import Vector
 
+    # The inspected distro Blender 4.0 liquid bake aborts inside Mantaflow's
+    # embedded Python initialization. Refuse it before entering native bake;
+    # cloth/morph/rigid CGI keep their independently tested 4.0 path.
+    if any("liquid_domain" in raw for raw in job["objects"]):
+        _need(bpy.app.version>=(4,5,0),"Native liquid baking requires Blender 4.5 or newer; this older runtime is unsupported")
+
     bpy.ops.wm.read_factory_settings(use_empty=True)
     scene=bpy.context.scene
     scene.render.engine="CYCLES"
@@ -481,6 +585,7 @@ def render_blender_shot(job, out: Path, *, verified_assets_root=None,
     scene.frame_start=1 if frame_start is None else frame_start
     scene.frame_end=job["frames"] if frame_end is None else frame_end
     scene.render.fps=job["fps"]
+    if "physics" in job:scene.gravity=job["physics"]["gravity"]
     world=bpy.data.worlds.new("ZX7 director-owned world")
     scene.world=world
     world.use_nodes=True
@@ -592,6 +697,16 @@ def render_blender_shot(job, out: Path, *, verified_assets_root=None,
                 obj.keyframe_insert(data_path=attr,frame=p["frame"])
         _set_interpolation(obj,data.get("interpolation","BEZIER"))
 
+    def add_modifiers(obj,specs):
+        for spec in specs:
+            kind_mod=spec["kind"]
+            if kind_mod=="bevel":
+                mod=obj.modifiers.new("Authored bevel","BEVEL");mod.width=spec["width"];mod.segments=spec["segments"];mod.limit_method="ANGLE";mod.angle_limit=radians(spec["angle_degrees"])
+            elif kind_mod=="solidify":
+                mod=obj.modifiers.new("Authored shell","SOLIDIFY");mod.thickness=spec["thickness"];mod.offset=spec["offset"]
+            else:
+                mod=obj.modifiers.new("Authored subdivision","SUBSURF");mod.levels=spec["levels"];mod.render_levels=spec["levels"]
+
     directed_objects={}
     for raw in job["objects"]:
         kind=raw["type"]
@@ -632,14 +747,18 @@ def render_blender_shot(job, out: Path, *, verified_assets_root=None,
             uv_layer=obj.data.uv_layers.new(name="Director UV")
             for polygon,coordinates in zip(obj.data.polygons,uvs):
                 for index,coordinate in zip(polygon.loop_indices,coordinates):uv_layer.data[index].uv=coordinate
-        for spec in raw.get("modifiers",[]):
-            kind_mod=spec["kind"]
-            if kind_mod=="bevel":
-                mod=obj.modifiers.new("Authored bevel","BEVEL");mod.width=spec["width"];mod.segments=spec["segments"];mod.limit_method="ANGLE";mod.angle_limit=radians(spec["angle_degrees"])
-            elif kind_mod=="solidify":
-                mod=obj.modifiers.new("Authored shell","SOLIDIFY");mod.thickness=spec["thickness"];mod.offset=spec["offset"]
-            else:
-                mod=obj.modifiers.new("Authored subdivision","SUBSURF");mod.levels=spec["levels"];mod.render_levels=spec["levels"]
+        if "shape_keys" in raw:
+            obj.shape_key_add(name="Basis")
+            for key in raw["shape_keys"]:
+                block=obj.shape_key_add(name=key["id"])
+                for vertex,position in zip(block.data,key["vertices"]):vertex.co=position
+                block.value=key["value"]
+                for point in key.get("animate",[]):
+                    block.value=point["value"][0];block.keyframe_insert(data_path="value",frame=point["frame"])
+                _set_interpolation(obj.data.shape_keys,key.get("interpolation","BEZIER"),data_path=block.path_from_id("value"))
+        # Cloth solves the original control mesh; finishing modifiers are
+        # attached after baking, so solver topology cannot silently change.
+        if "cloth" not in raw:add_modifiers(obj,raw.get("modifiers",[]))
         obj.location=raw["location"]
         obj.rotation_euler=[radians(x) for x in raw["rotation_degrees"]]
         obj.scale=raw["scale"]
@@ -651,7 +770,7 @@ def render_blender_shot(job, out: Path, *, verified_assets_root=None,
         if "parent" in raw:directed_objects[raw["id"]].parent=directed_objects[raw["parent"]]
 
     physics_report=None
-    if "physics" in job:
+    if any("rigid_body" in raw for raw in job["objects"]):
         # Evaluate the REAL Bullet world on the original shot clock, then bake
         # dynamic poses. A resumed frame subset sees the same history and
         # subframe motion blur can interpolate the resulting native poses.
@@ -690,6 +809,120 @@ def render_blender_shot(job, out: Path, *, verified_assets_root=None,
             "positions":{name:[{"frame":f,"location":list(values[f-1].to_translation())} for f in selected] for name,values in poses.items()}}
         scene.frame_start=1 if frame_start is None else frame_start
         scene.frame_end=job["frames"] if frame_end is None else frame_end
+
+    def mesh_observation(obj,mesh,frame):
+        import hashlib,struct
+        coords=[tuple(v.co) for v in mesh.vertices]
+        _need(all(math.isfinite(x) for v in coords for x in v),"Native simulation produced non-finite geometry")
+        world_coords=[obj.matrix_world@v.co for v in mesh.vertices]
+        return {"frame":frame,"vertices":len(coords),"polygons":len(mesh.polygons),
+            "geometry_sha256":hashlib.sha256(b"".join(struct.pack("<fff",*v) for v in coords)).hexdigest(),
+            "bounds_min":[min((v[i] for v in world_coords),default=0) for i in range(3)],
+            "bounds_max":[max((v[i] for v in world_coords),default=0) for i in range(3)]}
+
+    cloth_specs=[raw for raw in job["objects"] if "cloth" in raw]
+    cloth_report=None
+    if cloth_specs:
+        scene.frame_set(1);cloth_modifiers={}
+        for raw in job["objects"]:
+            if "cloth_collision" not in raw:continue
+            obj=directed_objects[raw["id"]];obj.modifiers.new("Authored cloth contact","COLLISION")
+            for key,value in raw["cloth_collision"].items():setattr(obj.collision,key,value)
+        for raw in cloth_specs:
+            obj=directed_objects[raw["id"]];spec=raw["cloth"]
+            bpy.ops.object.select_all(action="DESELECT");obj.select_set(True);bpy.context.view_layer.objects.active=obj
+            bpy.ops.object.transform_apply(location=False,rotation=False,scale=True)
+            mod=obj.modifiers.new("Authored native cloth","CLOTH");cloth_modifiers[raw["id"]]=mod
+            for key in set(_CLOTH_FLOATS)|{"quality"}:setattr(mod.settings,key,spec[key])
+            pins=obj.vertex_groups.new(name="ZX7 authored cloth pins")
+            for pin in spec["pins"]:pins.add([pin["vertex"]],pin["weight"],"REPLACE")
+            mod.settings.vertex_group_mass=pins.name
+            cs=mod.collision_settings;cs.use_collision=spec["collisions"];cs.use_self_collision=spec["self_collision"]
+            for source,target in (("collision_distance","distance_min"),("collision_quality","collision_quality"),("self_distance","self_distance_min"),("self_friction","self_friction")):
+                setattr(cs,target,spec[source])
+            mod.point_cache.frame_start=1;mod.point_cache.frame_end=job["frames"]
+        snapshots={raw["id"]:[] for raw in cloth_specs};observations={raw["id"]:[] for raw in cloth_specs}
+        scene.frame_start=1;scene.frame_end=job["frames"]
+        for frame in range(1,job["frames"]+1):
+            scene.frame_set(frame);depsgraph=bpy.context.evaluated_depsgraph_get()
+            for raw in cloth_specs:
+                identity=raw["id"];obj=directed_objects[identity];evaluated=obj.evaluated_get(depsgraph);mesh=evaluated.to_mesh()
+                try:
+                    _need(len(mesh.vertices)==len(obj.data.vertices),"Cloth control topology changed during simulation")
+                    row=mesh_observation(obj,mesh,frame)
+                    row["pins"]=[{"vertex":pin["vertex"],"position":list(obj.matrix_world@mesh.vertices[pin["vertex"]].co)} for pin in raw["cloth"]["pins"]]
+                    observations[identity].append(row)
+                    snapshots[identity].append([tuple(v.co) for v in mesh.vertices])
+                finally:evaluated.to_mesh_clear()
+        for raw in cloth_specs:
+            identity=raw["id"];obj=directed_objects[identity];obj.modifiers.remove(cloth_modifiers[identity])
+            poses=snapshots[identity]
+            for vertex,position in zip(obj.data.vertices,poses[0]):vertex.co=position
+            obj.data.update();obj.shape_key_add(name="Basis")
+            for frame,positions in enumerate(poses[1:],2):
+                block=obj.shape_key_add(name=f"ZX7 baked cloth {frame}")
+                for vertex,position in zip(block.data,positions):vertex.co=position
+                for at,value in ((frame-1,0.),(frame,1.),(frame+1,0.)):
+                    if at<=job["frames"]:block.value=value;block.keyframe_insert(data_path="value",frame=at)
+            _set_interpolation(obj.data.shape_keys,"LINEAR")
+            add_modifiers(obj,raw.get("modifiers",[]))
+        cloth_report={"solver":"Blender native cloth; original-clock vertex pose bake",
+            "original_clock_frames":job["frames"],"meshes":observations,
+            "maximum_vertex_displacement":{identity:max(math.dist(a,b) for a,b in zip(poses[0],poses[-1])) for identity,poses in snapshots.items()}}
+        scene.frame_start=1 if frame_start is None else frame_start;scene.frame_end=job["frames"] if frame_end is None else frame_end
+
+    liquid_report=None
+    domain_spec=next((raw for raw in job["objects"] if "liquid_domain" in raw),None)
+    if domain_spec is not None:
+        scene.frame_set(1);domain=directed_objects[domain_spec["id"]]
+        for raw in job["objects"]:
+            if not any(k in raw for k in _LIQUID_FIELDS):continue
+            obj=directed_objects[raw["id"]]
+            bpy.ops.object.select_all(action="DESELECT");obj.select_set(True);bpy.context.view_layer.objects.active=obj
+            bpy.ops.object.transform_apply(location=False,rotation=False,scale=True)
+            mod=obj.modifiers.new("Authored native liquid","FLUID")
+            if "liquid_domain" in raw:
+                mod.fluid_type="DOMAIN";bpy.context.view_layer.update();ds=mod.domain_settings;spec=raw["liquid_domain"]
+                ds.domain_type="LIQUID";ds.resolution_max=spec["resolution"];ds.use_mesh=True;ds.mesh_scale=spec["mesh_scale"]
+                ds.mesh_particle_radius=spec["particle_radius"];ds.time_scale=spec["time_scale"];ds.flip_ratio=spec["flip_ratio"]
+                ds.use_viscosity=spec["viscosity"]>0;ds.viscosity_value=spec["viscosity"]
+                cache=Path(out)/"native-liquid-cache";cache.mkdir(parents=True,exist_ok=False)
+                ds.cache_type="ALL";ds.cache_directory=str(cache.resolve());ds.cache_frame_start=1;ds.cache_frame_end=job["frames"]
+            elif "liquid_flow" in raw:
+                mod.fluid_type="FLOW";bpy.context.view_layer.update();flow=mod.flow_settings;spec=raw["liquid_flow"]
+                flow.flow_type="LIQUID";flow.flow_behavior=spec["behavior"];flow.surface_distance=spec["surface_distance"]
+                flow.use_initial_velocity=True;flow.velocity_coord=spec["velocity"]
+            else:
+                mod.fluid_type="EFFECTOR";bpy.context.view_layer.update();effector=mod.effector_settings;spec=raw["liquid_obstacle"]
+                effector.effector_type="COLLISION";effector.surface_distance=spec["surface_distance"];effector.use_plane_init=spec["planar"]
+        scene.frame_start=1;scene.frame_end=job["frames"];scene.frame_set(1)
+        bpy.ops.object.select_all(action="DESELECT");domain.select_set(True);bpy.context.view_layer.objects.active=domain
+        done=bpy.ops.fluid.bake_all()
+        _need("FINISHED" in done and ds.has_cache_baked_data and ds.has_cache_baked_mesh,"Native liquid cache did not actually bake")
+        cache_meshes=list((cache/"mesh").glob("*.bobj.gz"))
+        _need(len(cache_meshes)==job["frames"],"Native liquid mesh cache lost original frames")
+        observations=[]
+        for frame in range(1,job["frames"]+1):
+            scene.frame_set(frame);evaluated=domain.evaluated_get(bpy.context.evaluated_depsgraph_get());mesh=evaluated.to_mesh()
+            try:observations.append(mesh_observation(domain,mesh,frame))
+            finally:evaluated.to_mesh_clear()
+        _need(any(row["polygons"]>0 for row in observations),"Liquid simulation produced no real surface")
+        for raw in job["objects"]:
+            if "liquid_flow" in raw:directed_objects[raw["id"]].hide_render=True
+        liquid_report={"solver":"Blender Mantaflow native liquid mesh","original_clock_frames":job["frames"],
+            "cache_mesh_frames":len(cache_meshes),"resolution":ds.resolution_max,"viscosity":ds.viscosity_value,
+            "meshes":observations}
+        scene.frame_start=1 if frame_start is None else frame_start;scene.frame_end=job["frames"] if frame_end is None else frame_end
+
+    morph_report={}
+    for raw in job["objects"]:
+        if "shape_keys" not in raw:continue
+        rows=[];obj=directed_objects[raw["id"]]
+        for frame in sorted({1,max(1,job["frames"]//2),job["frames"]}):
+            scene.frame_set(frame);evaluated=obj.evaluated_get(bpy.context.evaluated_depsgraph_get());mesh=evaluated.to_mesh()
+            try:rows.append(mesh_observation(obj,mesh,frame))
+            finally:evaluated.to_mesh_clear()
+        morph_report[raw["id"]]=rows
 
     for spec in job["lights"]:
         light_data=bpy.data.lights.new(spec["id"],spec["type"])
@@ -763,7 +996,7 @@ def render_blender_shot(job, out: Path, *, verified_assets_root=None,
             "bounces":{key:getattr(scene.cycles,key) for key in sorted(_BOUNCES)},
             "procedural_materials":[m["id"] for m in job["materials"] if "surface_noise" in m],
             "volume_materials":[m["id"] for m in job["materials"] if "volume" in m],
-            "physics":physics_report}
+            "physics":physics_report,"cloth":cloth_report,"liquid":liquid_report,"shape_keys":morph_report}
     (out/"render-report.json").write_text(json.dumps(report,indent=2)+"\n")
     return {"shot_id":job["shot_id"],"frames":job["frames"],"fps":job["fps"],"native_controls":report,
             "format":("scene-linear multilayer 32-bit float OpenEXR RGBA, depth, normal and vector"

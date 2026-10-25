@@ -755,8 +755,8 @@ def body_catalog(workspace,*,vault_root=None):
     add("body.blender3d","physical 3D filmmaking","Blender real rendered geometries, materials and moving camera",
         "write",bool(shutil.which("blender") and video_io),
         ["scene_json","out"],render3d)
-    add("body.cgi_shot","source-attested product CGI and PBR scene rendering",
-        "Sealed texture/GLB assets; PBR and procedural microdetail, absorption/scattering, object-focus optics, authored shutter/bounces, native rigid-body pose baking on original clock; Blender Cycles CPU",
+    add("body.cgi_shot","source-attested original CGI and native simulation",
+        "Sealed texture/GLB assets; PBR, optics, authored shutter, rigid bodies, cloth/pins/collisions, topology-preserving shape keys and native liquid mesh baking (Blender 4.5+); original-clock simulation; Cycles CPU",
         "write",bool(shutil.which("blender") and video_io),["plan","out"],cgi_shot)
     add("body.planar_insert","measured planar tracking and corner-pin VFX",
         "SIFT/RANSAC original reference-to-frame motion; premultiplied-alpha perspective insertion, owned foreground mattes and bitstream-preserved sound; fails on track loss, not 3D camera solve",
