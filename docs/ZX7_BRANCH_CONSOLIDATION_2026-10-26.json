@@ -219,7 +219,7 @@
     "README.md"
   ],
   "branch_deletion_performed": false,
-  "validation": "Exact candidate commit must pass existing native, security, browser, source, custody and OTIO checks before main promotion.",
+  "validation": "All seven exact-candidate workflows passed; verified commit was fast-forwarded to main without force.",
   "local_preflight": {
     "files": 390,
     "all_branch_unique_paths": 388,
@@ -251,5 +251,81 @@
       "failed": 0
     },
     "duplicate_content_decision": "Two repeated model-provenance pairs belong to separate archived evaluations; retain them. No duplicate implementation source found."
-  }
+  },
+  "verification": {
+    "verified_candidate_commit": "ae7999b1f6f9866601483042a1104dc35d93d68b",
+    "all_seven_workflows_passed": true,
+    "native_tests": {
+      "run": 663,
+      "passed": 662,
+      "skipped": 1,
+      "failed": 0,
+      "separate_chromium_check": "success"
+    },
+    "runs": [
+      {
+        "id": 40277599820,
+        "name": "Director contract regression tests",
+        "sha": "ae7999b1f6f9866601483042a1104dc35d93d68b",
+        "conclusion": "success",
+        "url": "https://github.com/oyzitjfzj/Ad/actions/runs/40277599820"
+      },
+      {
+        "id": 40277595162,
+        "name": "ZX7 BODY — Integrated Mobile + Native Release Proof",
+        "sha": "ae7999b1f6f9866601483042a1104dc35d93d68b",
+        "conclusion": "success",
+        "url": "https://github.com/oyzitjfzj/Ad/actions/runs/40277595162"
+      },
+      {
+        "id": 40277595161,
+        "name": "ZX7 All Tracked Source Inventory",
+        "sha": "ae7999b1f6f9866601483042a1104dc35d93d68b",
+        "conclusion": "success",
+        "url": "https://github.com/oyzitjfzj/Ad/actions/runs/40277595161"
+      },
+      {
+        "id": 40277595281,
+        "name": "ZX7 BODY — Mobile Console Security Contract",
+        "sha": "ae7999b1f6f9866601483042a1104dc35d93d68b",
+        "conclusion": "success",
+        "url": "https://github.com/oyzitjfzj/Ad/actions/runs/40277595281"
+      },
+      {
+        "id": 40277595193,
+        "name": "ZX7 BODY — Real Source-Custody Editorial Proof",
+        "sha": "ae7999b1f6f9866601483042a1104dc35d93d68b",
+        "conclusion": "success",
+        "url": "https://github.com/oyzitjfzj/Ad/actions/runs/40277595193"
+      },
+      {
+        "id": 40277595248,
+        "name": "ZX7 BODY Genuine OTIO Audio-Visual Roundtrip",
+        "sha": "ae7999b1f6f9866601483042a1104dc35d93d68b",
+        "conclusion": "success",
+        "url": "https://github.com/oyzitjfzj/Ad/actions/runs/40277595248"
+      },
+      {
+        "id": 40277595184,
+        "name": "ZX7 BODY — Real Mobile Browser Acceptance",
+        "sha": "ae7999b1f6f9866601483042a1104dc35d93d68b",
+        "conclusion": "success",
+        "url": "https://github.com/oyzitjfzj/Ad/actions/runs/40277595184"
+      }
+    ]
+  },
+  "promotion": {
+    "main_fast_forwarded_to": "ae7999b1f6f9866601483042a1104dc35d93d68b",
+    "all_original_tips_retained": true,
+    "branch_deletion_performed": false,
+    "deletable_branch_names": [
+      "director-grounded-planning",
+      "studio-vnext-independent-proof",
+      "zx7-body/live-signal-contract-20261021",
+      "zx7-body/mobile-operator-20261021",
+      "zx7-body/real-multitrack-renderer",
+      "zx7-specialist-free-stack-20261020"
+    ]
+  },
+  "workflow_prerequisites_resolution": "Retain the recovered multitrack branch FFmpeg install/probe steps in the manual legacy contract workflow. Current automated native workflow already installs these tools."
 }

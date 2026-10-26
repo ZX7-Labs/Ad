@@ -58,3 +58,21 @@ mobile security, real Chromium, source inventory, custody and OTIO workflows.
 Record the exact candidate/run SHAs when promoting main; older baseline checks
 are not substituted for candidate acceptance. Consolidation preserves engineering
 work and does not certify complete creative-studio product readiness.
+
+## Completed verification and main promotion
+
+Candidate `ae7999b1f6f9866601483042a1104dc35d93d68b` passed all seven workflows,
+and main was fast-forwarded to that exact commit without force. Native run
+[40277595162](https://github.com/oyzitjfzj/Ad/actions/runs/40277595162) ran 663 cases:
+662 passed, one browser-only skip. Separate real Chromium acceptance passed.
+Source inventory, mobile security, source custody, OTIO and director checks all
+passed on the same candidate. All 390 tracked files passed format inventory.
+
+All six non-default branch snapshots are now ancestors of main. They may be
+deleted after checking that their heads have not moved beyond this consolidation.
+No branch deletion was performed. PRs whose heads are now retained in main are
+closed as consolidated. The manifest retains exact starting heads and run URLs.
+
+Final housekeeping records these results and restores the old multitrack
+workflow's existing FFmpeg installation/probe steps for manual execution. This
+changes verification configuration/documentation, not the tested runtime modules.
