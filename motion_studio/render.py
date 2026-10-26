@@ -14,14 +14,8 @@ from pathlib import Path
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
-
-FONTS = {
-    "sans": "/usr/share/fonts/opentype/urw-base35/NimbusSans-Regular.otf",
-    "bold": "/usr/share/fonts/opentype/urw-base35/NimbusSans-Bold.otf",
-    "serif": "/usr/share/fonts/opentype/urw-base35/P052-Italic.otf",
-    "mono": "/usr/share/fonts/opentype/urw-base35/NimbusMonoPS-Regular.otf",
-}
-
+from studio_next.sound_synthesis import synthesize,validate_mix
+from studio_next.font_registry import resolve_artist_font,require_unicode_font_coverage
 
 def color(value):
     from PIL import ImageColor
@@ -30,7 +24,7 @@ def color(value):
 
 @functools.lru_cache(maxsize=256)
 def font(style, size):
-    return ImageFont.truetype(FONTS[style], max(1, round(size)))
+    return ImageFont.truetype(resolve_artist_font(style), max(1, round(size)))
 
 
 def ease(value, kind="smooth"):
@@ -73,14 +67,18 @@ def artwork(spec, factor):
         elif kind=="polygon":
             d.polygon([box(p) for p in item["points"]],fill=fill)
         elif kind=="text":
-            f=font(item.get("font","sans"),round(item["size"]*factor))
+            typeface=item.get("font","sans")
+            require_unicode_font_coverage(resolve_artist_font(typeface),item["text"])
+            f=font(typeface,round(item["size"]*factor))
             x,y=box(item["at"])
             for index,line in enumerate(item["text"].split("\n")):
                 xx=x
                 if item.get("align")=="center": xx-=d.textlength(line,font=f)/2
                 if item.get("align")=="right": xx-=d.textlength(line,font=f)
                 d.text((xx,y+round(index*item["size"]*item.get("leading",1.07)*factor)),
-                       line,font=f,fill=fill,stroke_width=0)
+                       line,font=f,fill=fill,
+                       stroke_width=max(1,round(item.get("width",1)*factor)) if "stroke" in item else 0,
+                       stroke_fill=item.get("stroke"))
         else:
             raise ValueError("Unsupported artwork primitive: "+kind)
     return im
@@ -96,15 +94,20 @@ class Compositor:
         d=ImageDraw.Draw(self.background)
         # Stable background texture, not flickering random noise per frame.
         spacing=round(project.get("grid",28)*self.factor)
-        for y in range(spacing//2,self.height,spacing):
-            for x in range(spacing//2,self.width,spacing):
-                d.ellipse((x,y,x+max(1,round(self.factor)),y+max(1,round(self.factor))),
-                          fill=project.get("grid_color","#E0E0DD"))
-        rng=np.random.default_rng(914)
-        noise=rng.normal(0,.65,(self.height,self.width,1))
-        a=np.asarray(self.background).copy()
-        a[:,:,:3]=np.clip(a[:,:,:3].astype(float)+noise,0,255).astype(np.uint8)
-        self.background=Image.fromarray(a)
+        if spacing>0:
+            for y in range(spacing//2,self.height,spacing):
+                for x in range(spacing//2,self.width,spacing):
+                    d.ellipse((x,y,x+max(1,round(self.factor)),y+max(1,round(self.factor))),
+                              fill=project.get("grid_color","#E0E0DD"))
+        # Historical authored samples retain their original rendering when
+        # this field is absent. New Film IR explicitly controls/no-ops grain.
+        grain=project.get("background_noise",{"gain":.65,"seed":914})
+        if grain is not None and grain["gain"]>0:
+            rng=np.random.default_rng(grain["seed"])
+            noise=rng.normal(0,grain["gain"],(self.height,self.width,1))
+            a=np.asarray(self.background).copy()
+            a[:,:,:3]=np.clip(a[:,:,:3].astype(float)+noise,0,255).astype(np.uint8)
+            self.background=Image.fromarray(a)
 
     def frame(self, scene, t):
         canvas=self.background.copy()
@@ -156,13 +159,17 @@ def mix_audio(project, scenes, out, rate=48000):
     total=sum(s["seconds"] for s in scenes)
     bed=np.zeros(round(total*rate),dtype=np.float64)
     voice=np.zeros_like(bed)
+    authored=validate_mix(project["audio_mix"]) if "audio_mix" in project else None
     cursor=0.
     for s in scenes:
         if s.get("wav"):
             audio=pcm_read(s["wav"],rate)
             # Preserve the accepted identity/rate/pitch; only adjust output gain.
-            rms=float(np.sqrt(np.mean(audio.astype(float)**2)))
-            audio*=min(4.,.115/max(rms,1e-6))
+            if authored is None:
+                rms=float(np.sqrt(np.mean(audio.astype(float)**2)))
+                audio*=min(4.,.115/max(rms,1e-6))
+            else:
+                audio*=10**(authored.get("voice_gain_db",0)/20)
             start=round((cursor+s.get("voice_delay",.28))*rate)
             voice[start:start+len(audio)]+=audio[:max(0,min(len(audio),len(voice)-start))]
         cursor+=s["seconds"]
@@ -182,7 +189,9 @@ def mix_audio(project, scenes, out, rate=48000):
             duration=cue.get("seconds",.18)
             t=np.arange(round(duration*rate))/rate
             noise=rng.normal(0,1,len(t))
-            if cue["type"]=="paper":
+            if cue["type"]=="synth":
+                sound=synthesize(cue,rate)
+            elif cue["type"]=="paper":
                 noise=np.convolve(noise,np.ones(9)/9,mode="same")
                 sound=noise*np.sin(np.pi*t/duration)**2*cue.get("gain",.09)
             elif cue["type"]=="ink":
@@ -193,10 +202,16 @@ def mix_audio(project, scenes, out, rate=48000):
             index=round((cursor+cue["at"])*rate);length=min(len(sound),len(bed)-index)
             if length>0: bed[index:index+length]+=sound[:length]
         cursor+=scene["seconds"]
-    fade=np.minimum(1,np.arange(len(bed))/rate/.3)*np.minimum(1,(len(bed)-np.arange(len(bed)))/rate/1.1)
+    incoming=.3 if authored is None else authored.get("fade_in_seconds",0)
+    outgoing=1.1 if authored is None else authored.get("fade_out_seconds",0)
+    if authored is not None and incoming+outgoing>total:raise ValueError("Authored audio fades exceed film duration")
+    fade=(np.minimum(1,np.arange(len(bed))/rate/incoming) if incoming else 1)
+    fade=fade*(np.minimum(1,(len(bed)-np.arange(len(bed)))/rate/outgoing) if outgoing else 1)
     mixed=(voice+bed)*fade
     peak=np.max(np.abs(mixed))
-    if peak>.92:mixed*=.92/peak
+    ceiling=.92 if authored is None else authored.get("peak_ceiling")
+    if ceiling is not None and peak>ceiling:mixed*=ceiling/peak
+    elif peak>1:raise ValueError("Authored sound mix clips; choose track gains or a peak ceiling")
     stereo=np.stack([mixed,mixed],axis=1)
     with wave.open(str(out),"wb") as w:
         w.setnchannels(2);w.setsampwidth(2);w.setframerate(rate)
@@ -254,8 +269,14 @@ def render(project_path, out, width=1080, fps=24):
         encoder.stdin.close()
     if encoder.wait()!=0:raise RuntimeError('Video encoder failed')
     final=out/'sample.mp4'
+    loudness=p.get("audio_mix",{}).get("loudness")
+    audio_filters=['-af','loudnorm=I=-16:TP=-1.5:LRA=11'] if "audio_mix" not in p else []
+    if loudness is not None:
+        from studio_next.film_finishing import build_finishing_filters
+        _,filters=build_finishing_filters({"video_ops":[],"audio_ops":[{"kind":"loudnorm",**loudness}]},has_audio=True)
+        audio_filters=['-af',','.join(filters)]
     subprocess.run(['ffmpeg','-hide_banner','-loglevel','error','-y','-i',str(silent),'-i',str(audio),
-        '-map','0:v:0','-map','1:a:0','-c:v','copy','-af','loudnorm=I=-16:TP=-1.5:LRA=11',
+        '-map','0:v:0','-map','1:a:0','-c:v','copy',*audio_filters,
         '-c:a','aac','-b:a','192k','-ar','48000','-movflags','+faststart','-shortest',
         '-metadata','comment=Agent-directed illustrative sample; autonomous application not completed',str(final)],check=True)
     print('VIDEO',str(final),final.stat().st_size,flush=True)

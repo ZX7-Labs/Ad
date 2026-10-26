@@ -1,0 +1,170 @@
+{
+  "date": "2026-10-25",
+  "branch": "zx7-body/mobile-operator-20261021",
+  "based_on_commit": "c046b7dccc922baa3d96b97861b9464ca4508f95",
+  "implementation_document": "docs/BODY_CGI_CONTROLS_2026-10-25.md",
+  "local_verification": {
+    "tests_run": 606,
+    "tests_passed": 564,
+    "tests_skipped": 42,
+    "tests_failed": 0,
+    "tests_errors": 0,
+    "log_sha256": "622ac77c4ba115a7d6ab92fe43ad23b9556716e182be5aae8f08aa4a18b6658f",
+    "native_blender_4_5_15_contracts_and_pixels": "final full suite includes all ten CGI control tests",
+    "native_blender_4_0_2_controls_acceptance": "1 test passed",
+    "separately_installed_wheel_native_proof": {
+      "all_checks_passed": true,
+      "public_body_cgi_graph": true,
+      "full_mp4_decode": true,
+      "native_renderer_version": "4.5.15 LTS",
+      "original_cgi_frames": 12,
+      "actual_dynamic_body_settled_on_collider": true,
+      "original_clock_subset_pixels_identical": true,
+      "all_three_dag_nodes_reused_without_render": true,
+      "volume_control_mean_pixel_difference": 0.2753092447916667,
+      "surface_detail_mean_pixel_difference": 2.8359578450520835,
+      "motion_blur_support_gain_pixels": 29,
+      "movie_sha256": "e111ca2bf61ca8e0da257394ff3825bcb593c6da8e48798d5adca61188adcb28",
+      "live_creative_model_used": false,
+      "premium_artist_approval": false
+    },
+    "installed_production_module_bytes_match_checkout": true,
+    "lease_regression": "5 lease tests passed; original-expiry blocking repeated 12 times with controlled clock and real SQLite",
+    "advanced_unblurred_exr": {
+      "actual_whole_and_chunked_render": true,
+      "frame_6_vector_nonzero_components": {
+        "ViewLayer.Vector.W": 148,
+        "ViewLayer.Vector.X": 148,
+        "ViewLayer.Vector.Y": 148,
+        "ViewLayer.Vector.Z": 148
+      },
+      "whole_sha256": "bbf0659e51aecfe694f87b25f346f5963c8e4d2dd8cc78c725aa32f275908480",
+      "chunked_sha256": "9653ca5d07c0ca440a713d06082cc52a6f8e283cf6b2420730929912d2d45b86"
+    },
+    "full_suite_precedes_test_only_lease_stabilization": true,
+    "public_model_control_interface": {
+      "installed_public_model_facing_schema_query": true,
+      "new_physics_and_render_controls_discoverable": true,
+      "typed_advanced_plan_authored_through_live_signal": true,
+      "source_document_sha256": "9787f1a27fc7efd872e06499bef6f5bffadc953164396deb5fc74db4213f8c9b",
+      "does_not_claim_authoring_is_rendering": true,
+      "live_llm_inference_used": false
+    }
+  },
+  "remote_ci": {
+    "status": "all matching native and targeted CI checks succeeded",
+    "verified_code_commit": "6ebad3ac077cec8e1da80ef745f7867405508cef",
+    "native": {
+      "run_id": 40165711237,
+      "url": "https://github.com/oyzitjfzj/Ad/actions/runs/40165711237",
+      "tests_run": 606,
+      "tests_passed": 605,
+      "tests_skipped": 1,
+      "skip_reason": "browser acceptance runs in its separate workflow",
+      "actual_gui_and_authenticated_media_roundtrip": true,
+      "separately_installed_wheel_native_2d_3d_audio_otio_mp4": true,
+      "installed_native_cgi_controls": {
+        "all_checks_passed": true,
+        "public_body_cgi_graph": true,
+        "full_mp4_decode": true,
+        "native_renderer_version": "4.5.15 LTS",
+        "original_cgi_frames": 12,
+        "actual_dynamic_body_settled_on_collider": true,
+        "original_clock_subset_pixels_identical": true,
+        "all_three_dag_nodes_reused_without_render": true,
+        "volume_control_mean_pixel_difference": 0.2753092447916667,
+        "surface_detail_mean_pixel_difference": 2.8359578450520835,
+        "motion_blur_support_gain_pixels": 29,
+        "movie_sha256": "7c73701163b1d1631e594532667577da71daf5d6342d96f618246bf95e23716e",
+        "live_creative_model_used": false,
+        "premium_artist_approval": false
+      },
+      "installed_pbr_cgi_and_planar_occluded_vfx": {
+        "cgi_sha256": "6b30bac27ac8bccadd58cce49db70cd4be345c54dcb6b64afe364ce2e6d3c43b",
+        "tracked_vfx_sha256": "ba5aaf38fb30c519e76cdf6ca4e7ab740499b0f9355ccab1304266bc58291f6c",
+        "actual_cgi_frames": 24,
+        "actual_tracked_frames": 24,
+        "original_audio_decoded_pcm_identical": true,
+        "human_acting_generation_proven": false,
+        "general_3d_camera_tracking_proven": false,
+        "autonomous_creative_brain_used": false,
+        "proof_scope": "Actual native CGI and planar VFX execution, not world-class artistic approval"
+      },
+      "artifacts": [
+        {
+          "id": 12588577206,
+          "name": "zx7-integrated-mobile-native-body-proof",
+          "size_in_bytes": 5644660,
+          "digest": "sha256:93e6f4a5652bfbbd0889ce3076f2d992bd6fff7f3ad1e562c4f9fe0d94d679fe"
+        }
+      ]
+    },
+    "matching_checks": [
+      {
+        "run_id": 40165711249,
+        "name": "ZX7 All Tracked Source Inventory",
+        "conclusion": "success",
+        "url": "https://github.com/oyzitjfzj/Ad/actions/runs/40165711249"
+      },
+      {
+        "run_id": 40165711215,
+        "name": "ZX7 BODY \u2014 Mobile Console Security Contract",
+        "conclusion": "success",
+        "url": "https://github.com/oyzitjfzj/Ad/actions/runs/40165711215"
+      },
+      {
+        "run_id": 40165711229,
+        "name": "ZX7 BODY \u2014 Real Source-Custody Editorial Proof",
+        "conclusion": "success",
+        "url": "https://github.com/oyzitjfzj/Ad/actions/runs/40165711229"
+      },
+      {
+        "run_id": 40165711237,
+        "name": "ZX7 BODY \u2014 Integrated Mobile + Native Release Proof",
+        "conclusion": "success",
+        "url": "https://github.com/oyzitjfzj/Ad/actions/runs/40165711237"
+      }
+    ],
+    "minimal_security": {
+      "run_id": 40165711215,
+      "tests_run": 217,
+      "tests_passed": 111,
+      "tests_skipped": 106
+    },
+    "browser_and_otio": {
+      "source_commit": "90c6a685064fec6ec6c77bb838561fa3aa499d34",
+      "browser_run": 40165480268,
+      "otio_run": 40165480334,
+      "status": "both succeeded; application code unchanged by subsequent lease-test-only correction"
+    },
+    "focused_checks_overlap_full_suite": true,
+    "live_neural_creative_model_inference": false,
+    "independent_professional_film_quality_approval": false
+  },
+  "capability_scope": [
+    "authored Cycles light transport and physical shutter",
+    "procedural microdetail and absorption/scattering volumes",
+    "material and light keyframe animation",
+    "object-focus and aperture optics",
+    "native Bullet rigid body with original-clock dynamic pose bake"
+  ],
+  "live_creative_model_used": false,
+  "whole_studio_production_complete": false,
+  "independent_professional_quality_approved": false,
+  "keep_pr_draft_and_main_untouched": true,
+  "remaining": [
+    "fluid/cloth/soft-body/fracture simulation and rigged acting",
+    "full 3D camera solve and broader compositing scope",
+    "verified local GPU and real model-generated actor/video footage",
+    "independent professional creative quality and varied full commissions"
+  ],
+  "production_code_commit": "90c6a685064fec6ec6c77bb838561fa3aa499d34",
+  "resolved_ci_failure": {
+    "run_id": 40165480450,
+    "source_commit": "90c6a685064fec6ec6c77bb838561fa3aa499d34",
+    "cause": "An existing lease test assumed a 160ms lease survives free-runner scheduling after a fixed sleep.",
+    "correction": "Observe real successful SQLite renewals with a controlled clock, then verify competing ownership is blocked; observe substitution checks with events. No lease production code or ownership assertion removed.",
+    "rerun_status": "passed matching updated source; run 40165711215"
+  },
+  "verified_code_commit": "6ebad3ac077cec8e1da80ef745f7867405508cef"
+}

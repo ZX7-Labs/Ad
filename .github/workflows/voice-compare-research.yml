@@ -1,10 +1,6 @@
 name: "Voice Lab — F5 vs XTTS (non-commercial listening)"
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/voice-compare-research.yml"
 permissions:
   contents: read
   actions: read

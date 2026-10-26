@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "zx7-studio-body"
+version = "0.1.0"
+description = "Independent original-media production tools, durable jobs and verified audiovisual output"
+requires-python = ">=3.11"
+license = {file = "LICENSE"}
+dependencies = []
+
+[project.optional-dependencies]
+production = ["numpy>=1.26,<3", "Pillow>=10,<13", "opentimelineio>=0.17,<1", "fonttools>=4,<5"]
+vfx_exr = ["OpenEXR>=3.3,<4", "numpy>=1.26,<3"]
+vfx_tracking = ["opencv-python-headless>=4.10,<5", "numpy>=1.26,<3", "Pillow>=10,<13"]
+
+[project.scripts]
+zx7-body = "studio_next.body_service:main"
+zx7-client = "studio_next.body_client:main"
+zx7-desktop = "studio_next.body_desktop:main"
+zx7-tools = "studio_next.body_capabilities:main"
+zx7-archive = "studio_next.body_archive:main"
+zx7-relink-otio = "studio_next.body_asset_links:main"
+
+[tool.setuptools.packages.find]
+include = ["studio_next", "motion_studio"]
+
+[tool.setuptools.package-data]
+studio_next = ["fixtures/*.json"]

@@ -1,6 +1,7 @@
 name: Director contract regression tests
 on:
   push:
+    branches: [main]
     paths:
       - "creative_director/**"
       - "director_research/**"

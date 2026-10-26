@@ -5,9 +5,11 @@ StudioDirector grants tool permissions and validates selected tool route.
 No pretrained model is bundled and no 'best screenwriter' claim is made.
 """
 from dataclasses import dataclass, field
+import base64
 import json
 from urllib.parse import urlsplit
-from urllib.request import Request, urlopen
+from urllib.request import Request
+from .local_model_http import urlopen
 from typing import Any
 
 _CREATIVE_SYSTEM = """You are a studio CREATIVE DIRECTOR, story strategist and editor, not a coding assistant.
@@ -64,10 +66,19 @@ class LocalCreativeModel:
         self.settings=settings
         self.system_prompt=system_prompt
 
-    def _invoke(self,role,context):
+    def _invoke(self,role,context,*,images=()):
+        user_content=json.dumps(context,ensure_ascii=False,allow_nan=False)
+        if images:
+            content=[{"type":"text","text":user_content}]
+            for mime,raw in images:
+                if mime not in ("image/png","image/jpeg") or not isinstance(raw,bytes) or not 100<=len(raw)<=3000000:
+                    raise ValueError("Bounded actual decoded model image required")
+                content.append({"type":"image_url","image_url":{
+                    "url":"data:"+mime+";base64,"+base64.b64encode(raw).decode("ascii")}})
+            user_content=content
         payload={"model":self.settings.model_id,"stream":False,
                  "messages":[{"role":"system","content":role},
-                             {"role":"user","content":json.dumps(context,ensure_ascii=False,allow_nan=False)}],
+                             {"role":"user","content":user_content}],
                  "response_format":{"type":"json_object"}}
         payload.update(self.settings.sampling)
         data=json.dumps(payload,ensure_ascii=False).encode("utf-8")
@@ -84,13 +95,18 @@ class LocalCreativeModel:
         body=choice["message"].get("content")
         if not isinstance(body,str) or not body.strip():
             raise ValueError("Local model returned no JSON")
-        parsed=json.loads(body.strip())
+        def reject_constant(value):
+            raise ValueError("Local model returned non-finite JSON: "+value)
+        parsed=json.loads(body.strip(),parse_constant=reject_constant)
         if not isinstance(parsed,dict):
             raise ValueError("Local model returned a non-object JSON value")
         return parsed
 
     def decide(self,context):
         return self._invoke(self.system_prompt,context)
+
+    def decide_with_images(self,context,images):
+        return self._invoke(self.system_prompt,context,images=images)
 
     def review(self,context):
         # Caller can create a separate instance with a different local model id,

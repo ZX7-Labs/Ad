@@ -37,10 +37,12 @@ AI हर नए काम के लिए विचार, दृश्य भ
 
 **यह README उत्पाद का वर्तमान लक्ष्य और उसकी अपेक्षित कार्यप्रणाली बताती है। बनी हुई क्षमताओं की स्थिति और उनका परीक्षण संबंधित इंजीनियरिंग दस्तावेज़ों में दर्ज हैं।**
 
-## मौजूदा विकास और प्रमाण
+## वर्तमान कोड और प्रमाण
 
-- [BODY की सक्रिय विकास ब्रांच](https://github.com/oyzitjfzj/Ad/tree/zx7-body/mobile-operator-20261021)
-- [इंजीनियरिंग स्थिति और शुरुआत](https://github.com/oyzitjfzj/Ad/blob/zx7-body/mobile-operator-20261021/ZX7_START_HERE.md)
-- [परीक्षण और स्वीकृति का दर्ज प्रमाण](https://github.com/oyzitjfzj/Ad/blob/zx7-body/mobile-operator-20261021/docs/ZX7_BODY_NATIVE_VISUAL_ACCEPTANCE_2026-10-25.json)
+- [एकीकृत मुख्य कोड](https://github.com/oyzitjfzj/Ad/tree/main)
+- [इंजीनियरिंग स्थिति और शुरुआत](https://github.com/oyzitjfzj/Ad/blob/main/ZX7_START_HERE.md)
+- [परीक्षण और स्वीकृति का दर्ज प्रमाण](https://github.com/oyzitjfzj/Ad/blob/main/docs/ZX7_BODY_NATIVE_VISUAL_ACCEPTANCE_2026-10-25.json)
 
 पुराने दस्तावेज़ों में किसी खास नमूने, शैली, एजेंसी या सीमित प्रयोग का वर्णन मिल सकता है। पूरे उत्पाद की वर्तमान दिशा ऊपर बताई गई है।
+
+ब्रांच एकीकरण और सुरक्षित हटाने का रिकॉर्ड: [BRANCH_CONSOLIDATION_2026-10-26.md](docs/BRANCH_CONSOLIDATION_2026-10-26.md)।

@@ -174,6 +174,16 @@ class TestProducer(unittest.TestCase):
         r=StudioDirector(b,QueueReviewer([critic_ok()]),self.catalog).create(good_brief())
         self.assertEqual(r.trace[0]["outcome"],"blocked")
         self.assertEqual(r.state,"ready_for_human_review")
+    def test_paid_tool_proposal_cannot_pass_just_because_installed(self):
+        self.catalog.register(ToolSpec("paid.video","Paid animation","Would charge account","paid"),
+                              lambda x:{"charged":True})
+        plan=make_plan()
+        plan["tool_route"]=[{"tool_id":"paid.video","reason":"Realistic expensive scene",
+                             "inputs":{"prompt":"some idea"}}]
+        b=QueueBrain([{"kind":"proposal","plan":plan}])
+        r=StudioDirector(b,QueueReviewer([]),self.catalog,max_turns=1).create(good_brief())
+        self.assertEqual(r.state,"blocked")
+        self.assertIn("unavailable",str(r.trace[0].get("errors")))
     def test_exhausted_budget_blocks(self):
         b=QueueBrain([{"kind":"tool","tool_id":"not.installed","inputs":{}}]*3)
         r=StudioDirector(b,QueueReviewer([]),self.catalog,max_turns=3).create(good_brief())

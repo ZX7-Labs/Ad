@@ -1,10 +1,6 @@
 name: "Voice Lab — Confident Cinematic Original"
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/voice-confident-cinematic.yml"
 permissions:
   contents: read
 jobs:

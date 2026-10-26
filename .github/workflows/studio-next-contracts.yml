@@ -1,11 +1,6 @@
 name: "Next Studio Architecture — Contract and Security Tests"
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - "studio_next/**"
-      - ".github/workflows/studio-next-contracts.yml"
 permissions:
   contents: read
 jobs:

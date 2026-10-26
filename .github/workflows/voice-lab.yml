@@ -1,10 +1,6 @@
 name: "Voice Lab — Qwen3 male A/B"
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/voice-lab.yml"
 permissions:
   contents: read
 jobs:

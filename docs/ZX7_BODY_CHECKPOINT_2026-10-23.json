@@ -1,0 +1,347 @@
+{
+  "schema": 2,
+  "date": "2026-10-23",
+  "project": "ZX7 Studio / BODY",
+  "canonical_branch": "zx7-body/mobile-operator-20261021",
+  "canonical_head": "aa02050c6e41dcba017aaa45bf86d4cfee4279c0",
+  "draft_pr": "https://github.com/oyzitjfzj/Ad/pull/3",
+  "main_untouched": true,
+  "original_art_and_voices_unchanged": true,
+  "not_production_complete": true,
+  "completed_integration": [
+    "Inspected all seven branches: ancestral research branches retained, independent live-signal contract consolidated into canonical host-scoped BodySignal adapter",
+    "Legacy alternate multitrack still-photo overlay reconciled into actual rights-verified compositor as source_kind=still_image; parallel unverified legacy producer not merged",
+    "Host authority isolates workspace, typed discovery and source preflight, direct authorized submit/retry and factual observation; cross-workspace access denied",
+    "Actual original film with seven recorded/licensed graphic layers and independently synthesized stereo sound generated through registered BODY compositor DAG, physically decoded, SHA-verified and graph reused"
+  ],
+  "evidence": {
+    "native_all_modules_prior_to_final_nerve": "https://github.com/oyzitjfzj/Ad/actions/runs/39908010516",
+    "security_last_green": "https://github.com/oyzitjfzj/Ad/actions/runs/39909436923",
+    "real_physical_model_to_movie": "https://github.com/oyzitjfzj/Ad/actions/runs/39909461654",
+    "real_physical_model_to_movie_tests": 26,
+    "original_cinematic_short": "https://github.com/oyzitjfzj/Ad/actions/runs/39909749426",
+    "original_cinematic_artifact": "https://github.com/oyzitjfzj/Ad/actions/runs/39909749426/artifacts/12482506577",
+    "original_cinematic_mp4_sha256": "7e6a57a2d037a476c243202acaa27d5e239b7c7a26bab60bc93aafc84f81c733",
+    "original_cinematic_duration_seconds": 11,
+    "independent_human_creative_review": false,
+    "native_model_contract_full_integration": "https://github.com/oyzitjfzj/Ad/actions/runs/39909436889",
+    "native_model_contract_full_integration_conclusion": "success",
+    "original_cinematic_video_properties": {
+      "codec": "H.264",
+      "width": 640,
+      "height": 360,
+      "fps": 24,
+      "duration_seconds": 11,
+      "audio_codec": "AAC",
+      "channels": 2,
+      "sample_rate": 48000,
+      "full_decoder_local_recheck": true
+    },
+    "original_film_graph_stages_reused": [
+      "film",
+      "custody",
+      "decode"
+    ],
+    "real_model_to_physical_mp4_job_test_passed": false,
+    "integrated_native_after_otio_import": "https://github.com/oyzitjfzj/Ad/actions/runs/39915372266",
+    "integrated_native_after_otio_import_counts": {
+      "total": 491,
+      "passed": 490,
+      "skipped": 1,
+      "reason": "Separate real Chromium browser acceptance suite",
+      "workflow_success": true
+    },
+    "fast_authenticated_security_after_otio": "https://github.com/oyzitjfzj/Ad/actions/runs/39915372238",
+    "actual_native_original_rights_codec_37_0skips": "https://github.com/oyzitjfzj/Ad/actions/runs/39927124699",
+    "actual_native_37_0skips_conclusion": "success",
+    "script_authored_film_ir_to_actual_body_movie_test_passed": true,
+    "independent_model_inference_actually_triggered": false,
+    "full_native_after_source_custody_hardening": "https://github.com/oyzitjfzj/Ad/actions/runs/39928192941",
+    "full_native_after_source_custody_hardening_conclusion": "success",
+    "latest_verified_integrated_native": "https://github.com/oyzitjfzj/Ad/actions/runs/40017123856",
+    "latest_verified_integrated_native_outcome": {
+      "source_commit": "aa02050c6e41dcba017aaa45bf86d4cfee4279c0",
+      "workflow_run": 40017123856,
+      "conclusion": "success",
+      "ran": 565,
+      "passed": 564,
+      "skipped": 1,
+      "full_source_rights_technical_release_proven": false,
+      "local_original_3d_32f_openexr_to_aces2_10bit_prores_real": true,
+      "brain_signal_authored_multilayer_cut_full_video_audio_decoded": true,
+      "owner_licensed_temporal_mask_and_stereo_balance_physically_measured": true,
+      "motion_compensated_cpu_optical_flow_and_audio_physical_decoded": true,
+      "exact_pixel_mask_and_independent_model_video_artistic_judgment": false,
+      "actual_independent_creative_brain_model_inference": false,
+      "artist_and_human_quality_release_certified": false,
+      "all_12_professional_gates_complete": false
+    },
+    "current_matching_native_actual_source_security": "https://github.com/oyzitjfzj/Ad/actions/runs/39970317953",
+    "current_matching_native_actual_source_security_cases": 37,
+    "current_matching_browser": "https://github.com/oyzitjfzj/Ad/actions/runs/39928192825",
+    "current_matching_mobile_security": "https://github.com/oyzitjfzj/Ad/actions/runs/40017121922",
+    "current_full_git_repo_source_audit": "https://github.com/oyzitjfzj/Ad/actions/runs/40017121813",
+    "current_full_git_repo_source_audit_observations": {
+      "tracked_files": 332,
+      "parsed_python_files": 204,
+      "parsed_json_files": 41,
+      "parsed_yaml_files": 41,
+      "parsed_toml_files": 1,
+      "parse_failures": 0,
+      "static_risk_locations": 379,
+      "source_audit_methods": "All indexed tracked source SHA256+Python compile+JSON/TOML/YAML format parsers; AST risk locations are not security signoff",
+      "every_file_manually_line_by_line_security_reviewed": false
+    }
+  },
+  "branch_differences": [
+    {
+      "branch": "zx7-body/live-signal-contract-20261021",
+      "status": "reconciled host-scoped semantic subset on canonical code; old implementation preserved"
+    },
+    {
+      "branch": "zx7-body/real-multitrack-renderer",
+      "status": "alternate multi-layer still-image semantics reconciled; distinct media_body.py and sidecar recovery not merged because weaker custody and separate unverifed equivalence"
+    },
+    {
+      "branch": "zx7-specialist-free-stack-20261020",
+      "status": "PR #3 base; original creative work protected"
+    }
+  ],
+  "release_gates": {
+    "complete": 0,
+    "total": 12,
+    "partial_foundations": 10,
+    "primarily_blocked": 2
+  },
+  "major_remaining": [
+    "complete professional NLE: nested edit graphs, sample-accurate sound revisions, physical masks/transitions",
+    "end-to-end OCIO/ACES scene-linear HDR color management and advanced VFX with independently verified pixels",
+    "real right-cleared source generation on verified installed GPU and licensed weights; no fake live-action",
+    "semantic visual/audio film observation→creative revisions with actual independent human critique",
+    "secure persistent remote HTTPS Android host, real distributed workers and large-scale crash/restart",
+    "full professional acceptance on several diverse complete creative films and original music"
+  ],
+  "final_showcase_condition": "This original 11-second animated film is proof of the actual BODY editing/audio engine and model-facing execution path, not a final cinematic creative-quality award or full BODY release.",
+  "next_authorized_engineering_action": "Finish distinct professional editing/audio/media branch contract release gates, genuine autonomous model interface integration with real licensed model/hardware and independent creative review. Do not merge main until all 12 subsystem acceptance gates are independently proven and user-approved.",
+  "film_authorship_truth": {
+    "source": "ZX7 Studio 11-second 2026-10-23 original film",
+    "creative_idea_and_authoring": "Assistant wrote the deterministic Python creative/source-generation and story/typography/music instructions",
+    "body_role": "Real registered BODY executed original image+audio assembly, FFmpeg encoded and decoded movie, SHA/custody, graph checkpoint reuse",
+    "independent_creative_brain_generated_the_film": false,
+    "model_control_adapter_functionality_proven": true,
+    "model_autonomously_decided_end_to_end_storyboard": false,
+    "claim_of_elite_professional_artistic_quality": false,
+    "human_independent_critique_performed": false,
+    "owner_can_replace_script_with_any_independent_model_without_more_engineering": false
+  },
+  "editorial_interchange": {
+    "scope": "Strict original BT.709 exact-frame single picture track with synchronized original audio or intentional silence; reversible edits in actual Academy OpenTimelineIO .otio",
+    "live_canonical_body_tools": [
+      "body.otio_owned_export",
+      "body.otio_owned_import"
+    ],
+    "actual_codec_acceptance": "https://github.com/oyzitjfzj/Ad/actions/runs/39915372289",
+    "physical_cases": 8,
+    "all_cases_real_codec_and_otio": true,
+    "all_cases_passed": true,
+    "strict_loss_refusal": [
+      "unverified/relinked media",
+      "unattested original source",
+      "audio removed, muted, shifted, truncated",
+      "fractional selected frames",
+      "third-party timewarps",
+      "unrepresented effects",
+      "disabled items",
+      "creative markers",
+      "foreign timeline timecode",
+      "unknown NLE tracks or transitions"
+    ],
+    "whole_creative_NLE_certified": false,
+    "catalog_registered_and_graph_ready": true,
+    "professionally_reordered_cut_reencoded_as_real_27_frame_audio_visual_movie": true
+  },
+  "verify_all_branches": {
+    "count": 7,
+    "branch_graphs_and_all_tracked_file_hashes_compared": true,
+    "all_file_contents_manually_reviewed": false,
+    "canonical_tracked_files_at_2026_10_23_OTIO_entry": 322,
+    "most_important_noncanonical_unique_files": [
+      "studio_next/media_body.py",
+      "studio_next/media_recovery.py",
+      "studio_next/test_media_body.py",
+      "studio_next/test_media_recovery.py",
+      "docs/BODY_RECOVERY_CHECKPOINT_2026-10-21.md",
+      "README.md"
+    ],
+    "unique_old_alternative_sources_not_automatically_merged": true,
+    "current_native_ci_on_same_code": "https://github.com/oyzitjfzj/Ad/actions/runs/39915372266"
+  },
+  "production_reality": "Partial functionality has strong physical verification but 0/12 complete subsystem release gates; requested premium independently AI-directed film and real GPU/commercial professional body NOT yet achieved.",
+  "current_unmerged_source_custody_hardening": {
+    "coverage": [
+      "multicut picture and soundtrack",
+      "frame-rational speed and original recorded sound",
+      "display-referred BT709 original camera and licensed LUT",
+      "original audiovisual finishing",
+      "original true peak EBU128 source analysis"
+    ],
+    "shared_cas_seal": "studio_next/composite_mix.py::sealed_attested_original",
+    "native_decode_inputs_readonly_private_and_sha256_attested": true,
+    "original_editor_sources_never_overwritten": true,
+    "conflicting_accepted_masters_never_overwritten": true,
+    "actual_codec_swap_adversaries_37_zero_skips": true,
+    "whole_12_subsystem_gate_certified": false,
+    "native_504_total_verified": true,
+    "shared_source_implementation_changes_invalidate_all_consumers_including_OTIO": true
+  },
+  "current_engineering_increment": {
+    "source_code_commit": "aa02050c6e41dcba017aaa45bf86d4cfee4279c0",
+    "source_history": [
+      "8f1f596a508cc556555c44bd9e800829cb1bc722",
+      "a95cada2dff739c18f17854a587db95574b683ef",
+      "868f518982c9a620668bab9f2701513a6baa9283",
+      "21446de9b868ad953146eafb48714175affe5877",
+      "1348c1e68a81e5fa05bf2d69a7045ca68440c7ee"
+    ],
+    "corrected_real_failure_paths": [
+      "Reversible owner-edit timeline previously unlinked a competing producer's accepted movie upon native hardlink failure; now guarded with immutable prepublication decision evidence and no public unlink",
+      "Owner rights-attested generic FFmpeg editor previously encoded directly to public MP4 and unlinked output on error; now decodes private staging and publishes exclusive hardlink",
+      "Original picture/audio review previously directly copied over public ZXREVIEW and deleted it on failure; now no-clobber link from verified temporary same-filesystem archive",
+      "Blender EXR ZIP previously published directly to public output then deleted it after exceptions; now only fully decoded private EXR archive is published by exclusive link",
+      "Project backups previously inspected only sealed-original private temporary paths; now also refuse in-flight review and EXR staging",
+      "Legacy generic owned editor previously tested only that source audio exists, not that the physical audio stream lasts through picture; now checks actual independent video/audio stream extents before native preservation"
+    ],
+    "native_target": "https://github.com/oyzitjfzj/Ad/actions/runs/39933979484",
+    "focused_source_security_target": "https://github.com/oyzitjfzj/Ad/actions/runs/39933979527",
+    "mobile_security_target": "https://github.com/oyzitjfzj/Ad/actions/runs/39933979500",
+    "current_release_note": "Latest 511-case integrated real native proof success and 2026-10-23 mobile security success now independently confirmed. Focused source-custody CI still in progress; do not borrow its prior results. All 12 professional final subsystem gates remain not fully accepted, and no independently Brain-generated cinematic film has been certified.",
+    "last_confirmed_security": "https://github.com/oyzitjfzj/Ad/actions/runs/39933979500",
+    "integrated_native_verified": {
+      "url": "https://github.com/oyzitjfzj/Ad/actions/runs/39933979484",
+      "result": "completed_success",
+      "tests": 511,
+      "pass": 510,
+      "skip": 1,
+      "source_commit": "1348c1e68a81e5fa05bf2d69a7045ca68440c7ee"
+    },
+    "security_verified": {
+      "url": "https://github.com/oyzitjfzj/Ad/actions/runs/39933979500",
+      "result": "completed_success"
+    },
+    "focused_native": "https://github.com/oyzitjfzj/Ad/actions/runs/39933979527",
+    "focused_native_result": "in_progress_not_yet_accepted",
+    "active_source_head": "c63a86d721ae59c68cf7fbbff2df05de477aba8c",
+    "new_verified_code_contributions": [
+      {
+        "commit": "bd1c4d2316182ef92f7cfc9982ca1041bd006eca",
+        "area": "Immutable actual original Blender scene copies used by resumable EXR jobs, temporally swapped owner JSON rejected from being fed to Cycles",
+        "test": "Real 32f scene-source race proof; integrated prior run 39935134250 success before follow-on BODY capabilities"
+      },
+      {
+        "commit": "8384a1a917f01a70923d55166dc352af2a6cb0cd",
+        "area": "Rights-attested entire original constant-frame-rate picture sampled and real soundtrack meter evidence; physically stream-decoded temporal trace, stage immutable original and no-clobber receipt",
+        "test": "First integrated run 39935797294 RED: unknown JSON artifact lacked strict BODY witness verifier, corrected by 27b130...; do not borrow earlier success"
+      },
+      {
+        "commit": "27b130f40907747d691b74ac53ae77efc7913fe8",
+        "area": "Strict structural readback of every whole-movie timecode, hashed original and technically measured normalized 8-bit RGB per-frame evidence; graph witness now enforces special format",
+        "test": "Original red run corrected; full matching native CI still needs successful result"
+      },
+      {
+        "commit": "54a6149aa16a0ed7a2d3fe4c20a08d4d5a00c4e4",
+        "area": "Pinned real native OCIO 2.5 ACES 2.0 CG display view from Blender OpenEXR 32f to independently decoded 8-bit PNG viewing proof with exact source vault attestation and config fingerprint",
+        "test": "No HDR mastering claimed; true native OpenEXR/OCIO/Pillow tests required and ongoing"
+      },
+      {
+        "commit": "bd532deb0afec31ec16ad8129ebdbf02db2be6fb",
+        "area": "Correct invalid-frame adversarial ACES2 real Blender 2-frame fixture",
+        "test": "Physical external native CI not final at snapshot"
+      },
+      {
+        "commit": "c63a86d721ae59c68cf7fbbff2df05de477aba8c",
+        "area": "Protect autonomous model-facing command and discovery against two legacy unlicensed-provenance edit and OTIO engines; keep old compatibility engines for controlled operator migration only",
+        "test": "In current final native regression cycle"
+      }
+    ],
+    "pending_matching_integrated_native": "https://github.com/oyzitjfzj/Ad/actions/runs/39936972527",
+    "pending_matching_source_security": "https://github.com/oyzitjfzj/Ad/actions/runs/39936972580",
+    "verified_matching_mobile_security": "https://github.com/oyzitjfzj/Ad/actions/runs/39936972633",
+    "output_limitations": [
+      "A physically decoded 8-bit ACES2 PNG preview is not cinema release color management, a scene-linear HDR delivered movie or a trusted camera-IDT chain",
+      "Framewise RGB amplitude differences are factual visual signals not autonomously meaningful story and artistry scores",
+      "No external independent film Brain has authored a premium shot sequence and executed all of it on a persistent signed production host",
+      "No legal free footage GPU, persistent authorized remote Android HTTPS or real distributed worker farm confirmed",
+      "All 12 final professional master gates still require independent total acceptance"
+    ],
+    "recommended_next_verified_step": "Obtain exact-code completed integrated 5xx-test native OpenEXR/OCIO/temporal/Brain permission proof, fix any red result, then test independent multi-shot real source film through ONE creative model and BODY, preserving original project voice and source. Never call this complete without all twelve gates.",
+    "latest_full_accepted_native_baseline": {
+      "commit": "31d066ae521d4ced15f37067eef17cce695d8d7f",
+      "run": "https://github.com/oyzitjfzj/Ad/actions/runs/39939028994",
+      "ran": 523,
+      "skipped": 1,
+      "status": "success"
+    },
+    "next_native_verification": {
+      "commit": "23880ec2438551716677778cb1083d83dd3816b4",
+      "run": "https://github.com/oyzitjfzj/Ad/actions/runs/39942955940",
+      "status": "completed_success",
+      "actual_test_report": "528 tests ran, 527 passed, one browser-only test skipped"
+    },
+    "next_full_original_film_proof": [
+      "body.aces2_movie: graph-attested source 32float OpenEXR -> real pinned OCIO ACES2 SDR display transform of every frame -> 16bit physical RGB intermediate -> native ProRes 422 10bit MOV full pixel/audio decode (sound is intentionally absent)",
+      "body.asset_vault now admits decoded body.aces2_movie outputs only via graph-bound authorized physical producers, never via model text",
+      "Physical integration test constructs real Blender 32f scene, licenses original source, renders whole 10bit color-managed scene film, licenses generated MOV, and replays graph without replacing accepted bytes",
+      "body.review_frame now exclusively hardlinks private fully decoded PNG; losing competing writer can no longer delete approved image",
+      "Private review image extraction and scene-movie intermediates are refused by director project archive/restore policy"
+    ],
+    "old_11_second_demo": {
+      "github_action": "https://github.com/oyzitjfzj/Ad/actions/runs/39909749426",
+      "artifact_name": "zx7-body-original-film",
+      "filename": "zx7-body-original-film.mp4",
+      "sha256": "7e6a57a2d037a476c243202acaa27d5e239b7c7a26bab60bc93aafc84f81c733",
+      "actual_duration_seconds": 11,
+      "independent_creative_brain_generated": false,
+      "entire_professional_studio_approved": false
+    },
+    "remaining_unproven": [
+      "The newly added all-frames ACES2 10bit MOV and its full source->vault->film graph still need exact HEAD CI pass and actual full-film independent artist quality approval",
+      "HDR/ACES camera input-to-master workflows and advanced multi-artist roundtrips remain unfinished",
+      "No persistent GPU-original human scene generation or production distributed render farm is proven",
+      "A complete independent creative Brain connected for full director revision loops and released film quality is not proven"
+    ],
+    "last_full_native_proof": "https://github.com/oyzitjfzj/Ad/actions/runs/40017123856",
+    "latest_actual_native_test_counts": "565 total, 564 passed, one separately covered browser-only test skipped in this native suite",
+    "source_custody_risk_work": [
+      "Sealed exact native Blender EXR owner scene to prevent transient source substitution during Cycles",
+      "Whole archive restore uses Linux atomic no-replace directory rename and backup uses exclusive tar creation with loser-safe cleanup",
+      "MediaVault CAS supports identical racing originals, denies forged/symlinked CAS and publishes complete verified checkout only by no-replace link",
+      "Original WAV/MP3/FLAC and compressed video/images require actual physical source decode for custody rather than superficial headers",
+      "Model-neutral BODY excludes old unattested editor operations and reports real missing model generation, GPU and 24/7 remote Android constraints",
+      "Local ComfyUI GET/POST and discovery forbid redirect-based escape from explicit loopback origin, proven through a live local HTTP mock",
+      "Non-clobber native review frames, signed-attempt media publication, exact-exr ACES2 BT709 SDR ProRes and per-frame picture/sound observation",
+      "Repository-wide source inventory tracks all 332 files, 204 Python syntax-valid sources and 379 manual audit candidate sites"
+    ],
+    "unresolved_total_release_gates": 12,
+    "production_readiness": false,
+    "premium_independent_director_film_complete": false,
+    "do_not_merge_into_main_until_accepted": true,
+    "optical_flow_technical_progress": {
+      "native_cpu_motion_interpolation": "installed and physical real picture+audio decoded",
+      "authored_original_film_ir": "Model-neutral BODY command can publish immutable rights-needing JSON plan",
+      "true_ai_creative_inference_generated_original_complete_film": false
+    },
+    "verified_media_matte_and_sound_work": [
+      "Artist-defined moving/still grayscale matte multiplies actual original RGBA alpha; masked frames full native decode",
+      "Licensed original soundtrack stereo balance independently measured from decoded PCM",
+      "Two independent producer jobs cannot replace another editor's accepted composite",
+      "Standalone glTF binary scene validates real JSON and all bounded native BIN buffer views; EXR and TrueType validate real pixels/glyphs"
+    ],
+    "security_and_host_increments": [
+      "Linux persistent user systemd service unit created exclusively and rejects symlink substitution; activation remains owner-controlled",
+      "Local ComfyUI HTTP GET/POST refuses redirects and ambient proxy usage",
+      "Creative model source checkpoints reject directory escapes, symlinked stages, fixed temp collisions and forged stage manifest identity"
+    ],
+    "release_ready": false,
+    "confidence": "Real native tool operation and repeatable CI, not independently approved artistic or production release"
+  }
+}

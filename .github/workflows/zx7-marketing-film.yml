@@ -1,10 +1,6 @@
 name: "Sample Film — ZX7 Marketing Agency"
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/zx7-marketing-film.yml"
 permissions:
   contents: read
 jobs:

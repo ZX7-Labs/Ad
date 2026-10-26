@@ -1,3 +1,5 @@
+> Historical scope/reference snapshot. For the current product definition and consolidated code, start at [README.md](README.md) and [ZX7_START_HERE.md](ZX7_START_HERE.md).
+
 # Supplied visual reference — recovered frame review
 
 ## Source and review scope

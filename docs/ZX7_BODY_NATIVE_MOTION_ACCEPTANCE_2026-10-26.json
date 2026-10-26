@@ -1,0 +1,67 @@
+{
+  "date": "2026-10-26",
+  "focus": "Native motion design using existing Blender engine",
+  "implementation_source_commit": "18c32ca792ca1ee7509024eddd5afa6c3b413e3f",
+  "runtime": {
+    "name": "Blender",
+    "version": "4.5.15 LTS",
+    "archive_sha256": "0d2b8bb2efe97e6c8eb57de6b7322f8800e1984e3125b60decca5f6771e4773e"
+  },
+  "local_focused_tests": {
+    "run": 41,
+    "passed": 41,
+    "failed": 0,
+    "skipped": 0,
+    "modules": [
+      "test_body_motion_project",
+      "test_body_integration",
+      "test_body_signal",
+      "test_body_affordances",
+      "test_body_materials",
+      "test_body_publication"
+    ]
+  },
+  "separately_installed_package": {
+    "wheel_sha256": "16af986737e2c3705da551f143edbb2f24448de3c151a250e16b23391eba7c35",
+    "module_sha256": {
+      "body_motion_project": "c91331939d00b21427f5eb35782e70f0059eea3abc36b85a15fbc3821b984eaa",
+      "body_motion_worker": "3dec6cc8574ecc1b4067c0197a07dcfafb5cb8dce9a7903f3d672140f40d56d1",
+      "body_motion_proof": "3c77b1428fe760b6745e62bd7a8ff91904903d1b2361cc284d421bcf380ec909",
+      "body_integration": "3c44b028c56347d3eb36c90b75cc5f73a7961631ad5606e290cd2e8532f32781",
+      "body_document_schemas": "3ecedf1dc73eae90e2e1f40d68d86b286f9f1590a218dc85edf1d40851dbb639",
+      "body_materials": "dd3669dcc94b37cdedf95ec9b27b1699f5c27526b851a74a33b945344a664ca3",
+      "body_publication": "8f41fdf189bcd05792914d1585c141704d7d6e320b15ef340ef80fe7aa47d10c"
+    },
+    "native_public_tool_proof": {
+      "all_checks_passed": true,
+      "engine_version": "4.5.15 LTS",
+      "native_geometry_nodes_executed": true,
+      "native_text_animation_and_material_executed": true,
+      "saved_native_project_reopened_and_revised": true,
+      "original_project_preserved": true,
+      "actual_revision_pixels_changed": true,
+      "verified_stages_reused": 5,
+      "generated_native_movie_custody_registered": true,
+      "native_runtime_property_discovery_executed": true,
+      "model_inference_performed": false,
+      "artistic_quality_approved": false,
+      "failed_native_edit_published_nothing_and_preserved_original": true
+    }
+  },
+  "exact_source_ci": {
+    "native_release_run": 40275242494,
+    "state_at_recording": "pending",
+    "url": "https://github.com/oyzitjfzj/Ad/actions/runs/40275242494",
+    "source_inventory_run": 40275242476,
+    "source_inventory_result": "success",
+    "security_run": 40275242655,
+    "security_result": "success",
+    "source_custody_run": 40275242671,
+    "source_custody_state_at_recording": "in_progress"
+  },
+  "complete_motion_design_production_release_certified": false,
+  "model_inference_performed": false,
+  "artistic_quality_approved": false,
+  "scope_document": "BODY_NATIVE_MOTION_2026-10-26.md"
+}
+

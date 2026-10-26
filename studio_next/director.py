@@ -65,7 +65,7 @@ class StudioDirector:
                 continue
             if kind=="proposal":
                 proposal=decision.get("plan")
-                installed=self.catalog.executable_ids()
+                installed=self.catalog.executable_ids(allowed_access=self.allowed_access)
                 # Plan may use only actual runnable tools; being documented does
                 # not mean a provider/model/renderer is installed.
                 errors=audit_proposal(proposal,brief,installed)

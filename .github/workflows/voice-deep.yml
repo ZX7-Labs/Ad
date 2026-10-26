@@ -1,10 +1,6 @@
 name: "Voice Lab — Deep Male Chatterbox Nano"
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/voice-deep.yml"
 permissions:
   contents: read
 jobs:

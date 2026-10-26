@@ -1,9 +1,6 @@
 name: Grounded Director — controlled 4B and 9B comparison
 on:
   workflow_dispatch:
-  push:
-    branches: [director-grounded-planning]
-    paths: [".github/workflows/director-grounded.yml"]
 permissions:
   contents: read
 jobs:

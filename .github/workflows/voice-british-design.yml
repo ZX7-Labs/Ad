@@ -1,10 +1,6 @@
 name: "Voice Lab — Original British Assistant vs Cinematic"
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/voice-british-design.yml"
 permissions:
   contents: read
 jobs:

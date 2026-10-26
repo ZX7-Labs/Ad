@@ -1,9 +1,6 @@
 name: Director review — evidence-linked motion-design recheck
 on:
   workflow_dispatch:
-  push:
-    branches: [director-grounded-planning]
-    paths: [".github/workflows/director-review-grounding.yml"]
 permissions:
   contents: read
 jobs:
