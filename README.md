@@ -1,48 +1,55 @@
-# ZX7 BODY — AI के लिए एक संपूर्ण क्रिएटिव सिस्टम
+# ZX7 BODY
 
-**एक ऐसा एकीकृत क्रिएटिव सिस्टम बनाना है जिसमें AI मॉडल अपने आइडिया को डिज़ाइन, एडिट, एनिमेट, सुन और देख सके; हर हिस्से को बारीकी से बदल सके; और तैयार काम एक्सपोर्ट कर सके।**
+An open-source creative execution system operated by AI. The goal is one
+workspace for design, editing, animation, CGI, VFX and sound, with detailed
+control over the creative project and its output.
 
-जैसे एक कलाकार क्रिएटिव सॉफ़्टवेयर में अपनी कल्पना के अनुसार काम करता है, वैसे ही AI इस BODY में काम करेगा। AI रचनात्मक फैसले करेगा और BODY उसे उन फैसलों को वास्तविक तस्वीर, आवाज़, दृश्य और वीडियो में बदलने की क्षमताएँ और नियंत्रण देगी।
+The current implementation provides a tool catalog, editable project controls,
+native Blender projects, media rendering, source custody and resumable jobs.
+Available operations depend on the engines installed on the host. Development
+is active; this is not a completed all-purpose creative suite.
 
-## एक सिस्टम, साथ काम करने वाली सभी क्षमताएँ
+## Run locally
 
-फोटो एडिटिंग, ग्राफिक और थंबनेल डिज़ाइन, वीडियो एडिटिंग, मोशन ग्राफिक्स, 2D और 3D एनीमेशन, मॉडलिंग, सामग्री और टेक्सचर, लाइटिंग, कैमरा, CGI, सिमुलेशन, VFX, कम्पोज़िटिंग, कलर ग्रेडिंग, आवाज़, संगीत, साउंड डिज़ाइन, मिक्सिंग और फाइनल रेंडरिंग—ये सब एक जुड़े हुए क्रिएटिव कार्यस्थल के हिस्से होंगे।
+Python 3.11+ is required. The service is tested on Linux. Install FFmpeg/FFprobe
+for media operations, Blender 4.5+ for native motion projects, and Inkscape for
+SVG rasterization. These applications are installed separately.
 
-अंदर अलग-अलग क्षेत्रों के विशेषज्ञ घटक मिलकर काम कर सकते हैं। AI के लिए वे एक सुसंगत सिस्टम की क्षमताएँ होंगी: साझा प्रोजेक्ट, साझा एसेट्स, जुड़े हुए बदलाव और एक साथ इस्तेमाल किए जा सकने वाले नियंत्रण। उपयोगकर्ता का विचार पूरे काम का आधार होगा।
+```sh
+python -m pip install '.[production]'
+zx7-tools --workspace ./workspace
+export ZX7_BODY_API_TOKEN="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"
+zx7-body --workspace-root ./workspace
+```
 
-## AI के हाथ में किस तरह का नियंत्रण चाहिए
+Keep the same token in a second terminal to inspect the running service:
 
-AI को पूरे प्रोजेक्ट से लेकर किसी एक फ्रेम, लेयर, ऑब्जेक्ट या आवाज़ के छोटे हिस्से तक काम करने का नियंत्रण मिले। उदाहरण के लिए:
+```sh
+zx7-client tools
+zx7-client describe body.motion_project
+```
 
-- **एडिटिंग और समय:** क्लिप चुनना, काटना, जोड़ना और क्रम बदलना; अवधि, स्पीड, स्पीड रैम्प, ट्रांज़िशन और सटीक सिंक तय करना।
-- **डिज़ाइन और गति:** लेआउट, टेक्स्ट, फॉन्ट, रंग, आकृति, लेयर, मास्क, शैडो, पारदर्शिता, कीफ़्रेम, कर्व और गति का व्यवहार बनाना और बदलना।
-- **3D और CGI:** ज्योमेट्री, मॉडल, रिग, पोज़, एनीमेशन, सामग्री, टेक्सचर, प्रकाश, कैमरा और सिमुलेशन को नियंत्रित करना।
-- **VFX और रंग:** ट्रैकिंग, रोटो, कीइंग, कम्पोज़िटिंग, इफेक्ट्स, कलर करेक्शन और शॉटों के बीच लुक और निरंतरता संभालना।
-- **ऑडियो:** आवाज़, संगीत और साउंड इफेक्ट्स की टाइमिंग, एडिटिंग, स्तर, प्रोसेसिंग, स्थान और मिक्स बदलना।
-- **निरीक्षण और डिलीवरी:** प्रीव्यू देखना और सुनना, किसी चुने हुए हिस्से में सुधार करना, विकल्पों की तुलना करना और सही फॉर्मेट में फाइनल आउटपुट देना।
+The authenticated service listens on `127.0.0.1:8765`. Discover tools and their
+document schemas before submitting a project. Native operations run on the host;
+missing engines are reported as requiring setup. Optional EXR and tracking
+dependencies are available through `.[vfx_exr,vfx_tracking]`.
 
-ये उदाहरण नियंत्रण की गहराई समझाते हैं। परियोजना का लक्ष्य सभी रचनात्मक क्षेत्रों में इसी गहराई का काम संभव करना है।
+## Project and checks
 
-## रचनात्मक स्वतंत्रता कैसे काम करेगी
+- [AGENTS.md](AGENTS.md): product intent and development direction.
+- `studio_next/`: execution, project controls, service, clients and tests.
+- `motion_studio/`: existing 2D compositor and sample projects.
+- `creative_director/`, `director_research/`, `voice_lab/`: optional research tools.
+- `.github/workflows/`: automated verification and optional manual experiments.
 
-AI हर नए काम के लिए विचार, दृश्य भाषा, कहानी, अवधि, संरचना और तकनीक चुनेगा। वह उपलब्ध क्षमताओं को अपनी कल्पना के अनुसार जोड़ सकेगा और किसी भी चरण पर प्रोजेक्ट के संबंधित हिस्से को बदल सकेगा।
+GitHub Actions runs native rendering, source checks, security, browser, custody
+and interchange tests. Run focused tests with `python -m unittest`; native tests
+require their corresponding host engines and Python dependencies.
 
-उदाहरण: किसी प्रोडक्ट फिल्म में AI मॉडल बनाए, सामग्री और लाइटिंग तय करे, कैमरे की गति एनिमेट करे, शॉट एडिट करे, रंग और आवाज़ मिलाए, फिर प्रीव्यू देखकर केवल कैमरे की गति या किसी आवाज़ की टाइमिंग सुधार दे। पूरा प्रोजेक्ट उसी एक सिस्टम में जुड़ा रहे।
+## Licenses
 
-यही स्वतंत्रता विज्ञापन, फिल्म, शॉर्ट वीडियो, जानकारी देने वाले वीडियो, स्थिर डिज़ाइन और अन्य क्रिएटिव कामों में भी चाहिए। हर प्रोजेक्ट की अपनी रचना और शैली हो सकती है।
-
-## अपेक्षित गुणवत्ता
-
-हर क्षेत्र में अग्रणी पेशेवर क्रिएटिव प्रणालियों जितनी गहराई, सटीकता, गुणवत्ता और रचनात्मक स्वतंत्रता विकसित करना लक्ष्य है। पूरे सिस्टम को उस स्तर पर इंजीनियर करना है जहाँ AI गंभीर और जटिल प्रोडक्शन का काम बारीकी से संचालित कर सके।
-
-**यह README उत्पाद का वर्तमान लक्ष्य और उसकी अपेक्षित कार्यप्रणाली बताती है। बनी हुई क्षमताओं की स्थिति और उनका परीक्षण संबंधित इंजीनियरिंग दस्तावेज़ों में दर्ज हैं।**
-
-## वर्तमान कोड और प्रमाण
-
-- [एकीकृत मुख्य कोड](https://github.com/oyzitjfzj/Ad/tree/main)
-- [इंजीनियरिंग स्थिति और शुरुआत](https://github.com/oyzitjfzj/Ad/blob/main/ZX7_START_HERE.md)
-- [परीक्षण और स्वीकृति का दर्ज प्रमाण](https://github.com/oyzitjfzj/Ad/blob/main/docs/ZX7_BODY_NATIVE_VISUAL_ACCEPTANCE_2026-10-25.json)
-
-पुराने दस्तावेज़ों में किसी खास नमूने, शैली, एजेंसी या सीमित प्रयोग का वर्णन मिल सकता है। पूरे उत्पाद की वर्तमान दिशा ऊपर बताई गई है।
-
-ब्रांच एकीकरण और सुरक्षित हटाने का रिकॉर्ड: [BRANCH_CONSOLIDATION_2026-10-26.md](docs/BRANCH_CONSOLIDATION_2026-10-26.md)।
+Repository code is covered by [LICENSE](LICENSE). External applications, model
+weights, fonts, voices and media have their own terms. Research scripts do not
+grant commercial rights to their models; the F5/XTTS comparison uses models with
+non-commercial restrictions. Review the selected engine and asset licenses for
+your deployment.

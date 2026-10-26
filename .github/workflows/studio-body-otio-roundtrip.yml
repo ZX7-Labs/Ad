@@ -2,7 +2,7 @@ name: ZX7 BODY Genuine OTIO Audio-Visual Roundtrip
 on:
   workflow_dispatch:
   push:
-    branches: [main, zx7-body/mobile-operator-20261021]
+    branches: [main]
     paths:
       - ".github/workflows/studio-body-otio-roundtrip.yml"
       - "studio_next/body_sequence_otio.py"

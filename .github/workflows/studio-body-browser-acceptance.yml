@@ -2,7 +2,7 @@ name: "ZX7 BODY — Real Mobile Browser Acceptance"
 on:
   workflow_dispatch:
   push:
-    branches: [main, zx7-body/mobile-operator-20261021]
+    branches: [main]
     paths:
       - ".github/workflows/studio-body-browser-acceptance.yml"
       - "studio_next/test_body_browser.py"

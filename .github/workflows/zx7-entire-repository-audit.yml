@@ -2,7 +2,7 @@ name: ZX7 All Tracked Source Inventory
 on:
   workflow_dispatch:
   push:
-    branches: [main, zx7-body/mobile-operator-20261021]
+    branches: [main]
 permissions:
   contents: read
 

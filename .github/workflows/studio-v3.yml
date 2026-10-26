@@ -1,12 +1,8 @@
 name: "AD Studio V3 — Open-source Video Director"
 on:
   workflow_dispatch:
-  issues:
-    types: [opened]
 permissions:
   contents: read
-  issues: write
-
 jobs:
   produce:
     if: github.event_name != 'issues' || (github.event.issue.user.login == github.repository_owner && startsWith(github.event.issue.title, '[VIDEO]'))
