@@ -59,7 +59,7 @@ The pinned, checksum-verified **Blender 4.5.15 LTS** actually executed native te
 animation, custom geometry, material shader and a connected Geometry Nodes
 modifier. A saved project was reopened to change typography and node inputs.
 Actual pixels changed, the original project remained identical, and four public
-execution stages reused verified results. A deliberately invalid native edit
+execution stages plus generated-media custody reused verified results. A deliberately invalid native edit
 must publish nothing and preserve its parent. Exact installed-package and CI
 receipts are recorded separately. Historical 647-case acceptance belongs to the
 older recorded source and is not acceptance of this change.

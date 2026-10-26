@@ -1,5 +1,4 @@
 """Native project ABI, custody and transaction boundary regression checks."""
-import copy
 import hashlib
 import json
 from pathlib import Path
@@ -11,6 +10,7 @@ from studio_next.body_motion_project import VERSION,validate_motion_job,verify_m
 from studio_next.body_motion_proof import fixture_job
 from studio_next.body_document_schemas import validate_document
 from studio_next.body_materials import fingerprint_physical_inputs
+from studio_next.body_publication import require_published_source
 
 
 class NativeMotionProjectTests(unittest.TestCase):
@@ -58,6 +58,12 @@ class NativeMotionProjectTests(unittest.TestCase):
     def test_absent_blender_is_needs_setup(self):
         with patch("studio_next.body_motion_project.shutil.which",return_value=None):
             self.assertFalse(motion_runtime_ready())
+
+    def test_bundle_manifest_alone_cannot_certify_generated_media(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source=Path(tmp)/"external.zxmotion";source.write_bytes(b"model asserted native data")
+            with self.assertRaises(ValueError):require_published_source(source,"body.motion_project")
+            with self.assertRaises(ValueError):export_motion_media(source,Path(tmp)/"out.mp4",fps=24)
 
 
 if __name__=="__main__":unittest.main()

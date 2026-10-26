@@ -70,6 +70,31 @@ def publication_record_exists(final):
     return path is not None and not path.is_symlink() and path.is_file()
 
 
+def require_published_source(final, tool_id):
+    """Verify host-journal provenance when a native project becomes a source.
+
+    The private host journal, not a model-authored bundle manifest, establishes
+    the producing tool. This does not grant rights to uploaded external files.
+    """
+    final=Path(final).absolute()
+    directory=final.parent/".zx7-publications"
+    if directory.is_symlink() or final.is_symlink() or not directory.is_dir():
+        raise ValueError("Source needs an authentic host publication")
+    for receipt in directory.glob("*.json"):
+        if receipt.is_symlink() or receipt.stat().st_size>16384:continue
+        try:
+            record=json.loads(receipt.read_text())
+            identity=record["identity"]
+            if record["output"]!=str(final) or identity["tool_id"]!=tool_id:continue
+            with physical_tool_attempt(**identity):
+                if _receipt_location(final)!=receipt:continue
+                verified=_load_receipt(final)
+            with final.open("rb") as stream:actual=hashlib.file_digest(stream,"sha256").hexdigest()
+            if verified["sha256"]==actual and verified["bytes"]==final.stat().st_size:return actual
+        except (ValueError,KeyError,TypeError,OSError):continue
+    raise ValueError("Source has no matching native producer publication")
+
+
 def _load_receipt(final):
     path = _receipt_location(final)
     if path is None or not path.exists():

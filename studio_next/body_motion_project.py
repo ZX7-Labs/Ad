@@ -147,9 +147,12 @@ def run_motion_project(job_path,workspace,target,*,timeout=3600):
         if job["project"] is not None:
             relative=Path(job["project"]);original=(root/relative).resolve()
             if relative.is_absolute() or ".." in relative.parts or not original.is_relative_to(root):raise ValueError("Native project escaped workspace")
+            from .body_publication import require_published_source
+            approved=require_published_source(original,"body.motion_project")
             # Operate only on the copied, reverified immutable input snapshot.
             sealed=stage/"input.zxmotion";shutil.copyfile(original,sealed)
             verify_motion_bundle(sealed);input_identity=digest(sealed)
+            if input_identity!=approved:raise ValueError("Native parent changed after provenance verification")
             with zipfile.ZipFile(sealed) as bundle:base=stage/"input.blend";base.write_bytes(bundle.read("project.blend"))
         request=stage/"request.json";request.write_bytes(data)
         output=stage/"result";output.mkdir()
@@ -186,14 +189,18 @@ def run_motion_project(job_path,workspace,target,*,timeout=3600):
 
 
 def export_motion_media(bundle_path,target,*,fps):
-    report=verify_motion_bundle(bundle_path);dest=Path(target)
+    from .body_publication import require_published_source
+    approved=require_published_source(bundle_path,"body.motion_project")
+    dest=Path(target)
     if dest.exists():raise FileExistsError("Native media output already exists")
-    frames=report["native"]["renders"]
-    if not frames or any(x["format"]!="png" for x in frames):raise ValueError("Media export needs authored PNG render order")
     if type(fps) is not int or not 1<=fps<=240:raise ValueError("Explicit integer delivery fps must be 1..240")
     with tempfile.TemporaryDirectory(prefix="zx7-motion-export-") as tmp:
         root=Path(tmp)
-        with zipfile.ZipFile(bundle_path) as bundle:
+        sealed=root/"source.zxmotion";shutil.copyfile(bundle_path,sealed)
+        if digest(sealed)!=approved:raise ValueError("Native export source changed after provenance verification")
+        report=verify_motion_bundle(sealed);frames=report["native"]["renders"]
+        if not frames or any(x["format"]!="png" for x in frames):raise ValueError("Media export needs authored PNG render order")
+        with zipfile.ZipFile(sealed) as bundle:
             for i,frame in enumerate(frames):
                 (root/f"frame_{i:06d}.png").write_bytes(bundle.read(frame["file"]))
         if dest.suffix.lower()==".png":

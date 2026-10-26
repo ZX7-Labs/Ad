@@ -84,13 +84,15 @@ def native_motion_proof(workspace):
            {"id":"delivery","tool_id":"body.motion_export","purpose":"Actual media from authored frames",
             "inputs":{"bundle":"original.zxmotion","out":"motion.mp4","fps":12},"depends_on":["native"]},
            {"id":"preview","tool_id":"body.motion_export","purpose":"Actual revised frame",
-            "inputs":{"bundle":"revision.zxmotion","out":"revision.png","fps":12},"depends_on":["revision"]}]
+            "inputs":{"bundle":"revision.zxmotion","out":"revision.png","fps":12},"depends_on":["revision"]},
+           {"id":"custody","tool_id":"body.asset_vault","purpose":"Actual generated media enters downstream custody",
+            "inputs":{"source_witness":{"$node_output":"delivery"}},"depends_on":["delivery"]}]
     ir={"project":{"creative_intent":"Native motion project engineering acceptance"},"shots":[{"id":"motion","purpose":"Technical control probe"}],"tool_graph":graph}
     first=run_body_project(ir,root)
     if first["status"]!="all_tool_results_verified":raise RuntimeError(str(first["errors"]))
     before=digest(root/"original.zxmotion")
     again=run_body_project(ir,root)
-    if again["status"]!="all_tool_results_verified" or len(again["reused"])!=4:raise RuntimeError("Native durable reuse failed")
+    if again["status"]!="all_tool_results_verified" or len(again["reused"])!=5:raise RuntimeError("Native durable reuse failed")
     a=verify_motion_bundle(root/"original.zxmotion");b=verify_motion_bundle(root/"revision.zxmotion")
     assert a["members"]["render_000001.png"]!=b["members"]["render_000000.png"]
     assert a["members"]["render_000000.png"]!=a["members"]["render_000002.png"]
@@ -106,7 +108,8 @@ def native_motion_proof(workspace):
     assert not (root/"broken.zxmotion").exists() and digest(root/"original.zxmotion")==before
     report={"all_checks_passed":True,"engine_version":a["engine_version"],"native_geometry_nodes_executed":True,
         "native_text_animation_and_material_executed":True,"saved_native_project_reopened_and_revised":True,
-        "original_project_preserved":True,"actual_revision_pixels_changed":True,"verified_stages_reused":4,
+        "original_project_preserved":True,"actual_revision_pixels_changed":True,"verified_stages_reused":5,
+        "generated_native_movie_custody_registered":True,
         "native_runtime_property_discovery_executed":True,"model_inference_performed":False,"artistic_quality_approved":False}
     report["failed_native_edit_published_nothing_and_preserved_original"]=True
     (root/"motion-proof.json").write_text(json.dumps(report,indent=2)+"\n")
