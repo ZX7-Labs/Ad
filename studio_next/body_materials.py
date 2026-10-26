@@ -30,6 +30,8 @@ _SOURCE_FIELDS={
     "body.asset_vault":("source",),
     "body.composite_mix":("plan",),
     "body.visual_graph":("plan",),
+    "body.motion_project":("plan",),
+    "body.motion_export":("bundle",),
     "body.film_finish":("plan",),
     "body.color_lut":("plan",),
     "body.full_decode":("source",),
@@ -49,12 +51,12 @@ _SOURCE_FIELDS={
     "body.exr_checkpoint":("scene_json",),
     "body.motion2d":("original_film_ir","voice_assets"),
 }
-_NESTED_SOURCE_KEYS=frozenset(("source","path","image_path","texture_path",
+_NESTED_SOURCE_KEYS=frozenset(("source","path","project","image_path","texture_path",
                                "model_path","audio_path","video_path"))
 _PRODUCTION_SUFFIXES=frozenset((
     ".mp4",".webm",".mov",".mkv",".png",".jpg",".jpeg",".svg",
     ".wav",".flac",".mp3",".json",".blend",".glb",".gltf",
-    ".otf",".ttf",".exr",".tiff",".webp"))
+    ".otf",".ttf",".exr",".tiff",".webp",".zxmotion"))
 
 
 def _file(root,relative):

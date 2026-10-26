@@ -29,6 +29,7 @@ from .creative_asset_ops import rasterize_original_svg,extract_director_selected
 from .native_body_engines import render_original_blender,render_original_motion
 from .body_cgi import render_cgi_plan
 from .body_visual_render import render_visual_graph
+from .body_motion_project import run_motion_project,export_motion_media,verify_motion_bundle,motion_runtime_ready
 from .body_planar import render_planar_insert
 from .delivery_audit import audit_delivered_movie,_probe_details
 from .durable_graph import DurableFilmGraph,execute_durable_film_graph
@@ -92,6 +93,8 @@ def _witness(file):
         verify_review_bundle(f)
     elif f.suffix.lower()==".json":
         verify_full_temporal_evidence(f)
+    elif f.suffix.lower()==".zxmotion":
+        verify_motion_bundle(f)
     return out
 
 
@@ -101,6 +104,9 @@ def _verify_witness(result):
     p=Path(result["path"])
     if not p.is_file() or sha256_file(p)!=result["sha256"]:
         return False
+    if p.suffix.lower()==".zxmotion":
+        try:return bool(verify_motion_bundle(p)["native"])
+        except (ValueError,KeyError,OSError,zipfile.BadZipFile):return False
     if p.suffix.lower() in (".mp4",".mov",".mkv",".webm"):
         observed=_probe_details(p)
         return (abs(observed["duration_seconds"]-result["duration_seconds"])<.08
@@ -167,6 +173,8 @@ def _trusted_body_revision(tool_id):
         "body.composite_mix":["composite_mix.py","media_vault.py","production_qc.py"],
         "body.visual_graph":["body_visual_graph.py","body_visual_render.py","body_visual_contract.py","body_visual_exr.py",
                              "body_pixel_math.py","body_animation.py","composite_mix.py","media_vault.py","production_qc.py"],
+        "body.motion_project":["body_motion_project.py","body_motion_worker.py"],
+        "body.motion_export":["body_motion_project.py","production_qc.py"],
         "body.film_finish":["film_finishing.py","media_vault.py","composite_mix.py","production_qc.py"],
         "body.color_lut":["body_color_pipeline.py","media_vault.py","delivery_audit.py","composite_mix.py","production_qc.py"],
         "body.full_decode":["production_qc.py","delivery_audit.py"],
@@ -204,6 +212,8 @@ def _trusted_body_revision(tool_id):
         "body.asset_vault":[],
         "body.composite_mix":["ffmpeg","ffprobe"],
         "body.visual_graph":["ffmpeg","ffprobe"],
+        "body.motion_project":["blender"],
+        "body.motion_export":["ffmpeg","ffprobe"],
         "body.film_finish":["ffmpeg","ffprobe"],
         "body.color_lut":["ffmpeg","ffprobe"],
         "body.full_decode":["ffmpeg","ffprobe"],
@@ -623,6 +633,17 @@ def body_catalog(workspace,*,vault_root=None):
             dest,lambda staged:render_original_blender(
                 source,staged,trusted_asset_root=trusted_asset_root))
 
+    def native_motion(inputs):
+        source=_path_within(root,inputs["plan"],exists=True)
+        dest=_body_output(root,inputs["out"],allowed=(".zxmotion",))
+        receipt=_commit_actual_body_output(dest,lambda staged:run_motion_project(source,root,staged))
+        return {**receipt,"native_project_observations":verify_motion_bundle(dest)["native"]}
+
+    def native_motion_export(inputs):
+        source=_path_within(root,inputs["bundle"],exists=True)
+        dest=_body_output(root,inputs["out"],allowed=(".png",".mp4"))
+        return _commit_actual_body_output(dest,lambda staged:export_motion_media(source,staged,fps=inputs["fps"]))
+
     def cgi_shot(inputs):
         plan=_path_within(root,inputs["plan"],exists=True)
         dest=_body_output(root,inputs["out"],allowed=(".mp4",))
@@ -779,6 +800,13 @@ def body_catalog(workspace,*,vault_root=None):
     add("body.blender3d","physical 3D filmmaking","Blender real rendered geometries, materials and moving camera",
         "write",bool(shutil.which("blender") and video_io),
         ["scene_json","out"],render3d)
+    add("body.motion_project","native Blender motion-design project and RNA controls",
+        "Isolated native .blend transactions: discover installed properties/enums, create/edit geometry, text, materials, nodes, cameras and animation; "
+        "save/reopen immutable packed projects and render authored original frames. Blender 4.5+ required; no full-studio quality certification.",
+        "write",motion_runtime_ready(),["plan","out"],native_motion)
+    add("body.motion_export","deliver actual native motion project renders",
+        "Decode-verified PNG or H264 MP4 from the authored native PNG frame order and explicit integer delivery fps; picture-only export",
+        "write",video_io,["bundle","out","fps"],native_motion_export)
     add("body.cgi_shot","source-attested original CGI and native simulation",
         "Sealed texture/GLB assets; PBR, optics, authored shutter, rigid bodies, cloth/pins/collisions, topology-preserving shape keys and native liquid mesh baking (Blender 4.5+); original-clock simulation; Cycles CPU",
         "write",bool(shutil.which("blender") and video_io),["plan","out"],cgi_shot)
@@ -877,7 +905,7 @@ def _require_authentic_generated_media_lineage(film_ir):
     # A legacy rights label, raw SVG, or extracted image cannot manufacture
     # generated-original rights. Only trusted originating renderers or editors
     # which themselves require MediaVault source custody may be archived.
-    trusted_producers={"body.blender3d","body.motion2d","body.visual_graph",
+    trusted_producers={"body.blender3d","body.motion2d","body.visual_graph","body.motion_export",
                        "body.exr_passes","body.exr_checkpoint",
                        "body.aces2_movie",
                        "body.render_edit_owned",

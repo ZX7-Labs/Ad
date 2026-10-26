@@ -279,6 +279,8 @@ for _kind,_fields in (
     _EDITOR_OPS.append(obj({"kind":choice(_kind),**_fields}))
 _SECONDARY={"body.timeline_revision":{"operation":obj({
     "operations":array({"oneOf":_EDITOR_OPS},minItems=1,maxItems=64)})}}
+from .body_motion_project import motion_document_schema
+_SCHEMAS["body.motion_project"]=("plan",motion_document_schema())
 
 
 def document_contract(tool_id,input_name=None):
@@ -312,6 +314,9 @@ def validate_document(tool_id, document,input_name=None):
     if tool_id == "body.visual_graph":
         from .body_visual_graph import validate_graph
         validate_graph(document)
+    if tool_id == "body.motion_project":
+        from .body_motion_project import validate_motion_job
+        validate_motion_job(document)
     return True
 
 

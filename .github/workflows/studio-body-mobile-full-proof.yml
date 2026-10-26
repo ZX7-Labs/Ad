@@ -168,6 +168,11 @@ jobs:
           PY
           tar --no-same-owner -xf "$RUNNER_TEMP/blender.tar.xz" -C "$RUNNER_TEMP"
           echo "$RUNNER_TEMP/blender-4.5.15-linux-x64" >> "$GITHUB_PATH"
+      - name: Installed native Blender project saves, reopens, revises, renders and reuses actual Geometry Nodes
+        working-directory: ${{ runner.temp }}
+        run: |
+          "$RUNNER_TEMP/zx7-body-installed/bin/python" -I -u -m studio_next.body_motion_proof \
+            --workspace "$GITHUB_WORKSPACE/output/body-release-proof/native-motion-project"
       - name: Installed native editable visual graph retains original RGBA, float EXR and durable source custody
         working-directory: ${{ runner.temp }}
         run: |
@@ -212,6 +217,11 @@ jobs:
           assert deform['all_requested_checks_passed'] and deform['liquid_native_executed']
           assert all(deform['original_clock_geometry_identical'].values())
           assert all(deform['original_clock_picture_within_quantization_tolerance'].values())
+          motion=json.loads((root/'native-motion-project/motion-proof.json').read_text())
+          assert motion['all_checks_passed'] and motion['native_geometry_nodes_executed']
+          assert motion['saved_native_project_reopened_and_revised']
+          assert motion['failed_native_edit_published_nothing_and_preserved_original']
+          assert motion['verified_stages_reused']==4
           visual=json.loads((root/'native-visual-graph/visual-proof.json').read_text())
           assert visual['all_checks_passed'] and visual['original_clock_excerpt_rgba_identical']
           assert visual['float32_rgba_exact'] and visual['generated_float_source_custody_verified']
