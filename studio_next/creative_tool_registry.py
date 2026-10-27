@@ -44,6 +44,7 @@ APPLICATION_OPERATIONS = {
     "blender": ("body.blender3d", "body.exr_passes"),
     "ffmpeg": ("body.composite_mix", "body.sequence_cuts", "body.film_finish"),
     "inkscape": ("body.vector_png",),
+    "mlt": ("body.mlt_owned_export",),
 }
 
 
