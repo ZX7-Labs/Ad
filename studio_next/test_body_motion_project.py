@@ -3,6 +3,7 @@ import hashlib
 import json
 from pathlib import Path
 import subprocess
+import shutil
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -101,9 +102,12 @@ class NativeMotionProjectTests(unittest.TestCase):
                 (out/"native.json").write_text(json.dumps({
                     "engine_version":"4.5.15 LTS","renders":[]}))
                 return subprocess.CompletedProcess(argv,0,stdout="Blender mock finished")
-            def broken_copy(source,dest,**kwargs):
-                dest.write(b"only a partial archive")
-                raise OSError("interrupted native publication")
+            original_copy=shutil.copyfileobj
+            def broken_copy(source,dest,length=0):
+                if ".zx7-native-publish-" in str(getattr(dest,"name","")):
+                    dest.write(b"only a partial archive")
+                    raise OSError("interrupted native publication")
+                return original_copy(source,dest,length)
             with patch("studio_next.body_motion_project.shutil.which",return_value="blender"), \
                  patch("studio_next.body_motion_project.subprocess.check_output",
                        return_value="Blender 4.5.15 LTS\\n"), \
