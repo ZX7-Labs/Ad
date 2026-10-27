@@ -66,4 +66,61 @@ class NativeMotionProjectTests(unittest.TestCase):
             with self.assertRaises(ValueError):export_motion_media(source,Path(tmp)/"out.mp4",fps=24)
 
 
+    @staticmethod
+    def _export_fixture(root):
+        bundle=root/"valid-native.zxmotion"
+        blend=b"BLENDER-v405"+b"fixture data"*20
+        frame=b"\\x89PNG\\r\\n\\x1a\\n"+b"mocked original pixel fixture"
+        members={"project.blend":hashlib.sha256(blend).hexdigest(),
+                 "render_000000.png":hashlib.sha256(frame).hexdigest()}
+        report={"version":VERSION,"engine_version":"4.5.15 LTS",
+                "members":members,"native":{"renders":[
+                    {"scene":"Scene","frame":1,"format":"png","file":"render_000000.png"}]}}
+        with zipfile.ZipFile(bundle,"w") as archive:
+            archive.writestr("project.blend",blend)
+            archive.writestr("render_000000.png",frame)
+            archive.writestr("receipt.json",json.dumps(report))
+        return bundle,hashlib.sha256(bundle.read_bytes()).hexdigest(),frame
+
+    def test_native_export_encoder_failure_leaves_no_partial_publication(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);bundle,source_sha,_=self._export_fixture(root)
+            target=root/"original.mp4"
+            def interrupted_encoder(argv,**kwargs):
+                Path(argv[-1]).write_bytes(b"interrupted partial H264")
+                raise RuntimeError("encoder died after writing a partial movie")
+            with patch("studio_next.body_publication.require_published_source",return_value=source_sha):
+                with patch("studio_next.body_motion_project.subprocess.run",side_effect=interrupted_encoder):
+                    with self.assertRaisesRegex(RuntimeError,"encoder died"):
+                        export_motion_media(bundle,target,fps=24)
+            self.assertFalse(target.exists())
+            self.assertEqual(list(root.glob(".zx7-motion-export-*")),[])
+
+    def test_native_export_png_publishes_complete_bytes_exclusively(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);bundle,source_sha,frame=self._export_fixture(root)
+            target=root/"original.png"
+            with patch("studio_next.body_publication.require_published_source",return_value=source_sha):
+                export_motion_media(bundle,target,fps=24)
+                self.assertEqual(target.read_bytes(),frame)
+                with self.assertRaises(FileExistsError):
+                    export_motion_media(bundle,target,fps=24)
+            self.assertEqual(target.read_bytes(),frame)
+            self.assertEqual(list(root.glob(".zx7-motion-export-*")),[])
+
+    def test_native_export_concurrent_writer_is_never_removed_or_overwritten(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);bundle,source_sha,_=self._export_fixture(root)
+            target=root/"film.mp4"
+            def competing_encoder(argv,**kwargs):
+                Path(argv[-1]).write_bytes(b"fully encoded test movie")
+                target.write_bytes(b"independent other writer's bytes")
+            with patch("studio_next.body_publication.require_published_source",return_value=source_sha):
+                with patch("studio_next.body_motion_project.subprocess.run",side_effect=competing_encoder):
+                    with self.assertRaises(FileExistsError):
+                        export_motion_media(bundle,target,fps=24)
+            self.assertEqual(target.read_bytes(),b"independent other writer's bytes")
+            self.assertEqual(list(root.glob(".zx7-motion-export-*")),[])
+
+
 if __name__=="__main__":unittest.main()
