@@ -9,8 +9,9 @@ import unittest
 import xml.etree.ElementTree as ET
 
 from studio_next.body_mlt_editor import (
-    validate_mlt_edit,build_mlt_xml,export_owned_mlt)
+    validate_mlt_edit,build_mlt_xml,export_owned_mlt,verify_owned_mlt_project)
 from studio_next.media_vault import MediaVault
+from studio_next.body_document_schemas import validate_document
 
 
 def _movie(path,color):
@@ -49,6 +50,7 @@ class VerifiedMLTEditorialTests(unittest.TestCase):
     def test_exact_multitrack_placement_and_exclusive_project_publication(self):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp);plan,source=self._case(root)
+            self.assertTrue(validate_document("body.mlt_owned_export",plan))
             checked=validate_mlt_edit(plan,root,root/"vault")
             self.assertEqual(checked["frames"],12)
             self.assertEqual(len(checked["sources"]),2)
@@ -64,6 +66,9 @@ class VerifiedMLTEditorialTests(unittest.TestCase):
             result=export_owned_mlt(source,root,root/"vault",target)
             self.assertEqual(result["sha256"],hashlib.sha256(target.read_bytes()).hexdigest())
             self.assertTrue(result["sound_intentionally_silent"])
+            report=verify_owned_mlt_project(target)
+            self.assertEqual(report["verified_original_sources"],2)
+            self.assertEqual(report["verified_mlt_tracks"],2)
             with self.assertRaises(FileExistsError):
                 export_owned_mlt(source,root,root/"vault",target)
             self.assertFalse(list(root.glob(".zx7-mlt-*")))
@@ -91,6 +96,31 @@ class VerifiedMLTEditorialTests(unittest.TestCase):
             changed["tracks"][0]["clips"][0]["end_frame"]=13
             with self.assertRaisesRegex(ValueError,"exceeds"):
                 validate_mlt_edit(changed,root,root/"vault")
+
+    @unittest.skipUnless(shutil.which("melt"),"Installed MLT executable required")
+    def test_model_facing_body_registry_only_exposes_real_available_mlt_adapter(self):
+        from studio_next.body_capabilities import explain_operational_tool
+        from studio_next.body_integration import body_catalog
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp)
+            installed={tool["id"]:tool for tool in body_catalog(root).discover()}
+            self.assertEqual(installed["body.mlt_owned_export"]["status"],"installed")
+            doc=explain_operational_tool(root,"body.mlt_owned_export")
+            self.assertEqual(doc["status"],"ready_for_execution_trial")
+            self.assertIn("plan",doc["document_contracts"])
+            self.assertIn("tracks",doc["document_contracts"]["plan"]["json_schema"]["properties"])
+
+    def test_tampered_mlt_source_is_rejected_after_publication(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);plan,source=self._case(root)
+            target=root/"original.mlt"
+            export_owned_mlt(source,root,root/"vault",target)
+            self.assertTrue(verify_owned_mlt_project(target)["verified_original_sources"])
+            text=target.read_text()
+            tampered=text.replace("zx7.attestation_id","plugin.load_from_url")
+            target.write_text(tampered)
+            with self.assertRaises(ValueError):
+                verify_owned_mlt_project(target)
 
     @unittest.skipUnless(shutil.which("melt"),"Actual LGPL/GPL MLT runtime required")
     def test_actual_mlt_multitrack_renders_measured_decodable_video(self):
