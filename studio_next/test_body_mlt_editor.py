@@ -186,6 +186,73 @@ class VerifiedMLTEditorialTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 verify_owned_mlt_project(target)
 
+    def test_untrusted_mlt_service_injection_and_frame_overflow_are_rejected(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);_,source=self._case(root)
+            target=root/"source.mlt"
+            export_owned_mlt(source,root,root/"vault",target)
+            original=target.read_text()
+            scenarios={
+                "root property":original.replace("</mlt>",
+                    '<property name="mlt_service">producer_xml</property></mlt>'),
+                "root consumer":original.replace("</mlt>",
+                    '<consumer mlt_service="avformat"/></mlt>'),
+                "root producer switch":original.replace(
+                    'producer="zx7-tractor"','producer="source-attacker"',1),
+                "extra producer command":original.replace(
+                    '<producer id="source-', '<producer in="0" id="source-',1),
+                "extra producer property":original.replace(
+                    '</producer>','<property name="resource">/etc/passwd</property></producer>',1),
+                "profile mutation":original.replace('colorspace="709"','colorspace="601"',1),
+                "nested timeline service":original.replace(
+                    '</playlist>','<producer id="new-side-effect"/></playlist>',1),
+                "untrusted mutable track":original.replace(
+                    'hide="audio"','hide="video"',1),
+                "extra output frame":original.replace('out="11"','out="12"',1),
+                "unsupported compositor":original.replace(
+                    '<property name="mlt_service">qtblend</property>',
+                    '<property name="mlt_service">luma</property>',1),
+                "inflated gap":original.replace(
+                    '<blank length="4"','<blank length="100"'),
+            }
+            self.assertTrue(all(v!=original for v in scenarios.values()))
+            for case,tampered in scenarios.items():
+                with self.subTest(case=case):
+                    target.write_text(tampered)
+                    with self.assertRaises(ValueError):
+                        verify_owned_mlt_project(target)
+
+    @unittest.skipUnless(shutil.which("melt"),"Native MLT producer required")
+    def test_melt_receives_a_sealed_snapshot_not_mutable_project_path(self):
+        from unittest.mock import patch
+        from studio_next.body_mlt_render import render_owned_mlt
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);_,source=self._case(root)
+            native=root/"timeline.mlt"
+            export_owned_mlt(source,root,root/"vault",native)
+            initial=native.read_bytes()
+            watched=[]
+            def changing_owner(command,**kwargs):
+                # Simulate a concurrent editor altering its own project while
+                # the native runtime is being invoked. Only a sealed snapshot
+                # is allowed as the melt input.
+                chosen=Path(command[1])
+                self.assertNotEqual(chosen.resolve(),native.resolve())
+                self.assertEqual(chosen.read_bytes(),initial)
+                self.assertTrue(verify_owned_mlt_project(chosen)["verified_original_sources"])
+                watched.append(chosen)
+                native.write_bytes(b'<?xml version="1.0"?><mlt producer="evil"/>')
+                self.assertEqual(chosen.read_bytes(),initial)
+                return subprocess.CompletedProcess(command,78,stdout="",
+                                                   stderr="simulated native stop")
+            with patch("studio_next.body_mlt_render.subprocess.run",
+                       side_effect=changing_owner):
+                with self.assertRaisesRegex(RuntimeError,"simulated native stop"):
+                    render_owned_mlt(native,root,root/"unpublished.mp4")
+            self.assertEqual(len(watched),1)
+            self.assertFalse((root/"unpublished.mp4").exists())
+            self.assertFalse(list(root.glob(".zx7-mlt-render-*")))
+
     @unittest.skipUnless(shutil.which("melt"),"Actual LGPL/GPL MLT runtime required")
     def test_actual_mlt_multitrack_renders_measured_decodable_video(self):
         with tempfile.TemporaryDirectory() as temp:
