@@ -322,6 +322,29 @@ class VerifiedMLTEditorialTests(unittest.TestCase):
             evidence="Actual original soundtrack generated as FFmpeg source fixture",
             owner_or_generator="physical-test-source")
 
+    def test_ambiguous_multi_language_source_audio_must_not_be_guessed(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);plan,_=self._case(root)
+            original=root/"ambiguous-sound.mp4"
+            subprocess.run(["ffmpeg","-hide_banner","-loglevel","error",
+                "-f","lavfi","-i","color=c=black:s=64x48:r=12:d=1",
+                "-f","lavfi","-i","sine=frequency=440:duration=1",
+                "-f","lavfi","-i","sine=frequency=880:duration=1",
+                "-map","0:v:0","-map","1:a:0","-map","2:a:0",
+                "-c:v","libx264","-pix_fmt","yuv420p","-frames:v","12",
+                "-c:a","aac","-color_primaries","bt709","-color_trc","bt709",
+                "-colorspace","bt709","-y",str(original)],check=True,timeout=40)
+            record=MediaVault(root/"vault").ingest(original,mime="video/mp4",
+                rights="owner_supplied",source_type="owner_upload",
+                source_id="ambiguous-languages-fixture",evidence="generated source",
+                owner_or_generator="fixture")
+            plan["audio_tracks"]=[{"clips":[{
+                "source":"zx7:sha256:"+record["asset_id"],
+                "asset_id":record["asset_id"],"attestation_id":record["attestation_id"],
+                "position_frame":0,"first_frame":0,"end_frame":12}]}]
+            with self.assertRaisesRegex(ValueError,"one unambiguous"):
+                validate_mlt_edit(plan,root,root/"vault")
+
     def test_authenticated_original_soundtrack_is_typed_not_a_model_rights_claim(self):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp);plan,source=self._case(root)
