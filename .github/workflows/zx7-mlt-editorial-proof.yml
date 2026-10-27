@@ -33,3 +33,10 @@ jobs:
       - name: Regression of existing frame-accurate editing and source custody
         run: |
           python -m unittest studio_next.test_body_sequence_cuts studio_next.test_body_timeline_revision studio_next.test_body_tool_contracts -v
+      - name: Restore full independent native production test environment
+        run: |
+          sudo apt-get install -y blender inkscape xvfb python3-tk fonts-dejavu-core fonts-noto-core
+          python -m pip install --no-cache-dir "numpy>=1.26,<3" "Pillow>=10,<13" "opentimelineio>=0.17,<1" "fonttools>=4,<5" "OpenEXR>=3.3,<4" "opencolorio>=2.5,<2.6" "opencv-python-headless>=4.10,<5"
+      - name: Run every existing and new studio application contract on this exact branch
+        run: |
+          xvfb-run -a python -m unittest discover -s studio_next -p 'test_*.py' -v
