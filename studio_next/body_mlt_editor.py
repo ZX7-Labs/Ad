@@ -43,9 +43,12 @@ def _prop(owner,name,value):
     ET.SubElement(owner,"property",{"name":name}).text=str(value)
 
 
-# This bounded QtBlend subset uses upstream documented Porter-Duff/SVG values.
-# Reject invented plugin names, GLSL expressions, arbitrary filters and effects.
+# Use MLT QtBlend for source-over and the independently supported Frei0r Cairo
+# compositor for true layer blending. Ubuntu MLT 7.22 accepts qtblend mode
+# properties but yields source-over pixels for opaque native media in practice.
+# Never pretend an XML value alone proves a rendered visual operation.
 _BLEND_MODES={"normal":0,"multiply":13,"screen":14,"overlay":15}
+_CAIRO_MODES={"multiply","screen","overlay"}
 
 
 def _single_recorded_audio_stream(path):
@@ -263,8 +266,16 @@ def build_mlt_xml(plan,checked):
         _prop(transition,"b_track",ti)
         # MLT 'luma' without a wipe map performs a dissolve, not opaque
         # compositing. The actual FFmpeg-decode test guards this distinction.
-        _prop(transition,"mlt_service","qtblend")
-        _prop(transition,"compositing",_BLEND_MODES[checked["blend_modes"][ti]])
+        mode=checked["blend_modes"][ti]
+        if mode=="normal":
+            _prop(transition,"mlt_service","qtblend")
+            _prop(transition,"compositing",0)
+        else:
+            # Native Frei0r cairoblend is a separate software compositor;
+            # param 0 is full opacity and param 1 the fixed named blend mode.
+            _prop(transition,"mlt_service","frei0r.cairoblend")
+            _prop(transition,"0",1)
+            _prop(transition,"1",mode)
         _prop(transition,"always_active",1)
     for ti in range(len(checked["audio_tracks"])):
         transition=ET.SubElement(tractor,"transition",{
@@ -443,18 +454,33 @@ def _verify_exact_mlt_xml_tree(root):
         if transition.attrib!={"in":"0","out":str(frames-1)}:
             raise ValueError("MLT transition time range altered")
         is_sound=i>=picture_tracks-1
-        allow={"a_track","b_track","mlt_service","always_active"}|(
-            {"start","sum"} if is_sound else {"compositing"})
-        props=properties(transition,allow)
-        if not is_sound and props.get("compositing") not in {
-                str(value) for value in _BLEND_MODES.values()}:
-            raise ValueError("MLT native visual blending mode is not allowlisted")
-        expected=({"a_track":"0",
-                   "b_track":str(picture_tracks+i-(picture_tracks-1)),
-                   "mlt_service":"mix","start":"1","sum":"1",
-                   "always_active":"1"} if is_sound else
-                  {"a_track":"0","b_track":str(i+1),"mlt_service":"qtblend",
-                   "compositing":props["compositing"],"always_active":"1"})
+        if is_sound:
+            props=properties(transition,{"a_track","b_track",
+                "mlt_service","always_active","start","sum"})
+            expected={"a_track":"0",
+                "b_track":str(picture_tracks+i-(picture_tracks-1)),
+                "mlt_service":"mix","start":"1","sum":"1","always_active":"1"}
+        else:
+            # Strictly distinguish the Qt source-over operation and approved
+            # Cairo native blend. Arbitrary Frei0r plugin names and parameters
+            # are not executable through this custody-constrained XML loader.
+            props={p.get("name"):p.text for p in transition.findall("property")}
+            service=props.get("mlt_service")
+            if service=="qtblend":
+                props=properties(transition,{"a_track","b_track",
+                    "mlt_service","compositing","always_active"})
+                expected={"a_track":"0","b_track":str(i+1),
+                    "mlt_service":"qtblend","compositing":"0","always_active":"1"}
+            elif service=="frei0r.cairoblend":
+                props=properties(transition,{"a_track","b_track",
+                    "mlt_service","0","1","always_active"})
+                if props["1"] not in _CAIRO_MODES:
+                    raise ValueError("MLT native visual blending mode is not allowlisted")
+                expected={"a_track":"0","b_track":str(i+1),
+                    "mlt_service":"frei0r.cairoblend","0":"1","1":props["1"],
+                    "always_active":"1"}
+            else:
+                raise ValueError("MLT native visual blending mode is not allowlisted")
         if props!=expected:
             raise ValueError("MLT original mixer/compositor was substituted")
     for playlist in playlists:
