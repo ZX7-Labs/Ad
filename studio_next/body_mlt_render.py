@@ -21,6 +21,7 @@ from .media_vault import MediaVault,sha256_file
 from .precision_retime import _source_timebase
 from .production_qc import full_decode_inspection
 from .delivery_audit import _probe_details
+from .body_color_pipeline import _actual_bt709_source
 
 
 def render_owned_mlt(edit,workspace,output):
@@ -135,6 +136,8 @@ def render_owned_mlt(edit,workspace,output):
         encoded=Path(tmp)/"render.mp4"
         cmd=["melt",str(worker),"-consumer",f"avformat:{encoded}",
              "vcodec=libx264","pix_fmt=yuv420p","crf=18",
+             "color_primaries=bt709","color_trc=bt709",
+             "colorspace=709","movflags=+faststart",
              "an=1","real_time=-1","threads=2"]
         run=subprocess.run(cmd,capture_output=True,text=True,timeout=7200)
         if run.returncode:
@@ -145,6 +148,10 @@ def render_owned_mlt(edit,workspace,output):
         probe=_probe_details(encoded)
         if probe["audio_stream_present"]:
             raise ValueError("MLT renderer unexpectedly emitted an unauthorized soundtrack")
+        # The project and its physical inputs are BT.709, and the delivered
+        # movie must retain those explicit display tags for other devices.
+        # Otherwise a nominally successful encode could shift appearance.
+        _actual_bt709_source(encoded)
         qa=full_decode_inspection(encoded,expected={
             "width":width,"height":height,
             "duration_seconds":float(Fraction(frames,1)/fps),
