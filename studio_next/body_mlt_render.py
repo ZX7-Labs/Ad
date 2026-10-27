@@ -144,7 +144,7 @@ def render_owned_mlt(edit,workspace,output):
             raise RuntimeError("Verified MLT rendering failed: "+run.stderr[-1200:])
         measured_rate,measured_frames=_source_timebase(encoded)
         if measured_rate!=fps or measured_frames!=frames:
-            raise ValueError("Actual decoded MLT frame clock differs from original editing intent")
+            raise ValueError(f"Actual decoded MLT frame clock differs from original editing intent: expected {fps} ({frames} frames), decoded {measured_rate} ({measured_frames} frames)")
         probe=_probe_details(encoded)
         if probe["audio_stream_present"]:
             raise ValueError("MLT renderer unexpectedly emitted an unauthorized soundtrack")
