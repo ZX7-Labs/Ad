@@ -145,6 +145,17 @@ class VerifiedMLTEditorialTests(unittest.TestCase):
                 "color_space","color_primaries","color_transfer")},
                 {"color_space":"bt709","color_primaries":"bt709",
                  "color_transfer":"bt709"})
+            raw=subprocess.check_output(["ffmpeg","-v","error","-xerror",
+                "-i",str(video),"-pix_fmt","rgb24","-f","rawvideo","-vsync","0","-"],timeout=30)
+            pitch=64*48*3
+            self.assertEqual(len(raw),12*pitch)
+            def color_at(frame):
+                off=frame*pitch+(24*64+32)*3
+                return tuple(raw[off:off+3])
+            start,overlay,finish=(color_at(i) for i in (0,5,11))
+            self.assertGreater(start[0],start[2]+70)
+            self.assertGreater(overlay[2],overlay[0]+70)
+            self.assertGreater(finish[0],finish[2]+70)
             with self.assertRaises(FileExistsError):
                 catalog.invoke("body.mlt_owned_render",{
                     "edit":"edit.mlt","out":"finished.mp4"},allowed_access={"write"})
@@ -158,7 +169,10 @@ class VerifiedMLTEditorialTests(unittest.TestCase):
             root=Path(temp);plan,source=self._case(root)
             export_owned_mlt(source,root,root/"vault",root/"edit.mlt")
             target=root/"no-partial.mp4"
+            real_run=subprocess.run
             def crash(command,**kw):
+                if command[0]!="melt":
+                    return real_run(command,**kw)
                 Path(command[command.index("-consumer")+1][len("avformat:"):]).write_bytes(
                     b"invalid partially encoded h264")
                 return subprocess.CompletedProcess(command,72,stdout="",stderr="forced native crash")
@@ -240,7 +254,10 @@ class VerifiedMLTEditorialTests(unittest.TestCase):
             export_owned_mlt(source,root,root/"vault",native)
             initial=native.read_bytes()
             watched=[]
+            real_run=subprocess.run
             def changing_owner(command,**kwargs):
+                if command[0]!="melt":
+                    return real_run(command,**kwargs)
                 # Simulate a concurrent editor altering its own project while
                 # the native runtime is being invoked. Only a sealed snapshot
                 # is allowed as the melt input.
@@ -287,6 +304,174 @@ class VerifiedMLTEditorialTests(unittest.TestCase):
             self.assertFalse((root/"unpublished.mp4").exists())
             self.assertFalse(list(root.glob(".zx7-mlt-render-*")))
 
+    @staticmethod
+    def _original_sound(root,freq=440):
+        from studio_next.media_vault import MediaVault
+        source=root/f"sound-{freq}.mp4"
+        subprocess.run(["ffmpeg","-hide_banner","-loglevel","error","-nostdin",
+            "-f","lavfi","-i","color=c=black:s=64x48:r=12:d=1",
+            "-f","lavfi","-i",f"sine=frequency={freq}:sample_rate=48000:duration=1",
+            "-map","0:v:0","-map","1:a:0",
+            "-c:v","libx264","-pix_fmt","yuv420p","-frames:v","12",
+            "-c:a","aac","-b:a","192k",
+            "-color_primaries","bt709","-color_trc","bt709","-colorspace","bt709",
+            "-y",str(source)],check=True,timeout=40)
+        return MediaVault(root/"vault").ingest(source,mime="video/mp4",
+            rights="owner_supplied",source_type="owner_upload",
+            source_id=f"original-audio-{freq}",
+            evidence="Actual original soundtrack generated as FFmpeg source fixture",
+            owner_or_generator="physical-test-source")
+
+    def test_ambiguous_multi_language_source_audio_must_not_be_guessed(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);plan,_=self._case(root)
+            original=root/"ambiguous-sound.mp4"
+            subprocess.run(["ffmpeg","-hide_banner","-loglevel","error",
+                "-f","lavfi","-i","color=c=black:s=64x48:r=12:d=1",
+                "-f","lavfi","-i","sine=frequency=440:duration=1",
+                "-f","lavfi","-i","sine=frequency=880:duration=1",
+                "-map","0:v:0","-map","1:a:0","-map","2:a:0",
+                "-c:v","libx264","-pix_fmt","yuv420p","-frames:v","12",
+                "-c:a","aac","-color_primaries","bt709","-color_trc","bt709",
+                "-colorspace","bt709","-y",str(original)],check=True,timeout=40)
+            record=MediaVault(root/"vault").ingest(original,mime="video/mp4",
+                rights="owner_supplied",source_type="owner_upload",
+                source_id="ambiguous-languages-fixture",evidence="generated source",
+                owner_or_generator="fixture")
+            plan["audio_tracks"]=[{"clips":[{
+                "source":"zx7:sha256:"+record["asset_id"],
+                "asset_id":record["asset_id"],"attestation_id":record["attestation_id"],
+                "position_frame":0,"first_frame":0,"end_frame":12}]}]
+            with self.assertRaisesRegex(ValueError,"one unambiguous"):
+                validate_mlt_edit(plan,root,root/"vault")
+
+    def test_authenticated_original_soundtrack_is_typed_not_a_model_rights_claim(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);plan,source=self._case(root)
+            audio=self._original_sound(root)
+            clip={"source":"zx7:sha256:"+audio["asset_id"],
+                  "asset_id":audio["asset_id"],
+                  "attestation_id":audio["attestation_id"],
+                  "position_frame":4,"first_frame":1,"end_frame":7}
+            plan["audio_tracks"]=[{"clips":[clip]}]
+            self.assertTrue(validate_document("body.mlt_owned_export",plan))
+            verified=validate_mlt_edit(plan,root,root/"vault")
+            self.assertEqual(len(verified["audio_tracks"]),1)
+            self.assertEqual(len(verified["audio_sources"]),1)
+            source.write_text(json.dumps(plan))
+            target=root/"original-sound.mlt"
+            result=export_owned_mlt(source,root,root/"vault",target)
+            self.assertFalse(result["sound_intentionally_silent"])
+            self.assertEqual(result["original_sound_tracks"],1)
+            checked=verify_owned_mlt_project(target)
+            self.assertEqual(checked["verified_audio_tracks"],1)
+            self.assertEqual(checked["verified_mlt_tracks"],2)
+            shape=ET.parse(target)
+            self.assertEqual(len(shape.findall("./tractor/multitrack/track")),3)
+            self.assertEqual(len(shape.findall("./tractor/transition")),2)
+            producers=[node for node in shape.findall("./producer")
+                if node.get("id","").startswith("audio-source-")]
+            self.assertEqual(len(producers),1)
+            properties={node.get("name"):node.text
+                for node in producers[0].findall("property")}
+            self.assertEqual(properties["audio_index"],"1")  # physical MP4 index
+            self.assertEqual(properties["video_index"],"-1")
+            wrong_index=target.read_text().replace(
+                '<property name="audio_index">1</property>',
+                '<property name="audio_index">0</property>')
+            self.assertNotEqual(wrong_index,target.read_text())
+            target.write_text(wrong_index)
+            with self.assertRaisesRegex(ValueError,"audio index"):
+                verify_owned_mlt_project(target)
+            target.write_text(ET.tostring(shape.getroot(),encoding="unicode"))
+            self.assertEqual(verify_owned_mlt_project(target)["verified_audio_tracks"],1)
+            for field,value in (("asset_id","0"*64),
+                                ("source","https://free-music.example/audio"),
+                                ("end_frame",20)):
+                changed=json.loads(json.dumps(plan))
+                changed["audio_tracks"][0]["clips"][0][field]=value
+                with self.subTest(field=field),self.assertRaises((ValueError,TypeError)):
+                    validate_mlt_edit(changed,root,root/"vault")
+
+    @unittest.skipUnless(shutil.which("melt"),"A real native MLT audio mixer is required")
+    def test_real_native_audio_is_decoded_and_time_positioned_with_original_picture(self):
+        from studio_next.body_integration import body_catalog
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);plan,source=self._case(root)
+            record=self._original_sound(root)
+            plan["audio_tracks"]=[{"clips":[{
+                "source":"zx7:sha256:"+record["asset_id"],
+                "asset_id":record["asset_id"],
+                "attestation_id":record["attestation_id"],
+                "position_frame":4,"first_frame":0,"end_frame":4}]}]
+            source.write_text(json.dumps(plan))
+            engine=body_catalog(root)
+            prepared=engine.invoke("body.mlt_owned_export",{
+                "plan":"original.json","out":"with-real-sound.mlt"},allowed_access={"write"})
+            self.assertFalse(verify_owned_mlt_project(prepared["path"])[
+                "verified_audio_tracks"]==0)
+            rendered=engine.invoke("body.mlt_owned_render",{
+                "edit":"with-real-sound.mlt","out":"sound-picture.mp4"},
+                allowed_access={"write"})
+            self.assertTrue(rendered["audio_present"])
+            movie=Path(rendered["path"])
+            probe=json.loads(subprocess.check_output(["ffprobe","-v","error",
+                "-show_streams","-of","json",str(movie)]))
+            self.assertEqual(sum(x["codec_type"]=="audio" for x in probe["streams"]),1)
+            samples=subprocess.check_output(["ffmpeg","-hide_banner",
+                "-loglevel","error","-i",str(movie),"-map","0:a:0",
+                "-ac","1","-ar","48000","-f","f32le","-"],timeout=35)
+            from array import array
+            wave=array("f");wave.frombytes(samples)
+            def mean_abs(begin,end):
+                sample=wave[int(begin*48000):int(end*48000)]
+                return sum(abs(x) for x in sample)/max(1,len(sample))
+            self.assertLess(mean_abs(.05,.20),.004)
+            self.assertGreater(mean_abs(.39,.55),.012)
+            self.assertLess(mean_abs(.79,.95),.004)
+
+    @unittest.skipUnless(shutil.which("melt"),"Native recorded audio mixing requires actual MLT")
+    def test_two_independent_original_audio_tracks_mix_both_real_frequencies(self):
+        from studio_next.body_integration import body_catalog
+        from array import array
+        import math
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);plan,source=self._case(root)
+            tracks=[]
+            for frequency in (440,880):
+                owned=self._original_sound(root,frequency)
+                tracks.append({"clips":[{
+                    "source":"zx7:sha256:"+owned["asset_id"],
+                    "asset_id":owned["asset_id"],
+                    "attestation_id":owned["attestation_id"],
+                    "position_frame":0,"first_frame":0,"end_frame":12}]})
+            plan["audio_tracks"]=tracks
+            source.write_text(json.dumps(plan))
+            body=body_catalog(root)
+            body.invoke("body.mlt_owned_export",{
+                "plan":"original.json","out":"two-soundtracks.mlt"},allowed_access={"write"})
+            verified=verify_owned_mlt_project(root/"two-soundtracks.mlt")
+            self.assertEqual(verified["verified_audio_tracks"],2)
+            result=body.invoke("body.mlt_owned_render",{
+                "edit":"two-soundtracks.mlt","out":"two-soundtracks.mp4"},
+                allowed_access={"write"})
+            self.assertTrue(result["audio_present"])
+            decoded=subprocess.check_output(["ffmpeg","-hide_banner","-loglevel","error",
+                "-i",str(result["path"]),"-map","0:a:0",
+                "-ac","1","-ar","48000","-f","f32le","-"],timeout=40)
+            samples=array("f");samples.frombytes(decoded)
+            start=int(.23*48000);end=int(.72*48000)
+            window=samples[start:end]
+            self.assertGreater(len(window),20000)
+            for frequency in (440,880):
+                sine=sum(sample*math.sin(2*math.pi*frequency*(start+i)/48000)
+                         for i,sample in enumerate(window))
+                cosine=sum(sample*math.cos(2*math.pi*frequency*(start+i)/48000)
+                           for i,sample in enumerate(window))
+                amplitude=2*math.hypot(sine,cosine)/len(window)
+                self.assertGreater(amplitude,.025,
+                    f"Original {frequency} Hz voice vanished from the combined edit")
+
     def test_project_and_video_reject_symlinked_parent_escape(self):
         from studio_next.body_mlt_render import render_owned_mlt
         with tempfile.TemporaryDirectory() as temp:
@@ -321,12 +506,20 @@ class VerifiedMLTEditorialTests(unittest.TestCase):
                 if write.name and len(Path(write.name).name)==64:
                     write.write(b"alteration inside private decoder staging")
                     tampered.append(write.name)
+            real_run=subprocess.run
+            native_calls=[]
+            def refuse_native(command,**kw):
+                if command[0]=="melt":
+                    native_calls.append(command)
+                    raise AssertionError("Corrupt original must never reach native renderer")
+                return real_run(command,**kw)
             with patch("studio_next.body_mlt_render.shutil.copyfileobj",
                        side_effect=untrusted_copy):
-                with patch("studio_next.body_mlt_render.subprocess.run") as native:
+                with patch("studio_next.body_mlt_render.subprocess.run",
+                           side_effect=refuse_native):
                     with self.assertRaisesRegex(ValueError,"changed while sealing"):
                         render_owned_mlt(project,root,root/"never-publish.mp4")
-                    native.assert_not_called()
+                    self.assertFalse(native_calls)
             self.assertTrue(tampered)
             self.assertFalse((root/"never-publish.mp4").exists())
             self.assertFalse(list(root.glob(".zx7-mlt-render-*")))
