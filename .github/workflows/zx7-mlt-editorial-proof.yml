@@ -23,7 +23,7 @@ jobs:
       - name: Install actual open-source MLT engine and media decoders
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y melt ffmpeg
+          sudo apt-get install -y melt ffmpeg frei0r-plugins
           melt -query version
           ffmpeg -version | head -n 1
       - name: Check source syntax and exact editorial ABI
