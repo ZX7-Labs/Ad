@@ -128,7 +128,14 @@ class VerifiedMLTEditorialTests(unittest.TestCase):
                     "plan":"original.json","out":edit},allowed_access={"write"})
                 output=body.invoke("body.mlt_owned_render",{
                     "edit":edit,"out":movie},allowed_access={"write"})
-                self.assertEqual(output["frames"],12)
+                self.assertEqual(Path(output["path"]).resolve(),(root/movie).resolve())
+                decoded=json.loads(subprocess.check_output([
+                    "ffprobe","-v","error","-count_frames",
+                    "-select_streams","v:0",
+                    "-show_entries","stream=nb_read_frames,width,height",
+                    "-of","json",str(root/movie)],timeout=40))["streams"][0]
+                self.assertEqual(int(decoded["nb_read_frames"]),12)
+                self.assertEqual((decoded["width"],decoded["height"]),(64,48))
                 rgb=subprocess.check_output(["ffmpeg","-v","error","-xerror",
                     "-i",str(root/movie),"-map","0:v:0",
                     "-pix_fmt","rgb24","-f","rawvideo","-"],timeout=40)
