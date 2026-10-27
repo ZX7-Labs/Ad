@@ -125,7 +125,7 @@ def render_owned_mlt(edit,workspace,output):
         worker=Path(tmp)/"private-worker.mlt"
         with worker.open("xb") as output_xml:
             output_xml.write(ET.tostring(worker_xml,encoding="utf-8",
-                                           xml_declaration=True)+b"\\n")
+                                           xml_declaration=True)+b"\n")
             output_xml.flush()
             os.fsync(output_xml.fileno())
         if sha256_file(sealed)!=before:
