@@ -238,11 +238,37 @@ class VerifiedMLTEditorialTests(unittest.TestCase):
                 # is allowed as the melt input.
                 chosen=Path(command[1])
                 self.assertNotEqual(chosen.resolve(),native.resolve())
-                self.assertEqual(chosen.read_bytes(),initial)
-                self.assertTrue(verify_owned_mlt_project(chosen)["verified_original_sources"])
+                project=ET.fromstring(initial)
+                worker=ET.fromstring(chosen.read_bytes())
+                original_producers=project.findall("producer")
+                rewritten_producers=worker.findall("producer")
+                self.assertEqual(len(original_producers),len(rewritten_producers))
+                frozen_sources=[]
+                for original_producer,worker_producer in zip(
+                        original_producers,rewritten_producers):
+                    original_properties={p.get("name"):p.text
+                        for p in original_producer.findall("property")}
+                    worker_properties={p.get("name"):p.text
+                        for p in worker_producer.findall("property")}
+                    original_media=Path(original_properties["resource"])
+                    frozen=Path(worker_properties.pop("resource"))
+                    original_properties.pop("resource")
+                    self.assertEqual(worker_properties,original_properties)
+                    self.assertNotEqual(original_media,frozen)
+                    self.assertEqual(frozen.parent.name,"private-sources")
+                    self.assertTrue(frozen.is_relative_to(chosen.parent))
+                    self.assertEqual(
+                        hashlib.sha256(frozen.read_bytes()).hexdigest(),
+                        worker_properties["zx7.original_sha256"])
+                    self.assertEqual(frozen.read_bytes(),original_media.read_bytes())
+                    frozen_sources.append(frozen)
                 watched.append(chosen)
+                before_worker=chosen.read_bytes()
+                before_copies=[p.read_bytes() for p in frozen_sources]
                 native.write_bytes(b'<?xml version="1.0"?><mlt producer="evil"/>')
-                self.assertEqual(chosen.read_bytes(),initial)
+                self.assertEqual(chosen.read_bytes(),before_worker)
+                self.assertEqual([p.read_bytes() for p in frozen_sources],
+                                 before_copies)
                 return subprocess.CompletedProcess(command,78,stdout="",
                                                    stderr="simulated native stop")
             with patch("studio_next.body_mlt_render.subprocess.run",
@@ -251,6 +277,31 @@ class VerifiedMLTEditorialTests(unittest.TestCase):
                     render_owned_mlt(native,root,root/"unpublished.mp4")
             self.assertEqual(len(watched),1)
             self.assertFalse((root/"unpublished.mp4").exists())
+            self.assertFalse(list(root.glob(".zx7-mlt-render-*")))
+
+    def test_corrupted_private_cas_snapshot_never_starts_native_renderer(self):
+        from unittest.mock import patch
+        from studio_next.body_mlt_render import render_owned_mlt
+        from studio_next import body_mlt_render
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);_,source=self._case(root)
+            project=root/"owned.mlt"
+            export_owned_mlt(source,root,root/"vault",project)
+            actual_copy=body_mlt_render.shutil.copyfileobj
+            tampered=[]
+            def untrusted_copy(read,write,*args):
+                actual_copy(read,write,*args)
+                if write.name and len(Path(write.name).name)==64:
+                    write.write(b"alteration inside private decoder staging")
+                    tampered.append(write.name)
+            with patch("studio_next.body_mlt_render.shutil.copyfileobj",
+                       side_effect=untrusted_copy):
+                with patch("studio_next.body_mlt_render.subprocess.run") as native:
+                    with self.assertRaisesRegex(ValueError,"changed while sealing"):
+                        render_owned_mlt(project,root,root/"never-publish.mp4")
+                    native.assert_not_called()
+            self.assertTrue(tampered)
+            self.assertFalse((root/"never-publish.mp4").exists())
             self.assertFalse(list(root.glob(".zx7-mlt-render-*")))
 
     @unittest.skipUnless(shutil.which("melt"),"Actual LGPL/GPL MLT runtime required")
