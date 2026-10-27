@@ -287,6 +287,25 @@ class VerifiedMLTEditorialTests(unittest.TestCase):
             self.assertFalse((root/"unpublished.mp4").exists())
             self.assertFalse(list(root.glob(".zx7-mlt-render-*")))
 
+    def test_project_and_video_reject_symlinked_parent_escape(self):
+        from studio_next.body_mlt_render import render_owned_mlt
+        with tempfile.TemporaryDirectory() as temp:
+            base=Path(temp)
+            root=base/"workspace"
+            outside=base/"outside"
+            root.mkdir()
+            outside.mkdir()
+            _,plan=self._case(root)
+            project=root/"safe.mlt"
+            export_owned_mlt(plan,root,root/"vault",project)
+            linked=root/"external-output"
+            linked.symlink_to(outside,target_is_directory=True)
+            with self.assertRaisesRegex(ValueError,"workspace"):
+                export_owned_mlt(plan,root,root/"vault",linked/"bad.mlt")
+            with self.assertRaisesRegex(ValueError,"workspace"):
+                render_owned_mlt(project,root,linked/"bad.mp4")
+            self.assertEqual(list(outside.iterdir()),[])
+
     def test_corrupted_private_cas_snapshot_never_starts_native_renderer(self):
         from unittest.mock import patch
         from studio_next.body_mlt_render import render_owned_mlt
