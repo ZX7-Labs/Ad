@@ -158,7 +158,10 @@ class VerifiedMLTEditorialTests(unittest.TestCase):
             root=Path(temp);plan,source=self._case(root)
             export_owned_mlt(source,root,root/"vault",root/"edit.mlt")
             target=root/"no-partial.mp4"
+            real_run=subprocess.run
             def crash(command,**kw):
+                if command[0]!="melt":
+                    return real_run(command,**kw)
                 Path(command[command.index("-consumer")+1][len("avformat:"):]).write_bytes(
                     b"invalid partially encoded h264")
                 return subprocess.CompletedProcess(command,72,stdout="",stderr="forced native crash")
@@ -240,7 +243,10 @@ class VerifiedMLTEditorialTests(unittest.TestCase):
             export_owned_mlt(source,root,root/"vault",native)
             initial=native.read_bytes()
             watched=[]
+            real_run=subprocess.run
             def changing_owner(command,**kwargs):
+                if command[0]!="melt":
+                    return real_run(command,**kwargs)
                 # Simulate a concurrent editor altering its own project while
                 # the native runtime is being invoked. Only a sealed snapshot
                 # is allowed as the melt input.
@@ -408,12 +414,20 @@ class VerifiedMLTEditorialTests(unittest.TestCase):
                 if write.name and len(Path(write.name).name)==64:
                     write.write(b"alteration inside private decoder staging")
                     tampered.append(write.name)
+            real_run=subprocess.run
+            native_calls=[]
+            def refuse_native(command,**kw):
+                if command[0]=="melt":
+                    native_calls.append(command)
+                    raise AssertionError("Corrupt original must never reach native renderer")
+                return real_run(command,**kw)
             with patch("studio_next.body_mlt_render.shutil.copyfileobj",
                        side_effect=untrusted_copy):
-                with patch("studio_next.body_mlt_render.subprocess.run") as native:
+                with patch("studio_next.body_mlt_render.subprocess.run",
+                           side_effect=refuse_native):
                     with self.assertRaisesRegex(ValueError,"changed while sealing"):
                         render_owned_mlt(project,root,root/"never-publish.mp4")
-                    native.assert_not_called()
+                    self.assertFalse(native_calls)
             self.assertTrue(tampered)
             self.assertFalse((root/"never-publish.mp4").exists())
             self.assertFalse(list(root.glob(".zx7-mlt-render-*")))
