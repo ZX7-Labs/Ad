@@ -369,6 +369,22 @@ class VerifiedMLTEditorialTests(unittest.TestCase):
             shape=ET.parse(target)
             self.assertEqual(len(shape.findall("./tractor/multitrack/track")),3)
             self.assertEqual(len(shape.findall("./tractor/transition")),2)
+            producers=[node for node in shape.findall("./producer")
+                if node.get("id","").startswith("audio-source-")]
+            self.assertEqual(len(producers),1)
+            properties={node.get("name"):node.text
+                for node in producers[0].findall("property")}
+            self.assertEqual(properties["audio_index"],"1")  # physical MP4 index
+            self.assertEqual(properties["video_index"],"-1")
+            wrong_index=target.read_text().replace(
+                '<property name="audio_index">1</property>',
+                '<property name="audio_index">0</property>')
+            self.assertNotEqual(wrong_index,target.read_text())
+            target.write_text(wrong_index)
+            with self.assertRaisesRegex(ValueError,"audio index"):
+                verify_owned_mlt_project(target)
+            target.write_text(ET.tostring(shape.getroot(),encoding="unicode"))
+            self.assertEqual(verify_owned_mlt_project(target)["verified_audio_tracks"],1)
             for field,value in (("asset_id","0"*64),
                                 ("source","https://free-music.example/audio"),
                                 ("end_frame",20)):
