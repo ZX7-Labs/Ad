@@ -152,7 +152,10 @@ def build_mlt_xml(plan,checked):
             "in":"0","out":str(checked["frames"]-1)})
         _prop(transition,"a_track",0)
         _prop(transition,"b_track",ti)
-        _prop(transition,"mlt_service","luma")
+        # MLT 'luma' without a wipe map performs a dissolve, not opaque
+        # compositing. The actual FFmpeg-decode test guards this distinction.
+        _prop(transition,"mlt_service","qtblend")
+        _prop(transition,"compositing",0)
         _prop(transition,"always_active",1)
     ET.indent(root,space="  ")
     return ET.tostring(root,encoding="utf-8",xml_declaration=True)+b"\n"
@@ -268,7 +271,8 @@ def verify_owned_mlt_project(file_path):
     for i,transition in enumerate(tractor.findall("./transition"),1):
         settings={p.get("name"):p.text for p in transition.findall("property")}
         if settings!={"a_track":"0","b_track":str(i),
-                     "mlt_service":"luma","always_active":"1"}:
+                     "mlt_service":"qtblend","compositing":"0",
+                     "always_active":"1"}:
             raise ValueError("Unsupported or replaced MLT compositor")
     return {"verified_original_sources":len(producers),
             "verified_mlt_tracks":len(playlists),
