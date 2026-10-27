@@ -166,7 +166,9 @@ def export_owned_mlt(plan_path,workspace,vault_root,output):
     root=Path(workspace).resolve();plan_path=Path(plan_path).resolve()
     target=Path(output).absolute()
     if (not plan_path.is_relative_to(root) or not plan_path.is_file()
-            or not target.is_relative_to(root) or target.suffix.lower()!=".mlt"):
+            or not target.is_relative_to(root) or
+            not target.resolve().is_relative_to(root) or
+            target.suffix.lower()!=".mlt"):
         raise ValueError("MLT bridge requires owned source JSON and a workspace .mlt target")
     if target.exists() or target.is_symlink():
         raise FileExistsError("Immutable original MLT project already exists")
