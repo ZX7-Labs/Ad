@@ -177,15 +177,18 @@ def run_motion_project(job_path,workspace,target,*,timeout=3600):
             for p in output.iterdir():archive.write(p,p.name)
             archive.writestr("receipt.json",json.dumps(report,sort_keys=True))
         verify_motion_bundle(staged)
-        # Exclusive final create; BODY's surrounding publication owns crash recovery.
-        created=False
-        try:
-            with dest.open("xb") as stream,staged.open("rb") as incoming:
-                created=True
+        # Build on the destination filesystem before publishing. In particular,
+        # process death during the copy must not expose a partial .zxmotion.
+        # The hardlink is exclusive: never replace another owner's version.
+        with tempfile.TemporaryDirectory(prefix=".zx7-native-publish-",dir=dest.parent) as publish:
+            prepared=Path(publish)/"complete.zxmotion"
+            with staged.open("rb") as incoming,prepared.open("xb") as stream:
                 shutil.copyfileobj(incoming,stream)
-        except BaseException:
-            if created:dest.unlink(missing_ok=True)
-            raise
+                stream.flush()
+                os.fsync(stream.fileno())
+            if digest(prepared)!=digest(staged):
+                raise ValueError("Native project changed during publication copy")
+            os.link(prepared,dest)
     return report
 
 
