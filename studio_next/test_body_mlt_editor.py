@@ -110,6 +110,56 @@ class VerifiedMLTEditorialTests(unittest.TestCase):
             self.assertIn("plan",doc["document_contracts"])
             self.assertIn("tracks",doc["document_contracts"]["plan"]["json_schema"]["properties"])
 
+    @unittest.skipUnless(shutil.which("melt"),"Native MLT producer required")
+    def test_real_registered_body_renders_video_only_multitrack_mp4(self):
+        from studio_next.body_integration import body_catalog
+        from studio_next.body_mlt_render import render_owned_mlt
+        from studio_next.body_materials import fingerprint_physical_inputs
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);self._case(root)
+            catalog=body_catalog(root)
+            original=catalog.invoke("body.mlt_owned_export",
+                                    {"plan":"original.json","out":"edit.mlt"},
+                                    allowed_access={"write"})
+            self.assertTrue(Path(original["path"]).is_file())
+            fingerprints=fingerprint_physical_inputs("body.mlt_owned_render",{
+                "edit":"edit.mlt"},root)
+            self.assertEqual(len(fingerprints),3)  # MLT plan + red and blue CAS
+            rendered=catalog.invoke("body.mlt_owned_render",{
+                "edit":"edit.mlt","out":"finished.mp4"},allowed_access={"write"})
+            video=root/"finished.mp4"
+            self.assertEqual(rendered["sha256"],hashlib.sha256(video.read_bytes()).hexdigest())
+            self.assertTrue(rendered["audio_present"] is False)
+            measured=json.loads(subprocess.check_output([
+                "ffprobe","-v","error","-count_frames","-select_streams","v:0",
+                "-show_entries","stream=nb_read_frames,width,height",
+                "-of","json",str(video)]))
+            self.assertEqual(int(measured["streams"][0]["nb_read_frames"]),12)
+            self.assertEqual((measured["streams"][0]["width"],
+                              measured["streams"][0]["height"]),(64,48))
+            with self.assertRaises(FileExistsError):
+                catalog.invoke("body.mlt_owned_render",{
+                    "edit":"edit.mlt","out":"finished.mp4"},allowed_access={"write"})
+            self.assertFalse(list(root.glob(".zx7-mlt-render-*")))
+
+    @unittest.skipUnless(shutil.which("melt"),"Native MLT producer required")
+    def test_failed_mlt_render_cannot_publish_partial_final_movie(self):
+        from unittest.mock import patch
+        from studio_next.body_mlt_render import render_owned_mlt
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);plan,source=self._case(root)
+            export_owned_mlt(source,root,root/"vault",root/"edit.mlt")
+            target=root/"no-partial.mp4"
+            def crash(command,**kw):
+                Path(command[command.index("-consumer")+1][len("avformat:"):]).write_bytes(
+                    b"invalid partially encoded h264")
+                return subprocess.CompletedProcess(command,72,stdout="",stderr="forced native crash")
+            with patch("studio_next.body_mlt_render.subprocess.run",side_effect=crash):
+                with self.assertRaisesRegex(RuntimeError,"forced native crash"):
+                    render_owned_mlt(root/"edit.mlt",root,target)
+            self.assertFalse(target.exists())
+            self.assertFalse(list(root.glob(".zx7-mlt-render-*")))
+
     @unittest.skipUnless(shutil.which("melt"),"Installed MLT executable required")
     def test_real_body_catalog_publishes_verified_editorial_project(self):
         from studio_next.body_integration import body_catalog
