@@ -218,7 +218,7 @@ def verify_owned_mlt_project(file_path):
     producers={}
     for item in root.findall("producer"):
         props={p.get("name"):p.text for p in item.findall("property")}
-        if (len(props)!=4 or props.get("mlt_service")!="avformat" or
+        if (len(props)!=5 or len(item.findall("property"))!=5 or props.get("mlt_service")!="avformat" or
             props.get("audio_index")!="-1" or
             item.attrib.get("id")!="source-"+str(props.get("zx7.original_sha256",""))[:24]):
             raise ValueError("MLT source contains unauthorised producer properties")
