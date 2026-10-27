@@ -43,6 +43,11 @@ def _prop(owner,name,value):
     ET.SubElement(owner,"property",{"name":name}).text=str(value)
 
 
+# This bounded QtBlend subset uses upstream documented Porter-Duff/SVG values.
+# Reject invented plugin names, GLSL expressions, arbitrary filters and effects.
+_BLEND_MODES={"normal":0,"multiply":13,"screen":14,"overlay":15}
+
+
 def _single_recorded_audio_stream(path):
     """Never silently select the first language/take of multi-audio media."""
     try:
@@ -80,9 +85,17 @@ def validate_mlt_edit(plan,workspace,vault_root):
     resolved=[]
     sources={}
     total=0
+    blend_modes=[]
     for ti,track in enumerate(tracks):
-        if not isinstance(track,dict) or set(track)!={"clips"}:
-            raise ValueError("MLT track requires explicitly authored clips")
+        if (not isinstance(track,dict) or "clips" not in track or
+                set(track)-{"clips","blend_mode"}):
+            raise ValueError("MLT track requires original clips and only a typed blend mode")
+        mode=track.get("blend_mode","normal")
+        if type(mode) is not str or mode not in _BLEND_MODES:
+            raise ValueError("MLT native compositing mode is not an approved visual operation")
+        if ti==0 and mode!="normal":
+            raise ValueError("The original bottom video track has no lower layer to blend")
+        blend_modes.append(mode)
         clips=track["clips"]
         if not isinstance(clips,list) or not 1<=len(clips)<=128:
             raise ValueError("MLT track requires 1..128 actual source clips")
@@ -183,7 +196,7 @@ def validate_mlt_edit(plan,workspace,vault_root):
         resolved_sound.append(checked)
     return {"fps":fps,"width":width,"height":height,"tracks":resolved,
             "sources":sources,"frames":total,"audio_tracks":resolved_sound,
-            "audio_sources":sound_sources}
+            "audio_sources":sound_sources,"blend_modes":blend_modes}
 
 
 def build_mlt_xml(plan,checked):
@@ -251,7 +264,7 @@ def build_mlt_xml(plan,checked):
         # MLT 'luma' without a wipe map performs a dissolve, not opaque
         # compositing. The actual FFmpeg-decode test guards this distinction.
         _prop(transition,"mlt_service","qtblend")
-        _prop(transition,"compositing",0)
+        _prop(transition,"compositing",_BLEND_MODES[checked["blend_modes"][ti]])
         _prop(transition,"always_active",1)
     for ti in range(len(checked["audio_tracks"])):
         transition=ET.SubElement(tractor,"transition",{
@@ -433,12 +446,15 @@ def _verify_exact_mlt_xml_tree(root):
         allow={"a_track","b_track","mlt_service","always_active"}|(
             {"start","sum"} if is_sound else {"compositing"})
         props=properties(transition,allow)
+        if not is_sound and props.get("compositing") not in {
+                str(value) for value in _BLEND_MODES.values()}:
+            raise ValueError("MLT native visual blending mode is not allowlisted")
         expected=({"a_track":"0",
                    "b_track":str(picture_tracks+i-(picture_tracks-1)),
                    "mlt_service":"mix","start":"1","sum":"1",
                    "always_active":"1"} if is_sound else
                   {"a_track":"0","b_track":str(i+1),"mlt_service":"qtblend",
-                   "compositing":"0","always_active":"1"})
+                   "compositing":props["compositing"],"always_active":"1"})
         if props!=expected:
             raise ValueError("MLT original mixer/compositor was substituted")
     for playlist in playlists:
