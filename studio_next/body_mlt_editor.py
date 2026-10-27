@@ -12,6 +12,7 @@ from fractions import Fraction
 import hashlib
 import json
 import os
+import subprocess
 from pathlib import Path
 import tempfile
 import xml.etree.ElementTree as ET
@@ -40,6 +41,21 @@ def _rate(v):
 
 def _prop(owner,name,value):
     ET.SubElement(owner,"property",{"name":name}).text=str(value)
+
+
+def _single_recorded_audio_stream(path):
+    """Never silently select the first language/take of multi-audio media."""
+    try:
+        raw=subprocess.check_output(["ffprobe","-v","error",
+            "-select_streams","a","-show_entries","stream=index",
+            "-of","json",str(path)],timeout=90)
+        streams=json.loads(raw).get("streams",[])
+    except (OSError,ValueError,subprocess.CalledProcessError,
+            subprocess.TimeoutExpired) as exc:
+        raise ValueError("Recorded soundtrack cannot be physically probed") from exc
+    if len(streams)!=1:
+        raise ValueError("MLT source must contain one unambiguous actual original audio stream")
+    return True
 
 
 def validate_mlt_edit(plan,workspace,vault_root):
@@ -149,6 +165,7 @@ def validate_mlt_edit(plan,workspace,vault_root):
                 probe=_probe_details(file)
                 if not probe["audio_stream_present"]:
                     raise ValueError("Audio track contains no physically recorded soundtrack")
+                _single_recorded_audio_stream(file)
                 source_fps,frames=_source_timebase(file)
                 if source_fps!=fps:
                     raise ValueError("Original soundtrack requires the authored rational frame clock")
@@ -479,6 +496,7 @@ def verify_owned_mlt_project(file_path):
                 probe=_probe_details(filename)
                 if not probe["audio_stream_present"]:
                     raise ValueError("Recorded original sound is missing")
+                _single_recorded_audio_stream(filename)
                 sources[digest]["sound_seconds"]=_decoded_source_duration(filename,"audio")
         else:
             if "geometry" not in sources[digest]:
