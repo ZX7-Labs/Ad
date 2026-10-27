@@ -205,7 +205,7 @@ def _verify_exact_mlt_xml_tree(root):
     direct=list(root)
     producer_count=sum(c.tag=="producer" for c in direct)
     playlist_count=sum(c.tag=="playlist" for c in direct)
-    if (not 1<=producer_count<=128 or not 1<=playlist_count<=8 or
+    if (not 1<=producer_count<=1024 or not 1<=playlist_count<=8 or
         [c.tag for c in direct] !=
             ["profile"]+["producer"]*producer_count+
             ["playlist"]*playlist_count+["tractor"]):
