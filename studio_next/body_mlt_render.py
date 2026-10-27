@@ -134,7 +134,13 @@ def render_owned_mlt(edit,workspace,output):
         if any(sha256_file(path)!=digest for digest,path in frozen.items()):
             raise ValueError("Native staged media differs from authenticated originals")
         encoded=Path(tmp)/"render.mp4"
+        # Certain installed MLT runtimes fall back to PAL 25fps when the
+        # trusted XML is reconstructed under a private worker pathname.
+        # Pin all output profile values from the independently verified
+        # authored frame clock rather than trusting MLT's default consumer.
         cmd=["melt",str(worker),"-consumer",f"avformat:{encoded}",
+             f"frame_rate_num={fps.numerator}",f"frame_rate_den={fps.denominator}",
+             f"width={width}",f"height={height}","progressive=1",
              "vcodec=libx264","pix_fmt=yuv420p","crf=18",
              "color_primaries=bt709","color_trc=bt709",
              "colorspace=709","movflags=+faststart",
