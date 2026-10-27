@@ -92,8 +92,48 @@ def render_owned_mlt(edit,workspace,output):
             raise ValueError("Original MLT project changed while securing render input")
         if verify_owned_mlt_project(sealed)!=verified:
             raise ValueError("Sealed editable MLT project failed source verification")
+        # A validated XML snapshot is not enough: the native reader otherwise
+        # follows live CAS paths for the entire encode. Copy each authenticated
+        # producer exactly once to a private file, then give the native worker
+        # only those immutable-by-custody content-verified stage paths.
+        private_sources=Path(tmp)/"private-sources"
+        private_sources.mkdir(mode=0o700)
+        frozen={}
+        for file,digest,att in sources:
+            if digest in frozen:
+                continue
+            MediaVault(file.parents[2]).inspect(digest,attestation_id=att)
+            snapshot=private_sources/digest
+            with file.open("rb") as original, snapshot.open("xb") as target:
+                shutil.copyfileobj(original,target,1024*1024)
+                target.flush()
+                os.fsync(target.fileno())
+            if sha256_file(snapshot)!=digest:
+                raise ValueError("Actual owner media changed while sealing native decoder input")
+            MediaVault(file.parents[2]).inspect(digest,attestation_id=att)
+            frozen[digest]=snapshot
+        # The worker XML is generated *only* from previously allowlisted
+        # producer nodes and private byte-sealed CAS copies. Never parse
+        # arbitrary user XML into executable MLT options.
+        worker_xml=ET.fromstring(sealed.read_bytes())
+        for producer in worker_xml.findall("producer"):
+            props={p.get("name"):p for p in producer.findall("property")}
+            digest=props["zx7.original_sha256"].text
+            if digest not in frozen:
+                raise ValueError("Sealed MLT references an unauthenticated producer")
+            props["resource"].text=str(frozen[digest])
+        worker=Path(tmp)/"private-worker.mlt"
+        with worker.open("xb") as output_xml:
+            output_xml.write(ET.tostring(worker_xml,encoding="utf-8",
+                                           xml_declaration=True)+b"\\n")
+            output_xml.flush()
+            os.fsync(output_xml.fileno())
+        if sha256_file(sealed)!=before:
+            raise ValueError("Sealed original project was changed before native execution")
+        if any(sha256_file(path)!=digest for digest,path in frozen.items()):
+            raise ValueError("Native staged media differs from authenticated originals")
         encoded=Path(tmp)/"render.mp4"
-        cmd=["melt",str(sealed),"-consumer",f"avformat:{encoded}",
+        cmd=["melt",str(worker),"-consumer",f"avformat:{encoded}",
              "vcodec=libx264","pix_fmt=yuv420p","crf=18",
              "an=1","real_time=-1","threads=2"]
         run=subprocess.run(cmd,capture_output=True,text=True,timeout=7200)
@@ -117,6 +157,10 @@ def render_owned_mlt(edit,workspace,output):
             if sha256_file(file)!=digest:
                 raise ValueError("MLT original clip changed while native renderer executed")
             MediaVault(file.parents[2]).inspect(digest,attestation_id=att)
+        if any(sha256_file(path)!=digest for digest,path in frozen.items()):
+            raise ValueError("Private native decoder input was modified during rendering")
+        if sha256_file(sealed)!=before:
+            raise ValueError("Original sealed editor plan was modified during rendering")
         with encoded.open("rb") as stream:os.fsync(stream.fileno())
         os.link(encoded,dest)
     return {"path":str(dest),"sha256":sha256_file(dest),
