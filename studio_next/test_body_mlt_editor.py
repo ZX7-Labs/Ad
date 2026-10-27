@@ -137,6 +137,14 @@ class VerifiedMLTEditorialTests(unittest.TestCase):
             self.assertEqual(int(measured["streams"][0]["nb_read_frames"]),12)
             self.assertEqual((measured["streams"][0]["width"],
                               measured["streams"][0]["height"]),(64,48))
+            tags=json.loads(subprocess.check_output([
+                "ffprobe","-v","error","-select_streams","v:0",
+                "-show_entries","stream=color_space,color_primaries,color_transfer",
+                "-of","json",str(video)]))["streams"][0]
+            self.assertEqual({k:tags[k] for k in (
+                "color_space","color_primaries","color_transfer")},
+                {"color_space":"bt709","color_primaries":"bt709",
+                 "color_transfer":"bt709"})
             with self.assertRaises(FileExistsError):
                 catalog.invoke("body.mlt_owned_render",{
                     "edit":"edit.mlt","out":"finished.mp4"},allowed_access={"write"})
