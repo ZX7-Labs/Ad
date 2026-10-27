@@ -95,6 +95,15 @@ class VerifiedMLTEditorialTests(unittest.TestCase):
             export_owned_mlt(plan_file,root,root/"vault",exported)
             self.assertEqual(verify_owned_mlt_project(exported)["verified_mlt_tracks"],2)
             doc=exported.read_text()
+            if shutil.which("melt"):
+                from unittest.mock import patch
+                from studio_next.body_mlt_render import render_owned_mlt
+                with patch(
+                    "studio_next.body_mlt_render._require_native_frei0r_compositing",
+                    side_effect=RuntimeError("native Cairo compositor unavailable")):
+                    with self.assertRaisesRegex(RuntimeError,"compositor unavailable"):
+                        render_owned_mlt(exported,root,root/"untrusted-effects.mp4")
+                self.assertFalse((root/"untrusted-effects.mp4").exists())
             self.assertIn('<property name="mlt_service">frei0r.cairoblend</property>',doc)
             self.assertIn('<property name="1">multiply</property>',doc)
             rejected=doc.replace(
