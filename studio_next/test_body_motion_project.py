@@ -120,6 +120,42 @@ class NativeMotionProjectTests(unittest.TestCase):
             self.assertFalse(target.exists())
             self.assertFalse(list(root.glob(".zx7-native-publish-*")))
 
+    @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"),
+                         "Real FFmpeg and FFprobe required for actual native media encoding")
+    def test_native_export_actual_mp4_decodes_with_expected_frames(self):
+        from io import BytesIO
+        from PIL import Image
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);bundle=root/"source.zxmotion";target=root/"render.mp4"
+            picture=BytesIO()
+            Image.new("RGBA",(64,48),(15,84,141,255)).save(picture,format="PNG")
+            png=picture.getvalue()
+            blend=b"BLENDER-v405"+b"synthetic publication fixture" * 16
+            contents={"project.blend":blend,"render_000000.png":png,
+                      "render_000001.png":png}
+            receipt={"version":VERSION,"engine_version":"mock-fixture, not Blender acceptance",
+                     "members":{n:hashlib.sha256(raw).hexdigest() for n,raw in contents.items()},
+                     "native":{"renders":[
+                       {"scene":"Scene","frame":i,"format":"png","file":f"render_{i:06d}.png"}
+                       for i in range(2)]}}
+            with zipfile.ZipFile(bundle,"w") as archive:
+                for name,raw in contents.items():archive.writestr(name,raw)
+                archive.writestr("receipt.json",json.dumps(receipt))
+            source_sha=hashlib.sha256(bundle.read_bytes()).hexdigest()
+            with patch("studio_next.body_publication.require_published_source",
+                       return_value=source_sha):
+                export_motion_media(bundle,target,fps=12)
+            probe=json.loads(subprocess.check_output([
+                "ffprobe","-v","error","-select_streams","v:0",
+                "-show_entries","stream=width,height,nb_frames,codec_name",
+                "-of","json",str(target)],text=True))
+            track=probe["streams"][0]
+            self.assertEqual((track["width"],track["height"]),(64,48))
+            self.assertEqual(int(track["nb_frames"]),2)
+            subprocess.run(["ffmpeg","-v","error","-xerror","-i",str(target),
+                            "-f","null","-"],capture_output=True,check=True,timeout=30)
+            self.assertFalse(list(root.glob(".zx7-motion-export-*")))
+
     @staticmethod
     def _export_fixture(root):
         bundle=root/"valid-native.zxmotion"
