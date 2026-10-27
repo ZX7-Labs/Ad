@@ -110,6 +110,20 @@ class VerifiedMLTEditorialTests(unittest.TestCase):
             self.assertIn("plan",doc["document_contracts"])
             self.assertIn("tracks",doc["document_contracts"]["plan"]["json_schema"]["properties"])
 
+    @unittest.skipUnless(shutil.which("melt"),"Installed MLT executable required")
+    def test_real_body_catalog_publishes_verified_editorial_project(self):
+        from studio_next.body_integration import body_catalog
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);self._case(root)
+            result=body_catalog(root).invoke("body.mlt_owned_export",{
+                "plan":"original.json","out":"actual-edit.mlt"},allowed_access={"write"})
+            self.assertEqual(Path(result["path"]).name,"actual-edit.mlt")
+            self.assertEqual(result["sha256"],
+                             hashlib.sha256((root/"actual-edit.mlt").read_bytes()).hexdigest())
+            self.assertEqual(verify_owned_mlt_project(root/"actual-edit.mlt")[
+                "verified_mlt_tracks"],2)
+            self.assertFalse(list(root.glob(".zx7-uncommitted-*")))
+
     def test_tampered_mlt_source_is_rejected_after_publication(self):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp);plan,source=self._case(root)
