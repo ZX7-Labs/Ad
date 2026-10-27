@@ -110,6 +110,19 @@ class VerifiedMLTEditorialTests(unittest.TestCase):
             stream=decoded["streams"][0]
             self.assertEqual((stream["width"],stream["height"]),(64,48))
             self.assertEqual(int(stream["nb_read_frames"]),12)
+            raw=subprocess.check_output(["ffmpeg","-v","error","-xerror",
+                "-i",str(output),"-pix_fmt","rgb24","-f","rawvideo","-vsync","0","-"],
+                timeout=30)
+            pitch=64*48*3
+            self.assertEqual(len(raw),12*pitch)
+            def center(frame):
+                offset=frame*pitch+(24*64+32)*3
+                return tuple(raw[offset:offset+3])
+            start=center(0);overlay=center(5);finish=center(11)
+            self.assertGreater(start[0],start[2]+70,("red base",start))
+            self.assertGreater(overlay[2],overlay[0]+70,
+                               ("actual blue upper timeline layer",overlay))
+            self.assertGreater(finish[0],finish[2]+70,("red after overlay",finish))
             subprocess.run(["ffmpeg","-hide_banner","-loglevel","error",
                 "-xerror","-i",str(output),"-f","null","-"],check=True,timeout=30,
                 capture_output=True)
