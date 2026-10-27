@@ -380,6 +380,48 @@ class VerifiedMLTEditorialTests(unittest.TestCase):
             self.assertGreater(mean_abs(.39,.55),.012)
             self.assertLess(mean_abs(.79,.95),.004)
 
+    @unittest.skipUnless(shutil.which("melt"),"Native recorded audio mixing requires actual MLT")
+    def test_two_independent_original_audio_tracks_mix_both_real_frequencies(self):
+        from studio_next.body_integration import body_catalog
+        from array import array
+        import math
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);plan,source=self._case(root)
+            tracks=[]
+            for frequency in (440,880):
+                owned=self._original_sound(root,frequency)
+                tracks.append({"clips":[{
+                    "source":"zx7:sha256:"+owned["asset_id"],
+                    "asset_id":owned["asset_id"],
+                    "attestation_id":owned["attestation_id"],
+                    "position_frame":0,"first_frame":0,"end_frame":12}]})
+            plan["audio_tracks"]=tracks
+            source.write_text(json.dumps(plan))
+            body=body_catalog(root)
+            body.invoke("body.mlt_owned_export",{
+                "plan":"original.json","out":"two-soundtracks.mlt"},allowed_access={"write"})
+            verified=verify_owned_mlt_project(root/"two-soundtracks.mlt")
+            self.assertEqual(verified["verified_audio_tracks"],2)
+            result=body.invoke("body.mlt_owned_render",{
+                "edit":"two-soundtracks.mlt","out":"two-soundtracks.mp4"},
+                allowed_access={"write"})
+            self.assertTrue(result["audio_present"])
+            decoded=subprocess.check_output(["ffmpeg","-hide_banner","-loglevel","error",
+                "-i",str(result["path"]),"-map","0:a:0",
+                "-ac","1","-ar","48000","-f","f32le","-"],timeout=40)
+            samples=array("f");samples.frombytes(decoded)
+            start=int(.23*48000);end=int(.72*48000)
+            window=samples[start:end]
+            self.assertGreater(len(window),20000)
+            for frequency in (440,880):
+                sine=sum(sample*math.sin(2*math.pi*frequency*(start+i)/48000)
+                         for i,sample in enumerate(window))
+                cosine=sum(sample*math.cos(2*math.pi*frequency*(start+i)/48000)
+                           for i,sample in enumerate(window))
+                amplitude=2*math.hypot(sine,cosine)/len(window)
+                self.assertGreater(amplitude,.025,
+                    f"Original {frequency} Hz voice vanished from the combined edit")
+
     def test_project_and_video_reject_symlinked_parent_escape(self):
         from studio_next.body_mlt_render import render_owned_mlt
         with tempfile.TemporaryDirectory() as temp:
