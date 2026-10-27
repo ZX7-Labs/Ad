@@ -12,6 +12,7 @@ from fractions import Fraction
 import hashlib
 import json
 import os
+import subprocess
 from pathlib import Path
 import tempfile
 import xml.etree.ElementTree as ET
@@ -20,6 +21,7 @@ from .body_color_pipeline import _actual_bt709_source
 from .media_vault import MediaVault, sha256_file
 from .precision_retime import _source_timebase
 from .delivery_audit import _probe_details
+from .composite_mix import _decoded_source_duration
 
 
 def _integer(v, label, low, high):
@@ -41,12 +43,29 @@ def _prop(owner,name,value):
     ET.SubElement(owner,"property",{"name":name}).text=str(value)
 
 
+def _single_recorded_audio_stream(path):
+    """Never silently select the first language/take of multi-audio media."""
+    try:
+        raw=subprocess.check_output(["ffprobe","-v","error",
+            "-select_streams","a","-show_entries","stream=index",
+            "-of","json",str(path)],timeout=90)
+        streams=json.loads(raw).get("streams",[])
+    except (OSError,ValueError,subprocess.CalledProcessError,
+            subprocess.TimeoutExpired) as exc:
+        raise ValueError("Recorded soundtrack cannot be physically probed") from exc
+    if (len(streams)!=1 or type(streams[0].get("index")) is not int or
+            not 0<=streams[0]["index"]<=64):
+        raise ValueError("MLT source must contain one unambiguous actual original audio stream")
+    return streams[0]["index"]
+
+
 def validate_mlt_edit(plan,workspace,vault_root):
     """Verify every media byte and frame position before creating a project."""
     root=Path(workspace).resolve()
     vault=MediaVault(vault_root)
-    if not isinstance(plan,dict) or set(plan)!={"frame_rate","frame_size","tracks"}:
-        raise ValueError("MLT project needs frame_rate/frame_size/tracks only")
+    if (not isinstance(plan,dict) or not {"frame_rate","frame_size","tracks"}.issubset(plan)
+            or set(plan)-{"frame_rate","frame_size","tracks","audio_tracks"}):
+        raise ValueError("MLT project needs original frame, picture and optional sound tracks")
     fps=_rate(plan["frame_rate"])
     frame_size=plan["frame_size"]
     if not isinstance(frame_size,dict) or set(frame_size)!={"width","height"}:
@@ -110,8 +129,61 @@ def validate_mlt_edit(plan,workspace,vault_root):
         resolved.append(checked)
     if total>1000000 or Fraction(total,1)/fps>24*3600:
         raise ValueError("MLT project exceeds explicit host frame/time budget")
+    sound_tracks=plan.get("audio_tracks",[])
+    if not isinstance(sound_tracks,list) or len(sound_tracks)>4:
+        raise ValueError("MLT authenticated sound supports up to four separate tracks")
+    sound_sources={}
+    resolved_sound=[]
+    for ti,track in enumerate(sound_tracks):
+        if not isinstance(track,dict) or set(track)!={"clips"}:
+            raise ValueError("MLT sound track needs only the authored clips")
+        clips=track["clips"]
+        if not isinstance(clips,list) or not 1<=len(clips)<=128:
+            raise ValueError("MLT sound track requires 1..128 physically recorded clips")
+        end_at=0
+        checked=[]
+        for clip in clips:
+            fields={"source","asset_id","attestation_id","position_frame",
+                    "first_frame","end_frame"}
+            if not isinstance(clip,dict) or set(clip)!=fields:
+                raise ValueError("MLT sound clip requires original ownership, source span and position")
+            asset=clip["asset_id"];att=clip["attestation_id"]
+            if (not isinstance(asset,str) or not isinstance(att,str) or
+                    clip["source"]!="zx7:sha256:"+asset):
+                raise ValueError("MLT sound source has no matching authenticated original identity")
+            record=vault.inspect(asset,attestation_id=att)
+            if record["mime"] not in ("video/mp4","video/quicktime","video/webm"):
+                raise ValueError("Initial MLT original-sound adapter requires authenticated video audio")
+            file=Path(record["path"]).resolve()
+            if not file.is_relative_to(root):
+                raise ValueError("Original sound escapes the owner's studio workspace")
+            pos=_integer(clip["position_frame"],"sound position",0,1000000)
+            first=_integer(clip["first_frame"],"sound in",0,1000000)
+            end=_integer(clip["end_frame"],"sound out",1,1000000)
+            if end<=first or pos<end_at or pos+end-first>total:
+                raise ValueError("Original sound overlaps its track or exceeds the picture timeline")
+            if asset not in sound_sources:
+                probe=_probe_details(file)
+                if not probe["audio_stream_present"]:
+                    raise ValueError("Audio track contains no physically recorded soundtrack")
+                actual_audio_index=_single_recorded_audio_stream(file)
+                source_fps,frames=_source_timebase(file)
+                if source_fps!=fps:
+                    raise ValueError("Original soundtrack requires the authored rational frame clock")
+                available=_decoded_source_duration(file,"audio")
+                sound_sources[asset]={"path":file,"frames":frames,
+                    "audio_seconds":available,"attestation":att,
+                    "audio_index":actual_audio_index}
+            info=sound_sources[asset]
+            if end>info["frames"] or float(Fraction(end,1)/fps)>info["audio_seconds"]+.015:
+                raise ValueError("Original soundtrack is shorter than the selected source cut")
+            end_at=pos+end-first
+            checked.append({"asset":asset,"source":file,"position":pos,
+                            "first":first,"last":end-1,"end":end_at})
+        resolved_sound.append(checked)
     return {"fps":fps,"width":width,"height":height,"tracks":resolved,
-            "sources":sources,"frames":total}
+            "sources":sources,"frames":total,"audio_tracks":resolved_sound,
+            "audio_sources":sound_sources}
 
 
 def build_mlt_xml(plan,checked):
@@ -131,6 +203,17 @@ def build_mlt_xml(plan,checked):
         _prop(source,"audio_index",-1)
         _prop(source,"zx7.original_sha256",digest)
         _prop(source,"zx7.attestation_id",rec["attestation"])
+    for i,(digest,rec) in enumerate(checked["audio_sources"].items()):
+        sound=ET.SubElement(root,"producer",{"id":"audio-source-"+digest[:24]})
+        _prop(sound,"mlt_service","avformat")
+        _prop(sound,"resource",rec["path"])
+        _prop(sound,"video_index",-1)
+        # MLT audio_index is an absolute container stream index, not the
+        # ordinal among audio streams. MP4 usually has video at 0 and sound at 1.
+        # This value comes from ffprobe of the custody-verified original.
+        _prop(sound,"audio_index",rec["audio_index"])
+        _prop(sound,"zx7.original_sha256",digest)
+        _prop(sound,"zx7.attestation_id",rec["attestation"])
     for ti,clips in enumerate(checked["tracks"]):
         playlist=ET.SubElement(root,"playlist",{"id":f"track-{ti}"})
         position=0
@@ -142,11 +225,24 @@ def build_mlt_xml(plan,checked):
             position=clip["end"]
         if position<checked["frames"]:
             ET.SubElement(playlist,"blank",{"length":str(checked["frames"]-position)})
+    for ti,clips in enumerate(checked["audio_tracks"]):
+        playlist=ET.SubElement(root,"playlist",{"id":f"audio-track-{ti}"})
+        position=0
+        for clip in clips:
+            blank=clip["position"]-position
+            if blank:ET.SubElement(playlist,"blank",{"length":str(blank)})
+            ET.SubElement(playlist,"entry",{"producer":"audio-source-"+clip["asset"][:24],
+                "in":str(clip["first"]),"out":str(clip["last"])})
+            position=clip["end"]
+        if position<checked["frames"]:
+            ET.SubElement(playlist,"blank",{"length":str(checked["frames"]-position)})
     tractor=ET.SubElement(root,"tractor",{"id":"zx7-tractor","in":"0",
                                            "out":str(checked["frames"]-1)})
     multitrack=ET.SubElement(tractor,"multitrack")
     for ti in range(len(checked["tracks"])):
         ET.SubElement(multitrack,"track",{"producer":f"track-{ti}","hide":"audio"})
+    for ti in range(len(checked["audio_tracks"])):
+        ET.SubElement(multitrack,"track",{"producer":f"audio-track-{ti}","hide":"video"})
     for ti in range(1,len(checked["tracks"])):
         transition=ET.SubElement(tractor,"transition",{
             "in":"0","out":str(checked["frames"]-1)})
@@ -156,6 +252,15 @@ def build_mlt_xml(plan,checked):
         # compositing. The actual FFmpeg-decode test guards this distinction.
         _prop(transition,"mlt_service","qtblend")
         _prop(transition,"compositing",0)
+        _prop(transition,"always_active",1)
+    for ti in range(len(checked["audio_tracks"])):
+        transition=ET.SubElement(tractor,"transition",{
+            "in":"0","out":str(checked["frames"]-1)})
+        _prop(transition,"a_track",0)
+        _prop(transition,"b_track",len(checked["tracks"])+ti)
+        _prop(transition,"mlt_service","mix")
+        _prop(transition,"start",1)
+        _prop(transition,"sum",1)
         _prop(transition,"always_active",1)
     ET.indent(root,space="  ")
     return ET.tostring(root,encoding="utf-8",xml_declaration=True)+b"\n"
@@ -179,9 +284,9 @@ def export_owned_mlt(plan_path,workspace,vault_root,output):
     target.parent.mkdir(parents=True,exist_ok=True)
     # Recheck the project and all referenced physical content before publication.
     if plan_path.read_bytes()!=original:raise ValueError("MLT artistic edit changed during export")
-    for digest,asset in checked["sources"].items():
+    for digest,asset in {**checked["sources"],**checked["audio_sources"]}.items():
         if sha256_file(asset["path"])!=digest:
-            raise ValueError("MLT producer bytes changed during export")
+            raise ValueError("MLT authenticated picture or soundtrack changed during export")
     with tempfile.TemporaryDirectory(dir=target.parent,prefix=".zx7-mlt-") as temp:
         staged=Path(temp)/"complete.mlt"
         with staged.open("xb") as stream:
@@ -189,29 +294,39 @@ def export_owned_mlt(plan_path,workspace,vault_root,output):
         os.link(staged,target)
     return {"path":str(target),"sha256":sha256_file(target),
             "bytes":target.stat().st_size,"tracks":len(checked["tracks"]),
-            "frames":checked["frames"],"source_blobs":len(checked["sources"]),
+            "frames":checked["frames"],
+            "source_blobs":len(set(checked["sources"])|set(checked["audio_sources"])),
+            "original_sound_tracks":len(checked["audio_tracks"]),
             "host_local_project_only":True,
-            "sound_intentionally_silent":True,
+            "sound_intentionally_silent":not bool(checked["audio_tracks"]),
             "complete_nle_or_creative_quality_approved":False}
 
 
 def _verify_exact_mlt_xml_tree(root):
-    """MLT's native XML reader is non-validating: deny extra runnable services.
-
-    Permit only the exact declarative tree that build_mlt_xml produces.
-    In particular, an extra profile/producer/tractor property is not inert
-    XML: MLT interprets properties as service/plugin configuration.
-    """
+    """Only approved typed original media playlists and MLT sound/video services."""
     if root.tag!="mlt" or root.attrib!={"version":"7","producer":"zx7-tractor"}:
-        raise ValueError("MLT root has unsupported producer or execution properties")
+        raise ValueError("MLT root contains unapproved executable native properties")
     direct=list(root)
-    producer_count=sum(c.tag=="producer" for c in direct)
-    playlist_count=sum(c.tag=="playlist" for c in direct)
-    if (not 1<=producer_count<=1024 or not 1<=playlist_count<=8 or
-        [c.tag for c in direct] !=
-            ["profile"]+["producer"]*producer_count+
-            ["playlist"]*playlist_count+["tractor"]):
-        raise ValueError("MLT creative graph is not the approved structural subset")
+    producer_count=sum(x.tag=="producer" for x in direct)
+    playlists=[x for x in direct if x.tag=="playlist"]
+    playlist_count=len(playlists)
+    picture_tracks=0
+    for item in playlists:
+        if item.get("id")==f"track-{picture_tracks}":
+            picture_tracks+=1
+        else:
+            break
+    sound_count=playlist_count-picture_tracks
+    if (not 1<=picture_tracks<=8 or not 0<=sound_count<=4
+            or not 1<=producer_count<=1536
+            or playlist_count>12
+            or [c.tag for c in direct] !=
+               ["profile"]+["producer"]*producer_count+
+               ["playlist"]*playlist_count+["tractor"]):
+        raise ValueError("MLT native graph has unrecognized video/audio track structure")
+    if any(x.attrib!={"id":f"audio-track-{i}"}
+           for i,x in enumerate(playlists[picture_tracks:])):
+        raise ValueError("MLT original recorded soundtrack order changed")
     profile=direct[0]
     profile_keys={"description","width","height","progressive",
                   "sample_aspect_num","sample_aspect_den",
@@ -225,179 +340,213 @@ def _verify_exact_mlt_xml_tree(root):
         profile.get("colorspace")!="709"):
         raise ValueError("MLT timeline profile contains unapproved properties")
     try:
-        w=int(profile.get("width"));h=int(profile.get("height"))
+        width=int(profile.get("width"));height=int(profile.get("height"))
         rate=Fraction(int(profile.get("frame_rate_num")),
                       int(profile.get("frame_rate_den")))
     except (TypeError,ValueError,ZeroDivisionError) as exc:
-        raise ValueError("MLT timeline has invalid frame geometry/clock") from exc
-    if (not 2<=w<=7680 or not 2<=h<=4320 or w%2 or h%2 or
-        not 1<=rate<=240 or
-        profile.get("display_aspect_num")!=str(w) or
-        profile.get("display_aspect_den")!=str(h)):
-        raise ValueError("MLT timeline geometry or frame clock is inconsistent")
-    def properties(node,names):
-        children=list(node)
-        if (len(children)!=len(names) or
-            [ch.tag for ch in children]!=["property"]*len(names)):
-            raise ValueError("MLT service has unexpected properties or nested operations")
-        actual={}
-        for ch in children:
-            if (set(ch.attrib)!={"name"} or len(ch)!=0 or
-                ch.attrib["name"] not in names or ch.attrib["name"] in actual or
-                ch.text is None):
-                raise ValueError("MLT service includes an unapproved property")
-            actual[ch.attrib["name"]]=ch.text
-        return actual
-    for child in direct[1:1+producer_count]:
-        if len(child.attrib)!=1 or "id" not in child.attrib:
-            raise ValueError("MLT source producer has extra execution attributes")
-        props=properties(child,{"mlt_service","resource","audio_index",
-                                 "zx7.original_sha256","zx7.attestation_id"})
-        if props["mlt_service"]!="avformat" or props["audio_index"]!="-1":
-            raise ValueError("MLT original source is not muted avformat")
-    for index,playlist in enumerate(direct[1+producer_count:-1]):
-        if playlist.attrib!={"id":f"track-{index}"}:
-            raise ValueError("MLT playlist has extra producer configuration")
-        for child in playlist:
-            if len(child) or child.text and child.text.strip():
-                raise ValueError("MLT timeline item contains executable nested XML")
-            if child.tag=="entry":
-                if set(child.attrib)!={"producer","in","out"}:
-                    raise ValueError("MLT clip has unapproved control attributes")
-            elif child.tag=="blank":
-                if set(child.attrib)!={"length"}:
-                    raise ValueError("MLT timeline blank contains unknown instructions")
+        raise ValueError("MLT timeline profile has invalid picture/clock") from exc
+    if (not 2<=width<=7680 or not 2<=height<=4320 or
+        width%2 or height%2 or not 1<=rate<=240 or
+        profile.get("display_aspect_num")!=str(width) or
+        profile.get("display_aspect_den")!=str(height)):
+        raise ValueError("MLT output canvas or authored rational clock differs")
+    def properties(node,allow):
+        nodes=list(node)
+        if (len(nodes)!=len(allow) or
+            any(c.tag!="property" or set(c.attrib)!={"name"} or
+                len(c)!=0 or c.text is None for c in nodes)):
+            raise ValueError("Unapproved native media service configuration")
+        found={}
+        for c in nodes:
+            name=c.attrib["name"]
+            if name not in allow or name in found:
+                raise ValueError("Unapproved or duplicate MLT native property")
+            found[name]=c.text
+        return found
+    for producer in direct[1:1+producer_count]:
+        if set(producer.attrib)!={"id"}:
+            raise ValueError("MLT producer has unapproved execution attributes")
+        is_sound=producer.get("id","").startswith("audio-source-")
+        props=properties(producer,{
+            "mlt_service","resource","audio_index","zx7.original_sha256",
+            "zx7.attestation_id"}|({"video_index"} if is_sound else set()))
+        digest=props["zx7.original_sha256"]
+        if (props["mlt_service"]!="avformat" or
+            not isinstance(digest,str) or len(digest)!=64 or
+            producer.get("id")!=("audio-source-" if is_sound else "source-")+digest[:24]):
+            raise ValueError("MLT native producer is not a verified original video/audio CAS")
+        if is_sound:
+            if props["video_index"]!="-1":
+                raise ValueError("MLT soundtrack must disable the original video stream")
+            try:audio_index=int(props["audio_index"])
+            except (TypeError,ValueError) as exc:
+                raise ValueError("MLT original sound stream index invalid") from exc
+            if not 0<=audio_index<=64:
+                raise ValueError("MLT original sound stream index outside measured range")
+        elif props["audio_index"]!="-1":
+            raise ValueError("MLT visual producer must never leak recorded sound")
+    for i,playlist in enumerate(playlists):
+        expected=(f"track-{i}" if i<picture_tracks
+                  else f"audio-track-{i-picture_tracks}")
+        if playlist.attrib!={"id":expected}:
+            raise ValueError("MLT playlist identity is not an authored track")
+        for item in playlist:
+            if len(item) or item.text and item.text.strip():
+                raise ValueError("MLT timeline item has unapproved nested service")
+            if item.tag=="entry":
+                if set(item.attrib)!={"producer","in","out"}:
+                    raise ValueError("MLT original cut includes unsupported data")
+                selected=item.get("producer","")
+                expected_prefix="source-" if i<picture_tracks else "audio-source-"
+                if not selected.startswith(expected_prefix):
+                    raise ValueError("MLT clip crosses picture and soundtrack custody")
+            elif item.tag=="blank":
+                if set(item.attrib)!={"length"}:
+                    raise ValueError("MLT original gap has unapproved attributes")
             else:
-                raise ValueError("MLT playlist contains unsupported nested service")
+                raise ValueError("MLT playlist contains unsupported service")
     tractor=direct[-1]
     if (set(tractor.attrib)!={"id","in","out"} or
         tractor.get("id")!="zx7-tractor" or tractor.get("in")!="0"):
-        raise ValueError("MLT main tractor was changed")
-    try:total=int(tractor.get("out"))+1
-    except (ValueError,TypeError) as exc:
-        raise ValueError("MLT tractor has invalid output frame range") from exc
-    if not 1<=total<=1000000:
-        raise ValueError("MLT tractor exceeds host frame budget")
-    if ([ch.tag for ch in tractor] !=
-        ["multitrack"]+["transition"]*(playlist_count-1)):
-        raise ValueError("MLT tractor has untrusted nested services")
-    mtrack=tractor[0]
-    if (mtrack.attrib or
-        len(mtrack)!=playlist_count or
-        any(ch.tag!="track" or len(ch) or
-            ch.attrib!={"producer":f"track-{i}","hide":"audio"}
-            for i,ch in enumerate(mtrack))):
-        raise ValueError("MLT layered tracks contain unapproved services")
-    for i,transition in enumerate(tractor[1:],1):
-        if transition.attrib!={"in":"0","out":str(total-1)}:
-            raise ValueError("MLT compositor transition has unexpected attributes")
-        props=properties(transition,{"a_track","b_track","mlt_service",
-                                     "compositing","always_active"})
-        if props!={"a_track":"0","b_track":str(i),
-                   "mlt_service":"qtblend","compositing":"0",
-                   "always_active":"1"}:
-            raise ValueError("MLT compositor service cannot be substituted")
-    for playlist in direct[1+producer_count:-1]:
-        length=0
+        raise ValueError("MLT original tractor was changed")
+    try:frames=int(tractor.get("out"))+1
+    except (TypeError,ValueError) as exc:
+        raise ValueError("MLT original tractor frame count invalid") from exc
+    if not 1<=frames<=1000000:
+        raise ValueError("MLT original film frame budget exceeded")
+    if ([x.tag for x in tractor]!=
+        ["multitrack"]+["transition"]*(picture_tracks-1+sound_count)):
+        raise ValueError("MLT native transitions or sound tracks were altered")
+    multitrack=tractor[0]
+    if multitrack.attrib or len(multitrack)!=playlist_count:
+        raise ValueError("MLT native tractor tracks invalid")
+    for i,item in enumerate(multitrack):
+        expected=({"producer":f"track-{i}","hide":"audio"}
+            if i<picture_tracks else
+            {"producer":f"audio-track-{i-picture_tracks}","hide":"video"})
+        if item.tag!="track" or item.attrib!=expected or len(item):
+            raise ValueError("MLT picture/sound source stream was changed")
+    for i,transition in enumerate(tractor[1:]):
+        if transition.attrib!={"in":"0","out":str(frames-1)}:
+            raise ValueError("MLT transition time range altered")
+        is_sound=i>=picture_tracks-1
+        allow={"a_track","b_track","mlt_service","always_active"}|(
+            {"start","sum"} if is_sound else {"compositing"})
+        props=properties(transition,allow)
+        expected=({"a_track":"0",
+                   "b_track":str(picture_tracks+i-(picture_tracks-1)),
+                   "mlt_service":"mix","start":"1","sum":"1",
+                   "always_active":"1"} if is_sound else
+                  {"a_track":"0","b_track":str(i+1),"mlt_service":"qtblend",
+                   "compositing":"0","always_active":"1"})
+        if props!=expected:
+            raise ValueError("MLT original mixer/compositor was substituted")
+    for playlist in playlists:
+        duration=0
         for item in playlist:
-            if item.tag=="blank":
-                try:added=int(item.attrib["length"])
-                except ValueError as exc:raise ValueError("MLT malformed blank") from exc
-            else:
-                try:lo=int(item.attrib["in"]);hi=int(item.attrib["out"])
-                except ValueError as exc:raise ValueError("MLT malformed source frames") from exc
-                if not 0<=lo<=hi<=1000000:
-                    raise ValueError("MLT original decoded frame indices invalid")
-                added=hi-lo+1
-            if not 1<=added<=1000000 or length+added>total:
-                raise ValueError("MLT timeline contains invalid or overflowing frames")
-            length+=added
-        if length!=total:
-            raise ValueError("MLT physical track length differs from authored timeline")
-
+            try:
+                if item.tag=="blank":count=int(item.get("length"))
+                else:
+                    start=int(item.get("in"));end=int(item.get("out"))
+                    if not 0<=start<=end<=1000000:
+                        raise ValueError("MLT original sound/image cut range invalid")
+                    count=end-start+1
+            except (ValueError,TypeError) as exc:
+                raise ValueError("Malformed MLT original clip/gap") from exc
+            if not 1<=count<=1000000 or duration+count>frames:
+                raise ValueError("MLT source timeline overflows its original frame budget")
+            duration+=count
+        if duration!=frames:
+            raise ValueError("MLT native sound or picture track duration mismatch")
+    return {"picture_tracks":picture_tracks,"sound_tracks":sound_count}
 
 def verify_owned_mlt_project(file_path):
-    """Reopen only our exact XML subset; verify all original custody bytes.
-
-    An MLT XML file alone cannot issue rights or make an arbitrary producer
-    acceptable. No external URLs, dynamic filters, arbitrary effects, DTD,
-    or plugin imports are accepted as an owned interchange artifact.
-    """
+    """Physically accept only allowlisted native MLT services and original media."""
     path=Path(file_path)
-    if not path.is_file() or not 100<=path.stat().st_size<=1024*1024:
-        raise ValueError("MLT project artifact missing or outside verification budget")
+    if not path.is_file() or not 100<=path.stat().st_size<=2*1024*1024:
+        raise ValueError("Owned MLT native project exceeds verification budget")
     raw=path.read_bytes()
     if b"<!DOCTYPE" in raw.upper() or b"<!ENTITY" in raw.upper():
-        raise ValueError("MLT XML cannot declare external entities")
-    try:root=ET.fromstring(raw)
-    except ET.ParseError as exc:raise ValueError("Invalid owned MLT XML") from exc
-    _verify_exact_mlt_xml_tree(root)
-    if root.tag!="mlt" or not root.attrib.get("producer")=="zx7-tractor":
-        raise ValueError("Not a verified ZX7 MLT editorial project")
-    allowed={"mlt","profile","producer","property","playlist","blank","entry",
-             "tractor","multitrack","track","transition"}
-    if any(item.tag not in allowed for item in root.iter()):
-        raise ValueError("Unverified native XML services cannot be trusted")
-    parents=list(root)
-    if (sum(p.tag=="profile" for p in parents)!=1 or
-        sum(p.tag=="tractor" for p in parents)!=1):
-        raise ValueError("MLT original project profile or tractor is ambiguous")
-    producers={}
-    for item in root.findall("producer"):
-        props={p.get("name"):p.text for p in item.findall("property")}
-        if (len(props)!=5 or len(item.findall("property"))!=5 or props.get("mlt_service")!="avformat" or
-            props.get("audio_index")!="-1" or
-            item.attrib.get("id")!="source-"+str(props.get("zx7.original_sha256",""))[:24]):
-            raise ValueError("MLT source contains unauthorised producer properties")
-        digest=props["zx7.original_sha256"]; att=props.get("zx7.attestation_id")
+        raise ValueError("MLT native project cannot contain executable entities")
+    try:xml=ET.fromstring(raw)
+    except ET.ParseError as exc:raise ValueError("Corrupt native MLT project XML") from exc
+    structure=_verify_exact_mlt_xml_tree(xml)
+    sources={}
+    expected_rate=Fraction(
+        int(xml.find("profile").get("frame_rate_num")),
+        int(xml.find("profile").get("frame_rate_den")))
+    width=int(xml.find("profile").get("width"))
+    height=int(xml.find("profile").get("height"))
+    for producer in xml.findall("producer"):
+        props={p.get("name"):p.text for p in producer.findall("property")}
+        digest=props["zx7.original_sha256"]
+        att=props["zx7.attestation_id"]
         filename=Path(props["resource"])
         if not (isinstance(digest,str) and len(digest)==64 and
+                all(c in "0123456789abcdef" for c in digest) and
                 isinstance(att,str) and len(att)==64 and
+                all(c in "0123456789abcdef" for c in att) and
                 filename.is_absolute() and filename.name==digest and
                 filename.parent.name==digest[:2] and
                 filename.parent.parent.name=="objects"):
-            raise ValueError("MLT original video has no exact CAS+attestation identity")
+            raise ValueError("MLT native producer is not an exact physical CAS source")
         vault=MediaVault(filename.parents[2])
-        trusted=vault.inspect(digest,attestation_id=att)
-        if Path(trusted["path"])!=filename or trusted["mime"] not in (
-                "video/mp4","video/quicktime","video/webm"):
-            raise ValueError("MLT source media no longer matches verified rights")
-        if item.attrib["id"] in producers:raise ValueError("Duplicate MLT producers")
-        producers[item.attrib["id"]]=digest
-    playlists=root.findall("playlist")
-    if not 1<=len(playlists)<=8 or not producers:
-        raise ValueError("MLT timeline requires physical tracks and media")
-    for index,playlist in enumerate(playlists):
-        if playlist.get("id")!=f"track-{index}":
-            raise ValueError("MLT track order or identity changed")
-        for child in playlist:
-            if child.tag=="entry":
-                if set(child.attrib)!={"producer","in","out"} or child.get("producer") not in producers:
-                    raise ValueError("MLT changed an owned source entry")
-                try:lo=int(child.get("in"));hi=int(child.get("out"))
-                except (TypeError,ValueError) as exc:raise ValueError("MLT invalid original frame index") from exc
-                if not 0<=lo<=hi<=1000000:raise ValueError("MLT source range changed")
-            elif child.tag=="blank":
-                try:length=int(child.get("length"))
-                except (TypeError,ValueError) as exc:raise ValueError("MLT invalid blank length") from exc
-                if not 1<=length<=1000000:raise ValueError("MLT blank exceeds timeline")
-            else:raise ValueError("MLT project contains an unsupported clip type")
-    tractor=root.find("tractor")
-    if tractor.get("id")!="zx7-tractor":
-        raise ValueError("MLT tractor identity changed")
-    tracks=tractor.findall("./multitrack/track")
-    if len(tracks)!=len(playlists) or any(
-        t.attrib!={"producer":f"track-{i}","hide":"audio"}
-        for i,t in enumerate(tracks)):
-        raise ValueError("MLT original muted tracks were altered")
-    if len(tractor.findall("./transition"))!=len(tracks)-1:
-        raise ValueError("MLT compositor transition count changed")
-    for i,transition in enumerate(tractor.findall("./transition"),1):
-        settings={p.get("name"):p.text for p in transition.findall("property")}
-        if settings!={"a_track":"0","b_track":str(i),
-                     "mlt_service":"qtblend","compositing":"0",
-                     "always_active":"1"}:
-            raise ValueError("Unsupported or replaced MLT compositor")
-    return {"verified_original_sources":len(producers),
-            "verified_mlt_tracks":len(playlists),
+        record=vault.inspect(digest,attestation_id=att)
+        if (Path(record["path"])!=filename or record["mime"] not in (
+                "video/mp4","video/quicktime","video/webm")):
+            raise ValueError("Native project lost its original licensed video/audio")
+        is_sound=producer.get("id").startswith("audio-source-")
+        if digest not in sources:
+            fps,count=_source_timebase(filename)
+            if fps!=expected_rate:
+                raise ValueError("MLT original footage/sound changed its frame clock")
+            sources[digest]={"frames":count}
+        if is_sound:
+            if props["audio_index"]!=str(_single_recorded_audio_stream(filename)):
+                raise ValueError("MLT original audio index does not match verified file")
+            if "sound_seconds" not in sources[digest]:
+                probe=_probe_details(filename)
+                if not probe["audio_stream_present"]:
+                    raise ValueError("Recorded original sound is missing")
+                _single_recorded_audio_stream(filename)
+                sources[digest]["sound_seconds"]=_decoded_source_duration(filename,"audio")
+        else:
+            if "geometry" not in sources[digest]:
+                probe=_probe_details(filename)
+                _actual_bt709_source(filename)
+                sources[digest]["geometry"]=(probe["width"],probe["height"])
+            if sources[digest]["geometry"]!=(width,height):
+                raise ValueError("Native video geometry differs from its original film")
+        identity=producer.get("id")
+        if identity in sources.get("ids",set()):
+            raise ValueError("Duplicated exact native source producer identity")
+        sources.setdefault("ids",set()).add(identity)
+        sources[identity]={"digest":digest,"sound":is_sound}
+    verified_sources=[x for k,x in sources.items() if k!="ids" and
+                      isinstance(x,dict) and "digest" in x]
+    if not verified_sources:
+        raise ValueError("No exact rights-authenticated audiovisual MLT media")
+    for ti,playlist in enumerate(xml.findall("playlist")):
+        total=0
+        sound_track=ti>=structure["picture_tracks"]
+        for entry in playlist:
+            if entry.tag=="blank":
+                total+=int(entry.get("length"))
+                continue
+            pid=entry.get("producer")
+            if pid not in sources or "digest" not in sources[pid]:
+                raise ValueError("MLT timeline references unauthenticated original producer")
+            digest=sources[pid]["digest"]
+            if sources[pid]["sound"]!=sound_track:
+                raise ValueError("MLT original audio/video stream crossed into another track")
+            last=int(entry.get("out"))
+            count=sources[digest]["frames"]
+            if last>=count:
+                raise ValueError("MLT native timeline edits exceed physically decoded source frames")
+            if sound_track and (float(Fraction(last+1,1)/expected_rate)>
+                    sources[digest]["sound_seconds"]+.015):
+                raise ValueError("MLT soundtrack extends beyond physical recorded audio")
+    return {"verified_original_sources":len(verified_sources),
+            "verified_mlt_tracks":structure["picture_tracks"],
+            "verified_audio_tracks":structure["sound_tracks"],
             "native_mlt_render_measured":False}
