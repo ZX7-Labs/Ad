@@ -138,8 +138,15 @@ class VerifiedMLTEditorialTests(unittest.TestCase):
                     offset=frame*pitch+(24*64+32)*3
                     return tuple(rgb[offset:offset+3])
                 samples[mode]=center(5)
+                # Blending applies only while the second authored track exists.
+                # Every mode must restore the exact owned picture after it.
                 background=center(0)
+                after_overlay=center(11)
                 self.assertGreater(background[0],background[2]+70)
+                self.assertGreater(after_overlay[0],after_overlay[2]+70)
+                self.assertLess(max(abs(a-b) for a,b in zip(
+                    background,after_overlay)),35,
+                    (mode,"unintended full-timeline color transformation"))
             self.assertGreater(samples["normal"][2],samples["normal"][0]+70)
             self.assertLess(sum(samples["multiply"]),120,
                 ("native multiply must physically darken red × blue",samples))
