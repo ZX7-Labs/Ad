@@ -30,9 +30,12 @@ def render_owned_mlt(edit,workspace,output):
     source=Path(edit).absolute()
     dest=Path(output).absolute()
     if (not source.is_file() or source.is_symlink()
-            or not source.is_relative_to(root) or source.suffix.lower()!=".mlt"
-            or not dest.is_relative_to(root) or dest.suffix.lower()!=".mp4"
-            or source==dest):
+            or not source.is_relative_to(root) or
+            not source.resolve().is_relative_to(root) or
+            source.suffix.lower()!=".mlt"
+            or not dest.is_relative_to(root) or
+            not dest.resolve().is_relative_to(root) or
+            dest.suffix.lower()!=".mp4" or source==dest):
         raise ValueError("Native MLT execution requires a verified owned .mlt and workspace .mp4")
     if dest.exists() or dest.is_symlink():
         raise FileExistsError("Never replace prior MLT creative media")
