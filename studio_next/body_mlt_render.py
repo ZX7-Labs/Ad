@@ -141,13 +141,17 @@ def render_owned_mlt(edit,workspace,output):
         # trusted XML is reconstructed under a private worker pathname.
         # Pin all output profile values from the independently verified
         # authored frame clock rather than trusting MLT's default consumer.
+        sound_present=verified["verified_audio_tracks"]>0
         cmd=["melt",str(worker),"-consumer",f"avformat:{encoded}",
              f"frame_rate_num={fps.numerator}",f"frame_rate_den={fps.denominator}",
              f"width={width}",f"height={height}","progressive=1",
              "vcodec=libx264","pix_fmt=yuv420p","crf=18",
              "color_primaries=bt709","color_trc=bt709",
              "colorspace=709","movflags=+faststart",
-             "an=1","real_time=-1","threads=2"]
+             "an=0" if sound_present else "an=1",
+             "real_time=-1","threads=2"]
+        if sound_present:
+            cmd+=["acodec=aac","ab=192k","ar=48000","channels=2"]
         run=subprocess.run(cmd,capture_output=True,text=True,timeout=7200)
         if run.returncode:
             raise RuntimeError("Verified MLT rendering failed: "+run.stderr[-1200:])
@@ -155,8 +159,8 @@ def render_owned_mlt(edit,workspace,output):
         if measured_rate!=fps or measured_frames!=frames:
             raise ValueError(f"Actual decoded MLT frame clock differs from original editing intent: expected {fps} ({frames} frames), decoded {measured_rate} ({measured_frames} frames)")
         probe=_probe_details(encoded)
-        if probe["audio_stream_present"]:
-            raise ValueError("MLT renderer unexpectedly emitted an unauthorized soundtrack")
+        if probe["audio_stream_present"]!=sound_present:
+            raise ValueError("MLT original recorded soundtrack was lost or an unauthorized audio stream appeared")
         # The project and its physical inputs are BT.709, and the delivered
         # movie must retain those explicit display tags for other devices.
         # Otherwise a nominally successful encode could shift appearance.
@@ -164,7 +168,7 @@ def render_owned_mlt(edit,workspace,output):
         qa=full_decode_inspection(encoded,expected={
             "width":width,"height":height,
             "duration_seconds":float(Fraction(frames,1)/fps),
-            "require_audio":False})
+            "require_audio":sound_present})
         if not qa["technical_delivery_verified"] or not qa["full_picture_and_sound_decoder_completed"]:
             raise ValueError("Actual MLT picture failed full decoder or output dimensions")
         if sha256_file(source)!=before:
@@ -185,6 +189,7 @@ def render_owned_mlt(edit,workspace,output):
             "width":width,"height":height,"source_assets":len(sources),
             "source_project_sha256":before,
             "native_multitrack_verified":bool(verified["verified_mlt_tracks"]>1),
-            "original_sound_intentionally_silent":True,
+            "original_sound_intentionally_silent":not sound_present,
+            "verified_original_audio_tracks":verified["verified_audio_tracks"],
             "full_decoded_picture":True,
             "artistic_quality_approved":False}
