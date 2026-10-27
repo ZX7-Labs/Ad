@@ -81,8 +81,19 @@ def render_owned_mlt(edit,workspace,output):
         raise ValueError("No original verified media in the edit")
     dest.parent.mkdir(parents=True,exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=".zx7-mlt-render-",dir=dest.parent) as tmp:
+        # Never execute the mutable input XML path. MLT's own XML reader is
+        # non-validating; run a byte-sealed, independently revalidated snapshot.
+        sealed=Path(tmp)/"sealed-original.mlt"
+        with source.open("rb") as original, sealed.open("xb") as target:
+            shutil.copyfileobj(original,target)
+            target.flush()
+            os.fsync(target.fileno())
+        if sha256_file(sealed)!=before:
+            raise ValueError("Original MLT project changed while securing render input")
+        if verify_owned_mlt_project(sealed)!=verified:
+            raise ValueError("Sealed editable MLT project failed source verification")
         encoded=Path(tmp)/"render.mp4"
-        cmd=["melt",str(source),"-consumer",f"avformat:{encoded}",
+        cmd=["melt",str(sealed),"-consumer",f"avformat:{encoded}",
              "vcodec=libx264","pix_fmt=yuv420p","crf=18",
              "an=1","real_time=-1","threads=2"]
         run=subprocess.run(cmd,capture_output=True,text=True,timeout=7200)
