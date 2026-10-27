@@ -95,10 +95,11 @@ class VerifiedMLTEditorialTests(unittest.TestCase):
             export_owned_mlt(plan_file,root,root/"vault",exported)
             self.assertEqual(verify_owned_mlt_project(exported)["verified_mlt_tracks"],2)
             doc=exported.read_text()
-            self.assertIn('<property name="compositing">13</property>',doc)
+            self.assertIn('<property name="mlt_service">frei0r.cairoblend</property>',doc)
+            self.assertIn('<property name="1">multiply</property>',doc)
             rejected=doc.replace(
-                '<property name="compositing">13</property>',
-                '<property name="compositing">999</property>')
+                '<property name="1">multiply</property>',
+                '<property name="1">arbitrary_plugin</property>')
             self.assertNotEqual(doc,rejected)
             exported.write_text(rejected)
             with self.assertRaisesRegex(ValueError,"allowlisted"):
@@ -119,8 +120,10 @@ class VerifiedMLTEditorialTests(unittest.TestCase):
         installed=subprocess.run(["melt","-query","transitions"],
             capture_output=True,text=True,timeout=25,check=True)
         self.assertIn("qtblend",installed.stdout,
-            "The installed native MLT editor does not advertise the qtblend service; "
-            "an XML-only effect must never claim working compositing")
+            "The installed native MLT editor does not advertise the qtblend service")
+        self.assertIn("frei0r.cairoblend",installed.stdout,
+            "The independent Cairo native blending plugin is unavailable; "
+            "the editor must never claim imaginary multiply/screen/overlay")
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp);plan,source=self._case(root)
             body=body_catalog(root)
