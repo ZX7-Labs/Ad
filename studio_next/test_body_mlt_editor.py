@@ -322,6 +322,41 @@ class VerifiedMLTEditorialTests(unittest.TestCase):
             evidence="Actual original soundtrack generated as FFmpeg source fixture",
             owner_or_generator="physical-test-source")
 
+    def test_spatial_source_requires_explicit_mixdown_not_silent_stereo_conversion(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);plan,source=self._case(root)
+            surround=root/"owner-original-5point1.mp4"
+            subprocess.run(["ffmpeg","-hide_banner","-loglevel","error",
+                "-f","lavfi","-i","color=c=black:s=64x48:r=12:d=1",
+                "-f","lavfi","-i","anullsrc=channel_layout=5.1:sample_rate=48000",
+                "-map","0:v:0","-map","1:a:0","-t","1",
+                "-c:v","libx264","-pix_fmt","yuv420p",
+                "-c:a","aac","-ac","6",
+                "-color_primaries","bt709","-color_trc","bt709",
+                "-colorspace","bt709","-y",str(surround)],
+                check=True,timeout=40)
+            observed=json.loads(subprocess.check_output([
+                "ffprobe","-v","error","-select_streams","a",
+                "-show_entries","stream=channels","-of","json",
+                str(surround)]))["streams"]
+            self.assertEqual(observed[0]["channels"],6)
+            recorded=MediaVault(root/"vault").ingest(surround,mime="video/mp4",
+                rights="owner_supplied",source_type="owner_upload",
+                source_id="six-channel-original",evidence="original spatial source fixture",
+                owner_or_generator="native-test-fixture")
+            plan["audio_tracks"]=[{"clips":[{
+                "source":"zx7:sha256:"+recorded["asset_id"],
+                "asset_id":recorded["asset_id"],
+                "attestation_id":recorded["attestation_id"],
+                "position_frame":0,"first_frame":0,"end_frame":12}]}]
+            self.assertTrue(validate_document("body.mlt_owned_export",plan))
+            with self.assertRaisesRegex(ValueError,"silently downmix"):
+                validate_mlt_edit(plan,root,root/"vault")
+            source.write_text(json.dumps(plan))
+            with self.assertRaisesRegex(ValueError,"silently downmix"):
+                export_owned_mlt(source,root,root/"vault",root/"bad-downmix.mlt")
+            self.assertFalse((root/"bad-downmix.mlt").exists())
+
     def test_ambiguous_multi_language_source_audio_must_not_be_guessed(self):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp);plan,_=self._case(root)
