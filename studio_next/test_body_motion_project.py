@@ -70,7 +70,7 @@ class NativeMotionProjectTests(unittest.TestCase):
     def _export_fixture(root):
         bundle=root/"valid-native.zxmotion"
         blend=b"BLENDER-v405"+b"fixture data"*20
-        frame=b"\\x89PNG\\r\\n\\x1a\\n"+b"mocked original pixel fixture"
+        frame=bytes.fromhex("89504e470d0a1a0a")+b"mocked original pixel fixture"
         members={"project.blend":hashlib.sha256(blend).hexdigest(),
                  "render_000000.png":hashlib.sha256(frame).hexdigest()}
         report={"version":VERSION,"engine_version":"4.5.15 LTS",
