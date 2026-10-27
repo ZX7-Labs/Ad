@@ -44,10 +44,16 @@ def _prop(owner,name,value):
 
 
 def _single_recorded_audio_stream(path):
-    """Never silently select the first language/take of multi-audio media."""
+    """Require exactly one recorded original audio stream and supported channels.
+
+    The currently published native MLT delivery is a two-channel AAC film.
+    Never silently collapse a spatial 5.1/7.1 master into stereo: that needs
+    an explicitly approved, independently measured artist-authored conform.
+    """
     try:
         raw=subprocess.check_output(["ffprobe","-v","error",
-            "-select_streams","a","-show_entries","stream=index",
+            "-select_streams","a",
+            "-show_entries","stream=index,channels,sample_rate",
             "-of","json",str(path)],timeout=90)
         streams=json.loads(raw).get("streams",[])
     except (OSError,ValueError,subprocess.CalledProcessError,
@@ -56,7 +62,15 @@ def _single_recorded_audio_stream(path):
     if (len(streams)!=1 or type(streams[0].get("index")) is not int or
             not 0<=streams[0]["index"]<=64):
         raise ValueError("MLT source must contain one unambiguous actual original audio stream")
-    return streams[0]["index"]
+    track=streams[0]
+    if type(track.get("channels")) is not int or track["channels"] not in (1,2):
+        raise ValueError("Native MLT stereo delivery cannot silently downmix spatial/multichannel original audio")
+    try:sample_rate=int(track["sample_rate"])
+    except (KeyError,TypeError,ValueError) as exc:
+        raise ValueError("Native MLT audio stream has no measured physical sample clock") from exc
+    if not 8000<=sample_rate<=192000:
+        raise ValueError("Native MLT audio sample rate is outside independently measured limits")
+    return track["index"]
 
 
 def validate_mlt_edit(plan,workspace,vault_root):
