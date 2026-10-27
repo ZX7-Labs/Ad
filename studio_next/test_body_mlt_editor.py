@@ -83,6 +83,72 @@ class VerifiedMLTEditorialTests(unittest.TestCase):
                 with self.subTest(field=field),self.assertRaises(ValueError):
                     validate_mlt_edit(changed,root,root/"vault")
 
+    def test_only_typed_native_blend_modes_can_change_owned_video_layers(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);plan,plan_file=self._case(root)
+            plan["tracks"][1]["blend_mode"]="multiply"
+            self.assertTrue(validate_document("body.mlt_owned_export",plan))
+            checked=validate_mlt_edit(plan,root,root/"vault")
+            self.assertEqual(checked["blend_modes"],["normal","multiply"])
+            plan_file.write_text(json.dumps(plan))
+            exported=root/"multiplied.mlt"
+            export_owned_mlt(plan_file,root,root/"vault",exported)
+            self.assertEqual(verify_owned_mlt_project(exported)["verified_mlt_tracks"],2)
+            doc=exported.read_text()
+            self.assertIn('<property name="compositing">13</property>',doc)
+            rejected=doc.replace(
+                '<property name="compositing">13</property>',
+                '<property name="compositing">999</property>')
+            self.assertNotEqual(doc,rejected)
+            exported.write_text(rejected)
+            with self.assertRaisesRegex(ValueError,"allowlisted"):
+                verify_owned_mlt_project(exported)
+            for invalid in ("arbitrary_plugin","multiply;rm -rf /",3,None):
+                modified=json.loads(json.dumps(plan))
+                modified["tracks"][1]["blend_mode"]=invalid
+                with self.subTest(blend=invalid),self.assertRaises(ValueError):
+                    validate_mlt_edit(modified,root,root/"vault")
+            modified=json.loads(json.dumps(plan))
+            modified["tracks"][0]["blend_mode"]="screen"
+            with self.assertRaisesRegex(ValueError,"bottom"):
+                validate_mlt_edit(modified,root,root/"vault")
+
+    @unittest.skipUnless(shutil.which("melt"),"Real MLT QtBlend runtime required")
+    def test_original_native_multiply_screen_and_overlay_have_measured_pixel_effects(self):
+        from studio_next.body_integration import body_catalog
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);plan,source=self._case(root)
+            body=body_catalog(root)
+            samples={}
+            for mode in ("normal","multiply","screen","overlay"):
+                plan["tracks"][1]["blend_mode"]=mode
+                source.write_text(json.dumps(plan))
+                edit=f"edit-{mode}.mlt";movie=f"composed-{mode}.mp4"
+                body.invoke("body.mlt_owned_export",{
+                    "plan":"original.json","out":edit},allowed_access={"write"})
+                output=body.invoke("body.mlt_owned_render",{
+                    "edit":edit,"out":movie},allowed_access={"write"})
+                self.assertEqual(output["frames"],12)
+                rgb=subprocess.check_output(["ffmpeg","-v","error","-xerror",
+                    "-i",str(root/movie),"-map","0:v:0",
+                    "-pix_fmt","rgb24","-f","rawvideo","-"],timeout=40)
+                pitch=64*48*3
+                self.assertEqual(len(rgb),12*pitch)
+                def center(frame):
+                    offset=frame*pitch+(24*64+32)*3
+                    return tuple(rgb[offset:offset+3])
+                samples[mode]=center(5)
+                background=center(0)
+                self.assertGreater(background[0],background[2]+70)
+            self.assertGreater(samples["normal"][2],samples["normal"][0]+70)
+            self.assertLess(sum(samples["multiply"]),120,
+                ("native multiply must physically darken red × blue",samples))
+            self.assertGreater(samples["screen"][0],150,samples)
+            self.assertGreater(samples["screen"][2],150,samples)
+            self.assertLess(samples["screen"][1],110,samples)
+            self.assertGreater(samples["overlay"][0],samples["overlay"][2]+70,
+                ("native overlay should preserve dominant red destination",samples))
+
     def test_same_layer_overlap_and_unmeasured_source_range_fail_closed(self):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp);plan,_=self._case(root)
