@@ -145,6 +145,17 @@ class VerifiedMLTEditorialTests(unittest.TestCase):
                 "color_space","color_primaries","color_transfer")},
                 {"color_space":"bt709","color_primaries":"bt709",
                  "color_transfer":"bt709"})
+            raw=subprocess.check_output(["ffmpeg","-v","error","-xerror",
+                "-i",str(video),"-pix_fmt","rgb24","-f","rawvideo","-vsync","0","-"],timeout=30)
+            pitch=64*48*3
+            self.assertEqual(len(raw),12*pitch)
+            def color_at(frame):
+                off=frame*pitch+(24*64+32)*3
+                return tuple(raw[off:off+3])
+            start,overlay,finish=(color_at(i) for i in (0,5,11))
+            self.assertGreater(start[0],start[2]+70)
+            self.assertGreater(overlay[2],overlay[0]+70)
+            self.assertGreater(finish[0],finish[2]+70)
             with self.assertRaises(FileExistsError):
                 catalog.invoke("body.mlt_owned_render",{
                     "edit":"edit.mlt","out":"finished.mp4"},allowed_access={"write"})
