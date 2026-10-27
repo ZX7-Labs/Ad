@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 from functools import lru_cache
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -192,9 +193,14 @@ def export_motion_media(bundle_path,target,*,fps):
     from .body_publication import require_published_source
     approved=require_published_source(bundle_path,"body.motion_project")
     dest=Path(target)
-    if dest.exists():raise FileExistsError("Native media output already exists")
+    # Even direct callers must never observe a half-encoded published movie.
+    if dest.exists() or dest.is_symlink():raise FileExistsError("Native media output already exists")
     if type(fps) is not int or not 1<=fps<=240:raise ValueError("Explicit integer delivery fps must be 1..240")
-    with tempfile.TemporaryDirectory(prefix="zx7-motion-export-") as tmp:
+    suffix=dest.suffix.lower()
+    if suffix not in (".png",".mp4"):raise ValueError("Native delivery supports png/mp4")
+    # Stage on the output filesystem. Exclusive hardlink publishes only a
+    # completed inode, rejects concurrent writers and needs no overwrite.
+    with tempfile.TemporaryDirectory(prefix=".zx7-motion-export-",dir=dest.parent) as tmp:
         root=Path(tmp)
         sealed=root/"source.zxmotion";shutil.copyfile(bundle_path,sealed)
         if digest(sealed)!=approved:raise ValueError("Native export source changed after provenance verification")
@@ -203,12 +209,15 @@ def export_motion_media(bundle_path,target,*,fps):
         with zipfile.ZipFile(sealed) as bundle:
             for i,frame in enumerate(frames):
                 (root/f"frame_{i:06d}.png").write_bytes(bundle.read(frame["file"]))
-        if dest.suffix.lower()==".png":
+        encoded=root/("encoded"+suffix)
+        if suffix==".png":
             if len(frames)!=1:raise ValueError("PNG delivery requires one authored frame")
-            with dest.open("xb") as out:out.write((root/"frame_000000.png").read_bytes())
-        elif dest.suffix.lower()==".mp4":
+            shutil.copyfile(root/"frame_000000.png",encoded)
+        else:
             subprocess.run(["ffmpeg","-hide_banner","-loglevel","error","-nostdin","-n","-framerate",str(fps),
                 "-i",str(root/"frame_%06d.png"),"-c:v","libx264","-crf","18","-pix_fmt","yuv420p",
-                "-movflags","+faststart",str(dest)],check=True,timeout=3600)
-        else:raise ValueError("Native delivery supports png/mp4")
+                "-movflags","+faststart",str(encoded)],check=True,timeout=3600)
+        if not encoded.is_file() or not encoded.stat().st_size:
+            raise RuntimeError("Native media encoder produced no bytes")
+        os.link(encoded,dest)
     return report
