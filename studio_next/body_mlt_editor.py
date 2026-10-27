@@ -100,7 +100,7 @@ def validate_mlt_edit(plan,workspace,vault_root):
                 measured,frames=_source_timebase(source)
                 if measured!=fps:
                     raise ValueError("MLT cannot silently retime a different source clock")
-                sources[asset]={"path":source,"frames":frames}
+                sources[asset]={"path":source,"frames":frames,"attestation":att}
             if exclusive>sources[asset]["frames"]:
                 raise ValueError("MLT cut exceeds actual decoded media frames")
             end_at=pos+(exclusive-first)
@@ -130,6 +130,7 @@ def build_mlt_xml(plan,checked):
         _prop(source,"resource",rec["path"])
         _prop(source,"audio_index",-1)
         _prop(source,"zx7.original_sha256",digest)
+        _prop(source,"zx7.attestation_id",rec["attestation"])
     for ti,clips in enumerate(checked["tracks"]):
         playlist=ET.SubElement(root,"playlist",{"id":f"track-{ti}"})
         position=0
@@ -187,3 +188,88 @@ def export_owned_mlt(plan_path,workspace,vault_root,output):
             "host_local_project_only":True,
             "sound_intentionally_silent":True,
             "complete_nle_or_creative_quality_approved":False}
+
+
+def verify_owned_mlt_project(file_path):
+    """Reopen only our exact XML subset; verify all original custody bytes.
+
+    An MLT XML file alone cannot issue rights or make an arbitrary producer
+    acceptable. No external URLs, dynamic filters, arbitrary effects, DTD,
+    or plugin imports are accepted as an owned interchange artifact.
+    """
+    path=Path(file_path)
+    if not path.is_file() or not 100<=path.stat().st_size<=1024*1024:
+        raise ValueError("MLT project artifact missing or outside verification budget")
+    raw=path.read_bytes()
+    if b"<!DOCTYPE" in raw.upper() or b"<!ENTITY" in raw.upper():
+        raise ValueError("MLT XML cannot declare external entities")
+    try:root=ET.fromstring(raw)
+    except ET.ParseError as exc:raise ValueError("Invalid owned MLT XML") from exc
+    if root.tag!="mlt" or not root.attrib.get("producer")=="zx7-tractor":
+        raise ValueError("Not a verified ZX7 MLT editorial project")
+    allowed={"mlt","profile","producer","property","playlist","blank","entry",
+             "tractor","multitrack","track","transition"}
+    if any(item.tag not in allowed for item in root.iter()):
+        raise ValueError("Unverified native XML services cannot be trusted")
+    parents=list(root)
+    if (sum(p.tag=="profile" for p in parents)!=1 or
+        sum(p.tag=="tractor" for p in parents)!=1):
+        raise ValueError("MLT original project profile or tractor is ambiguous")
+    producers={}
+    for item in root.findall("producer"):
+        props={p.get("name"):p.text for p in item.findall("property")}
+        if (len(props)!=4 or props.get("mlt_service")!="avformat" or
+            props.get("audio_index")!="-1" or
+            item.attrib.get("id")!="source-"+str(props.get("zx7.original_sha256",""))[:24]):
+            raise ValueError("MLT source contains unauthorised producer properties")
+        digest=props["zx7.original_sha256"]; att=props.get("zx7.attestation_id")
+        filename=Path(props["resource"])
+        if not (isinstance(digest,str) and len(digest)==64 and
+                isinstance(att,str) and len(att)==64 and
+                filename.is_absolute() and filename.name==digest and
+                filename.parent.name==digest[:2] and
+                filename.parent.parent.name=="objects"):
+            raise ValueError("MLT original video has no exact CAS+attestation identity")
+        vault=MediaVault(filename.parents[2])
+        trusted=vault.inspect(digest,attestation_id=att)
+        if Path(trusted["path"])!=filename or trusted["mime"] not in (
+                "video/mp4","video/quicktime","video/webm"):
+            raise ValueError("MLT source media no longer matches verified rights")
+        if item.attrib["id"] in producers:raise ValueError("Duplicate MLT producers")
+        producers[item.attrib["id"]]=digest
+    playlists=root.findall("playlist")
+    if not 1<=len(playlists)<=8 or not producers:
+        raise ValueError("MLT timeline requires physical tracks and media")
+    for index,playlist in enumerate(playlists):
+        if playlist.get("id")!=f"track-{index}":
+            raise ValueError("MLT track order or identity changed")
+        for child in playlist:
+            if child.tag=="entry":
+                if set(child.attrib)!={"producer","in","out"} or child.get("producer") not in producers:
+                    raise ValueError("MLT changed an owned source entry")
+                try:lo=int(child.get("in"));hi=int(child.get("out"))
+                except (TypeError,ValueError) as exc:raise ValueError("MLT invalid original frame index") from exc
+                if not 0<=lo<=hi<=1000000:raise ValueError("MLT source range changed")
+            elif child.tag=="blank":
+                try:length=int(child.get("length"))
+                except (TypeError,ValueError) as exc:raise ValueError("MLT invalid blank length") from exc
+                if not 1<=length<=1000000:raise ValueError("MLT blank exceeds timeline")
+            else:raise ValueError("MLT project contains an unsupported clip type")
+    tractor=root.find("tractor")
+    if tractor.get("id")!="zx7-tractor":
+        raise ValueError("MLT tractor identity changed")
+    tracks=tractor.findall("./multitrack/track")
+    if len(tracks)!=len(playlists) or any(
+        t.attrib!={"producer":f"track-{i}","hide":"audio"}
+        for i,t in enumerate(tracks)):
+        raise ValueError("MLT original muted tracks were altered")
+    if len(tractor.findall("./transition"))!=len(tracks)-1:
+        raise ValueError("MLT compositor transition count changed")
+    for i,transition in enumerate(tractor.findall("./transition"),1):
+        settings={p.get("name"):p.text for p in transition.findall("property")}
+        if settings!={"a_track":"0","b_track":str(i),
+                     "mlt_service":"luma","always_active":"1"}:
+            raise ValueError("Unsupported or replaced MLT compositor")
+    return {"verified_original_sources":len(producers),
+            "verified_mlt_tracks":len(playlists),
+            "native_mlt_render_measured":False}
