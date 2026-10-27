@@ -22,6 +22,7 @@ _SOURCE_FIELDS={
     "body.retime":("plan",),
     "body.sequence_cuts":("plan",),
     "body.mlt_owned_export":("plan",),
+    "body.mlt_owned_render":("edit",),
     "body.timeline_revision":("plan","operation"),
     "body.otio":("edit",),
     "body.otio_owned_export":("plan",),
@@ -135,6 +136,17 @@ def fingerprint_physical_inputs(tool_id,inputs,workspace):
         p=_file(root,source)
         if p.is_file():
             found.add(p)
+            if p.suffix.lower()==".mlt" and tool_id=="body.mlt_owned_render":
+                from .body_mlt_editor import verify_owned_mlt_project
+                import xml.etree.ElementTree as ET
+                verify_owned_mlt_project(p)
+                doc=ET.fromstring(p.read_bytes())
+                for node in doc.findall("producer"):
+                    props={c.get("name"):c.text for c in node.findall("property")}
+                    file=Path(props["resource"]).resolve()
+                    if not file.is_relative_to(root):
+                        raise ValueError("MLT original asset escaped owner workspace")
+                    found.add(file)
             if p.suffix.lower()==".otio" and tool_id=="body.otio_owned_import":
                 from .body_sequence_otio import import_verified_sequence_otio
                 imported=import_verified_sequence_otio(p,root,root/"vault")
