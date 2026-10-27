@@ -20,6 +20,7 @@ from .body_color_pipeline import _actual_bt709_source
 from .media_vault import MediaVault, sha256_file
 from .precision_retime import _source_timebase
 from .delivery_audit import _probe_details
+from .composite_mix import _decoded_source_duration
 
 
 def _integer(v, label, low, high):
@@ -45,8 +46,9 @@ def validate_mlt_edit(plan,workspace,vault_root):
     """Verify every media byte and frame position before creating a project."""
     root=Path(workspace).resolve()
     vault=MediaVault(vault_root)
-    if not isinstance(plan,dict) or set(plan)!={"frame_rate","frame_size","tracks"}:
-        raise ValueError("MLT project needs frame_rate/frame_size/tracks only")
+    if (not isinstance(plan,dict) or not {"frame_rate","frame_size","tracks"}.issubset(plan)
+            or set(plan)-{"frame_rate","frame_size","tracks","audio_tracks"}):
+        raise ValueError("MLT project needs original frame, picture and optional sound tracks")
     fps=_rate(plan["frame_rate"])
     frame_size=plan["frame_size"]
     if not isinstance(frame_size,dict) or set(frame_size)!={"width","height"}:
@@ -110,8 +112,59 @@ def validate_mlt_edit(plan,workspace,vault_root):
         resolved.append(checked)
     if total>1000000 or Fraction(total,1)/fps>24*3600:
         raise ValueError("MLT project exceeds explicit host frame/time budget")
+    sound_tracks=plan.get("audio_tracks",[])
+    if not isinstance(sound_tracks,list) or len(sound_tracks)>4:
+        raise ValueError("MLT authenticated sound supports up to four separate tracks")
+    sound_sources={}
+    resolved_sound=[]
+    for ti,track in enumerate(sound_tracks):
+        if not isinstance(track,dict) or set(track)!={"clips"}:
+            raise ValueError("MLT sound track needs only the authored clips")
+        clips=track["clips"]
+        if not isinstance(clips,list) or not 1<=len(clips)<=128:
+            raise ValueError("MLT sound track requires 1..128 physically recorded clips")
+        end_at=0
+        checked=[]
+        for clip in clips:
+            fields={"source","asset_id","attestation_id","position_frame",
+                    "first_frame","end_frame"}
+            if not isinstance(clip,dict) or set(clip)!=fields:
+                raise ValueError("MLT sound clip requires original ownership, source span and position")
+            asset=clip["asset_id"];att=clip["attestation_id"]
+            if (not isinstance(asset,str) or not isinstance(att,str) or
+                    clip["source"]!="zx7:sha256:"+asset):
+                raise ValueError("MLT sound source has no matching authenticated original identity")
+            record=vault.inspect(asset,attestation_id=att)
+            if record["mime"] not in ("video/mp4","video/quicktime","video/webm"):
+                raise ValueError("Initial MLT original-sound adapter requires authenticated video audio")
+            file=Path(record["path"]).resolve()
+            if not file.is_relative_to(root):
+                raise ValueError("Original sound escapes the owner's studio workspace")
+            pos=_integer(clip["position_frame"],"sound position",0,1000000)
+            first=_integer(clip["first_frame"],"sound in",0,1000000)
+            end=_integer(clip["end_frame"],"sound out",1,1000000)
+            if end<=first or pos<end_at or pos+end-first>total:
+                raise ValueError("Original sound overlaps its track or exceeds the picture timeline")
+            if asset not in sound_sources:
+                probe=_probe_details(file)
+                if not probe["audio_stream_present"]:
+                    raise ValueError("Audio track contains no physically recorded soundtrack")
+                source_fps,frames=_source_timebase(file)
+                if source_fps!=fps:
+                    raise ValueError("Original soundtrack requires the authored rational frame clock")
+                available=_decoded_source_duration(file,"audio")
+                sound_sources[asset]={"path":file,"frames":frames,
+                    "audio_seconds":available,"attestation":att}
+            info=sound_sources[asset]
+            if end>info["frames"] or float(Fraction(end,1)/fps)>info["audio_seconds"]+.015:
+                raise ValueError("Original soundtrack is shorter than the selected source cut")
+            end_at=pos+end-first
+            checked.append({"asset":asset,"source":file,"position":pos,
+                            "first":first,"last":end-1,"end":end_at})
+        resolved_sound.append(checked)
     return {"fps":fps,"width":width,"height":height,"tracks":resolved,
-            "sources":sources,"frames":total}
+            "sources":sources,"frames":total,"audio_tracks":resolved_sound,
+            "audio_sources":sound_sources}
 
 
 def build_mlt_xml(plan,checked):
@@ -131,6 +184,14 @@ def build_mlt_xml(plan,checked):
         _prop(source,"audio_index",-1)
         _prop(source,"zx7.original_sha256",digest)
         _prop(source,"zx7.attestation_id",rec["attestation"])
+    for i,(digest,rec) in enumerate(checked["audio_sources"].items()):
+        sound=ET.SubElement(root,"producer",{"id":"audio-source-"+digest[:24]})
+        _prop(sound,"mlt_service","avformat")
+        _prop(sound,"resource",rec["path"])
+        _prop(sound,"video_index",-1)
+        _prop(sound,"audio_index",0)
+        _prop(sound,"zx7.original_sha256",digest)
+        _prop(sound,"zx7.attestation_id",rec["attestation"])
     for ti,clips in enumerate(checked["tracks"]):
         playlist=ET.SubElement(root,"playlist",{"id":f"track-{ti}"})
         position=0
@@ -142,11 +203,24 @@ def build_mlt_xml(plan,checked):
             position=clip["end"]
         if position<checked["frames"]:
             ET.SubElement(playlist,"blank",{"length":str(checked["frames"]-position)})
+    for ti,clips in enumerate(checked["audio_tracks"]):
+        playlist=ET.SubElement(root,"playlist",{"id":f"audio-track-{ti}"})
+        position=0
+        for clip in clips:
+            blank=clip["position"]-position
+            if blank:ET.SubElement(playlist,"blank",{"length":str(blank)})
+            ET.SubElement(playlist,"entry",{"producer":"audio-source-"+clip["asset"][:24],
+                "in":str(clip["first"]),"out":str(clip["last"])})
+            position=clip["end"]
+        if position<checked["frames"]:
+            ET.SubElement(playlist,"blank",{"length":str(checked["frames"]-position)})
     tractor=ET.SubElement(root,"tractor",{"id":"zx7-tractor","in":"0",
                                            "out":str(checked["frames"]-1)})
     multitrack=ET.SubElement(tractor,"multitrack")
     for ti in range(len(checked["tracks"])):
         ET.SubElement(multitrack,"track",{"producer":f"track-{ti}","hide":"audio"})
+    for ti in range(len(checked["audio_tracks"])):
+        ET.SubElement(multitrack,"track",{"producer":f"audio-track-{ti}","hide":"video"})
     for ti in range(1,len(checked["tracks"])):
         transition=ET.SubElement(tractor,"transition",{
             "in":"0","out":str(checked["frames"]-1)})
@@ -156,6 +230,15 @@ def build_mlt_xml(plan,checked):
         # compositing. The actual FFmpeg-decode test guards this distinction.
         _prop(transition,"mlt_service","qtblend")
         _prop(transition,"compositing",0)
+        _prop(transition,"always_active",1)
+    for ti in range(len(checked["audio_tracks"])):
+        transition=ET.SubElement(tractor,"transition",{
+            "in":"0","out":str(checked["frames"]-1)})
+        _prop(transition,"a_track",0)
+        _prop(transition,"b_track",len(checked["tracks"])+ti)
+        _prop(transition,"mlt_service","mix")
+        _prop(transition,"start",1)
+        _prop(transition,"sum",1)
         _prop(transition,"always_active",1)
     ET.indent(root,space="  ")
     return ET.tostring(root,encoding="utf-8",xml_declaration=True)+b"\n"
