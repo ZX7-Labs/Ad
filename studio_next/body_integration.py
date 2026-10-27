@@ -173,8 +173,8 @@ def _trusted_body_revision(tool_id):
         "body.timeline_revision":["body_timeline_revision.py","body_sequence_cuts.py","precision_retime.py","media_vault.py","body_color_pipeline.py","composite_mix.py","production_qc.py"],
         "body.otio":["editorial_interchange.py"],
         "body.otio_owned_export":["body_sequence_otio.py","body_sequence_cuts.py","media_vault.py","precision_retime.py","body_color_pipeline.py","composite_mix.py"],
-        "body.mlt_owned_export":["body_mlt_editor.py","media_vault.py","precision_retime.py","body_color_pipeline.py","delivery_audit.py"],
-        "body.mlt_owned_render":["body_mlt_render.py","body_mlt_editor.py","media_vault.py","precision_retime.py","production_qc.py"],
+        "body.mlt_owned_export":["body_mlt_editor.py","media_vault.py","precision_retime.py","body_color_pipeline.py","delivery_audit.py","composite_mix.py"],
+        "body.mlt_owned_render":["body_mlt_render.py","body_mlt_editor.py","media_vault.py","precision_retime.py","production_qc.py","composite_mix.py"],
         "body.otio_owned_import":["body_sequence_otio.py","body_sequence_cuts.py","media_vault.py","precision_retime.py","body_color_pipeline.py","composite_mix.py"],
         "body.vector_png":["creative_asset_ops.py"],
         "body.film_thumbnail":["creative_asset_ops.py","delivery_audit.py"],
@@ -873,10 +873,10 @@ def body_catalog(workspace,*,vault_root=None):
         "write",bool(otio_ready and video_io),["edit","out"],import_strict_cut)
     add("body.mlt_owned_export","native MLT multi-track editable video-layer project",
         "Rights-attested video overlays, original CFR source in/out points, explicit placed frame gaps and active native MLT compositing. "
-        "Host-local XML project; sound is deliberately silent, no generative art, transition/effect/portability or universal NLE claim.",
+        "Host-local XML project with explicit video mute and optional actual owner-attested audio tracks; no generated music, effects, relinking or universal NLE claim.",
         "write",bool(shutil.which("melt") and video_io),["plan","out"],export_native_owned_mlt)
     add("body.mlt_owned_render","native MLT multi-track video-only MP4 rendering",
-        "Render exact SHA-attested MLT project to original-clock decoded H264 movie. Video layers only, no soundtrack; "
+        "Render exact SHA-attested MLT project to decoded H264 with explicit original-audio or picture-only delivery; "
         "both project and every original source are verified again at publish, no arbitrary command or plugin inputs.",
         "write",bool(shutil.which("melt") and video_io),["edit","out"],render_native_owned_mlt)
     add("body.vector_png","original vector art and thumbnail","Inkscape headless real vector to PNG",
