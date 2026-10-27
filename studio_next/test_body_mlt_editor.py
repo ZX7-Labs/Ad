@@ -116,6 +116,11 @@ class VerifiedMLTEditorialTests(unittest.TestCase):
     @unittest.skipUnless(shutil.which("melt"),"Real MLT QtBlend runtime required")
     def test_original_native_multiply_screen_and_overlay_have_measured_pixel_effects(self):
         from studio_next.body_integration import body_catalog
+        installed=subprocess.run(["melt","-query","transitions"],
+            capture_output=True,text=True,timeout=25,check=True)
+        self.assertIn("qtblend",installed.stdout,
+            "The installed native MLT editor does not advertise the qtblend service; "
+            "an XML-only effect must never claim working compositing")
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp);plan,source=self._case(root)
             body=body_catalog(root)
