@@ -3,7 +3,8 @@
 Executes only a previously verified ZX7 MLT project. The model may select the
 project and output name, but cannot provide MLT XML, FFmpeg options, effects,
 shell arguments, executable code, arbitrary media URLs or new rights grants.
-No sound mixing: the registered MLT project explicitly mutes all source audio.
+Recorded original sound is mixed only through separately verified audio tracks;
+the frame-accurate native compositor must be physically installed and tested.
 """
 from __future__ import annotations
 
@@ -24,8 +25,25 @@ from .delivery_audit import _probe_details
 from .body_color_pipeline import _actual_bt709_source
 
 
+def _require_native_frei0r_compositing():
+    """Refuse to advertise a blend mode when its actual MLT plugin is missing.
+
+    MLT may silently fall back to a source-over picture for an unrecognized
+    transition, so a successfully encoded MP4 is not sufficient evidence.
+    """
+    try:
+        check=subprocess.run(["melt","-query","transitions"],
+            capture_output=True,text=True,timeout=40)
+    except (OSError,subprocess.SubprocessError) as exc:
+        raise RuntimeError("Unable to inspect installed original-source Cairo compositor") from exc
+    if check.returncode or "frei0r.cairoblend" not in check.stdout:
+        raise RuntimeError(
+            "Original-source multiply/screen/overlay require installed native "
+            "MLT Frei0r Cairo blending; arbitrary source-over substitution is forbidden")
+
+
 def render_owned_mlt(edit,workspace,output):
-    """Publish decoded, exact-clock original muted-video composition only."""
+    """Publish a fully decoded, measured original-source video and sound mix."""
     root=Path(workspace).resolve()
     source=Path(edit).absolute()
     dest=Path(output).absolute()
@@ -44,6 +62,10 @@ def render_owned_mlt(edit,workspace,output):
     before=sha256_file(source)
     verified=verify_owned_mlt_project(source)
     xml=ET.fromstring(source.read_bytes())
+    if any(any(p.get("name")=="mlt_service" and
+            p.text=="frei0r.cairoblend" for p in transition.findall("property"))
+            for transition in xml.findall("./tractor/transition")):
+        _require_native_frei0r_compositing()
     profile=xml.find("profile")
     tractor=xml.find("tractor")
     if profile is None or tractor is None:
