@@ -53,9 +53,10 @@ def _single_recorded_audio_stream(path):
     except (OSError,ValueError,subprocess.CalledProcessError,
             subprocess.TimeoutExpired) as exc:
         raise ValueError("Recorded soundtrack cannot be physically probed") from exc
-    if len(streams)!=1:
+    if (len(streams)!=1 or type(streams[0].get("index")) is not int or
+            not 0<=streams[0]["index"]<=64):
         raise ValueError("MLT source must contain one unambiguous actual original audio stream")
-    return True
+    return streams[0]["index"]
 
 
 def validate_mlt_edit(plan,workspace,vault_root):
@@ -165,13 +166,14 @@ def validate_mlt_edit(plan,workspace,vault_root):
                 probe=_probe_details(file)
                 if not probe["audio_stream_present"]:
                     raise ValueError("Audio track contains no physically recorded soundtrack")
-                _single_recorded_audio_stream(file)
+                actual_audio_index=_single_recorded_audio_stream(file)
                 source_fps,frames=_source_timebase(file)
                 if source_fps!=fps:
                     raise ValueError("Original soundtrack requires the authored rational frame clock")
                 available=_decoded_source_duration(file,"audio")
                 sound_sources[asset]={"path":file,"frames":frames,
-                    "audio_seconds":available,"attestation":att}
+                    "audio_seconds":available,"attestation":att,
+                    "audio_index":actual_audio_index}
             info=sound_sources[asset]
             if end>info["frames"] or float(Fraction(end,1)/fps)>info["audio_seconds"]+.015:
                 raise ValueError("Original soundtrack is shorter than the selected source cut")
@@ -206,7 +208,10 @@ def build_mlt_xml(plan,checked):
         _prop(sound,"mlt_service","avformat")
         _prop(sound,"resource",rec["path"])
         _prop(sound,"video_index",-1)
-        _prop(sound,"audio_index",0)
+        # MLT audio_index is an absolute container stream index, not the
+        # ordinal among audio streams. MP4 usually has video at 0 and sound at 1.
+        # This value comes from ffprobe of the custody-verified original.
+        _prop(sound,"audio_index",rec["audio_index"])
         _prop(sound,"zx7.original_sha256",digest)
         _prop(sound,"zx7.attestation_id",rec["attestation"])
     for ti,clips in enumerate(checked["tracks"]):
@@ -371,8 +376,13 @@ def _verify_exact_mlt_xml_tree(root):
             producer.get("id")!=("audio-source-" if is_sound else "source-")+digest[:24]):
             raise ValueError("MLT native producer is not a verified original video/audio CAS")
         if is_sound:
-            if props["audio_index"]!="0" or props["video_index"]!="-1":
-                raise ValueError("MLT soundtrack must carry only the first recorded original audio")
+            if props["video_index"]!="-1":
+                raise ValueError("MLT soundtrack must disable the original video stream")
+            try:audio_index=int(props["audio_index"])
+            except (TypeError,ValueError) as exc:
+                raise ValueError("MLT original sound stream index invalid") from exc
+            if not 0<=audio_index<=64:
+                raise ValueError("MLT original sound stream index outside measured range")
         elif props["audio_index"]!="-1":
             raise ValueError("MLT visual producer must never leak recorded sound")
     for i,playlist in enumerate(playlists):
@@ -492,6 +502,8 @@ def verify_owned_mlt_project(file_path):
                 raise ValueError("MLT original footage/sound changed its frame clock")
             sources[digest]={"frames":count}
         if is_sound:
+            if props["audio_index"]!=str(_single_recorded_audio_stream(filename)):
+                raise ValueError("MLT original audio index does not match verified file")
             if "sound_seconds" not in sources[digest]:
                 probe=_probe_details(filename)
                 if not probe["audio_stream_present"]:
