@@ -262,9 +262,9 @@ def export_owned_mlt(plan_path,workspace,vault_root,output):
     target.parent.mkdir(parents=True,exist_ok=True)
     # Recheck the project and all referenced physical content before publication.
     if plan_path.read_bytes()!=original:raise ValueError("MLT artistic edit changed during export")
-    for digest,asset in checked["sources"].items():
+    for digest,asset in {**checked["sources"],**checked["audio_sources"]}.items():
         if sha256_file(asset["path"])!=digest:
-            raise ValueError("MLT producer bytes changed during export")
+            raise ValueError("MLT authenticated picture or soundtrack changed during export")
     with tempfile.TemporaryDirectory(dir=target.parent,prefix=".zx7-mlt-") as temp:
         staged=Path(temp)/"complete.mlt"
         with staged.open("xb") as stream:
@@ -272,9 +272,11 @@ def export_owned_mlt(plan_path,workspace,vault_root,output):
         os.link(staged,target)
     return {"path":str(target),"sha256":sha256_file(target),
             "bytes":target.stat().st_size,"tracks":len(checked["tracks"]),
-            "frames":checked["frames"],"source_blobs":len(checked["sources"]),
+            "frames":checked["frames"],
+            "source_blobs":len(set(checked["sources"])|set(checked["audio_sources"])),
+            "original_sound_tracks":len(checked["audio_tracks"]),
             "host_local_project_only":True,
-            "sound_intentionally_silent":True,
+            "sound_intentionally_silent":not bool(checked["audio_tracks"]),
             "complete_nle_or_creative_quality_approved":False}
 
 
