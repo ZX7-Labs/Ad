@@ -2,6 +2,7 @@
 import hashlib
 import json
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -65,6 +66,55 @@ class NativeMotionProjectTests(unittest.TestCase):
             with self.assertRaises(ValueError):require_published_source(source,"body.motion_project")
             with self.assertRaises(ValueError):export_motion_media(source,Path(tmp)/"out.mp4",fps=24)
 
+
+    def test_native_project_publication_does_not_expose_partial_versions(self):
+        from studio_next.body_motion_project import run_motion_project
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);request=root/"request.json";target=root/"original.zxmotion"
+            request.write_text(json.dumps({"version":VERSION,"project":None,"actions":[],"renders":[]}))
+            def blender_runner(argv,**kwargs):
+                out=Path(argv[-1])
+                (out/"project.blend").write_bytes(b"BLENDER-v405"+b"fixture" * 30)
+                (out/"native.json").write_text(json.dumps({
+                    "engine_version":"4.5.15 LTS","renders":[],"actions":[]}))
+                return subprocess.CompletedProcess(argv,0,stdout="Blender mock finished")
+            with patch("studio_next.body_motion_project.shutil.which",return_value="blender"), \
+                 patch("studio_next.body_motion_project.subprocess.check_output",
+                       return_value="Blender 4.5.15 LTS\\n"), \
+                 patch("studio_next.body_motion_project.subprocess.run",
+                       side_effect=blender_runner):
+                result=run_motion_project(request,root,target)
+            self.assertEqual(result["engine_version"],"4.5.15 LTS")
+            self.assertEqual(verify_motion_bundle(target)["job_sha256"],
+                             hashlib.sha256(request.read_bytes()).hexdigest())
+            self.assertFalse(list(root.glob(".zx7-native-publish-*")))
+            self.assertTrue(target.is_file())
+
+    def test_native_project_publication_partial_copy_fails_without_visible_target(self):
+        from studio_next.body_motion_project import run_motion_project
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);request=root/"request.json";target=root/"film.zxmotion"
+            request.write_text(json.dumps({"version":VERSION,"project":None,"actions":[],"renders":[]}))
+            def blender_runner(argv,**kwargs):
+                out=Path(argv[-1])
+                (out/"project.blend").write_bytes(b"BLENDER-v405"+b"fixture" * 30)
+                (out/"native.json").write_text(json.dumps({
+                    "engine_version":"4.5.15 LTS","renders":[]}))
+                return subprocess.CompletedProcess(argv,0,stdout="Blender mock finished")
+            def broken_copy(source,dest,**kwargs):
+                dest.write(b"only a partial archive")
+                raise OSError("interrupted native publication")
+            with patch("studio_next.body_motion_project.shutil.which",return_value="blender"), \
+                 patch("studio_next.body_motion_project.subprocess.check_output",
+                       return_value="Blender 4.5.15 LTS\\n"), \
+                 patch("studio_next.body_motion_project.subprocess.run",
+                       side_effect=blender_runner), \
+                 patch("studio_next.body_motion_project.shutil.copyfileobj",
+                       side_effect=broken_copy):
+                with self.assertRaisesRegex(OSError,"interrupted native publication"):
+                    run_motion_project(request,root,target)
+            self.assertFalse(target.exists())
+            self.assertFalse(list(root.glob(".zx7-native-publish-*")))
 
     @staticmethod
     def _export_fixture(root):
