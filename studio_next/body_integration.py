@@ -25,6 +25,7 @@ from .registry import ToolCatalog
 from .edit_timeline import render_edit,_path_within
 from .editorial_interchange import export_editable_timeline
 from .body_sequence_otio import export_verified_sequence_otio,import_verified_sequence_otio
+from .body_mlt_editor import export_owned_mlt,verify_owned_mlt_project
 from .creative_asset_ops import rasterize_original_svg,extract_director_selected_frame
 from .native_body_engines import render_original_blender,render_original_motion
 from .body_cgi import render_cgi_plan
@@ -95,6 +96,8 @@ def _witness(file):
         verify_full_temporal_evidence(f)
     elif f.suffix.lower()==".zxmotion":
         verify_motion_bundle(f)
+    elif f.suffix.lower()==".mlt":
+        verify_owned_mlt_project(f)
     return out
 
 
@@ -104,6 +107,9 @@ def _verify_witness(result):
     p=Path(result["path"])
     if not p.is_file() or sha256_file(p)!=result["sha256"]:
         return False
+    if p.suffix.lower()==".mlt":
+        try:return verify_owned_mlt_project(p)["verified_original_sources"]>0
+        except (ValueError,OSError,KeyError):return False
     if p.suffix.lower()==".zxmotion":
         try:return bool(verify_motion_bundle(p)["native"])
         except (ValueError,KeyError,OSError,zipfile.BadZipFile):return False
@@ -166,6 +172,7 @@ def _trusted_body_revision(tool_id):
         "body.timeline_revision":["body_timeline_revision.py","body_sequence_cuts.py","precision_retime.py","media_vault.py","body_color_pipeline.py","composite_mix.py","production_qc.py"],
         "body.otio":["editorial_interchange.py"],
         "body.otio_owned_export":["body_sequence_otio.py","body_sequence_cuts.py","media_vault.py","precision_retime.py","body_color_pipeline.py","composite_mix.py"],
+        "body.mlt_owned_export":["body_mlt_editor.py","media_vault.py","precision_retime.py","body_color_pipeline.py","delivery_audit.py"],
         "body.otio_owned_import":["body_sequence_otio.py","body_sequence_cuts.py","media_vault.py","precision_retime.py","body_color_pipeline.py","composite_mix.py"],
         "body.vector_png":["creative_asset_ops.py"],
         "body.film_thumbnail":["creative_asset_ops.py","delivery_audit.py"],
@@ -206,6 +213,7 @@ def _trusted_body_revision(tool_id):
         "body.timeline_revision":["ffmpeg","ffprobe"],
         "body.otio":[],
         "body.otio_owned_export":["ffmpeg","ffprobe"],
+        "body.mlt_owned_export":["melt","ffmpeg","ffprobe"],
         "body.otio_owned_import":["ffmpeg","ffprobe"],
         "body.vector_png":["inkscape"],
         "body.film_thumbnail":["ffmpeg","ffprobe"],
@@ -633,6 +641,12 @@ def body_catalog(workspace,*,vault_root=None):
             dest,lambda staged:render_original_blender(
                 source,staged,trusted_asset_root=trusted_asset_root))
 
+    def export_native_owned_mlt(inputs):
+        source=_path_within(root,inputs["plan"],exists=True)
+        dest=_body_output(root,inputs["out"],allowed=(".mlt",))
+        return _commit_actual_body_output(dest,
+            lambda staged:export_owned_mlt(source,root,vault.root,staged))
+
     def native_motion(inputs):
         source=_path_within(root,inputs["plan"],exists=True)
         dest=_body_output(root,inputs["out"],allowed=(".zxmotion",))
@@ -848,6 +862,10 @@ def body_catalog(workspace,*,vault_root=None):
     add("body.otio_owned_import","physically verified original audiovisual OTIO revision import",
         "Strict professional edited OTIO into immutable new JSON director-cut plan; rejects lost/relinked audio/rights",
         "write",bool(otio_ready and video_io),["edit","out"],import_strict_cut)
+    add("body.mlt_owned_export","native MLT multi-track editable video-layer project",
+        "Rights-attested video overlays, original CFR source in/out points, explicit placed frame gaps and active native MLT compositing. "
+        "Host-local XML project; sound is deliberately silent, no generative art, transition/effect/portability or universal NLE claim.",
+        "write",bool(shutil.which("melt") and video_io),["plan","out"],export_native_owned_mlt)
     add("body.vector_png","original vector art and thumbnail","Inkscape headless real vector to PNG",
         "write",bool(shutil.which("inkscape") and png_decoder),["source_svg","out","width","height"],vector_art)
     add("body.film_thumbnail","original movie frame artwork","FFmpeg decode actual selected frame",

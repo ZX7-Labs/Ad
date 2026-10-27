@@ -72,6 +72,15 @@ _SCHEMAS = {
             "color_semantics": obj({"input": choice("bt709"), "output": choice("bt709")})}),
         "video_layers": array(_VIDEO), "audio_tracks": array(_AUDIO)})),
     "body.sequence_cuts": ("plan", _SEQUENCE),
+    "body.mlt_owned_export": ("plan", obj({
+        "frame_rate": RATE,
+        "frame_size": obj({"width": SIZE, "height": SIZE}),
+        "tracks": array(obj({"clips": array(obj({
+            "source": TEXT, "asset_id": TEXT, "attestation_id": TEXT,
+            "position_frame": number(0, integer=True),
+            "first_frame": number(0, integer=True), "end_frame": SIZE,
+            "audio": choice("intentional_silence")}), minItems=1, maxItems=128)}),
+            minItems=1, maxItems=8)})),
     "body.timeline_revision": ("plan", _SEQUENCE),
     "body.otio_owned_export": ("plan", _SEQUENCE),
     "body.retime": ("plan", obj({**_SOURCE_FIELDS, "source_fps": RATE,

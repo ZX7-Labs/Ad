@@ -21,6 +21,7 @@ _SOURCE_FIELDS={
     "body.render_edit_owned":("edit",),
     "body.retime":("plan",),
     "body.sequence_cuts":("plan",),
+    "body.mlt_owned_export":("plan",),
     "body.timeline_revision":("plan","operation"),
     "body.otio":("edit",),
     "body.otio_owned_export":("plan",),
