@@ -164,12 +164,20 @@ def _rekey(keys,kind,at,amount,field,retains_after,errors):
     after=[{**k,"frame":k["frame"]-amount} for k in keys if k["frame"]>=end]
     if at==0:
         if not after or after[0]["frame"]!=0:
-            after.insert(0,_bound(keys,end,field,errors))
+            # Surviving first source frame was originally at `end`, but
+            # now lies at native timeline frame zero.
+            boundary=_bound(keys,end,field,errors)
+            boundary["frame"]=0
+            after.insert(0,boundary)
         return after
     if before and before[-1]["frame"]!=at-1:
         before.append(_bound(keys,at-1,field,errors))
     if retains_after and (not after or after[0]["frame"]!=at):
-        after.insert(0,_bound(keys,end,field,errors))
+        # The first preserved post-cut source-frame value is sampled at
+        # ORIGINAL frame `end`, then moved to revised timeline frame `at`.
+        boundary=_bound(keys,end,field,errors)
+        boundary["frame"]=at
+        after.insert(0,boundary)
     return before+after
 
 
