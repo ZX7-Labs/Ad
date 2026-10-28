@@ -13,6 +13,7 @@ import hashlib
 import json
 import math
 import os
+import wave
 import subprocess
 from pathlib import Path
 import tempfile
@@ -20,7 +21,6 @@ import xml.etree.ElementTree as ET
 
 from .body_color_pipeline import _actual_bt709_source
 from .media_vault import MediaVault, sha256_file
-from .pcm_wave import inspect_pcm_wav
 from .precision_retime import _source_timebase
 from .delivery_audit import _probe_details
 from .composite_mix import _decoded_source_duration
@@ -111,6 +111,67 @@ def _verify_native_opacity(value,frames):
     return value
 
 
+
+def _gain_number(value):
+    """dB is a finite typed authored gain, not native filter syntax."""
+    if type(value) not in (int,float) or not math.isfinite(value) or not -96<=value<=24:
+        raise ValueError("MLT sound gain must be a finite -96..24 dB number")
+    return "0" if value==0 else format(float(value),".12g")
+
+
+def _gain_animation(track,frames):
+    if "gain_db" in track and "gain_keyframes" in track:
+        raise ValueError("Choose fixed or animated MLT gain, not both")
+    if "gain_keyframes" not in track:
+        return _gain_number(track.get("gain_db",0))
+    keys=track["gain_keyframes"]
+    if not isinstance(keys,list) or not 2<=len(keys)<=128:
+        raise ValueError("Native gain requires 2..128 director-authored frame keyframes")
+    parts=[]
+    previous=-1
+    for key in keys:
+        if not isinstance(key,dict) or set(key)!={"frame","gain_db"}:
+            raise ValueError("Native gain keyframe must have frame and gain_db only")
+        frame=_integer(key["frame"],"gain frame",0,frames-1)
+        if frame<=previous or (previous==-1 and frame!=0):
+            raise ValueError("Native gain frames must begin at zero and increase strictly")
+        parts.append(str(frame)+"="+_gain_number(key["gain_db"]))
+        previous=frame
+    return ";".join(parts)
+
+
+def _verify_native_gain(value,frames):
+    """Only canonical scalar or linearly keyed dB enters the MLT volume plugin."""
+    if not isinstance(value,str) or not value or len(value)>4096:
+        raise ValueError("Original sound contains invalid native gain")
+    if "=" not in value:
+        try:numeric=float(value)
+        except (TypeError,ValueError) as exc:
+            raise ValueError("Original native gain is not a number") from exc
+        if _gain_number(numeric)!=value:
+            raise ValueError("Original MLT gain is not a canonical finite decibel")
+        return value
+    parts=value.split(";")
+    if not 2<=len(parts)<=128:
+        raise ValueError("Native gain has unapproved animation length")
+    keys=[]
+    for item in parts:
+        if item.count("=")!=1:
+            raise ValueError("Unsupported MLT gain interpolation syntax")
+        frame,value_text=item.split("=")
+        if not frame.isdigit() or str(int(frame))!=frame:
+            raise ValueError("Noncanonical native gain frame")
+        try:numeric=float(value_text)
+        except (ValueError,TypeError) as exc:
+            raise ValueError("Noncanonical native sound gain") from exc
+        if _gain_number(numeric)!=value_text:
+            raise ValueError("Native sound gain is not canonical")
+        keys.append({"frame":int(frame),"gain_db":numeric})
+    if _gain_animation({"gain_keyframes":keys},frames)!=value:
+        raise ValueError("MLT sound animation cannot be reconstructed")
+    return value
+
+
 def _single_recorded_audio_stream(path):
     """Require exactly one recorded original audio stream and supported channels.
 
@@ -142,16 +203,15 @@ def _single_recorded_audio_stream(path):
 
 
 def _audio_only_source_frames(path, fps):
-    """Count exact original integer PCM samples on this project's frame clock.
-
-    Support standard and extensible PCM uniformly on Python 3.11 and later.
-    Do not interpret/convert the owner's original channel layout or codec.
-    """
+    """Count only complete original PCM samples at this project's frame clock."""
     try:
-        source=inspect_pcm_wav(path)
-        frames=(source["frames"]*fps.numerator)//(
-            source["sample_rate"]*fps.denominator)
-    except (OSError,ValueError) as exc:
+        with wave.open(str(path),"rb") as original:
+            samples=original.getnframes()
+            sample_rate=original.getframerate()
+            if samples<=0 or sample_rate<=0:
+                raise ValueError("Original WAV contains no physical PCM samples")
+            frames=(samples*fps.numerator)//(sample_rate*fps.denominator)
+    except (OSError,wave.Error) as exc:
         raise ValueError("Native original WAV frame timing cannot be verified") from exc
     if frames<1:
         raise ValueError("Recorded PCM is shorter than a project frame")
@@ -244,9 +304,12 @@ def validate_mlt_edit(plan,workspace,vault_root):
         raise ValueError("MLT authenticated sound supports up to four separate tracks")
     sound_sources={}
     resolved_sound=[]
+    gains=[]
     for ti,track in enumerate(sound_tracks):
-        if not isinstance(track,dict) or set(track)!={"clips"}:
-            raise ValueError("MLT sound track needs only the authored clips")
+        if (not isinstance(track,dict) or "clips" not in track or
+                set(track)-{"clips","gain_db","gain_keyframes"}):
+            raise ValueError("MLT sound track needs original clips and typed gain controls")
+        gains.append(_gain_animation(track,total))
         clips=track["clips"]
         if not isinstance(clips,list) or not 1<=len(clips)<=128:
             raise ValueError("MLT sound track requires 1..128 physically recorded clips")
@@ -299,7 +362,7 @@ def validate_mlt_edit(plan,workspace,vault_root):
     return {"fps":fps,"width":width,"height":height,"tracks":resolved,
             "sources":sources,"frames":total,"audio_tracks":resolved_sound,
             "audio_sources":sound_sources,"blend_modes":blend_modes,
-            "opacities":opacities}
+            "opacities":opacities,"sound_gains":gains}
 
 
 def build_mlt_xml(plan,checked):
@@ -395,6 +458,17 @@ def build_mlt_xml(plan,checked):
         _prop(transition,"start",1)
         _prop(transition,"sum",1)
         _prop(transition,"always_active",1)
+    # The installed native MLT filter applies the gain to the selected
+    # audio track BEFORE the tractor mix, retaining separate artist buses.
+    # Track is a verified internal index, never native input from a model.
+    for ti,level in enumerate(checked["sound_gains"]):
+        if level=="0":
+            continue
+        filt=ET.SubElement(tractor,"filter",{"in":"0",
+             "out":str(checked["frames"]-1)})
+        _prop(filt,"track",len(checked["tracks"])+ti)
+        _prop(filt,"mlt_service","volume")
+        _prop(filt,"level",level)
     ET.indent(root,space="  ")
     return ET.tostring(root,encoding="utf-8",xml_declaration=True)+b"\n"
 
@@ -547,9 +621,13 @@ def _verify_exact_mlt_xml_tree(root):
         raise ValueError("MLT original tractor frame count invalid") from exc
     if not 1<=frames<=1000000:
         raise ValueError("MLT original film frame budget exceeded")
-    if ([x.tag for x in tractor]!=
-        ["multitrack"]+["transition"]*(picture_tracks-1+sound_count)):
-        raise ValueError("MLT native transitions or sound tracks were altered")
+    transition_count=picture_tracks-1+sound_count
+    kinds=[x.tag for x in tractor]
+    if (kinds[:1+transition_count] !=
+            ["multitrack"]+["transition"]*transition_count or
+            any(tag!="filter" for tag in kinds[1+transition_count:]) or
+            len(kinds)>1+transition_count+sound_count):
+        raise ValueError("MLT native transitions, filters or soundtrack counts altered")
     multitrack=tractor[0]
     if multitrack.attrib or len(multitrack)!=playlist_count:
         raise ValueError("MLT native tractor tracks invalid")
@@ -559,7 +637,7 @@ def _verify_exact_mlt_xml_tree(root):
             {"producer":f"audio-track-{i-picture_tracks}","hide":"video"})
         if item.tag!="track" or item.attrib!=expected or len(item):
             raise ValueError("MLT picture/sound source stream was changed")
-    for i,transition in enumerate(tractor[1:]):
+    for i,transition in enumerate(tractor.findall("transition")):
         if transition.attrib!={"in":"0","out":str(frames-1)}:
             raise ValueError("MLT transition time range altered")
         is_sound=i>=picture_tracks-1
@@ -595,6 +673,23 @@ def _verify_exact_mlt_xml_tree(root):
                 raise ValueError("MLT native visual blending mode is not allowlisted")
         if props!=expected:
             raise ValueError("MLT original mixer/compositor was substituted")
+    prior_sound_track=-1
+    for filt in tractor.findall("filter"):
+        if filt.attrib!={"in":"0","out":str(frames-1)}:
+            raise ValueError("Native sound filter has unauthorized execution span")
+        props=properties(filt,{"track","mlt_service","level"})
+        if props["mlt_service"]!="volume":
+            raise ValueError("Untrusted native filter is never executable")
+        try:track_index=int(props["track"])
+        except (TypeError,ValueError) as exc:
+            raise ValueError("Native audio filter selects invalid track") from exc
+        if (str(track_index)!=props["track"] or
+                not picture_tracks<=track_index<picture_tracks+sound_count or
+                track_index<=prior_sound_track):
+            raise ValueError("MLT audio filter must select each source track once in order")
+        if _verify_native_gain(props["level"],frames)=="0":
+            raise ValueError("Native unity gain filter is not canonical")
+        prior_sound_track=track_index
     for playlist in playlists:
         duration=0
         for item in playlist:
