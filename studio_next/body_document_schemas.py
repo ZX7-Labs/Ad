@@ -90,6 +90,14 @@ _NATIVE_GRADE["description"]=(
     "Nine independently authored RGB channels, each evaluated on the film-frame clock. "
     "All nine controls per keyframe, linear interpolation and last-key hold. "
     "This is not an ACES/scene-linear or HDR-mastering transformation.")
+_NATIVE_TONE=obj({
+    "order":array(choice("contrast","saturation"),minItems=2,maxItems=2),
+    "keyframes":array(obj({"frame":number(0,integer=True),
+        "contrast":number(0,1),"saturation":number(0,1)}),minItems=1,maxItems=128)})
+_NATIVE_TONE["description"]=(
+    "Director-ordered native Frei0r contrast/saturation on attested BT.709 picture. "
+    "Both independently animated filters appear exactly once. The native neutral "
+    "contrast 0.5 and saturation 0.125 preserve the original image. Full film clock.")
 
 _SCHEMAS = {
     "body.visual_graph": ("plan", visual_graph_contract()),
@@ -112,6 +120,7 @@ _SCHEMAS = {
             "transform":_NATIVE_TRANSFORM,
             "mask":_NATIVE_MASK,
             "grade":_NATIVE_GRADE,
+            "tone":_NATIVE_TONE,
             "opacity":number(0,1),
             "opacity_keyframes":array(obj({"frame":number(0,integer=True),
                 "opacity":number(0,1)}),minItems=2,maxItems=128)}),

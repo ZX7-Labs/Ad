@@ -131,7 +131,7 @@ def apply_local_window_action(plan,action):
             after=revised[key][track]
             outcome=_local_one(after,action["kind"],index,delta)
             for field in ("opacity","opacity_keyframes","gain_db","gain_keyframes",
-                          "pan","pan_keyframes","blend_mode","transform","mask","grade"):
+                          "pan","pan_keyframes","blend_mode","transform","mask","grade","tone"):
                 if before.get(field)!=after.get(field):
                     raise AssertionError("Timeline-locked native track effect was changed")
             if len(after["clips"])!=len(before["clips"]):

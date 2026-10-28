@@ -23,6 +23,7 @@ from .body_mlt_editor import (
 from .media_vault import sha256_file
 from .body_mlt_transform import decode_transform,decode_mask
 from .body_mlt_grade import decode_grade
+from .body_mlt_tone import decode_tone,TONE_SERVICE_NAMES
 
 
 def recover_original_mlt_plan(edit, workspace, vault_root):
@@ -131,8 +132,12 @@ def recover_original_mlt_plan(edit, workspace, vault_root):
         },
         "tracks": tracks,
     }
+    tones={}
     for filt in tractor.findall("filter"):
         properties={p.get("name"):p.text for p in filt.findall("property")}
+        if properties["mlt_service"] in TONE_SERVICE_NAMES:
+            tones.setdefault(int(properties["track"]),[]).append(properties)
+            continue
         if properties["mlt_service"] in ("lift_gamma_gain","qtcrop","qtblend"):
             ti=int(properties["track"])
             if properties["mlt_service"]=="lift_gamma_gain":
@@ -140,10 +145,12 @@ def recover_original_mlt_plan(edit, workspace, vault_root):
             elif properties["mlt_service"]=="qtcrop":
                 tracks[ti]["mask"]=decode_mask(properties,frames)
             else:tracks[ti]["transform"]=decode_transform(properties,frames)
+    for ti,properties in tones.items():
+        tracks[ti]["tone"]=decode_tone(properties,frames)
     if sounds:
         for filt in tractor.findall("filter"):
             properties={p.get("name"):p.text for p in filt.findall("property")}
-            if properties["mlt_service"] in ("lift_gamma_gain","qtcrop","qtblend"):
+            if properties["mlt_service"] in ("lift_gamma_gain","qtcrop","qtblend") or properties["mlt_service"] in TONE_SERVICE_NAMES:
                 continue
             ti=int(properties["track"])-count
             if not 0<=ti<len(sounds):
