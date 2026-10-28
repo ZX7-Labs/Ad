@@ -88,8 +88,8 @@ def recover_original_mlt_plan(edit, workspace, vault_root):
                 clip["audio"] = "intentional_silence"
             clips.append(clip)
             at += clip["end_frame"] - clip["first_frame"]
-        if at != frames or not clips:
-            raise ValueError("Original MLT track would lose a required source span")
+        if at != frames or (not clips and (i==0 or is_sound)):
+            raise ValueError("Original MLT bottom picture/sound must retain its source span")
         (sounds if is_sound else tracks).append({"clips": clips})
 
     visual_transitions = tractor.findall("transition")[:max(0, count-1)]
