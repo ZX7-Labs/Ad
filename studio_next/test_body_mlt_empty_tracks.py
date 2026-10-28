@@ -92,8 +92,9 @@ class BlankUpperPictureTracks(unittest.TestCase):
             self.assertEqual([len(x["clips"]) for x in moved["tracks"]],[1,1,0])
             changes=compare_owned_mlt_projects(original,updated,root,root/"vault",
                                                 focus="all")
-            self.assertTrue(changes["source_ownership_preserved"] if
-                "source_ownership_preserved" in changes else changes["rights_attested"])
+            self.assertTrue(changes["exact_source_rights_and_native_roundtrips_rechecked"])
+            self.assertTrue(changes["structural_changes_verified"])
+            self.assertEqual(changes["picture_track_count_after"],3)
             self.assertEqual(original.read_bytes(),untouched)
             cmd=root/"move-back.json";cmd.write_text(json.dumps(place(1,2)))
             undone=root/"source-back-in-original-lane.mlt"
