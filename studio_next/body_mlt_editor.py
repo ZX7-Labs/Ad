@@ -702,7 +702,7 @@ def _verify_exact_mlt_xml_tree(root):
     if (kinds[:1+transition_count] !=
             ["multitrack"]+["transition"]*transition_count or
             any(tag!="filter" for tag in kinds[1+transition_count:]) or
-            len(kinds)>1+transition_count+sound_count):
+            len(kinds)>1+transition_count+2*sound_count):
         raise ValueError("MLT native transitions, filters or soundtrack counts altered")
     multitrack=tractor[0]
     if multitrack.attrib or len(multitrack)!=playlist_count:
@@ -750,22 +750,39 @@ def _verify_exact_mlt_xml_tree(root):
         if props!=expected:
             raise ValueError("MLT original mixer/compositor was substituted")
     prior_sound_track=-1
+    prior_service=-1
     for filt in tractor.findall("filter"):
         if filt.attrib!={"in":"0","out":str(frames-1)}:
-            raise ValueError("Native sound filter has unauthorized execution span")
-        props=properties(filt,{"track","mlt_service","level"})
-        if props["mlt_service"]!="volume":
-            raise ValueError("Untrusted native filter is never executable")
-        try:track_index=int(props["track"])
-        except (TypeError,ValueError) as exc:
-            raise ValueError("Native audio filter selects invalid track") from exc
+            raise ValueError("Native audio filter has unauthorized execution span")
+        controls={p.get("name"):p.text for p in filt.findall("property")}
+        service=controls.get("mlt_service")
+        if service not in ("volume","panner"):
+            raise ValueError("No arbitrary native audio filter may execute")
+        if service=="volume":
+            props=properties(filt,{"track","mlt_service","level"})
+            if _verify_native_gain(props["level"],frames)=="0":
+                raise ValueError("Native unity gain filter is not canonical")
+            service_order=0
+        else:
+            props=properties(filt,{"track","mlt_service",
+                                   "channel","gang","start","split"})
+            if (props["channel"]!="-1" or props["gang"]!="0" or
+                    props["start"]!="0.5" or
+                    _verify_native_pan(props["split"],frames)=="0.5"):
+                raise ValueError("Native stereo balance contains unsafe channel policy")
+            service_order=1
+        try:
+            track_index=int(props["track"])
+        except (ValueError,TypeError) as exc:
+            raise ValueError("Native sound filter selects a malformed track") from exc
         if (str(track_index)!=props["track"] or
                 not picture_tracks<=track_index<picture_tracks+sound_count or
-                track_index<=prior_sound_track):
-            raise ValueError("MLT audio filter must select each source track once in order")
-        if _verify_native_gain(props["level"],frames)=="0":
-            raise ValueError("Native unity gain filter is not canonical")
+                track_index<prior_sound_track or
+                (track_index==prior_sound_track and
+                 service_order<=prior_service)):
+            raise ValueError("Native sound bus filter order or identity changed")
         prior_sound_track=track_index
+        prior_service=service_order
     for playlist in playlists:
         duration=0
         for item in playlist:
