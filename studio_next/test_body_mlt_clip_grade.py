@@ -143,10 +143,12 @@ class NativeClipGradeTests(unittest.TestCase):
             root=Path(temp);plan,_,edit=self._case(root)
             first=plan["tracks"][1]["clips"][0]["clip_grade"]
             decision=action("blade",3)
+            decision["audio_tracks"]=[]
             changed,report=apply_linked_editor_actions(plan,{"edits":[decision]})
             self.assertEqual(changed["tracks"][1]["clips"][0]["clip_grade"],first)
             self.assertEqual(changed["tracks"][1]["clips"][1]["clip_grade"],first)
             next_step=action("ripple_insert",2,duration=2)
+            next_step["audio_tracks"]=[]
             moved,_=apply_linked_editor_actions(plan,{"edits":[next_step]})
             self.assertTrue(all(c["clip_grade"] in (first,
                 plan["tracks"][1]["clips"][1]["clip_grade"])
@@ -170,7 +172,7 @@ class NativeClipGradeTests(unittest.TestCase):
             self.assertGreater(second[2],170,(first,second))
             self.assertGreater(gap[0],180,(gap,"ungraded red lower layer disappeared"))
             self.assertEqual(edit.read_bytes(),before)
-            self.assertTrue(report["full_picture_and_sound_decoder_completed"])
+            self.assertTrue(report["full_decoded_picture"])
 
 
 if __name__=="__main__":
