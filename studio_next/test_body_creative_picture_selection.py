@@ -87,6 +87,17 @@ class CreativePictureSelectionTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,"Previously observed picture identity changed"):
                 self._read("original","frame-0.png")
             self.assertEqual(self.state["pictures"],original)
+            # A stale witness can be deliberately unselected, without
+            # rewriting either the old artifact or independent good frames.
+            unselected=self.coordinator.creative_sessions._dispatch(
+                self.state,self.signal,{"action":"unselect_picture",
+                    "arguments":{"job_id":"original","path":"frame-0.png"},
+                    "reason":"Discard a tampered comparison selection"})
+            self.assertEqual(unselected["selected_picture_count"],1)
+            self.assertTrue(unselected["original_artifacts_untouched"])
+            self.assertEqual(self.state["pictures"],[original[1]])
+            accepted=self._read("revised","frame-3.png")
+            self.assertEqual(accepted["selected_picture_count"],2)
 
 
 if __name__=="__main__":
