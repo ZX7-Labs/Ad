@@ -313,6 +313,7 @@ def render_retime(plan_path,workspace,vault_root,output,*,runner=None,probe=None
             raise RuntimeError("Time-remapped production dropped its explicit soundtrack")
         verified=runner is None and probe is None
         decoded_frame_count=None
+        measured_output_audio_seconds=None
         if verified:
             # Physical delivery has its OWN frame clock. A correct original
             # source fps and a successful encode do not establish that the
@@ -336,6 +337,19 @@ def render_retime(plan_path,workspace,vault_root,output,*,runner=None,probe=None
             if not qa["technical_delivery_verified"] or not qa[
                     "full_picture_and_sound_decoder_completed"]:
                 raise RuntimeError("Actual retimed picture or soundtrack failed entire media decode")
+            # The container's total duration is the *longest* stream. A
+            # successful audio decode with an AAC stream present says nothing
+            # about whether sound actually covers the retimed film. Measure
+            # its own authenticated encoded audio stream, separately from the
+            # complete already-verified picture clock and every-frame decode.
+            measured_output_audio_seconds=_decoded_source_duration(encoded,"audio")
+            picture_seconds=float(Fraction(decoded_frame_count,1)/decoded_rate)
+            # FFmpeg's native AAC packet encoder can delay/pad to 1024-sample
+            # boundaries. Three AAC frames at the authored 48 kHz delivery
+            # clock bound priming/padding and host stream-timestamp rounding.
+            sound_slack=3*1024/48000
+            if abs(measured_output_audio_seconds-picture_seconds)>sound_slack:
+                raise RuntimeError("Encoded original soundtrack duration does not cover the verified retimed picture clock")
         if (sha256_file(original_path)!=original_identity or
                 sha256_file(frozen)!=original_identity or
                 sha256_file(plan_path)!=plan_sha):
@@ -360,6 +374,7 @@ def render_retime(plan_path,workspace,vault_root,output,*,runner=None,probe=None
             "sealed_original_cas_during_decode":True,
             "full_picture_and_sound_decoder_completed":verified,
             "physically_decoded_output_frame_count":decoded_frame_count,
+            "physically_measured_output_audio_stream_seconds":measured_output_audio_seconds,
             "physically_verified_rational_output_clock":(
                 {"numerator":checked["fps"].numerator,
                  "denominator":checked["fps"].denominator} if verified else None),
