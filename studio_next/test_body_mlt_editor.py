@@ -813,10 +813,23 @@ class VerifiedMLTEditorialTests(unittest.TestCase):
                     self.assertGreater(len(sample),3000)
                     return sqrt(sum(x*x for x in sample)/len(sample))
                 return rms
+            with self.assertRaisesRegex(ValueError,"director-authored"):
+                catalog.invoke("body.mlt_owned_render",{
+                    "edit":"physical-gap.mlt","out":"unspecified-white.mp4"},
+                    allowed_access={"write"})
+            self.assertFalse((root/"unspecified-white.mp4").exists())
+            with self.assertRaises(ValueError):
+                catalog.invoke("body.mlt_owned_render",{
+                    "edit":"physical-gap.mlt","out":"untrusted-gap.mp4",
+                    "gap_color":"color:black;exec"},allowed_access={"write"})
+            self.assertFalse((root/"untrusted-gap.mp4").exists())
             for edit,movie in (("physical-before.mlt","before.mp4"),
                                ("physical-gap.mlt","with-gap.mp4")):
-                catalog.invoke("body.mlt_owned_render",{
-                    "edit":edit,"out":movie},allowed_access={"write"})
+                artist_inputs={"edit":edit,"out":movie}
+                if edit=="physical-gap.mlt":
+                    artist_inputs["gap_color"]="#000000"
+                catalog.invoke("body.mlt_owned_render",artist_inputs,
+                               allowed_access={"write"})
             orig=root/"before.mp4"
             altered=root/"with-gap.mp4"
             self.assertGreater(real_frame(orig,2)[0],real_frame(orig,2)[2]+75)
