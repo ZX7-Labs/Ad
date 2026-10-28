@@ -72,6 +72,19 @@ def _require_native_audio_panner():
             "Native director-authored sound position requires installed MLT panner")
 
 
+def _require_native_grade():
+    """Never accept inert RGB grade XML when native MLT lacks its actual filter."""
+    try:
+        check=subprocess.run(["melt","-query","filters"],capture_output=True,
+                             text=True,timeout=40)
+    except (OSError,subprocess.SubprocessError) as exc:
+        raise RuntimeError("Unable to inspect installed native RGB grading engine") from exc
+    installed={line.strip().removeprefix("- ").strip()
+               for line in check.stdout.splitlines()}
+    if check.returncode or "lift_gamma_gain" not in installed:
+        raise RuntimeError("Authored RGB lift/gamma/gain needs installed MLT lift_gamma_gain filter")
+
+
 def _require_native_transform(service="qtblend"):
     """An installed transition is insufficient: geometry needs the Qt filter."""
     try:
@@ -225,6 +238,8 @@ def render_owned_mlt(edit,workspace,output,*,gap_color=None):
     services={p.text for filt in xml.findall("./tractor/filter")
               for p in filt.findall("property")
               if p.get("name")=="mlt_service"}
+    if "lift_gamma_gain" in services:
+        _require_native_grade()
     if "volume" in services:
         _require_native_audio_volume()
     if "panner" in services:
