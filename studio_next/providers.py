@@ -75,8 +75,11 @@ class LocalCreativeModel:
             if evidence is not None and (not isinstance(evidence,list) or len(evidence)!=len(images)):
                 raise ValueError("Picture evidence count differs from actual vision inputs")
             for index,(mime,raw) in enumerate(images):
-                if mime not in ("image/png","image/jpeg") or not isinstance(raw,bytes) or not 100<=len(raw)<=3000000:
-                    raise ValueError("Bounded actual decoded model image required")
+                if mime not in ("image/png","image/jpeg") or not isinstance(raw,bytes) or not 8<=len(raw)<=3000000:
+                    raise ValueError("Bounded original PNG/JPEG image bytes required")
+                if (mime=="image/png" and not raw.startswith(b"\x89PNG\r\n\x1a\n")) or (
+                        mime=="image/jpeg" and not raw.startswith(b"\xff\xd8\xff")):
+                    raise ValueError("Original model image bytes do not match their declared media type")
                 label={"image_index":index,"image_mime":mime}
                 if evidence is not None:
                     meta=evidence[index]
