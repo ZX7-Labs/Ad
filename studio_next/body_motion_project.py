@@ -8,6 +8,8 @@ from __future__ import annotations
 import hashlib
 from functools import lru_cache
 import json
+import os
+from fractions import Fraction
 from pathlib import Path
 import shutil
 import subprocess
@@ -176,15 +178,20 @@ def run_motion_project(job_path,workspace,target,*,timeout=3600):
             for p in output.iterdir():archive.write(p,p.name)
             archive.writestr("receipt.json",json.dumps(report,sort_keys=True))
         verify_motion_bundle(staged)
-        # Exclusive final create; BODY's surrounding publication owns crash recovery.
-        created=False
-        try:
-            with dest.open("xb") as stream,staged.open("rb") as incoming:
-                created=True
+        # Build on the destination filesystem before publishing. In particular,
+        # process death during the copy must not expose a partial .zxmotion.
+        # The hardlink is exclusive: never replace another owner's version.
+        with tempfile.TemporaryDirectory(prefix=".zx7-native-publish-",dir=dest.parent) as publish:
+            prepared=Path(publish)/"complete.zxmotion"
+            with staged.open("rb") as incoming,prepared.open("xb") as stream:
                 shutil.copyfileobj(incoming,stream)
-        except BaseException:
-            if created:dest.unlink(missing_ok=True)
-            raise
+                stream.flush()
+                os.fsync(stream.fileno())
+            if digest(prepared)!=digest(staged):
+                raise ValueError("Native project changed during publication copy")
+            os.link(prepared,dest)
+            from .body_publication import sync_published_file
+            sync_published_file(dest)
     return report
 
 
@@ -192,9 +199,14 @@ def export_motion_media(bundle_path,target,*,fps):
     from .body_publication import require_published_source
     approved=require_published_source(bundle_path,"body.motion_project")
     dest=Path(target)
-    if dest.exists():raise FileExistsError("Native media output already exists")
+    # Even direct callers must never observe a half-encoded published movie.
+    if dest.exists() or dest.is_symlink():raise FileExistsError("Native media output already exists")
     if type(fps) is not int or not 1<=fps<=240:raise ValueError("Explicit integer delivery fps must be 1..240")
-    with tempfile.TemporaryDirectory(prefix="zx7-motion-export-") as tmp:
+    suffix=dest.suffix.lower()
+    if suffix not in (".png",".mp4"):raise ValueError("Native delivery supports png/mp4")
+    # Stage on the output filesystem. Exclusive hardlink publishes only a
+    # completed inode, rejects concurrent writers and needs no overwrite.
+    with tempfile.TemporaryDirectory(prefix=".zx7-motion-export-",dir=dest.parent) as tmp:
         root=Path(tmp)
         sealed=root/"source.zxmotion";shutil.copyfile(bundle_path,sealed)
         if digest(sealed)!=approved:raise ValueError("Native export source changed after provenance verification")
@@ -203,12 +215,42 @@ def export_motion_media(bundle_path,target,*,fps):
         with zipfile.ZipFile(sealed) as bundle:
             for i,frame in enumerate(frames):
                 (root/f"frame_{i:06d}.png").write_bytes(bundle.read(frame["file"]))
-        if dest.suffix.lower()==".png":
+        encoded=root/("encoded"+suffix)
+        if suffix==".png":
             if len(frames)!=1:raise ValueError("PNG delivery requires one authored frame")
-            with dest.open("xb") as out:out.write((root/"frame_000000.png").read_bytes())
-        elif dest.suffix.lower()==".mp4":
+            shutil.copyfile(root/"frame_000000.png",encoded)
+        else:
             subprocess.run(["ffmpeg","-hide_banner","-loglevel","error","-nostdin","-n","-framerate",str(fps),
                 "-i",str(root/"frame_%06d.png"),"-c:v","libx264","-crf","18","-pix_fmt","yuv420p",
-                "-movflags","+faststart",str(dest)],check=True,timeout=3600)
-        else:raise ValueError("Native delivery supports png/mp4")
+                "-movflags","+faststart",str(encoded)],check=True,timeout=3600)
+        if not encoded.is_file() or not encoded.stat().st_size:
+            raise RuntimeError("Native media encoder produced no bytes")
+        # Archive-member SHA checks prove the PNG input, not FFmpeg output.
+        # Physically decode output and remeasure the complete frame clock
+        # BEFORE exposing a new publication inode. No scripted model approval.
+        try:
+            if suffix==".png":
+                subprocess.run(["ffmpeg","-hide_banner","-loglevel","error",
+                    "-xerror","-nostdin","-i",str(encoded),
+                    "-frames:v","1","-f","null","-"],
+                    capture_output=True,check=True,timeout=120)
+            else:
+                from .production_qc import full_decode_inspection
+                from .precision_retime import _verify_decoded_frame_clock
+                report_check=full_decode_inspection(encoded,
+                    expected={"duration_seconds":len(frames)/fps},max_seconds=3600)
+                if not report_check["technical_delivery_verified"]:
+                    raise ValueError("Native encoded movie failed full decoder inspection: "+
+                        repr(report_check["delivery_mismatches"]))
+                _verify_decoded_frame_clock(encoded,Fraction(fps,1),len(frames))
+        except (ValueError,OSError,subprocess.CalledProcessError,
+                subprocess.TimeoutExpired) as exc:
+            raise ValueError("Native media cannot be published without real decode proof") from exc
+        # The encoded inode and final directory entry must both be durable
+        # before an API caller sees a successful native export.
+        with encoded.open("rb") as encoded_file:
+            os.fsync(encoded_file.fileno())
+        os.link(encoded,dest)
+        from .body_publication import sync_published_file
+        sync_published_file(dest)
     return report
