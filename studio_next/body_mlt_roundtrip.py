@@ -143,7 +143,9 @@ def recover_original_mlt_plan(edit, workspace, vault_root):
                     {"frame":int(key.split("=")[0]),
                      name:float(key.split("=")[1])}
                     for key in encoded.split(";")]
-            elif encoded!=neutral:
+            else:
+                # A present neutral filter is an explicit owner edit.
+                # Skipping it would silently erase artist-intent metadata.
                 sounds[ti][name]=float(encoded)
         plan["audio_tracks"] = sounds
     validate_document("body.mlt_owned_export", plan)
