@@ -368,11 +368,13 @@ def validate_mlt_edit(plan,workspace,vault_root):
     sound_sources={}
     resolved_sound=[]
     gains=[]
+    pans=[]
     for ti,track in enumerate(sound_tracks):
         if (not isinstance(track,dict) or "clips" not in track or
-                set(track)-{"clips","gain_db","gain_keyframes"}):
+                set(track)-{"clips","gain_db","gain_keyframes","pan","pan_keyframes"}):
             raise ValueError("MLT sound track needs original clips and typed gain controls")
         gains.append(_gain_animation(track,total))
+        pans.append(_pan_animation(track,total))
         clips=track["clips"]
         if not isinstance(clips,list) or not 1<=len(clips)<=128:
             raise ValueError("MLT sound track requires 1..128 physically recorded clips")
@@ -425,7 +427,7 @@ def validate_mlt_edit(plan,workspace,vault_root):
     return {"fps":fps,"width":width,"height":height,"tracks":resolved,
             "sources":sources,"frames":total,"audio_tracks":resolved_sound,
             "audio_sources":sound_sources,"blend_modes":blend_modes,
-            "opacities":opacities,"sound_gains":gains}
+            "opacities":opacities,"sound_gains":gains,"sound_pans":pans}
 
 
 def build_mlt_xml(plan,checked):
