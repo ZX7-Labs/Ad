@@ -89,6 +89,55 @@ class NativeStereoPanTests(unittest.TestCase):
                                        at(after_curve,moved),delta=1e-9)
         self.assertLess(evidence["largest_interpolated_key_rounding"],1e-8)
 
+    def test_500_random_pan_gain_curves_survive_exact_linked_audio_revisions(self):
+        """Original authored sound levels and spatial position survive source edit algebra."""
+        import random
+        rng=random.Random(20261028)
+        for case in range(500):
+            source={"frame_rate":{"numerator":12,"denominator":1},
+                "frame_size":{"width":64,"height":48},
+                "tracks":[{"clips":[{"source":"zx7:sha256:video",
+                    "asset_id":"video","attestation_id":"video-owner",
+                    "first_frame":0,"end_frame":12,"position_frame":0,
+                    "audio":"intentional_silence"}]}],
+                "audio_tracks":[{"clips":[{"source":"zx7:sha256:sound",
+                    "asset_id":"sound","attestation_id":"sound-owner",
+                    "first_frame":0,"end_frame":12,"position_frame":0}]}]}
+            locations=[0]+sorted(rng.sample(range(1,12),rng.randrange(1,8)))
+            for prop,field,lo,hi in (("pan_keyframes","pan",0,1),
+                                      ("gain_keyframes","gain_db",-80,20)):
+                source["audio_tracks"][0][prop]=[
+                    {"frame":f,field:rng.uniform(lo,hi)} for f in locations]
+            frame=rng.randrange(1,11)
+            amount=rng.randrange(1,8)
+            actions={"edits":[
+                {"kind":"ripple_insert","frame":frame,"frames":amount,
+                 "picture_tracks":[0],"audio_tracks":[0],
+                 "automation":"preserve_source_frame_values"},
+                {"kind":"ripple_delete","frame":frame,"frames":amount,
+                 "picture_tracks":[0],"audio_tracks":[0],
+                 "automation":"preserve_source_frame_values"}]}
+            restored,proof=apply_linked_editor_actions(source,actions)
+            self.assertEqual(len(proof["operations"]),2)
+            self.assertEqual(restored["audio_tracks"][0]["clips"],
+                             source["audio_tracks"][0]["clips"])
+            for key,field in (("pan_keyframes","pan"),
+                              ("gain_keyframes","gain_db")):
+                def sample(keys,at):
+                    if at<=keys[0]["frame"]:return keys[0][field]
+                    for prev,next_ in zip(keys,keys[1:]):
+                        if at<=next_["frame"]:
+                            w=(at-prev["frame"])/(next_["frame"]-prev["frame"])
+                            return prev[field]+w*(next_[field]-prev[field])
+                    return keys[-1][field]
+                actual=restored["audio_tracks"][0]
+                self.assertIn(key,actual)
+                for at in range(12):
+                    self.assertAlmostEqual(
+                        sample(source["audio_tracks"][0][key],at),
+                        sample(actual[key],at),delta=1e-8,
+                        msg=(case,key,frame,amount,at))
+
     @unittest.skipUnless(shutil.which("melt"),
                          "Require actual native MLT and FFmpeg for stereo proof")
     def test_brain_authored_native_pan_moves_real_pcm_channels_and_reverses_exactly(self):
