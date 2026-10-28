@@ -26,6 +26,19 @@ from studio_next.media_vault import MediaVault
 
 
 class NativeStereoPanTests(unittest.TestCase):
+    def test_high_precision_artist_gain_has_exact_binary64_native_roundtrip(self):
+        from studio_next.body_mlt_editor import _gain_number,_verify_native_gain
+        for val in (-96,-18,-12.5,0,0.12345678901234568,
+                    -7.12345678901234,-2.98765432109876,23.999999999999):
+            with self.subTest(authored_gain_db=val):
+                encoded=_gain_number(val)
+                self.assertEqual(float(encoded),float(val))
+                self.assertEqual(_verify_native_gain(encoded,12),encoded)
+        for original,old_spelling in (
+            (-18,"-18"),(-12.5,"-12.5"),(0,"0"),
+            (3.14159265359,"3.14159265359")):
+            self.assertEqual(_gain_number(original),old_spelling)
+
     def test_pan_is_explicit_finite_typed_source_animation_not_filter_syntax(self):
         self.assertEqual(_pan_animation({},12),"0.5")
         self.assertEqual(_pan_animation({"pan":0},12),"0")
@@ -152,7 +165,11 @@ class NativeStereoPanTests(unittest.TestCase):
             for name,controls in (
                 ("omitted",{}),("explicit-gain",{"gain_db":0}),
                 ("explicit-pan",{"pan":0.5}),
-                ("both-neutral",{"gain_db":0,"pan":0.5})):
+                ("both-neutral",{"gain_db":0,"pan":0.5}),
+                ("precise-level",{"gain_db":-7.12345678901234}),
+                ("precise-automation",{"gain_keyframes":[
+                    {"frame":0,"gain_db":-7.12345678901234},
+                    {"frame":11,"gain_db":-2.98765432109876}]})):
                 project={**plan,"audio_tracks":[{"clips":[dict(clip)],
                                                 **controls}]}
                 source.write_text(json.dumps(project))
@@ -165,7 +182,8 @@ class NativeStereoPanTests(unittest.TestCase):
                 report=verify_owned_mlt_project(target)
                 self.assertEqual(report["verified_audio_tracks"],1)
                 self.assertEqual(original_native,target.read_bytes())
-            for name in ("explicit-gain","explicit-pan","both-neutral"):
+            for name in ("explicit-gain","explicit-pan","both-neutral",
+                         "precise-level","precise-automation"):
                 summary=compare_owned_mlt_projects(
                     root/"omitted.mlt",root/(name+".mlt"),
                     root,root/"vault",focus="summary")
