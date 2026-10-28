@@ -65,7 +65,8 @@ def _track_control(track,kind):
             for key in ("blend_mode","opacity","opacity_keyframes")
             if key in track}
     return {key:copy.deepcopy(track[key])
-        for key in ("gain_db","gain_keyframes") if key in track}
+        for key in ("gain_db","gain_keyframes","pan","pan_keyframes")
+        if key in track}
 
 
 def _track_changes(original,updated,kind,index,old_frames,new_frames):
