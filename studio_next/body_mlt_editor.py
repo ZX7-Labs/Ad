@@ -478,6 +478,14 @@ def validate_mlt_edit(plan,workspace,vault_root):
             checked.append({"asset":asset,"source":file,"position":pos,
                             "first":first,"last":end-1,"end":end_at})
         resolved_sound.append(checked)
+    # A later stream probe must not be able to mutate an earlier approved
+    # CAS source and leave this standalone preflight apparently valid.
+    # Amortize the final recheck over each unique actual blob, not clips or
+    # alternate licenses; immutable publication repeats its own final check.
+    for digest,original in {record["asset_id"]:record["path"]
+                            for record in attested_records.values()}.items():
+        if sha256_file(original)!=digest:
+            raise ValueError("Original audiovisual source changed during native preflight")
     return {"fps":fps,"width":width,"height":height,"tracks":resolved,
             "sources":sources,"frames":total,"audio_tracks":resolved_sound,
             "audio_sources":sound_sources,"blend_modes":blend_modes,
