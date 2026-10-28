@@ -527,26 +527,24 @@ def build_mlt_xml(plan,checked):
     # audio track BEFORE the tractor mix, retaining separate artist buses.
     # Track is a verified internal index, never native input from a model.
     for ti,level in enumerate(checked["sound_gains"]):
-        if level=="0":
-            continue
-        filt=ET.SubElement(tractor,"filter",{"in":"0",
-             "out":str(checked["frames"]-1)})
-        _prop(filt,"track",len(checked["tracks"])+ti)
-        _prop(filt,"mlt_service","volume")
-        _prop(filt,"level",level)
-    for ti,position in enumerate(checked["sound_pans"]):
-        if position=="0.5":
-            continue
-        filt=ET.SubElement(tractor,"filter",{"in":"0",
-             "out":str(checked["frames"]-1)})
-        _prop(filt,"track",len(checked["tracks"])+ti)
-        _prop(filt,"mlt_service","panner")
-        _prop(filt,"channel",-1)
-        _prop(filt,"gang",0)
-        # MLT panner only activates animated split when a start property is
-        # also present. Inspect native plugin source, not just plugin docs.
-        _prop(filt,"start",0.5)
-        _prop(filt,"split",position)
+        if level!="0":
+            filt=ET.SubElement(tractor,"filter",{"in":"0",
+                 "out":str(checked["frames"]-1)})
+            _prop(filt,"track",len(checked["tracks"])+ti)
+            _prop(filt,"mlt_service","volume")
+            _prop(filt,"level",level)
+        position=checked["sound_pans"][ti]
+        if position!="0.5":
+            filt=ET.SubElement(tractor,"filter",{"in":"0",
+                 "out":str(checked["frames"]-1)})
+            _prop(filt,"track",len(checked["tracks"])+ti)
+            _prop(filt,"mlt_service","panner")
+            _prop(filt,"channel",-1)
+            _prop(filt,"gang",0)
+            # MLT panner evaluates animated split only if start exists.
+            # We verified this condition in the native C filter source.
+            _prop(filt,"start",0.5)
+            _prop(filt,"split",position)
     ET.indent(root,space="  ")
     return ET.tostring(root,encoding="utf-8",xml_declaration=True)+b"\n"
 
