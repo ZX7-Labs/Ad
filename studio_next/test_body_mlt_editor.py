@@ -537,6 +537,24 @@ class VerifiedMLTEditorialTests(unittest.TestCase):
                 "attestation_id":audio["attestation_id"]})
             with self.assertRaisesRegex(ValueError,"verified source video"):
                 validate_mlt_edit(image_instead,root,root/"vault")
+    def test_native_pcm_wav_multichannel_is_not_silently_downmixed(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);plan,_=self._case(root)
+            wav=root/"six-channel.wav"
+            subprocess.run(["ffmpeg","-hide_banner","-loglevel","error","-nostdin",
+                "-f","lavfi","-i","anullsrc=channel_layout=5.1:sample_rate=48000",
+                "-t","1","-c:a","pcm_s16le","-y",str(wav)],check=True,timeout=30)
+            record=MediaVault(root/"vault").ingest(wav,mime="audio/wav",
+                rights="owner_supplied",source_type="owner_upload",
+                source_id="spatial-wav-source",evidence="Six-channel physically decoded PCM",
+                owner_or_generator="fixture-owner")
+            plan["audio_tracks"]=[{"clips":[{
+                "source":"zx7:sha256:"+record["asset_id"],
+                "asset_id":record["asset_id"],"attestation_id":record["attestation_id"],
+                "position_frame":0,"first_frame":0,"end_frame":12}]}]
+            with self.assertRaisesRegex(ValueError,"silently downmix"):
+                validate_mlt_edit(plan,root,root/"vault")
+
     def test_same_layer_overlap_and_unmeasured_source_range_fail_closed(self):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp);plan,_=self._case(root)
