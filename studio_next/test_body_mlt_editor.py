@@ -740,6 +740,134 @@ class VerifiedMLTEditorialTests(unittest.TestCase):
             self.assertGreater(level(late),measures[0]*.65)
             self.assertEqual((root/"sound-original.mlt").read_bytes(),original)
 
+    @unittest.skipUnless(shutil.which("melt"),
+                         "Actual MLT and FFmpeg need to prove linked visual and audio edits")
+    def test_model_linked_group_ripple_is_real_frame_sound_and_native_undo(self):
+        """Razor/insert/delete must change actually decoded film, then restore it."""
+        from array import array
+        from math import sqrt
+        from studio_next.body_integration import body_catalog
+        from studio_next.body_mlt_linked_actions import apply_linked_editor_actions
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp)
+            authored,plan_file=self._case(root)
+            sound=self._original_sound(root)
+            authored["audio_tracks"]=[{"clips":[{
+                "source":"zx7:sha256:"+sound["asset_id"],
+                "asset_id":sound["asset_id"],
+                "attestation_id":sound["attestation_id"],
+                "position_frame":0,"first_frame":0,"end_frame":12}],
+                "gain_keyframes":[{"frame":0,"gain_db":-12},
+                                  {"frame":11,"gain_db":0}]}]
+            plan_file.write_text(json.dumps(authored))
+            catalog=body_catalog(root)
+            catalog.invoke("body.mlt_owned_export",{
+                "plan":plan_file.name,"out":"physical-before.mlt"},
+                allowed_access={"write"})
+            before=(root/"physical-before.mlt").read_bytes()
+            before_hash=hashlib.sha256(before).hexdigest()
+            from studio_next.body_mlt_roundtrip import recover_original_mlt_plan
+            native_plan=recover_original_mlt_plan(root/"physical-before.mlt",
+                                                  root,root/"vault")["plan"]
+            actions={"edits":[
+                {"kind":"blade","frame":6,
+                 "picture_tracks":[0,1],"audio_tracks":[0]},
+                {"kind":"ripple_insert","frame":6,"frames":3,
+                 "picture_tracks":[0,1],"audio_tracks":[0],
+                 "automation":"preserve_source_frame_values"}]}
+            op=root/"director-linked-edits.json"
+            op.write_text(json.dumps(actions))
+            updated=catalog.invoke("body.mlt_owned_revision",{
+                "edit":"physical-before.mlt","operation":op.name,
+                "out":"physical-gap.mlt"},allowed_access={"write"})
+            self.assertEqual(updated["prior_mlt_sha256"],before_hash)
+            self.assertEqual(updated["linked_editor_evidence"]["operations"][0]["kind"],
+                             "blade")
+            self.assertEqual(updated["linked_editor_evidence"]["operations"][1]["kind"],
+                             "ripple_insert")
+            self.assertEqual(updated["frames"],15)
+            new_native=recover_original_mlt_plan(root/"physical-gap.mlt",
+                                                  root,root/"vault")["plan"]
+            expected,_=apply_linked_editor_actions(native_plan,actions)
+            self.assertEqual(new_native,expected)
+            self.assertEqual((root/"physical-before.mlt").read_bytes(),before)
+
+            def real_frame(path,frame):
+                raw=subprocess.check_output(["ffmpeg","-hide_banner",
+                    "-loglevel","error","-nostdin","-xerror",
+                    "-i",str(path),"-vf",f"select=eq(n\\,{frame})",
+                    "-vsync","0","-frames:v","1","-pix_fmt","rgb24",
+                    "-f","rawvideo","-"],timeout=60)
+                self.assertEqual(len(raw),64*48*3)
+                center=(24*64+32)*3
+                return tuple(raw[center:center+3])
+
+            def pcm_levels(path):
+                raw=subprocess.check_output(["ffmpeg","-hide_banner",
+                    "-loglevel","error","-nostdin","-xerror",
+                    "-i",str(path),"-map","0:a:0","-ac","1",
+                    "-ar","48000","-f","s16le","-"],timeout=60)
+                samples=array("h");samples.frombytes(raw)
+                def rms(lo,hi):
+                    sample=samples[round(lo*48000):round(hi*48000)]
+                    self.assertGreater(len(sample),3000)
+                    return sqrt(sum(x*x for x in sample)/len(sample))
+                return rms
+            for edit,movie in (("physical-before.mlt","before.mp4"),
+                               ("physical-gap.mlt","with-gap.mp4")):
+                catalog.invoke("body.mlt_owned_render",{
+                    "edit":edit,"out":movie},allowed_access={"write"})
+            orig=root/"before.mp4"
+            altered=root/"with-gap.mp4"
+            self.assertGreater(real_frame(orig,2)[0],real_frame(orig,2)[2]+75)
+            self.assertGreater(real_frame(orig,5)[2],real_frame(orig,5)[0]+75)
+            self.assertGreater(real_frame(altered,2)[0],
+                               real_frame(altered,2)[2]+75)
+            self.assertGreater(real_frame(altered,5)[2],
+                               real_frame(altered,5)[0]+75)
+            black=real_frame(altered,7)
+            self.assertLess(max(black),36,black)
+            self.assertGreater(real_frame(altered,10)[2],
+                               real_frame(altered,10)[0]+75)
+            self.assertGreater(real_frame(altered,13)[0],
+                               real_frame(altered,13)[2]+75)
+            sound_gap=pcm_levels(altered)
+            before_level=sound_gap(.20,.30)
+            after_level=sound_gap(.95,1.05)
+            middle_level=sound_gap(.60,.68)
+            self.assertGreater(before_level,50)
+            self.assertGreater(after_level,50)
+            self.assertLess(middle_level,min(before_level,after_level)/8)
+
+            # A new valid native revision removes ONLY the director-inserted
+            # gap. Every original source frame and soundtrack clock reappears.
+            # The earlier accepted revisions remain untouched and readable.
+            delete={"edits":[{
+                "kind":"ripple_delete","frame":6,"frames":3,
+                "picture_tracks":[0,1],"audio_tracks":[0],
+                "automation":"preserve_source_frame_values"}]}
+            (root/"director-ripple-undo.json").write_text(json.dumps(delete))
+            undone=catalog.invoke("body.mlt_owned_revision",{
+                "edit":"physical-gap.mlt",
+                "operation":"director-ripple-undo.json",
+                "out":"physical-restored.mlt"},allowed_access={"write"})
+            self.assertEqual(undone["frames"],12)
+            restored=recover_original_mlt_plan(root/"physical-restored.mlt",
+                                               root,root/"vault")["plan"]
+            from studio_next.test_body_mlt_linked_actions import time_source
+            for key,indices in (("tracks",2),("audio_tracks",1)):
+                for index in range(indices):
+                    self.assertEqual(time_source(restored,key,index),
+                                     time_source(native_plan,key,index))
+            catalog.invoke("body.mlt_owned_render",{
+                "edit":"physical-restored.mlt","out":"after-undo.mp4"},
+                allowed_access={"write"})
+            self.assertGreater(real_frame(root/"after-undo.mp4",7)[2],
+                               real_frame(root/"after-undo.mp4",7)[0]+75)
+            self.assertEqual((root/"physical-before.mlt").read_bytes(),before)
+            self.assertTrue((root/"physical-gap.mlt").is_file())
+            self.assertTrue((root/"physical-restored.mlt").is_file())
+
     def test_native_editor_patch_refuses_raced_commands_before_project_publication(self):
         from unittest.mock import patch
         import studio_next.body_mlt_revision as patch_engine
