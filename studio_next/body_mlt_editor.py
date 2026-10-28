@@ -886,11 +886,22 @@ def verify_owned_mlt_project(file_path):
         if identity in sources.get("ids",set()):
             raise ValueError("Duplicated exact native source producer identity")
         sources.setdefault("ids",set()).add(identity)
-        sources[identity]={"digest":digest,"sound":is_sound}
+        sources[identity]={"digest":digest,"sound":is_sound,
+                           "physical_path":filename}
     verified_sources=[x for k,x in sources.items() if k!="ids" and
                       isinstance(x,dict) and "digest" in x]
     if not verified_sources:
         raise ValueError("No exact rights-authenticated audiovisual MLT media")
+    # A user-modified XML may add a structurally allowlisted panner to an
+    # otherwise legitimate mono bus without going through typed plan export.
+    # Source custody includes the original channel identity: reject this at
+    # native import, review and render, not merely at edit-plan construction.
+    panned_buses=set()
+    for filt in xml.findall("./tractor/filter"):
+        props={p.get("name"):p.text for p in filt.findall("property")}
+        if props.get("mlt_service")=="panner":
+            panned_buses.add(int(props["track"])-structure["picture_tracks"])
+    inspected_stereo=set()
     for ti,playlist in enumerate(xml.findall("playlist")):
         total=0
         sound_track=ti>=structure["picture_tracks"]
@@ -902,6 +913,11 @@ def verify_owned_mlt_project(file_path):
             if pid not in sources or "digest" not in sources[pid]:
                 raise ValueError("MLT timeline references unauthenticated original producer")
             digest=sources[pid]["digest"]
+            if sound_track and (ti-structure["picture_tracks"] in panned_buses
+                    and pid not in inspected_stereo):
+                _single_recorded_audio_stream(sources[pid]["physical_path"],
+                                               require_stereo=True)
+                inspected_stereo.add(pid)
             if sources[pid]["sound"]!=sound_track:
                 raise ValueError("MLT original audio/video stream crossed into another track")
             last=int(entry.get("out"))
