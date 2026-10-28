@@ -13,6 +13,7 @@ import hashlib
 import json
 import math
 import os
+import re
 import subprocess
 from pathlib import Path
 import tempfile
@@ -343,7 +344,8 @@ def validate_mlt_edit(plan,workspace,vault_root):
         for i,clip in enumerate(clips):
             required={"source","asset_id","attestation_id","position_frame",
                       "first_frame","end_frame","audio"}
-            if not isinstance(clip,dict) or set(clip)!=required:
+            if (not isinstance(clip,dict) or not required.issubset(clip)
+                    or set(clip)-required-{"clip_grade"}):
                 raise ValueError("MLT clip has incomplete physical source or placement")
             if clip["audio"]!="intentional_silence":
                 raise ValueError("MLT video-layer bridge cannot preserve/mix original audio; explicit silence only")
@@ -376,8 +378,11 @@ def validate_mlt_edit(plan,workspace,vault_root):
                 raise ValueError("MLT cut exceeds actual decoded media frames")
             end_at=pos+(exclusive-first)
             total=max(total,end_at)
+            clip_grade=(encode_grade(clip["clip_grade"],sources[asset]["frames"])
+                        if "clip_grade" in clip else None)
             checked.append({"asset":asset,"source":source,"position":pos,
-                            "first":first,"last":exclusive-1,"end":end_at})
+                            "first":first,"last":exclusive-1,"end":end_at,
+                            "clip_grade":clip_grade})
         resolved.append(checked)
     if total>1000000 or Fraction(total,1)/fps>24*3600:
         raise ValueError("MLT project exceeds explicit host frame/time budget")
@@ -497,13 +502,34 @@ def build_mlt_xml(plan,checked):
         _prop(sound,"audio_index",rec["audio_index"])
         _prop(sound,"zx7.original_sha256",digest)
         _prop(sound,"zx7.attestation_id",rec["attestation"])
+    # A distinct producer instance owns each clip-specific filter. Attaching
+    # it to a shared digest producer would also grade its other timeline uses;
+    # attaching it to an <entry> is not reliably roundtrippable in MLT XML.
+    for ti,clips in enumerate(checked["tracks"]):
+        for ci,clip in enumerate(clips):
+            if clip["clip_grade"] is None:continue
+            digest=clip["asset"];source_info=checked["sources"][digest]
+            producer=ET.SubElement(root,"producer",{
+                "id":f"clip-source-{ti}-{ci}-"+digest[:24]})
+            _prop(producer,"mlt_service","avformat")
+            _prop(producer,"resource",source_info["path"])
+            _prop(producer,"audio_index",-1)
+            _prop(producer,"zx7.original_sha256",digest)
+            _prop(producer,"zx7.attestation_id",source_info["attestation"])
+            filter_node=ET.SubElement(producer,"filter",{
+                "in":"0","out":str(source_info["frames"]-1)})
+            for name,value in clip["clip_grade"].items():
+                _prop(filter_node,name,value)
     for ti,clips in enumerate(checked["tracks"]):
         playlist=ET.SubElement(root,"playlist",{"id":f"track-{ti}"})
         position=0
-        for clip in clips:
+        for ci,clip in enumerate(clips):
             blank=clip["position"]-position
             if blank:ET.SubElement(playlist,"blank",{"length":str(blank)})
-            ET.SubElement(playlist,"entry",{"producer":"source-"+clip["asset"][:24],
+            source_id=(f"clip-source-{ti}-{ci}-"+clip["asset"][:24]
+                       if clip["clip_grade"] is not None else
+                       "source-"+clip["asset"][:24])
+            ET.SubElement(playlist,"entry",{"producer":source_id,
                 "in":str(clip["first"]),"out":str(clip["last"])})
             position=clip["end"]
         if position<checked["frames"]:
@@ -721,8 +747,12 @@ def _verify_exact_mlt_xml_tree(root):
         profile.get("display_aspect_num")!=str(width) or
         profile.get("display_aspect_den")!=str(height)):
         raise ValueError("MLT output canvas or authored rational clock differs")
-    def properties(node,allow):
+    def properties(node,allow,*,with_filter=False):
         nodes=list(node)
+        if with_filter:
+            if len(nodes)!=len(allow)+1 or nodes[-1].tag!="filter":
+                raise ValueError("A native source-grade producer needs one final color filter")
+            nodes=nodes[:-1]
         if (len(nodes)!=len(allow) or
             any(c.tag!="property" or set(c.attrib)!={"name"} or
                 len(c)!=0 or c.text is None for c in nodes)):
@@ -734,18 +764,40 @@ def _verify_exact_mlt_xml_tree(root):
                 raise ValueError("Unapproved or duplicate MLT native property")
             found[name]=c.text
         return found
+    clip_grade_sources=set()
     for producer in direct[1:1+producer_count]:
         if set(producer.attrib)!={"id"}:
             raise ValueError("MLT producer has unapproved execution attributes")
-        is_sound=producer.get("id","").startswith("audio-source-")
+        name=producer.get("id","")
+        is_sound=name.startswith("audio-source-")
+        is_clip=name.startswith("clip-source-")
         props=properties(producer,{
             "mlt_service","resource","audio_index","zx7.original_sha256",
-            "zx7.attestation_id"}|({"video_index"} if is_sound else set()))
+            "zx7.attestation_id"}|({"video_index"} if is_sound else set()),
+            with_filter=is_clip)
         digest=props["zx7.original_sha256"]
+        clip_identity=(re.fullmatch(r"clip-source-([0-7])-([0-9]{1,3})-([0-9a-f]{24})",name)
+                       if is_clip else None)
+        correct_id=((clip_identity is not None and
+                     clip_identity[3]==digest[:24] and int(clip_identity[2])<128)
+                    if is_clip else
+                    name==("audio-source-" if is_sound else "source-")+digest[:24])
         if (props["mlt_service"]!="avformat" or
-            not isinstance(digest,str) or len(digest)!=64 or
-            producer.get("id")!=("audio-source-" if is_sound else "source-")+digest[:24]):
+            not isinstance(digest,str) or not re.fullmatch(r"[0-9a-f]{64}",digest) or
+            not correct_id):
             raise ValueError("MLT native producer is not a verified original video/audio CAS")
+        if is_clip:
+            filter_node=producer[-1]
+            if (set(filter_node.attrib)!={"in","out"}
+                    or filter_node.attrib["in"]!="0"
+                    or not filter_node.attrib["out"].isdigit()
+                    or not 0<=int(filter_node.attrib["out"])<1000000):
+                raise ValueError("Clip-local native grade has an unbounded original frame clock")
+            color=properties(filter_node,GRADE_NATIVE_FIELDS-{"track"})
+            decode_grade({"track":"0",**color},int(filter_node.get("out"))+1)
+            if name in clip_grade_sources:
+                raise ValueError("Native source-grade producer identity duplicated")
+            clip_grade_sources.add(name)
         if is_sound:
             if props["video_index"]!="-1":
                 raise ValueError("MLT soundtrack must disable the original video stream")
@@ -756,11 +808,13 @@ def _verify_exact_mlt_xml_tree(root):
                 raise ValueError("MLT original sound stream index outside measured range")
         elif props["audio_index"]!="-1":
             raise ValueError("MLT visual producer must never leak recorded sound")
+    used_clip_grades=set()
     for i,playlist in enumerate(playlists):
         expected=(f"track-{i}" if i<picture_tracks
                   else f"audio-track-{i-picture_tracks}")
         if playlist.attrib!={"id":expected}:
             raise ValueError("MLT playlist identity is not an authored track")
+        clip_index=0
         for item in playlist:
             if len(item) or item.text and item.text.strip():
                 raise ValueError("MLT timeline item has unapproved nested service")
@@ -768,14 +822,26 @@ def _verify_exact_mlt_xml_tree(root):
                 if set(item.attrib)!={"producer","in","out"}:
                     raise ValueError("MLT original cut includes unsupported data")
                 selected=item.get("producer","")
-                expected_prefix="source-" if i<picture_tracks else "audio-source-"
-                if not selected.startswith(expected_prefix):
-                    raise ValueError("MLT clip crosses picture and soundtrack custody")
+                if i<picture_tracks:
+                    if selected.startswith("clip-source-"):
+                        prefix=f"clip-source-{i}-{clip_index}-"
+                        if (not selected.startswith(prefix)
+                                or selected not in clip_grade_sources
+                                or selected in used_clip_grades):
+                            raise ValueError("Native source-grade filter belongs to a different original clip")
+                        used_clip_grades.add(selected)
+                    elif not selected.startswith("source-"):
+                        raise ValueError("MLT clip crosses picture and soundtrack custody")
+                    clip_index+=1
+                elif not selected.startswith("audio-source-"):
+                    raise ValueError("Original sound cannot execute a picture grade filter")
             elif item.tag=="blank":
                 if set(item.attrib)!={"length"}:
                     raise ValueError("MLT original gap has unapproved attributes")
             else:
                 raise ValueError("MLT playlist contains unsupported service")
+    if used_clip_grades!=clip_grade_sources:
+        raise ValueError("Unreferenced native producer grade could hide an executable filter")
     tractor=direct[-1]
     if (set(tractor.attrib)!={"id","in","out"} or
         tractor.get("id")!="zx7-tractor" or tractor.get("in")!="0"):
@@ -984,6 +1050,11 @@ def verify_owned_mlt_project(file_path):
                 if measured!=expected_rate:
                     raise ValueError("MLT original footage/sound changed its frame clock")
             sources[digest]={"frames":count}
+        if producer.get("id","").startswith("clip-source-"):
+            filters=producer.findall("filter")
+            if (len(filters)!=1 or
+                    filters[0].attrib!={"in":"0","out":str(sources[digest]["frames"]-1)}):
+                raise ValueError("Native clip-specific grade lost the verified original source clock")
         if is_sound:
             if props["audio_index"]!=str(_single_recorded_audio_stream(filename)):
                 raise ValueError("MLT original audio index does not match verified file")

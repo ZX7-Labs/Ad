@@ -114,7 +114,8 @@ _SCHEMAS = {
             "source": TEXT, "asset_id": TEXT, "attestation_id": TEXT,
             "position_frame": number(0, integer=True),
             "first_frame": number(0, integer=True), "end_frame": SIZE,
-            "audio": choice("intentional_silence")}), minItems=1, maxItems=128)},{
+            "audio": choice("intentional_silence")},{
+            "clip_grade":_NATIVE_GRADE}), minItems=1, maxItems=128)},{
             "blend_mode":choice("normal","multiply","screen","overlay"),
             "transform":_NATIVE_TRANSFORM,
             "mask":_NATIVE_MASK,
