@@ -89,6 +89,32 @@ class RepeatedNativeSourceCustodyTests(unittest.TestCase):
             self.assertEqual(dest.read_bytes(),native)
             self.assertTrue(verify_owned_mlt_project(dest)["verified_original_sources"]>=2)
 
+    def test_standalone_preflight_rehashes_every_original_after_later_source_probes(self):
+        from studio_next import body_mlt_editor
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);plan,_=self._case(root)
+            ids=[track["clips"][0]["asset_id"] for track in plan["tracks"]]
+            file=Path(MediaVault(root/"vault").inspect(
+                ids[0],attestation_id=plan["tracks"][0]["clips"][0]["attestation_id"])["path"])
+            pristine=file.read_bytes()
+            measured=body_mlt_editor._source_timebase
+            fired=[]
+            def swapped_during_probe(source):
+                observed=measured(source)
+                if Path(source).name==ids[1] and not fired:
+                    fired.append(True)
+                    file.write_bytes(b"untrusted replacement during native preflight")
+                return observed
+            with patch("studio_next.body_mlt_editor._source_timebase",
+                       side_effect=swapped_during_probe):
+                try:
+                    with self.assertRaisesRegex(ValueError,"changed during native preflight"):
+                        validate_mlt_edit(plan,root,root/"vault")
+                finally:
+                    file.write_bytes(pristine)
+            self.assertEqual(fired,[True])
+            self.assertEqual(sha256_file(file),ids[0])
+
     def test_alternate_rights_attestation_never_reuses_another_identity(self):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp);plan,_=self._case(root)
