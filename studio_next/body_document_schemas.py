@@ -89,7 +89,10 @@ _SCHEMAS = {
             "source":TEXT,"asset_id":DIGEST,"attestation_id":TEXT,
             "position_frame":number(0,integer=True),
             "first_frame":number(0,integer=True),
-            "end_frame":SIZE}),minItems=1,maxItems=128)}),maxItems=4)})),
+            "end_frame":SIZE}),minItems=1,maxItems=128)},{
+                "gain_db":number(-96,24),
+                "gain_keyframes":array(obj({"frame":number(0,integer=True),
+                    "gain_db":number(-96,24)}),minItems=2,maxItems=128)}),maxItems=4)})),
     "body.timeline_revision": ("plan", _SEQUENCE),
     "body.otio_owned_export": ("plan", _SEQUENCE),
     "body.retime": ("plan", obj({**_SOURCE_FIELDS, "source_fps": RATE,
