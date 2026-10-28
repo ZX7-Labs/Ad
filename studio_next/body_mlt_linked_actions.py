@@ -13,6 +13,8 @@ from __future__ import annotations
 import copy
 import math
 
+from .body_mlt_local_edits import apply_local_window_action
+
 
 def _int(value, name, lower=0, upper=1_000_000):
     if type(value) is not int or not lower <= value <= upper:
@@ -201,9 +203,13 @@ def apply_linked_editor_actions(plan,decision):
     max_precision_loss=0.0
     for action in decision["edits"]:
         if not isinstance(action,dict) or action.get("kind") not in (
-                "blade","ripple_insert","ripple_delete"):
+                "blade","ripple_insert","ripple_delete","roll","slip","slide"):
             raise ValueError("Unsupported linked native editor operation")
         kind=action["kind"]
+        if kind in ("roll","slip","slide"):
+            result,window_evidence=apply_local_window_action(result,action)
+            records.append(window_evidence)
+            continue
         required={"kind","frame","picture_tracks","audio_tracks"}
         if kind!="blade":
             required|={"frames","automation"}
