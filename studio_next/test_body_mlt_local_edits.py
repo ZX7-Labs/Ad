@@ -114,7 +114,7 @@ class NativeClipWindowMathTests(unittest.TestCase):
         rejected=[
             _action("roll",3),
             _action("roll",-4),
-            _action("slide",3),
+            _action("slide",6),
             _action("slide",-4),
             _action("slip",-5),
             _action("slip",0),
