@@ -4,6 +4,7 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/zx7-editor-reference-film.yml"
+      - "examples/creative-evidence/enter-click-20261029.json"
   workflow_dispatch:
 permissions:
   contents: read
@@ -27,7 +28,8 @@ jobs:
       - name: Inspect original authored film contract and native editing ABI
         run: |
           python -m compileall -q studio_next motion_studio
-          python -m unittest studio_next.test_body_mlt_editor studio_next.test_body_mlt_compare studio_next.test_body_mlt_grade studio_next.test_body_tool_contracts -v 2>&1 | tee /tmp/zx7-film-preflight.log
+          set -o pipefail
+          python -m unittest studio_next.test_body_mlt_editor.VerifiedMLTEditorialTests.test_exact_multitrack_placement_and_exclusive_project_publication studio_next.test_body_mlt_editor.VerifiedMLTEditorialTests.test_original_native_multiply_screen_and_overlay_have_measured_pixel_effects studio_next.test_body_tool_contracts -v 2>&1 | tee /tmp/zx7-film-preflight.log
           python - <<'PY'
           import json
           from pathlib import Path
