@@ -286,5 +286,6 @@ def render_owned_mlt(edit,workspace,output,*,gap_color=None):
             "verified_original_audio_tracks":verified["verified_audio_tracks"],
             "full_decoded_picture":True,
             "artist_selected_gap_color":gap_color,
-            "uncovered_picture_intervals_verified":len(gaps),
+            "uncovered_picture_intervals_detected":len(gaps),
+            "sampled_director_gap_pixels_physically_verified":bool(gaps),
             "artistic_quality_approved":False}
