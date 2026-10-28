@@ -190,6 +190,8 @@ def run_motion_project(job_path,workspace,target,*,timeout=3600):
             if digest(prepared)!=digest(staged):
                 raise ValueError("Native project changed during publication copy")
             os.link(prepared,dest)
+            from .body_publication import sync_published_file
+            sync_published_file(dest)
     return report
 
 
@@ -244,5 +246,11 @@ def export_motion_media(bundle_path,target,*,fps):
         except (ValueError,OSError,subprocess.CalledProcessError,
                 subprocess.TimeoutExpired) as exc:
             raise ValueError("Native media cannot be published without real decode proof") from exc
+        # The encoded inode and final directory entry must both be durable
+        # before an API caller sees a successful native export.
+        with encoded.open("rb") as encoded_file:
+            os.fsync(encoded_file.fileno())
         os.link(encoded,dest)
+        from .body_publication import sync_published_file
+        sync_published_file(dest)
     return report
