@@ -106,6 +106,11 @@ class PhysicalRetimeTests(unittest.TestCase):
         self.assertEqual(result["retime_operations"],2)
         self.assertLess(abs(result["duration_seconds"]-2.5),0.14)
         self.assertTrue(result["audio_present"])
+        self.assertTrue(result["verified_physically"])
+        self.assertEqual(result["physically_verified_rational_output_clock"],
+                         {"numerator":24,"denominator":1})
+        self.assertIsInstance(result["physically_decoded_output_frame_count"],int)
+        self.assertLessEqual(abs(result["physically_decoded_output_frame_count"]-60),2)
         meta=_probe_details(self.root/"newly-edited.mp4")
         self.assertEqual((meta["width"],meta["height"]),(160,90))
         self.assertTrue(meta["audio_stream_present"])
@@ -113,6 +118,23 @@ class PhysicalRetimeTests(unittest.TestCase):
         subprocess.run(["ffmpeg","-hide_banner","-loglevel","error","-xerror",
             "-i",str(self.root/"newly-edited.mp4"),"-map","0:v:0",
             "-map","0:a:0","-f","null","-"],check=True,timeout=60)
+
+    def test_forged_output_frame_clock_or_count_cannot_publish_a_new_native_movie(self):
+        from studio_next.precision_retime import _source_timebase as measured
+        for case in ("wrong_rate","dropped_frames"):
+            def malicious_output_clock(path):
+                rate,frames=measured(path)
+                if Path(path).name=="original-speed-revision.mp4":
+                    return ((Fraction(25,1),frames) if case=="wrong_rate"
+                            else (rate,frames-7))
+                return rate,frames
+            dest=self.root/("blocked-"+case+".mp4")
+            with self.subTest(case=case),patch(
+                    "studio_next.precision_retime._source_timebase",
+                    side_effect=malicious_output_clock):
+                with self.assertRaisesRegex(RuntimeError,"rate|frame count"):
+                    render_retime(self.plan_file,self.root,self.root/"vault",dest)
+            self.assertFalse(dest.exists())
 
     def test_actual_motion_compensated_slow_motion_uses_native_flow_and_real_sound(self):
         installed=subprocess.run(["ffmpeg","-hide_banner","-filters"],
