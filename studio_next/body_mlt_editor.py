@@ -28,6 +28,8 @@ from .body_mlt_transform import (
     encode_transform, decode_transform, TRANSFORM_NATIVE_FIELDS,
     encode_mask, decode_mask, MASK_NATIVE_FIELDS)
 from .body_mlt_grade import encode_grade, decode_grade, GRADE_NATIVE_FIELDS
+from .body_mlt_tone import (encode_tone,decode_tone,decode_tone_service,
+                            TONE_SERVICE_NAMES,TONE_NATIVE_FIELDS)
 
 
 def _integer(v, label, low, high):
@@ -325,7 +327,7 @@ def validate_mlt_edit(plan,workspace,vault_root):
     blend_modes=[]
     for ti,track in enumerate(tracks):
         if (not isinstance(track,dict) or "clips" not in track or
-                set(track)-{"clips","blend_mode","opacity","opacity_keyframes","transform","mask","grade"}):
+                set(track)-{"clips","blend_mode","opacity","opacity_keyframes","transform","mask","grade","tone"}):
             raise ValueError("MLT track requires original clips and only a typed blend mode")
         mode=track.get("blend_mode","normal")
         if type(mode) is not str or mode not in _BLEND_MODES:
@@ -388,6 +390,7 @@ def validate_mlt_edit(plan,workspace,vault_root):
                 for t in tracks]
     masks=[encode_mask(t["mask"],total) if "mask" in t else None for t in tracks]
     grades=[encode_grade(t["grade"],total) if "grade" in t else None for t in tracks]
+    tones=[encode_tone(t["tone"],total) if "tone" in t else None for t in tracks]
     sound_tracks=plan.get("audio_tracks",[])
     if not isinstance(sound_tracks,list) or len(sound_tracks)>4:
         raise ValueError("MLT authenticated sound supports up to four separate tracks")
@@ -463,7 +466,7 @@ def validate_mlt_edit(plan,workspace,vault_root):
             "sources":sources,"frames":total,"audio_tracks":resolved_sound,
             "audio_sources":sound_sources,"blend_modes":blend_modes,
             "opacities":opacities,"sound_gains":gains,"sound_pans":pans,
-            "transforms":transforms,"masks":masks,"grades":grades}
+            "transforms":transforms,"masks":masks,"grades":grades,"tones":tones}
 
 
 def build_mlt_xml(plan,checked):
@@ -533,6 +536,13 @@ def build_mlt_xml(plan,checked):
             _prop(filt,"track",ti)
             for name,value in grade.items():
                 _prop(filt,name,value)
+        tone=checked["tones"][ti]
+        if tone is not None:
+            for operation in tone:
+                filt=ET.SubElement(tractor,"filter",{"in":"0","out":str(checked["frames"]-1)})
+                _prop(filt,"track",ti)
+                for name,value in operation.items():
+                    _prop(filt,name,value)
         mask=checked["masks"][ti]
         if mask is not None:
             filt=ET.SubElement(tractor,"filter",{"in":"0","out":str(checked["frames"]-1)})
@@ -780,7 +790,7 @@ def _verify_exact_mlt_xml_tree(root):
     filter_count=kinds.count("filter")
     premix=["multitrack"]+["filter"]*filter_count+["transition"]*transition_count
     legacy=["multitrack"]+["transition"]*transition_count+["filter"]*filter_count
-    if (kinds not in (premix,legacy) or filter_count>picture_tracks+2*(picture_tracks-1)+2*sound_count):
+    if (kinds not in (premix,legacy) or filter_count>3*picture_tracks+2*(picture_tracks-1)+2*sound_count):
         raise ValueError("MLT native transitions, filters or soundtrack counts altered")
     legacy_postmix=bool(filter_count and kinds!=premix)
     multitrack=tractor[0]
@@ -832,35 +842,50 @@ def _verify_exact_mlt_xml_tree(root):
     prior_service=-1
     prior_picture_track=0
     prior_picture_service=-1
+    tone_filters_by_track={}
     audio_started=False
     for filt in tractor.findall("filter"):
         if filt.attrib!={"in":"0","out":str(frames-1)}:
             raise ValueError("Native audio filter has unauthorized execution span")
         controls={p.get("name"):p.text for p in filt.findall("property")}
         service=controls.get("mlt_service")
-        if service in ("lift_gamma_gain","qtcrop","qtblend"):
+        if service in ("lift_gamma_gain","qtcrop","qtblend") or service in TONE_SERVICE_NAMES:
             is_grade=service=="lift_gamma_gain"
+            is_tone=service in TONE_SERVICE_NAMES
             is_mask=service=="qtcrop"
             props=properties(filt,
                 GRADE_NATIVE_FIELDS if is_grade else
+                TONE_NATIVE_FIELDS if is_tone else
                 MASK_NATIVE_FIELDS if is_mask else TRANSFORM_NATIVE_FIELDS)
             if is_grade:
                 decode_grade(props,frames)
                 picture_service=0
+            elif is_tone:
+                decode_tone_service(props,frames)
+                picture_service=1
             elif is_mask:
                 decode_mask(props,frames)
-                picture_service=1
+                picture_service=2
             else:
                 decode_transform(props,frames)
-                picture_service=2
+                picture_service=3
             try:picture_index=int(props["track"])
             except (TypeError,ValueError) as exc:
                 raise ValueError("Native picture filter track is invalid") from exc
+            same_track=picture_index==prior_picture_track
+            prior_tones=tone_filters_by_track.get(picture_index,[])
+            repeat_tone=(is_tone and same_track and
+                picture_service==prior_picture_service and len(prior_tones)==1 and
+                service!=prior_tones[0]["mlt_service"])
             if (str(picture_index)!=props["track"] or audio_started or legacy_postmix
-                    or not (0 if is_grade else 1)<=picture_index<picture_tracks
+                    or not (0 if is_grade or is_tone else 1)<=picture_index<picture_tracks
                     or picture_index<prior_picture_track
-                    or picture_index==prior_picture_track and picture_service<=prior_picture_service):
-                raise ValueError("Native color/geometry filters must precede mixing in canonical picture order")
+                    or same_track and picture_service<=prior_picture_service and not repeat_tone):
+                raise ValueError("Native picture effects must precede mixing in canonical per-track order")
+            if is_tone:
+                tone_filters_by_track.setdefault(picture_index,[]).append(props)
+                if len(tone_filters_by_track[picture_index])>2:
+                    raise ValueError("Native tone cannot repeat an authored effect")
             prior_picture_track=picture_index
             prior_picture_service=picture_service
             continue
@@ -891,6 +916,8 @@ def _verify_exact_mlt_xml_tree(root):
             raise ValueError("Native sound bus filter order or identity changed")
         prior_sound_track=track_index
         prior_service=service_order
+    for pair in tone_filters_by_track.values():
+        decode_tone(pair,frames)
     for playlist in playlists:
         duration=0
         for item in playlist:

@@ -72,6 +72,21 @@ def _require_native_audio_panner():
             "Native director-authored sound position requires installed MLT panner")
 
 
+def _require_native_tone(services):
+    """Reject an unavailable Frei0r effect before making director-visible media."""
+    required={"frei0r.contrast0r","frei0r.saturat0r"} & set(services)
+    if not required:return
+    try:
+        actual=subprocess.run(["melt","-query","filters"],capture_output=True,
+                              text=True,timeout=40)
+    except (OSError,subprocess.SubprocessError) as exc:
+        raise RuntimeError("Cannot inspect original source-tone native effects") from exc
+    installed={row.strip().removeprefix("- ").strip()
+               for row in actual.stdout.splitlines()}
+    if actual.returncode or not required.issubset(installed):
+        raise RuntimeError("Native director-authored contrast/saturation requires installed Frei0r filters")
+
+
 def _require_native_grade():
     """Never accept inert RGB grade XML when native MLT lacks its actual filter."""
     try:
@@ -240,6 +255,8 @@ def render_owned_mlt(edit,workspace,output,*,gap_color=None):
               if p.get("name")=="mlt_service"}
     if "lift_gamma_gain" in services:
         _require_native_grade()
+    if services.intersection({"frei0r.contrast0r","frei0r.saturat0r"}):
+        _require_native_tone(services)
     if "volume" in services:
         _require_native_audio_volume()
     if "panner" in services:

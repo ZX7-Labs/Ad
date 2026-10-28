@@ -274,7 +274,7 @@ def _trusted_body_revision(tool_id):
         # Source geometry and all nine RGB grading curves participate in
         # strict native validation, recovery, rendering and review. A change
         # to either bridge invalidates every affected cached operation.
-        known=[*known,"body_mlt_transform.py","body_mlt_grade.py"]
+        known=[*known,"body_mlt_transform.py","body_mlt_grade.py","body_mlt_tone.py"]
     h=hashlib.sha256()
     for item in ("body_integration.py","body_publication.py","durable_sqlite.py",
                  "body_tool_contracts.py","body_document_schemas.py","registry.py")+tuple(known):
