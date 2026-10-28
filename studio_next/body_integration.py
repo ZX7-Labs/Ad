@@ -180,7 +180,7 @@ def _trusted_body_revision(tool_id):
         "body.mlt_owned_render":["body_mlt_render.py","body_mlt_editor.py","pcm_wave.py","media_vault.py","precision_retime.py","production_qc.py","composite_mix.py"],
         "body.mlt_owned_import":["body_mlt_roundtrip.py","body_mlt_editor.py","body_materials.py","pcm_wave.py","media_vault.py","precision_retime.py","body_color_pipeline.py"],
         "body.mlt_owned_compare":["body_mlt_compare.py","body_mlt_roundtrip.py","body_mlt_editor.py","body_materials.py","pcm_wave.py","media_vault.py","precision_retime.py","body_color_pipeline.py"],
-        "body.mlt_owned_revision":["body_mlt_revision.py","body_mlt_linked_actions.py","body_mlt_local_edits.py","body_project_revision.py","body_mlt_roundtrip.py","body_mlt_editor.py","body_materials.py","pcm_wave.py","media_vault.py","precision_retime.py","body_color_pipeline.py"],
+        "body.mlt_owned_revision":["body_mlt_revision.py","body_mlt_linked_actions.py","body_mlt_local_edits.py","body_mlt_placements.py","body_project_revision.py","body_mlt_roundtrip.py","body_mlt_editor.py","body_materials.py","pcm_wave.py","media_vault.py","precision_retime.py","body_color_pipeline.py"],
         "body.otio_owned_import":["body_sequence_otio.py","body_sequence_cuts.py","media_vault.py","precision_retime.py","body_color_pipeline.py","composite_mix.py"],
         "body.vector_png":["creative_asset_ops.py"],
         "body.film_thumbnail":["creative_asset_ops.py","delivery_audit.py"],
@@ -915,7 +915,7 @@ def body_catalog(workspace,*,vault_root=None):
         "Read both actual immutable native MLT projects, revalidate each original media right, fully reconstruct both typed graphs without loss and report exactly moved, inserted, replaced or preserved source-frame spans and authored effect/clip partition changes. Never claim pixel equivalence or artistic quality from timeline structure.",
         "read",video_io,["before_edit","after_edit"],compare_native_owned_mlt)
     add("body.mlt_owned_revision","non-destructive native MLT multitrack visual and sound revision",
-        "Apply original source-attested JSON patches, linked razor/ripple, or signed-frame roll/slip/slide across director-selected native picture/audio clips. Preserve exact source identities; explicitly choose timeline-locked audio/opacity keyframes for local source-window edits, then prove native XML roundtrip, rights, physical clocks and atomic new-project publication. No complete NLE claim.",
+        "Execute author-authored source-attested JSON patches, group razor/ripple, signed-frame roll/slip/slide, or atomic cross-track picture/sound placements with explicit destination effect policy and no hidden ripple. Preserve every original source, media rights, frame clock and prior edit; prove native XML roundtrip and immutable publication. No complete NLE claim.",
         "write",bool(shutil.which("melt") and video_io),["edit","operation","out"],revise_native_owned_mlt)
     add("body.mlt_owned_render","native MLT multitrack audiovisual MP4 rendering",
         "Render fully rights-verified native MLT original picture and audio with exact rational clock; "
