@@ -714,6 +714,163 @@ class VerifiedMLTEditorialTests(unittest.TestCase):
             self.assertGreater(old_late[2],old_late[0]+75)
             self.assertGreater(new_late[0],new_late[2]+75)
 
+    def test_native_sound_gain_keyframe_preflight_and_malicious_filter_rejection(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);plan,source=self._case(root)
+            recorded=self._original_sound(root)
+            plan["audio_tracks"]=[{"clips":[{
+                "source":"zx7:sha256:"+recorded["asset_id"],
+                "asset_id":recorded["asset_id"],
+                "attestation_id":recorded["attestation_id"],
+                "position_frame":0,"first_frame":0,"end_frame":12}]}]
+            for value in (True,-97,25,float("nan"),float("inf"),"0;rm -rf"):
+                changed=json.loads(json.dumps(plan))
+                changed["audio_tracks"][0]["gain_db"]=value
+                with self.subTest(gain=str(value)),self.assertRaises(ValueError):
+                    validate_mlt_edit(changed,root,root/"vault")
+            for keys in (
+                [{"frame":1,"gain_db":-60},{"frame":8,"gain_db":0}],
+                [{"frame":0,"gain_db":-60},{"frame":0,"gain_db":0}],
+                [{"frame":0,"gain_db":-60},{"frame":12,"gain_db":0}],
+                [{"frame":0,"gain_db":-60},{"frame":8,"gain_db":False}]):
+                changed=json.loads(json.dumps(plan))
+                changed["audio_tracks"][0]["gain_keyframes"]=keys
+                with self.subTest(keys=keys),self.assertRaises(ValueError):
+                    validate_mlt_edit(changed,root,root/"vault")
+            plan["audio_tracks"][0]["gain_db"]=-8
+            self.assertTrue(validate_document("body.mlt_owned_export",plan))
+            source.write_text(json.dumps(plan))
+            edit=root/"typed-gain.mlt"
+            export_owned_mlt(source,root,root/"vault",edit)
+            original=edit.read_text()
+            self.assertIn('<property name="mlt_service">volume</property>',original)
+            self.assertIn('<property name="level">-8</property>',original)
+            self.assertEqual(verify_owned_mlt_project(edit)["verified_audio_tracks"],1)
+            for before,after in (
+                ('<property name="level">-8</property>',
+                 '<property name="level">-8;__import__("os")</property>'),
+                ('<property name="level">-8</property>',
+                 '<property name="level">-100</property>'),
+                ('<property name="track">2</property>',
+                 '<property name="track">0</property>'),
+                ('<property name="mlt_service">volume</property>',
+                 '<property name="mlt_service">arbitrary_sound_plugin</property>')):
+                self.assertIn(before,original)
+                edit.write_text(original.replace(before,after,1))
+                with self.subTest(malicious=after),self.assertRaises(ValueError):
+                    verify_owned_mlt_project(edit)
+            edit.write_text(original)
+
+    @unittest.skipUnless(shutil.which("melt"),"Actual native MLT volume filter needed")
+    def test_original_native_sound_gain_linear_keyframes_change_real_decoded_audio(self):
+        """Measure true relative PCM amplitude, never merely asserted XML gain."""
+        from array import array
+        from math import sqrt
+        from studio_next.body_integration import body_catalog
+        from studio_next.body_mlt_roundtrip import recover_original_mlt_plan
+        availability=subprocess.run(["melt","-query","filters"],
+            capture_output=True,text=True,timeout=30)
+        self.assertIn("volume",availability.stdout)
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);plan,source=self._case(root)
+            recorded=self._original_sound(root)
+            plan["audio_tracks"]=[{"clips":[{
+                "source":"zx7:sha256:"+recorded["asset_id"],
+                "asset_id":recorded["asset_id"],
+                "attestation_id":recorded["attestation_id"],
+                "position_frame":0,"first_frame":0,"end_frame":12}]}]
+            engine=body_catalog(root)
+            observations={}
+            for label,controls in (
+                ("unity",{}),
+                ("attenuated",{"gain_db":-12}),
+                ("animated",{"gain_keyframes":[
+                    {"frame":0,"gain_db":-60},{"frame":5,"gain_db":-60},
+                    {"frame":7,"gain_db":0},{"frame":11,"gain_db":0}]})
+            ):
+                authored=json.loads(json.dumps(plan))
+                authored["audio_tracks"][0].update(controls)
+                self.assertTrue(validate_document("body.mlt_owned_export",authored))
+                source.write_text(json.dumps(authored))
+                native=f"{label}.mlt";movie=f"{label}.mp4"
+                engine.invoke("body.mlt_owned_export",
+                    {"plan":"original.json","out":native},allowed_access={"write"})
+                self.assertEqual(recover_original_mlt_plan(root/native,root,
+                    root/"vault")["plan"],authored)
+                engine.invoke("body.mlt_owned_render",
+                    {"edit":native,"out":movie},allowed_access={"write"})
+                raw=subprocess.check_output(["ffmpeg","-hide_banner",
+                    "-loglevel","error","-nostdin","-xerror",
+                    "-i",str(root/movie),"-map","0:a:0",
+                    "-ar","48000","-ac","1","-f","s16le","-"],timeout=45)
+                samples=array("h");samples.frombytes(raw)
+                self.assertGreater(len(samples),45000)
+                def rms(a,b):
+                    window=samples[int(a*48000):int(b*48000)]
+                    self.assertTrue(window)
+                    return sqrt(sum(v*v for v in window)/len(window))
+                observations[label]=(rms(.18,.28),rms(.74,.84))
+            self.assertGreater(observations["unity"][0],500,observations)
+            self.assertLess(observations["attenuated"][0],
+                observations["unity"][0]*.33,observations)
+            self.assertGreater(observations["attenuated"][0],
+                observations["unity"][0]*.16,observations)
+            self.assertLess(observations["animated"][0],
+                observations["animated"][1]/8,observations)
+            self.assertGreater(observations["animated"][1],
+                observations["unity"][1]*.65,observations)
+
+    @unittest.skipUnless(shutil.which("melt"),"Independent actual MLT sound-bus test required")
+    def test_independent_native_sound_bus_gains_never_attenuate_the_other_bus(self):
+        """Two audio tracks at disjoint times must have independent decoded levels."""
+        from array import array
+        from math import sqrt
+        from studio_next.body_integration import body_catalog
+        from studio_next.body_mlt_roundtrip import recover_original_mlt_plan
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);plan,source=self._case(root)
+            recorded=self._original_sound(root)
+            base={"source":"zx7:sha256:"+recorded["asset_id"],
+                "asset_id":recorded["asset_id"],
+                "attestation_id":recorded["attestation_id"],
+                "first_frame":0,"end_frame":4}
+            first=dict(base,position_frame=0)
+            second=dict(base,position_frame=8)
+            plan["audio_tracks"]=[{"clips":[first]},{"clips":[second]}]
+            engine=body_catalog(root)
+            observed={}
+            for case,attenuated_index in (("first",0),("second",1)):
+                authored=json.loads(json.dumps(plan))
+                authored["audio_tracks"][attenuated_index]["gain_db"]=-60
+                source.write_text(json.dumps(authored))
+                xml=f"independent-{case}.mlt"
+                movie=f"independent-{case}.mp4"
+                engine.invoke("body.mlt_owned_export",
+                    {"plan":"original.json","out":xml},allowed_access={"write"})
+                native=ET.parse(root/xml)
+                filters=native.findall("./tractor/filter")
+                self.assertEqual(len(filters),1)
+                props={p.get("name"):p.text for p in filters[0].findall("property")}
+                self.assertEqual(props["track"],str(2+attenuated_index))
+                self.assertEqual(recover_original_mlt_plan(root/xml,root,
+                    root/"vault")["plan"],authored)
+                engine.invoke("body.mlt_owned_render",
+                    {"edit":xml,"out":movie},allowed_access={"write"})
+                raw=subprocess.check_output(["ffmpeg","-hide_banner",
+                    "-loglevel","error","-nostdin","-xerror",
+                    "-i",str(root/movie),"-map","0:a:0",
+                    "-ar","48000","-ac","1","-f","s16le","-"],timeout=45)
+                pcm=array("h");pcm.frombytes(raw)
+                self.assertGreater(len(pcm),45000)
+                def power(start,end):
+                    values=pcm[int(start*48000):int(end*48000)]
+                    return sqrt(sum(v*v for v in values)/len(values))
+                observed[case]=(power(.10,.20),power(.78,.88))
+            self.assertLess(observed["first"][0],observed["first"][1]/8,observed)
+            self.assertLess(observed["second"][1],observed["second"][0]/8,observed)
+            self.assertGreater(observed["first"][1],500,observed)
+            self.assertGreater(observed["second"][0],500,observed)
+
     def test_same_layer_overlap_and_unmeasured_source_range_fail_closed(self):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp);plan,_=self._case(root)
