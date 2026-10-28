@@ -84,17 +84,32 @@ def _require_native_transform():
         raise RuntimeError("Authored layer geometry requires native MLT qtblend filter")
 
 
-def _uncovered_picture_frames(xml,picture_tracks,frames):
-    """Find the actual timeline intervals with no playable picture source."""
+def _uncovered_picture_frames(xml,picture_tracks,frames,*,opaque_only=False):
+    """Intervals without sources, or without a provably opaque full-canvas layer.
+
+    A playable transformed/faded clip does not cover the entire canvas. Require
+    an authored matte conservatively; do not infer opacity from its filename.
+    """
     spans=[]
-    for playlist in xml.findall("playlist")[:picture_tracks]:
+    transparent=set()
+    if opaque_only:
+        for filt in xml.findall("./tractor/filter"):
+            p={p.get("name"):p.text for p in filt.findall("property")}
+            if p.get("mlt_service") in ("qtblend","qtcrop"):
+                transparent.add(int(p["track"]))
+        for transition in xml.findall("./tractor/transition")[:picture_tracks-1]:
+            p={p.get("name"):p.text for p in transition.findall("property")}
+            if p.get("mlt_service")=="frei0r.cairoblend" and (p["0"]!="1" or p["1"]!="normal"):
+                transparent.add(int(p["b_track"]))
+    for ti,playlist in enumerate(xml.findall("playlist")[:picture_tracks]):
         cursor=0
         for item in playlist:
             if item.tag=="blank":
                 cursor+=int(item.get("length"))
             else:
                 count=int(item.get("out"))-int(item.get("in"))+1
-                spans.append((cursor,cursor+count))
+                if ti not in transparent:
+                    spans.append((cursor,cursor+count))
                 cursor+=count
         if cursor!=frames:
             raise ValueError("Original native picture playlist does not match film clock")
@@ -150,16 +165,30 @@ def _worker_art_directed_matte(xml,frames,gap_color,picture_tracks):
     multitrack.insert(0,ET.Element("track",{
         "producer":"zx7-worker-matte-track","hide":"audio"}))
 
-    # The worker-only matte increments absolute MLT track indices by one.
-    # Compensate EVERY existing transition/filter, including the separately
-    # mixed original sound buses, and preserve their original relative roles.
+    # Compose the entire picture stack AGAINST the matte, including the old
+    # bottom layer. Merely adding a playlist fails when an active upper layer
+    # has alpha while the old bottom track is blank.
+    transitions=tractor.findall("transition")
+    use_cairo=any(any(p.get("name")=="mlt_service" and p.text=="frei0r.cairoblend"
+                     for p in t.findall("property")) for t in transitions)
     for transition in tractor.findall("transition"):
         controls={p.get("name"):p for p in transition.findall("property")}
-        for name in ("a_track","b_track"):
-            item=controls.get(name)
-            if item is None or item.text is None or not item.text.isdecimal():
-                raise ValueError("Trusted original MLT composition index unavailable")
-            item.text=str(int(item.text)+1)
+        if any(name not in controls or controls[name].text is None or
+               not controls[name].text.isdecimal() for name in ("a_track","b_track")):
+            raise ValueError("Trusted original MLT composition index unavailable")
+        controls["a_track"].text="0"
+        controls["b_track"].text=str(int(controls["b_track"].text)+1)
+        if use_cairo and controls["mlt_service"].text=="qtblend":
+            controls["mlt_service"].text="frei0r.cairoblend"
+            transition.remove(controls["compositing"])
+            ET.SubElement(transition,"property",{"name":"0"}).text="1"
+            ET.SubElement(transition,"property",{"name":"1"}).text="normal"
+    first=ET.Element("transition",{"in":"0","out":str(frames-1)})
+    values={"a_track":"0","b_track":"1","always_active":"1"}
+    values.update({"mlt_service":"frei0r.cairoblend","0":"1","1":"normal"}
+                  if use_cairo else {"mlt_service":"qtblend","compositing":"0"})
+    for name,value in values.items():ET.SubElement(first,"property",{"name":name}).text=value
+    tractor.insert(list(tractor).index(transitions[0]) if transitions else len(tractor),first)
     for filt in tractor.findall("filter"):
         controls={p.get("name"):p for p in filt.findall("property")}
         item=controls.get("track")
@@ -227,10 +256,11 @@ def render_owned_mlt(edit,workspace,output,*,gap_color=None):
             or profile.get("display_aspect_den")!=str(height)):
         raise ValueError("MLT declared film dimensions/timebase changed")
     gaps=_uncovered_picture_frames(xml,verified["verified_mlt_tracks"],frames)
+    backing_gaps=_uncovered_picture_frames(xml,verified["verified_mlt_tracks"],frames,opaque_only=True)
     if gap_color is not None and (not isinstance(gap_color,str) or
             not re.fullmatch(r"#[0-9a-fA-F]{6}",gap_color)):
         raise ValueError("Director must author an exact RGB hex gap color, not MLT code")
-    if gaps and gap_color is None:
+    if backing_gaps and gap_color is None:
         raise ValueError("Uncovered picture needs an explicit director-authored delivery gap_color; MLT defaults to an unapproved white test card")
     sources=[]
     for producer in xml.findall("producer"):
@@ -297,7 +327,7 @@ def render_owned_mlt(edit,workspace,output,*,gap_color=None):
             if digest not in frozen:
                 raise ValueError("Sealed MLT references an unauthenticated producer")
             props["resource"].text=str(frozen[digest])
-        if gaps:
+        if backing_gaps:
             _worker_art_directed_matte(worker_xml,frames,gap_color,
                                         verified["verified_mlt_tracks"])
         worker=Path(tmp)/"private-worker.mlt"
@@ -395,5 +425,7 @@ def render_owned_mlt(edit,workspace,output,*,gap_color=None):
             "full_decoded_picture":True,
             "artist_selected_gap_color":gap_color,
             "uncovered_picture_intervals_detected":len(gaps),
+            "unbacked_picture_intervals_detected":len(backing_gaps),
+            "authored_transparent_backing_applied":bool(backing_gaps),
             "sampled_director_gap_pixels_physically_verified":bool(gaps),
             "artistic_quality_approved":False}

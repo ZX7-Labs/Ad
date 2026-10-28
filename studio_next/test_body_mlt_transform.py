@@ -323,5 +323,31 @@ class NativeTransformProjectTests(unittest.TestCase):
                         plan["tracks"][1]["transform"]["keyframes"],t,field),delta=1e-9)
             self.assertEqual((root/"before.mlt").read_bytes(),prior)
 
+    @unittest.skipUnless(shutil.which("melt"),"Native transparent compositing over authored backing required")
+    def test_active_transparent_picture_over_bottom_gap_requires_and_renders_authored_backing(self):
+        from studio_next.body_mlt_render import render_owned_mlt
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);plan,file=original_fixtures.VerifiedMLTEditorialTests()._case(root)
+            original=plan["tracks"][0]["clips"][0]
+            plan["tracks"][0]["clips"]=[{**original,"end_frame":4},
+                {**original,"position_frame":8,"first_frame":4,"end_frame":8}]
+            plan["tracks"][1]["transform"]=transform(geometry(x=16,y=12,width=32,height=24))
+            plan["tracks"][1]["opacity"]=.5
+            file.write_text(json.dumps(plan));native=root/"alpha-gap.mlt"
+            export_owned_mlt(file,root,root/"vault",native);preserved=native.read_bytes()
+            with self.assertRaisesRegex(ValueError,"explicit director-authored"):
+                render_owned_mlt(native,root,root/"unapproved-background.mp4")
+            out=root/"approved-background.mp4"
+            report=render_owned_mlt(native,root,out,gap_color="#204020")
+            self.assertTrue(report["authored_transparent_backing_applied"])
+            self.assertEqual(report["uncovered_picture_intervals_detected"],0)
+            frame=pictures(out)[6]
+            for desired,actual in zip((32,64,32),pixel(frame,2,2)):
+                self.assertAlmostEqual(desired,actual,delta=18)
+            center=pixel(frame,32,24)
+            self.assertGreater(center[2],100);self.assertLess(center[1],50)
+            self.assertGreater(pixel(pictures(out)[2],2,2)[0],200)
+            self.assertEqual(native.read_bytes(),preserved)
+
 
 if __name__=="__main__":unittest.main()

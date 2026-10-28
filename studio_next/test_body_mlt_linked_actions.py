@@ -82,6 +82,7 @@ class LinkedNativeTimelineMathTests(unittest.TestCase):
             trans=ET.SubElement(tractor,"transition")
             ET.SubElement(trans,"property",{"name":"a_track"}).text=str(a)
             ET.SubElement(trans,"property",{"name":"b_track"}).text=str(b)
+            ET.SubElement(trans,"property",{"name":"mlt_service"}).text=("qtblend" if b==1 else "mix")
         filt=ET.SubElement(tractor,"filter")
         ET.SubElement(filt,"property",{"name":"track"}).text="2"
         before=ET.tostring(root)
@@ -105,7 +106,7 @@ class LinkedNativeTimelineMathTests(unittest.TestCase):
             values={p.get("name"):p.text
                     for p in transition.findall("property")}
             seen.append((values["a_track"],values["b_track"]))
-        self.assertEqual(seen,[("1","2"),("1","3")])
+        self.assertEqual(seen,[("0","1"),("0","2"),("0","3")])
         self.assertEqual(changed.find(
             "tractor/filter/property").text,"3")
         for color in ("black","0x000000ff","#ffffff;exec",
