@@ -27,7 +27,7 @@ jobs:
       - name: Inspect original authored film contract and native editing ABI
         run: |
           python -m compileall -q studio_next motion_studio
-          python -m unittest studio_next.test_body_mlt_editor studio_next.test_body_mlt_roundtrip studio_next.test_body_mlt_grade studio_next.test_body_tool_contracts -v 2>&1 | tee /tmp/zx7-film-preflight.log
+          python -m unittest studio_next.test_body_mlt_editor studio_next.test_body_mlt_compare studio_next.test_body_mlt_grade studio_next.test_body_tool_contracts -v 2>&1 | tee /tmp/zx7-film-preflight.log
           python - <<'PY'
           import json
           from pathlib import Path
@@ -115,7 +115,7 @@ jobs:
           export=body.invoke("body.mlt_owned_export",{"plan":"native-cut-plan.json","out":"actual-edit.mlt"},allowed_access={"write"})
           print("NATIVE PROJECT",json.dumps(export,default=str),flush=True)
           recovered=recover_original_mlt_plan(root/"actual-edit.mlt",root,root/"vault")
-          assert recovered==plan, "Original per-scene edit and sound did not roundtrip"
+          assert recovered["lossless_typed_native_roundtrip"] and recovered["plan"]==plan, "Original per-scene edit and sound did not roundtrip"
           rendered=body.invoke("body.mlt_owned_render",{"edit":"actual-edit.mlt","out":"final-film.mp4"},allowed_access={"write"})
           print("NATIVE RENDER",json.dumps(rendered,default=str),flush=True)
           final=root/"final-film.mp4"
