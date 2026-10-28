@@ -41,8 +41,8 @@ def verify_media_container(path,mime):
             observed=_probe_details(path)
             decoded=subprocess.run([
                 "ffmpeg","-hide_banner","-loglevel","error","-nostdin",
-                "-xerror","-i",str(path),"-map","0:v:0",
-                "-map","0:a:0?","-f","null","-"],
+                "-xerror","-i",str(path),"-map","0:v",
+                "-map","0:a?","-f","null","-"],
                 capture_output=True,timeout=3600,check=False)
             if decoded.returncode!=0:
                 raise MediaCustodyError(
