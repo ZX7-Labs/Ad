@@ -132,8 +132,7 @@ class ExactSourceTimecodeTests(unittest.TestCase):
                     format_timecode(0,numerator,denominator,drop_frame=drop)
         for value in (True,False,0.0,-1,2592000,None):
             with self.subTest(frame=value),self.assertRaises(ValueError):
-                format_timecode(value,30000,1001,drop_frame=True) if (
-                    value!=0.0 or type(value)==float) else None
+                format_timecode(value,30000,1001,drop_frame=True)
 
     def test_immutable_receipt_recomputed_from_source_clock_blocks_fake_proof(self):
         a=frame_timecode_receipt(107892,30000,1001,True)
