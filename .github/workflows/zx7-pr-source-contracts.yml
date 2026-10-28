@@ -1,0 +1,45 @@
+name: ZX7 Pull Request Source and Native Project Gate
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "studio_next/**"
+      - "motion_studio/**"
+      - "scripts/**"
+      - "pyproject.toml"
+      - ".github/workflows/zx7-pr-source-contracts.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: zx7-pr-source-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source-and-native-project:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install declared production-contract and audit parser dependencies
+        run: python -m pip install --no-cache-dir '.[production]' 'PyYAML>=6,<7'
+      - name: Install actual native FFmpeg encoder for decoder-backed output check
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg
+      - name: Compile all checked-in Python source
+        run: python -m compileall -q studio_next motion_studio creative_director director_research voice_lab src scripts
+      - name: Validate current Git tracked source inventory
+        run: |
+          python -m unittest discover -s scripts -p 'test_repo_audit.py' -v
+          python scripts/repo_audit.py --out /tmp/zx7-pr-source-inventory.json
+      - name: Verify native project publish, custody and capability contracts
+        run: |
+          python -m unittest \
+            studio_next.test_body_motion_project \
+            studio_next.test_body_host_resources \
+            studio_next.test_body_capabilities \
+            studio_next.test_body_tool_contracts -v
