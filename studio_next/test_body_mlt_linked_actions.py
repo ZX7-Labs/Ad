@@ -157,6 +157,74 @@ class LinkedNativeTimelineMathTests(unittest.TestCase):
                     value_at(after[key][index][prop],new_t,field),
                     delta=1e-9)
 
+    def test_thousands_of_independent_animator_curves_keep_exact_surviving_source_values(self):
+        """Adversarial source-to-timeline property test of keyframe boundaries.
+
+        No aesthetic/speed/gain defaults are supplied: each run has different
+        authored curves and different source frame edit positions.
+        """
+        rng=random.Random(20261028)
+        checked=0
+        for case in range(1400):
+            plan=original_project()
+            # Give both picture and soundtrack full underlying frame ranges.
+            upper=plan["tracks"][1]["clips"][0]
+            upper["position_frame"]=0
+            upper["first_frame"]=0
+            upper["end_frame"]=12
+            sound=plan["audio_tracks"][0]["clips"][0]
+            sound["position_frame"]=0
+            sound["first_frame"]=0
+            sound["end_frame"]=12
+            for track,prop,field,low,high in (
+                (plan["tracks"][1],"opacity_keyframes","opacity",0.0,1.0),
+                (plan["audio_tracks"][0],"gain_keyframes","gain_db",-90.0,20.0)):
+                authored_frames=[0]+sorted(rng.sample(range(1,12),
+                                              rng.randrange(1,8)))
+                track[prop]=[{"frame":frame,field:rng.uniform(low,high)}
+                              for frame in authored_frames]
+            kind=rng.choice(("ripple_insert","ripple_delete"))
+            at=rng.randrange(0,11)
+            amount=rng.randrange(1,13-at)
+            revised,details=apply_linked_editor_actions(plan,{
+                "edits":[action(kind,at,duration=amount)]})
+            self.assertEqual(len(details["operations"]),1)
+            for key,ind in (("tracks",0),("tracks",1),("audio_tracks",0)):
+                original=time_source(plan,key,ind)
+                expected={}
+                for t,src in original.items():
+                    if kind=="ripple_delete" and at<=t<at+amount:
+                        continue
+                    mapped=t if t<at else (
+                        t+amount if kind=="ripple_insert" else t-amount)
+                    expected[mapped]=src
+                self.assertEqual(time_source(revised,key,ind),expected,
+                                 msg=(case,kind,at,amount,key,ind))
+            for key,ind,prop,field in (
+                ("tracks",1,"opacity_keyframes","opacity"),
+                ("audio_tracks",0,"gain_keyframes","gain_db")):
+                previous=plan[key][ind][prop]
+                updated=revised[key][ind]
+                if prop in updated:
+                    new_curve=updated[prop]
+                    self.assertGreaterEqual(len(new_curve),2)
+                    self.assertEqual(new_curve[0]["frame"],0)
+                    self.assertEqual([x["frame"] for x in new_curve],
+                                     sorted({x["frame"] for x in new_curve}))
+                for old_t in time_source(plan,key,ind):
+                    if kind=="ripple_delete" and at<=old_t<at+amount:
+                        continue
+                    new_t=old_t if old_t<at else (
+                        old_t+amount if kind=="ripple_insert" else old_t-amount)
+                    actual=(value_at(updated[prop],new_t,field)
+                            if prop in updated else updated.get(
+                                field,1 if key=="tracks" else 0))
+                    expected=value_at(previous,old_t,field)
+                    self.assertAlmostEqual(expected,actual,delta=1e-8,
+                        msg=(case,kind,at,amount,key,old_t,expected,actual))
+                    checked+=1
+        self.assertGreater(checked,20000)
+
     def test_reject_unsafe_blades_selectors_metadata_and_entire_track_erasure(self):
         prior=original_project()
         exact=copy.deepcopy(prior)
