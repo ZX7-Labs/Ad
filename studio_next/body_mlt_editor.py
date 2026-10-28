@@ -11,6 +11,7 @@ from __future__ import annotations
 from fractions import Fraction
 import hashlib
 import json
+import math
 import os
 import subprocess
 from pathlib import Path
@@ -48,7 +49,65 @@ def _prop(owner,name,value):
 # properties but yields source-over pixels for opaque native media in practice.
 # Never pretend an XML value alone proves a rendered visual operation.
 _BLEND_MODES={"normal":0,"multiply":13,"screen":14,"overlay":15}
-_CAIRO_MODES={"multiply","screen","overlay"}
+_CAIRO_MODES={"normal","multiply","screen","overlay"}
+
+
+def _opacity_number(value):
+    """Strict canonical opacity number: no bool, NaN or injected native syntax."""
+    if type(value) not in (int,float) or not math.isfinite(value) or not 0<=value<=1:
+        raise ValueError("Native layer opacity must be a finite number in [0, 1]")
+    return format(float(value), ".12g")
+
+
+def _opacity_animation(track,frames):
+    """Encode model-authored *absolute timeline-frame* opacity, not a style preset."""
+    if "opacity" in track and "opacity_keyframes" in track:
+        raise ValueError("Choose either fixed or animated MLT opacity, not both")
+    if "opacity_keyframes" not in track:
+        return _opacity_number(track.get("opacity",1))
+    keys=track["opacity_keyframes"]
+    if not isinstance(keys,list) or not 2<=len(keys)<=128:
+        raise ValueError("Native opacity requires 2..128 authored timeline keyframes")
+    parts=[]
+    previous=-1
+    for key in keys:
+        if not isinstance(key,dict) or set(key)!={"frame","opacity"}:
+            raise ValueError("Native opacity keyframe needs frame and opacity only")
+        frame=_integer(key["frame"],"opacity frame",0,frames-1)
+        if frame<=previous or (previous==-1 and frame!=0):
+            raise ValueError("Native opacity frames must start at 0 and increase strictly")
+        parts.append(str(frame)+"="+_opacity_number(key["opacity"]))
+        previous=frame
+    return ";".join(parts)
+
+
+def _verify_native_opacity(value,frames):
+    """Accept only the finite scalar/linear frame syntax emitted by BODY."""
+    if not isinstance(value,str) or len(value)>4096 or not value:
+        raise ValueError("MLT opacity contains unapproved native animation")
+    if "=" not in value:
+        if _opacity_number(float(value))!=value:
+            raise ValueError("MLT opacity is not a canonical finite scalar")
+        return value
+    pieces=value.split(";")
+    if not 2<=len(pieces)<=128:
+        raise ValueError("MLT opacity animation count is invalid")
+    keys=[]
+    for item in pieces:
+        if item.count("=")!=1:
+            raise ValueError("MLT opacity contains unapproved keyframe syntax")
+        frame_text,level=item.split("=")
+        if not frame_text.isdigit() or str(int(frame_text))!=frame_text:
+            raise ValueError("MLT opacity keyframe is not a canonical frame")
+        try: level_number=float(level)
+        except ValueError as exc:
+            raise ValueError("MLT opacity has malformed keyframe value") from exc
+        if _opacity_number(level_number)!=level:
+            raise ValueError("MLT opacity keyframe is not a canonical level")
+        keys.append({"frame":int(frame_text),"opacity":level_number})
+    if _opacity_animation({"opacity_keyframes":keys},frames)!=value:
+        raise ValueError("MLT opacity animation cannot be reconstructed safely")
+    return value
 
 
 def _single_recorded_audio_stream(path):
@@ -105,7 +164,7 @@ def validate_mlt_edit(plan,workspace,vault_root):
     blend_modes=[]
     for ti,track in enumerate(tracks):
         if (not isinstance(track,dict) or "clips" not in track or
-                set(track)-{"clips","blend_mode"}):
+                set(track)-{"clips","blend_mode","opacity","opacity_keyframes"}):
             raise ValueError("MLT track requires original clips and only a typed blend mode")
         mode=track.get("blend_mode","normal")
         if type(mode) is not str or mode not in _BLEND_MODES:
@@ -159,6 +218,9 @@ def validate_mlt_edit(plan,workspace,vault_root):
         resolved.append(checked)
     if total>1000000 or Fraction(total,1)/fps>24*3600:
         raise ValueError("MLT project exceeds explicit host frame/time budget")
+    opacities=[_opacity_animation(track,total) for track in tracks]
+    if opacities[0]!="1":
+        raise ValueError("MLT bottom picture track has no background to fade")
     sound_tracks=plan.get("audio_tracks",[])
     if not isinstance(sound_tracks,list) or len(sound_tracks)>4:
         raise ValueError("MLT authenticated sound supports up to four separate tracks")
@@ -213,7 +275,8 @@ def validate_mlt_edit(plan,workspace,vault_root):
         resolved_sound.append(checked)
     return {"fps":fps,"width":width,"height":height,"tracks":resolved,
             "sources":sources,"frames":total,"audio_tracks":resolved_sound,
-            "audio_sources":sound_sources,"blend_modes":blend_modes}
+            "audio_sources":sound_sources,"blend_modes":blend_modes,
+            "opacities":opacities}
 
 
 def build_mlt_xml(plan,checked):
@@ -281,14 +344,16 @@ def build_mlt_xml(plan,checked):
         # MLT 'luma' without a wipe map performs a dissolve, not opaque
         # compositing. The actual FFmpeg-decode test guards this distinction.
         mode=checked["blend_modes"][ti]
-        if mode=="normal":
+        opacity=checked["opacities"][ti]
+        if mode=="normal" and opacity=="1":
             _prop(transition,"mlt_service","qtblend")
             _prop(transition,"compositing",0)
         else:
-            # Native Frei0r cairoblend is a separate software compositor;
-            # param 0 is full opacity and param 1 the fixed named blend mode.
+            # Frei0r Cairo exposes native animatable opacity (parameter 0)
+            # and a typed blend mode (parameter 1). Use it for real fades,
+            # including otherwise-normal source-over, never inert XML flags.
             _prop(transition,"mlt_service","frei0r.cairoblend")
-            _prop(transition,"0",1)
+            _prop(transition,"0",opacity)
             _prop(transition,"1",mode)
         _prop(transition,"always_active",1)
     for ti in range(len(checked["audio_tracks"])):
@@ -490,8 +555,11 @@ def _verify_exact_mlt_xml_tree(root):
                     "mlt_service","0","1","always_active"})
                 if props["1"] not in _CAIRO_MODES:
                     raise ValueError("MLT native visual blending mode is not allowlisted")
+                _verify_native_opacity(props["0"],frames)
+                if props["1"]=="normal" and props["0"]=="1":
+                    raise ValueError("Unnecessary Cairo source-over is not canonical")
                 expected={"a_track":"0","b_track":str(i+1),
-                    "mlt_service":"frei0r.cairoblend","0":"1","1":props["1"],
+                    "mlt_service":"frei0r.cairoblend","0":props["0"],"1":props["1"],
                     "always_active":"1"}
             else:
                 raise ValueError("MLT native visual blending mode is not allowlisted")

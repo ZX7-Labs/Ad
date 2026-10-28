@@ -26,7 +26,9 @@ exposing a small subset of it does not complete a creative field.
 # Development direction
 
 Complete one creative field to a reliable professional production standard before
-expanding into the next. The current focus is motion design using Blender.
+expanding into the next. The current focus is existing video-editing completion
+and integration across native MLT, OTIO, compositing, timing, sound, color and
+durable original-source recovery; preserve the working Blender motion system.
 Evaluate practical capability, control, output quality and reliability against
 leading professional workflows. Treat exceptional quality as a target requiring
 evidence, rather than an already achieved ranking.

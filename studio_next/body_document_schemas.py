@@ -80,7 +80,10 @@ _SCHEMAS = {
             "position_frame": number(0, integer=True),
             "first_frame": number(0, integer=True), "end_frame": SIZE,
             "audio": choice("intentional_silence")}), minItems=1, maxItems=128)},{
-            "blend_mode":choice("normal","multiply","screen","overlay")}),
+            "blend_mode":choice("normal","multiply","screen","overlay"),
+            "opacity":number(0,1),
+            "opacity_keyframes":array(obj({"frame":number(0,integer=True),
+                "opacity":number(0,1)}),minItems=2,maxItems=128)}),
             minItems=1, maxItems=8)},{
         "audio_tracks": array(obj({"clips":array(obj({
             "source":TEXT,"asset_id":DIGEST,"attestation_id":TEXT,

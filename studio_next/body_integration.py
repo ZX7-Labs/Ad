@@ -872,7 +872,7 @@ def body_catalog(workspace,*,vault_root=None):
         "Strict professional edited OTIO into immutable new JSON director-cut plan; rejects lost/relinked audio/rights",
         "write",bool(otio_ready and video_io),["edit","out"],import_strict_cut)
     add("body.mlt_owned_export","native MLT multi-track editable video-layer project",
-        "Rights-attested video overlays, original CFR source in/out points, explicit placed frame gaps and active native MLT compositing. "
+        "Rights-attested video overlays, exact CFR in/out and gaps, native track blend and frame-keyframed opacity through measured MLT Cairo compositing. "
         "Host-local XML project with explicit video mute and optional actual owner-attested audio tracks; no generated music, effects, relinking or universal NLE claim.",
         "write",bool(shutil.which("melt") and video_io),["plan","out"],export_native_owned_mlt)
     add("body.mlt_owned_render","native MLT multi-track video-only MP4 rendering",
