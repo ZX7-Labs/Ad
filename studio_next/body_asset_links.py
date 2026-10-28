@@ -97,6 +97,28 @@ def _except_external_urls(value):
     return value
 
 
+def _verified_relocation_report(workspace,old_workspace):
+    """Shared operator migration gate; the former path is never dereferenced."""
+    root=Path(workspace).resolve();old=Path(old_workspace)
+    if not old.is_absolute() or ".." in old.parts:
+        raise ValueError("Former host root must be an explicit absolute path")
+    report_file=root/".zx7-relocation-report.json"
+    if not report_file.is_file() or report_file.is_symlink():
+        raise ValueError("A verified cross-host archive relocation is required")
+    report_sha=sha256_file(report_file)
+    report=json.loads(report_file.read_text(encoding="utf-8"))
+    if (not isinstance(report,dict) or report.get("schema")!=1 or
+        report.get("recovery_mode")!="relocated_media_and_historical_state" or
+        report.get("destination_workspace")!=str(root) or
+        report.get("original_workspace_sha256")!=hashlib.sha256(str(old).encode()).hexdigest() or
+        not report.get("rebind_and_rerun_required") or
+        not isinstance(report.get("verified_original_archive_sha256"),str) or
+        not _SHA.fullmatch(report["verified_original_archive_sha256"]) or
+        sha256_file(report_file)!=report_sha):
+        raise ValueError("Original host identity does not match verified relocation")
+    return report,report_file,report_sha
+
+
 def relink_verified_otio(source,workspace,old_workspace,output):
     """Create a separately editable OTIO after verifying every video/audio ref.
 
@@ -119,17 +141,7 @@ def relink_verified_otio(source,workspace,old_workspace,output):
         raise FileExistsError("No replacement of previous or original editorial project")
     if destination==original:
         raise ValueError("Original creative project must remain unchanged")
-    report_file=root/".zx7-relocation-report.json"
-    if not report_file.is_file() or report_file.is_symlink():
-        raise ValueError("A verified cross-host archive relocation is required")
-    report=json.loads(report_file.read_text(encoding="utf-8"))
-    if (report.get("schema")!=1 or
-        report.get("recovery_mode")!="relocated_media_and_historical_state" or
-        report.get("destination_workspace")!=str(root) or
-        report.get("original_workspace_sha256")!=hashlib.sha256(
-            str(old).encode("utf-8")).hexdigest() or
-        not report.get("rebind_and_rerun_required")):
-        raise ValueError("Original host identity does not match verified relocation")
+    report,report_file,report_sha=_verified_relocation_report(root,old)
     original_sha=sha256_file(original)
     with tempfile.TemporaryDirectory(
             prefix=".zx7-relink-seal-",dir=root) as private:
@@ -214,6 +226,8 @@ def relink_verified_otio(source,workspace,old_workspace,output):
         # approved relink on a lost publication race.
         if sha256_file(original)!=original_sha:
             raise RuntimeError("Original artistic timeline was changed during relocation")
+        if sha256_file(report_file)!=report_sha:
+            raise RuntimeError("Verified relocation identity changed before publication")
         # Lexical link creation is atomic, unlike overwriting a pre-existing
         # accepted director cut with os.replace.
         os.link(temporary,destination,follow_symlinks=False)

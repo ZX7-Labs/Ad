@@ -43,7 +43,7 @@ jobs:
       - name: Verify no-drop or dropped-LABEL-only SMPTE clocks, 24h bounds and signed source-frame API
         run: python -m unittest studio_next.test_body_timecode -v
       - name: Verify typed layer geometry, immutable revisions and exact source-frame animation through ripple
-        run: python -m unittest studio_next.test_body_mlt_transform studio_next.test_body_mlt_masks -v
+        run: python -m unittest studio_next.test_body_mlt_transform studio_next.test_body_mlt_masks studio_next.test_body_mlt_relink -v
       - name: Validate current Git tracked source inventory
         run: |
           python -m unittest discover -s scripts -p 'test_repo_audit.py' -v

@@ -34,6 +34,11 @@ document schemas before submitting a project. Native operations run on the host;
 missing engines are reported as requiring setup. Optional EXR and tracking
 dependencies are available through `.[vfx_exr,vfx_tracking]`.
 
+After a verified archive is restored with relocation enabled, use
+`zx7-relink-mlt --workspace NEW --old-workspace OLD --source NEW/edit.mlt --out NEW/relinked.mlt`
+to create a separately verified native project at the new media locations.
+The old edit and prior execution history remain preserved; renders run again.
+
 ## Project and checks
 
 - [AGENTS.md](AGENTS.md): product intent and development direction.

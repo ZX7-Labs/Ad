@@ -19,6 +19,7 @@ _ARG_TYPES={
     "gap_color":"string","before_edit":"string","after_edit":"string","focus":"string",
     "numerator":"integer","denominator":"integer","drop_frame":"boolean",
     "timecode":"string",
+    "old_workspace":"string",
 }
 _EXAMPLES_DISALLOWED=True
 
