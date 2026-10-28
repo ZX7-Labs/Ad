@@ -13,6 +13,7 @@ from studio_next.body_mlt_editor import (
 from studio_next.media_vault import MediaVault
 from studio_next.body_document_schemas import validate_document
 from studio_next.body_mlt_roundtrip import import_owned_mlt_project, recover_original_mlt_plan
+from studio_next.body_mlt_revision import revise_owned_mlt_project
 
 
 def _movie(path,color):
@@ -554,6 +555,411 @@ class VerifiedMLTEditorialTests(unittest.TestCase):
                 "position_frame":0,"first_frame":0,"end_frame":12}]}]
             with self.assertRaisesRegex(ValueError,"silently downmix"):
                 validate_mlt_edit(plan,root,root/"vault")
+
+    def test_native_editor_patch_preserves_original_and_all_effects_without_hidden_rewrite(self):
+        """Model-authored creative patches stay real editable source-owned projects."""
+        from studio_next.body_project_revision import selected_value
+        from studio_next.body_integration import body_catalog
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp)
+            plan,source=self._case(root)
+            plan["tracks"][1]["blend_mode"]="screen"
+            plan["tracks"][1]["opacity_keyframes"]=[
+                {"frame":0,"opacity":0.25},{"frame":11,"opacity":0.9}]
+            source.write_text(json.dumps(plan))
+            old=root/"first-native.mlt"
+            export_owned_mlt(source,root,root/"vault",old)
+            old_bytes=old.read_bytes()
+            ops=root/"authored-operations.json"
+            instruction={"operations":[
+                {"op":"test","path":"/tracks/1/clips/0/position_frame","value":4},
+                {"op":"replace","path":"/tracks/1/clips/0/position_frame","value":0},
+                {"op":"replace","path":"/tracks/1/clips/0/first_frame","value":0},
+                {"op":"replace","path":"/tracks/1/clips/0/end_frame","value":6},
+                {"op":"replace","path":"/tracks/1/opacity_keyframes/0/opacity","value":0.75},
+            ]}
+            from studio_next.body_document_schemas import document_contract
+            exact=document_contract("body.mlt_owned_revision")
+            self.assertEqual(exact["input_name"],"operation")
+            self.assertTrue(validate_document(
+                "body.mlt_owned_revision",instruction,"operation"))
+            for bad_command in (
+                {"operations":[{"op":"remove","path":"/tracks/0",
+                                "value":"not allowed"}]},
+                {"operations":[{"op":"replace","path":"/tracks/0"}]},
+                {"operations":[{"op":"execute_shell","path":"",
+                                "value":"no"}]},
+                {"operations":[]},
+            ):
+                with self.assertRaises(ValueError):
+                    validate_document("body.mlt_owned_revision",
+                                      bad_command,"operation")
+            ops.write_text(json.dumps(instruction))
+            new=root/"revised-native.mlt"
+            evidence=revise_owned_mlt_project(old,ops,root,root/"vault",new)
+            self.assertEqual(old.read_bytes(),old_bytes)
+            self.assertEqual(evidence["prior_mlt_sha256"],
+                             hashlib.sha256(old_bytes).hexdigest())
+            self.assertTrue(evidence["lossless_typed_native_roundtrip"])
+            recovered=recover_original_mlt_plan(new,root,root/"vault")
+            planned=json.loads(json.dumps(plan))
+            planned["tracks"][1]["clips"][0].update(
+                {"position_frame":0,"first_frame":0,"end_frame":6})
+            planned["tracks"][1]["opacity_keyframes"][0]["opacity"]=0.75
+            self.assertEqual(recovered["plan"],planned)
+            self.assertEqual(selected_value(planned,
+                "/tracks/1/opacity_keyframes/0/opacity"),0.75)
+            self.assertNotEqual(evidence["sha256"],
+                                hashlib.sha256(old_bytes).hexdigest())
+            self.assertEqual(evidence["picture_tracks"],2)
+            self.assertEqual(evidence["frames"],12)
+            for rejected_ops in (
+                [{"op":"test","path":"/tracks/1/blend_mode","value":"multiply"},
+                 {"op":"replace","path":"/tracks/1/blend_mode","value":"overlay"}],
+                [{"op":"replace","path":"/tracks/1/clips/0/asset_id","value":"0"*64}],
+                [{"op":"replace","path":"/tracks/1/opacity","value":0.4}],
+                [{"op":"replace","path":"/tracks/1/opacity_keyframes/0/opacity",
+                  "value":"0.2;rm -rf /"}],
+                [{"op":"remove","path":"/tracks/0/clips/0/attestation_id"}],
+            ):
+                ops.write_text(json.dumps({"operations":rejected_ops}))
+                dest=root/("rejected-"+str(len(rejected_ops))+"-"+
+                           hashlib.sha256(ops.read_bytes()).hexdigest()[:10]+".mlt")
+                with self.subTest(patch=rejected_ops),self.assertRaises(ValueError):
+                    revise_owned_mlt_project(old,ops,root,root/"vault",dest)
+                self.assertFalse(dest.exists())
+                self.assertEqual(old.read_bytes(),old_bytes)
+            with self.assertRaises(ValueError):
+                revise_owned_mlt_project(old,ops,root,root/"vault",new)
+            self.assertEqual(hashlib.sha256(new.read_bytes()).hexdigest(),
+                             evidence["sha256"])
+            available={tool["id"]:tool for tool in body_catalog(root).discover()}
+            self.assertIn("body.mlt_owned_revision",available)
+            self.assertIn("body.mlt_owned_revision",available)
+            self.assertEqual(available["body.mlt_owned_revision"]["status"],
+                             "installed" if shutil.which("melt") else "needs_setup")
+            if shutil.which("melt"):
+                ops.write_text(json.dumps(instruction))
+                receipt=body_catalog(root).invoke("body.mlt_owned_revision",{
+                    "edit":old.name,"operation":ops.name,
+                    "out":"director-new-project.mlt"},allowed_access={"write"})
+                self.assertEqual(receipt["prior_mlt_sha256"],
+                                 hashlib.sha256(old_bytes).hexdigest())
+                self.assertEqual(recover_original_mlt_plan(
+                    root/"director-new-project.mlt",root,root/"vault")["plan"],
+                    planned)
+
+
+    @unittest.skipUnless(shutil.which("melt"),
+                         "Actual native MLT sound and film decoder required")
+    def test_model_creative_patch_affects_actual_independent_sound_gain(self):
+        """One AI command patches an immutable edit, changing *decoded* audio."""
+        from array import array
+        from math import sqrt
+        from studio_next.body_integration import body_catalog
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);plan,source=self._case(root)
+            sound=self._original_sound(root)
+            plan["audio_tracks"]=[{"clips":[{
+                "source":"zx7:sha256:"+sound["asset_id"],
+                "asset_id":sound["asset_id"],
+                "attestation_id":sound["attestation_id"],
+                "position_frame":0,"first_frame":0,"end_frame":12}]}]
+            source.write_text(json.dumps(plan))
+            engine=body_catalog(root)
+            first=engine.invoke("body.mlt_owned_export",{
+                "plan":source.name,"out":"sound-original.mlt"},
+                allowed_access={"write"})
+            original=(root/"sound-original.mlt").read_bytes()
+            operation={"operations":[
+                {"op":"test","path":"/audio_tracks/0/clips/0/first_frame","value":0},
+                {"op":"add","path":"/audio_tracks/0/gain_db","value":-18}]}
+            (root/"sound-decision.json").write_text(json.dumps(operation))
+            changed=engine.invoke("body.mlt_owned_revision",{
+                "edit":"sound-original.mlt","operation":"sound-decision.json",
+                "out":"sound-updated.mlt"},allowed_access={"write"})
+            self.assertEqual(changed["prior_mlt_sha256"],
+                             hashlib.sha256(original).hexdigest())
+            self.assertEqual((root/"sound-original.mlt").read_bytes(),original)
+            updated=recover_original_mlt_plan(root/"sound-updated.mlt",
+                                              root,root/"vault")["plan"]
+            self.assertEqual(updated["audio_tracks"][0]["gain_db"],-18.0)
+            self.assertEqual(updated["tracks"],plan["tracks"])
+            self.assertEqual(updated["audio_tracks"][0]["clips"],
+                             plan["audio_tracks"][0]["clips"])
+            measures=[]
+            for edit,out in (("sound-original.mlt","unmodified.mp4"),
+                             ("sound-updated.mlt","attenuated.mp4")):
+                engine.invoke("body.mlt_owned_render",{"edit":edit,"out":out},
+                              allowed_access={"write"})
+                raw=subprocess.check_output(["ffmpeg","-hide_banner",
+                    "-loglevel","error","-nostdin","-xerror",
+                    "-i",str(root/out),"-map","0:a:0","-ar","48000",
+                    "-ac","1","-f","s16le","-"],timeout=45)
+                samples=array("h");samples.frombytes(raw)
+                window=samples[12000:24000]
+                self.assertGreater(len(window),11000)
+                measures.append(sqrt(sum(v*v for v in window)/len(window)))
+            self.assertGreater(measures[0],500)
+            self.assertLess(measures[1],measures[0]/5)
+            self.assertGreater(measures[1],measures[0]/10)
+            # Next independent AI decision: turn fixed gain into a real frame-
+            # automated curve. It must remain a separate editable revision,
+            # without changing the source, original edit or first revision.
+            curve={"operations":[
+                {"op":"test","path":"/audio_tracks/0/gain_db","value":-18.0},
+                {"op":"remove","path":"/audio_tracks/0/gain_db"},
+                {"op":"add","path":"/audio_tracks/0/gain_keyframes","value":[
+                    {"frame":0,"gain_db":-60},{"frame":4,"gain_db":-60},
+                    {"frame":8,"gain_db":0},{"frame":11,"gain_db":0}]}]}
+            (root/"automation-decision.json").write_text(json.dumps(curve))
+            engine.invoke("body.mlt_owned_revision",{
+                "edit":"sound-updated.mlt",
+                "operation":"automation-decision.json",
+                "out":"sound-animated.mlt"},allowed_access={"write"})
+            animated=recover_original_mlt_plan(root/"sound-animated.mlt",
+                                                root,root/"vault")["plan"]
+            self.assertEqual(animated["audio_tracks"][0]["gain_keyframes"],
+                             curve["operations"][2]["value"])
+            self.assertNotIn("gain_db",animated["audio_tracks"][0])
+            engine.invoke("body.mlt_owned_render",{
+                "edit":"sound-animated.mlt","out":"animated.mp4"},
+                allowed_access={"write"})
+            raw=subprocess.check_output(["ffmpeg","-hide_banner",
+                "-loglevel","error","-nostdin","-xerror",
+                "-i",str(root/"animated.mp4"),"-map","0:a:0","-ar","48000",
+                "-ac","1","-f","s16le","-"],timeout=45)
+            pcm=array("h");pcm.frombytes(raw)
+            early=pcm[round(.18*48000):round(.28*48000)]
+            late=pcm[round(.78*48000):round(.88*48000)]
+            self.assertGreater(len(early),4000)
+            self.assertGreater(len(late),4000)
+            def level(samples):
+                return sqrt(sum(v*v for v in samples)/len(samples))
+            self.assertGreater(level(late),level(early)*8)
+            self.assertGreater(level(late),measures[0]*.65)
+            self.assertEqual((root/"sound-original.mlt").read_bytes(),original)
+
+    def test_native_editor_patch_refuses_raced_commands_before_project_publication(self):
+        from unittest.mock import patch
+        import studio_next.body_mlt_revision as patch_engine
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);plan,source=self._case(root)
+            original=root/"original-race.mlt"
+            export_owned_mlt(source,root,root/"vault",original)
+            commands=root/"race-commands.json"
+            commands.write_text(json.dumps({"operations":[
+                {"op":"replace","path":"/tracks/1/clips/0/position_frame","value":0}]}))
+            output=root/"untrusted-race.mlt"
+            native=patch_engine.export_owned_mlt
+            def tamper(*args,**kwargs):
+                result=native(*args,**kwargs)
+                commands.write_text(json.dumps({"operations":[
+                    {"op":"remove","path":"/tracks/1/clips"}]}))
+                return result
+            with patch.object(patch_engine,"export_owned_mlt",side_effect=tamper):
+                with self.assertRaisesRegex(ValueError,"changed before publication"):
+                    revise_owned_mlt_project(original,commands,root,root/"vault",output)
+            self.assertFalse(output.exists())
+            self.assertTrue(verify_owned_mlt_project(original)["verified_mlt_tracks"])
+            self.assertFalse(list(root.rglob(".zx7-native-revision-*")))
+
+    @unittest.skipUnless(shutil.which("melt"),
+                         "Physical native MLT frame comparison requires actual editor")
+    def test_native_editor_patch_changes_actual_decoded_video_without_editing_source(self):
+        from studio_next.body_mlt_render import render_owned_mlt
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);plan,source=self._case(root)
+            original=root/"prior-physical.mlt"
+            export_owned_mlt(source,root,root/"vault",original)
+            commands=root/"creative-geometry.json"
+            commands.write_text(json.dumps({"operations":[
+                {"op":"replace","path":"/tracks/1/clips/0/position_frame","value":0},
+                {"op":"replace","path":"/tracks/1/clips/0/first_frame","value":0},
+                {"op":"replace","path":"/tracks/1/clips/0/end_frame","value":6}]}))
+            revised=root/"next-physical.mlt"
+            revise_owned_mlt_project(original,commands,root,root/"vault",revised)
+            originals={p.name:p.read_bytes() for p in root.glob("*.mp4")}
+            outputs=[]
+            for label,edit in (("old",original),("new",revised)):
+                movie=root/(label+"-actual-film.mp4")
+                render_owned_mlt(edit,root,movie)
+                outputs.append(movie)
+            self.assertEqual({p: (root/p).read_bytes()
+                for p in originals},originals)
+            def frame(file,index):
+                raw=subprocess.check_output(["ffmpeg","-hide_banner",
+                    "-loglevel","error","-nostdin","-xerror","-i",str(file),
+                    "-vf",f"select=eq(n\\,{index})","-vsync","0","-frames:v","1",
+                    "-pix_fmt","rgb24","-f","rawvideo","-"],timeout=30)
+                self.assertEqual(len(raw),64*48*3)
+                center=(24*64+32)*3
+                return tuple(raw[center:center+3])
+            old_early=frame(outputs[0],1)
+            new_early=frame(outputs[1],1)
+            old_late=frame(outputs[0],8)
+            new_late=frame(outputs[1],8)
+            self.assertGreater(old_early[0],old_early[2]+75)
+            self.assertGreater(new_early[2],new_early[0]+75)
+            self.assertGreater(old_late[2],old_late[0]+75)
+            self.assertGreater(new_late[0],new_late[2]+75)
+
+    def test_native_sound_gain_keyframe_preflight_and_malicious_filter_rejection(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);plan,source=self._case(root)
+            recorded=self._original_sound(root)
+            plan["audio_tracks"]=[{"clips":[{
+                "source":"zx7:sha256:"+recorded["asset_id"],
+                "asset_id":recorded["asset_id"],
+                "attestation_id":recorded["attestation_id"],
+                "position_frame":0,"first_frame":0,"end_frame":12}]}]
+            for value in (True,-97,25,float("nan"),float("inf"),"0;rm -rf"):
+                changed=json.loads(json.dumps(plan))
+                changed["audio_tracks"][0]["gain_db"]=value
+                with self.subTest(gain=str(value)),self.assertRaises(ValueError):
+                    validate_mlt_edit(changed,root,root/"vault")
+            for keys in (
+                [{"frame":1,"gain_db":-60},{"frame":8,"gain_db":0}],
+                [{"frame":0,"gain_db":-60},{"frame":0,"gain_db":0}],
+                [{"frame":0,"gain_db":-60},{"frame":12,"gain_db":0}],
+                [{"frame":0,"gain_db":-60},{"frame":8,"gain_db":False}]):
+                changed=json.loads(json.dumps(plan))
+                changed["audio_tracks"][0]["gain_keyframes"]=keys
+                with self.subTest(keys=keys),self.assertRaises(ValueError):
+                    validate_mlt_edit(changed,root,root/"vault")
+            plan["audio_tracks"][0]["gain_db"]=-8
+            self.assertTrue(validate_document("body.mlt_owned_export",plan))
+            source.write_text(json.dumps(plan))
+            edit=root/"typed-gain.mlt"
+            export_owned_mlt(source,root,root/"vault",edit)
+            original=edit.read_text()
+            self.assertIn('<property name="mlt_service">volume</property>',original)
+            self.assertIn('<property name="level">-8</property>',original)
+            self.assertEqual(verify_owned_mlt_project(edit)["verified_audio_tracks"],1)
+            for before,after in (
+                ('<property name="level">-8</property>',
+                 '<property name="level">-8;__import__("os")</property>'),
+                ('<property name="level">-8</property>',
+                 '<property name="level">-100</property>'),
+                ('<property name="track">2</property>',
+                 '<property name="track">0</property>'),
+                ('<property name="mlt_service">volume</property>',
+                 '<property name="mlt_service">arbitrary_sound_plugin</property>')):
+                self.assertIn(before,original)
+                edit.write_text(original.replace(before,after,1))
+                with self.subTest(malicious=after),self.assertRaises(ValueError):
+                    verify_owned_mlt_project(edit)
+            edit.write_text(original)
+
+    @unittest.skipUnless(shutil.which("melt"),"Actual native MLT volume filter needed")
+    def test_original_native_sound_gain_linear_keyframes_change_real_decoded_audio(self):
+        """Measure true relative PCM amplitude, never merely asserted XML gain."""
+        from array import array
+        from math import sqrt
+        from studio_next.body_integration import body_catalog
+        from studio_next.body_mlt_roundtrip import recover_original_mlt_plan
+        availability=subprocess.run(["melt","-query","filters"],
+            capture_output=True,text=True,timeout=30)
+        self.assertIn("volume",availability.stdout)
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);plan,source=self._case(root)
+            recorded=self._original_sound(root)
+            plan["audio_tracks"]=[{"clips":[{
+                "source":"zx7:sha256:"+recorded["asset_id"],
+                "asset_id":recorded["asset_id"],
+                "attestation_id":recorded["attestation_id"],
+                "position_frame":0,"first_frame":0,"end_frame":12}]}]
+            engine=body_catalog(root)
+            observations={}
+            for label,controls in (
+                ("unity",{}),
+                ("attenuated",{"gain_db":-12}),
+                ("animated",{"gain_keyframes":[
+                    {"frame":0,"gain_db":-60},{"frame":5,"gain_db":-60},
+                    {"frame":7,"gain_db":0},{"frame":11,"gain_db":0}]})
+            ):
+                authored=json.loads(json.dumps(plan))
+                authored["audio_tracks"][0].update(controls)
+                self.assertTrue(validate_document("body.mlt_owned_export",authored))
+                source.write_text(json.dumps(authored))
+                native=f"{label}.mlt";movie=f"{label}.mp4"
+                engine.invoke("body.mlt_owned_export",
+                    {"plan":"original.json","out":native},allowed_access={"write"})
+                self.assertEqual(recover_original_mlt_plan(root/native,root,
+                    root/"vault")["plan"],authored)
+                engine.invoke("body.mlt_owned_render",
+                    {"edit":native,"out":movie},allowed_access={"write"})
+                raw=subprocess.check_output(["ffmpeg","-hide_banner",
+                    "-loglevel","error","-nostdin","-xerror",
+                    "-i",str(root/movie),"-map","0:a:0",
+                    "-ar","48000","-ac","1","-f","s16le","-"],timeout=45)
+                samples=array("h");samples.frombytes(raw)
+                self.assertGreater(len(samples),45000)
+                def rms(a,b):
+                    window=samples[int(a*48000):int(b*48000)]
+                    self.assertTrue(window)
+                    return sqrt(sum(v*v for v in window)/len(window))
+                observations[label]=(rms(.18,.28),rms(.74,.84))
+            self.assertGreater(observations["unity"][0],500,observations)
+            self.assertLess(observations["attenuated"][0],
+                observations["unity"][0]*.33,observations)
+            self.assertGreater(observations["attenuated"][0],
+                observations["unity"][0]*.16,observations)
+            self.assertLess(observations["animated"][0],
+                observations["animated"][1]/8,observations)
+            self.assertGreater(observations["animated"][1],
+                observations["unity"][1]*.65,observations)
+
+    @unittest.skipUnless(shutil.which("melt"),"Independent actual MLT sound-bus test required")
+    def test_independent_native_sound_bus_gains_never_attenuate_the_other_bus(self):
+        """Two audio tracks at disjoint times must have independent decoded levels."""
+        from array import array
+        from math import sqrt
+        from studio_next.body_integration import body_catalog
+        from studio_next.body_mlt_roundtrip import recover_original_mlt_plan
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);plan,source=self._case(root)
+            recorded=self._original_sound(root)
+            base={"source":"zx7:sha256:"+recorded["asset_id"],
+                "asset_id":recorded["asset_id"],
+                "attestation_id":recorded["attestation_id"],
+                "first_frame":0,"end_frame":4}
+            first=dict(base,position_frame=0)
+            second=dict(base,position_frame=8)
+            plan["audio_tracks"]=[{"clips":[first]},{"clips":[second]}]
+            engine=body_catalog(root)
+            observed={}
+            for case,attenuated_index in (("first",0),("second",1)):
+                authored=json.loads(json.dumps(plan))
+                authored["audio_tracks"][attenuated_index]["gain_db"]=-60
+                source.write_text(json.dumps(authored))
+                xml=f"independent-{case}.mlt"
+                movie=f"independent-{case}.mp4"
+                engine.invoke("body.mlt_owned_export",
+                    {"plan":"original.json","out":xml},allowed_access={"write"})
+                native=ET.parse(root/xml)
+                filters=native.findall("./tractor/filter")
+                self.assertEqual(len(filters),1)
+                props={p.get("name"):p.text for p in filters[0].findall("property")}
+                self.assertEqual(props["track"],str(2+attenuated_index))
+                self.assertEqual(recover_original_mlt_plan(root/xml,root,
+                    root/"vault")["plan"],authored)
+                engine.invoke("body.mlt_owned_render",
+                    {"edit":xml,"out":movie},allowed_access={"write"})
+                raw=subprocess.check_output(["ffmpeg","-hide_banner",
+                    "-loglevel","error","-nostdin","-xerror",
+                    "-i",str(root/movie),"-map","0:a:0",
+                    "-ar","48000","-ac","1","-f","s16le","-"],timeout=45)
+                pcm=array("h");pcm.frombytes(raw)
+                self.assertGreater(len(pcm),45000)
+                def power(start,end):
+                    values=pcm[int(start*48000):int(end*48000)]
+                    return sqrt(sum(v*v for v in values)/len(values))
+                observed[case]=(power(.10,.20),power(.78,.88))
+            self.assertLess(observed["first"][0],observed["first"][1]/8,observed)
+            self.assertLess(observed["second"][1],observed["second"][0]/8,observed)
+            self.assertGreater(observed["first"][1],500,observed)
+            self.assertGreater(observed["second"][0],500,observed)
 
     def test_same_layer_overlap_and_unmeasured_source_range_fail_closed(self):
         with tempfile.TemporaryDirectory() as temp:

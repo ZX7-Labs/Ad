@@ -28,6 +28,7 @@ from .body_sequence_otio import export_verified_sequence_otio,import_verified_se
 from .body_mlt_editor import export_owned_mlt,verify_owned_mlt_project
 from .body_mlt_render import render_owned_mlt
 from .body_mlt_roundtrip import import_owned_mlt_project
+from .body_mlt_revision import revise_owned_mlt_project
 from .creative_asset_ops import rasterize_original_svg,extract_director_selected_frame
 from .native_body_engines import render_original_blender,render_original_motion
 from .body_cgi import render_cgi_plan
@@ -174,9 +175,10 @@ def _trusted_body_revision(tool_id):
         "body.timeline_revision":["body_timeline_revision.py","body_sequence_cuts.py","precision_retime.py","media_vault.py","body_color_pipeline.py","composite_mix.py","production_qc.py"],
         "body.otio":["editorial_interchange.py"],
         "body.otio_owned_export":["body_sequence_otio.py","body_sequence_cuts.py","media_vault.py","precision_retime.py","body_color_pipeline.py","composite_mix.py"],
-        "body.mlt_owned_export":["body_mlt_editor.py","media_vault.py","precision_retime.py","body_color_pipeline.py","delivery_audit.py","composite_mix.py"],
-        "body.mlt_owned_render":["body_mlt_render.py","body_mlt_editor.py","media_vault.py","precision_retime.py","production_qc.py","composite_mix.py"],
-        "body.mlt_owned_import":["body_mlt_roundtrip.py","body_mlt_editor.py","body_materials.py","media_vault.py","precision_retime.py","body_color_pipeline.py"],
+        "body.mlt_owned_export":["body_mlt_editor.py","pcm_wave.py","media_vault.py","precision_retime.py","body_color_pipeline.py","delivery_audit.py","composite_mix.py"],
+        "body.mlt_owned_render":["body_mlt_render.py","body_mlt_editor.py","pcm_wave.py","media_vault.py","precision_retime.py","production_qc.py","composite_mix.py"],
+        "body.mlt_owned_import":["body_mlt_roundtrip.py","body_mlt_editor.py","body_materials.py","pcm_wave.py","media_vault.py","precision_retime.py","body_color_pipeline.py"],
+        "body.mlt_owned_revision":["body_mlt_revision.py","body_project_revision.py","body_mlt_roundtrip.py","body_mlt_editor.py","body_materials.py","pcm_wave.py","media_vault.py","precision_retime.py","body_color_pipeline.py"],
         "body.otio_owned_import":["body_sequence_otio.py","body_sequence_cuts.py","media_vault.py","precision_retime.py","body_color_pipeline.py","composite_mix.py"],
         "body.vector_png":["creative_asset_ops.py"],
         "body.film_thumbnail":["creative_asset_ops.py","delivery_audit.py"],
@@ -220,6 +222,7 @@ def _trusted_body_revision(tool_id):
         "body.mlt_owned_export":["melt","ffmpeg","ffprobe"],
         "body.mlt_owned_render":["melt","ffmpeg","ffprobe"],
         "body.mlt_owned_import":["ffmpeg","ffprobe"],
+        "body.mlt_owned_revision":["melt","ffmpeg","ffprobe"],
         "body.otio_owned_import":["ffmpeg","ffprobe"],
         "body.vector_png":["inkscape"],
         "body.film_thumbnail":["ffmpeg","ffprobe"],
@@ -658,6 +661,17 @@ def body_catalog(workspace,*,vault_root=None):
         dest=_body_output(root,inputs["out"],allowed=(".json",))
         return import_owned_mlt_project(source,root,vault.root,dest)
 
+    def revise_native_owned_mlt(inputs):
+        prior=_path_within(root,inputs["edit"],exists=True)
+        ops=_path_within(root,inputs["operation"],exists=True)
+        dest=_body_output(root,inputs["out"],allowed=(".mlt",))
+        evidence={}
+        def produce(stage):
+            evidence.update(revise_owned_mlt_project(prior,ops,root,vault.root,stage))
+        output=_commit_actual_body_output(dest,produce)
+        return {**output,**{k:v for k,v in evidence.items()
+            if k not in ("path","sha256")}}
+
     def render_native_owned_mlt(inputs):
         source=_path_within(root,inputs["edit"],exists=True)
         dest=_body_output(root,inputs["out"],allowed=(".mp4",))
@@ -881,11 +895,14 @@ def body_catalog(workspace,*,vault_root=None):
         "write",bool(otio_ready and video_io),["edit","out"],import_strict_cut)
     add("body.mlt_owned_export","native MLT multi-track editable video-layer project",
         "Rights-attested video overlays, exact CFR in/out and gaps, native track blend and frame-keyframed opacity through measured MLT Cairo compositing. "
-        "Host-local XML project with explicitly muted picture tracks and owner-attested original recorded video audio or real PCM WAV sound stems; no generated music, relinking or universal NLE claim.",
+        "Host-local XML with muted picture tracks and rights-attested original video audio or PCM WAV sound; independent per-bus gain and linear timeline keyframes via native MLT volume filter; no generated music or universal NLE claim.",
         "write",bool(shutil.which("melt") and video_io),["plan","out"],export_native_owned_mlt)
     add("body.mlt_owned_import","reversible rights-attested native MLT timeline to typed edit plan",
         "Reinspect physical source rights, original picture and sound, rational frame clock, upper-layer blend and native opacity; exact lossless XML rebuild required. Publishes immutable CAS-addressed JSON; rejects unsupported MLT effects instead of silently discarding them.",
         "write",video_io,["edit","out"],import_native_owned_mlt)
+    add("body.mlt_owned_revision","non-destructive native MLT multitrack visual and sound revision",
+        "Apply guarded creative JSON Pointer changes to recovered native picture and sound tracks. Verify every affected source, exact original clock and complete lossless XML roundtrip before publishing a new editable .mlt; prior project remains untouched.",
+        "write",bool(shutil.which("melt") and video_io),["edit","operation","out"],revise_native_owned_mlt)
     add("body.mlt_owned_render","native MLT multitrack audiovisual MP4 rendering",
         "Render exact SHA-attested MLT project to decoded H264 with explicit original-audio or picture-only delivery; "
         "both project and every original source are verified again at publish, no arbitrary command or plugin inputs.",
