@@ -116,7 +116,15 @@ def _gain_number(value):
     """dB is a finite typed authored gain, not native filter syntax."""
     if type(value) not in (int,float) or not math.isfinite(value) or not -96<=value<=24:
         raise ValueError("MLT sound gain must be a finite -96..24 dB number")
-    return "0" if value==0 else format(float(value),".12g")
+    if value==0:
+        return "0"
+    numeric=float(value)
+    historical=format(numeric,".12g")
+    # Existing native .mlt projects use twelve significant decimal digits.
+    # Preserve that exact canonical spelling whenever it is lossless, but
+    # never round a newly authored high-precision dB value merely to fit an
+    # older display convention. repr() roundtrips the full binary64 value.
+    return historical if float(historical)==numeric else repr(numeric)
 
 
 def _gain_animation(track,frames):
