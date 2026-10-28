@@ -895,7 +895,7 @@ def body_catalog(workspace,*,vault_root=None):
         "write",bool(otio_ready and video_io),["edit","out"],import_strict_cut)
     add("body.mlt_owned_export","native MLT multi-track editable video-layer project",
         "Rights-attested video overlays, exact CFR in/out and gaps, native track blend and frame-keyframed opacity through measured MLT Cairo compositing. "
-        "Host-local XML project with explicitly muted picture tracks and owner-attested original recorded video audio or real PCM WAV sound stems; no generated music, relinking or universal NLE claim.",
+        "Host-local XML with muted picture tracks and rights-attested original video audio or PCM WAV sound; independent per-bus gain and linear timeline keyframes via native MLT volume filter; no generated music or universal NLE claim.",
         "write",bool(shutil.which("melt") and video_io),["plan","out"],export_native_owned_mlt)
     add("body.mlt_owned_import","reversible rights-attested native MLT timeline to typed edit plan",
         "Reinspect physical source rights, original picture and sound, rational frame clock, upper-layer blend and native opacity; exact lossless XML rebuild required. Publishes immutable CAS-addressed JSON; rejects unsupported MLT effects instead of silently discarding them.",
