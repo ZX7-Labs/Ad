@@ -30,7 +30,8 @@ assets[{id,status,rights,location}], owner_facts and tool_graph nodes
 graph stages, author a new plan/output path for revisions, never overwrite.
 Observe job results, decode output and use real review instruments. You can
 request actual PNG/JPEG pixels with read_picture for a job artifact; the next
-turn receives image content if your runtime supports vision. Audio measurements
+turn receives up to four selected, SHA-verified images if vision is supported.
+Selecting further images evicts the oldest selection, not the underlying media. Audio measurements
 are not semantic listening, and frames do not establish continuous motion.
 Do not falsely claim either. Preserve ambitious ideas when a resource is absent.
 Return JSON only: {action, arguments, reason}. Actions and exact arguments:
@@ -47,6 +48,10 @@ There is a finite turn/time budget. Finish only after checking your actual jobs,
 state remaining blockers honestly and do not equate technical success with
 cinematic quality. An essential unanswered fact may require question.
 """
+
+
+_MAX_PICTURE_EVIDENCE=4
+_MAX_PICTURE_EVIDENCE_BYTES=12_000_000
 
 
 def _wire(value):
@@ -154,8 +159,17 @@ class CreativeSessions:
         return {"assets":assets,"more_assets":len(rows)>200}
 
     def _pictures(self,state):
-        images=[]
-        for picture in state["pictures"]:
+        """Revalidate every selected immutable picture at the moment of model use.
+
+        Review can compare different revisions simultaneously. The selection
+        budget constrains each inference request, not film duration, shots or
+        the number of frames a creative model may inspect over a session.
+        """
+        selected=state["pictures"]
+        if not isinstance(selected,list) or len(selected)>_MAX_PICTURE_EVIDENCE:
+            raise ValueError("Vision selection exceeds the host's frame comparison budget")
+        images=[];total_bytes=0
+        for picture in selected:
             record=self.coordinator.inspect(picture["job_id"])
             if record["workspace_id"]!=state["workspace_id"]:
                 raise PermissionError("Picture belongs to another session workspace")
@@ -164,6 +178,9 @@ class CreativeSessions:
                 raise ValueError("Vision requires an actual bounded PNG or JPEG artifact")
             if media["sha256"]!=picture["sha256"]:
                 raise ValueError("Observed picture bytes changed")
+            total_bytes+=media["bytes"]
+            if total_bytes>_MAX_PICTURE_EVIDENCE_BYTES:
+                raise ValueError("Vision selection exceeds the host's byte budget")
             with verified_artifact_snapshot(media) as stream:
                 images.append((media["mime"],stream.read(3000001)))
         return images
@@ -219,10 +236,26 @@ class CreativeSessions:
         if action=="read_picture" and set(args)=={"job_id","path"}:
             signal.observe(args["job_id"])
             media=self.coordinator.inspect_media(args["job_id"],args["path"])
-            pictures=[{**args,"sha256":media["sha256"]}]
+            # A physical artifact is immutable: do not quietly replace an
+            # earlier visual witness with different bytes under the same path.
+            for previous in state["pictures"]:
+                if (previous["job_id"]==args["job_id"] and
+                        previous["path"]==args["path"] and
+                        previous["sha256"]!=media["sha256"]):
+                    raise ValueError("Previously observed picture identity changed")
+            pictures=[previous for previous in state["pictures"]
+                      if (previous["job_id"],previous["path"])!=
+                         (args["job_id"],args["path"])]
+            pictures.append({**args,"sha256":media["sha256"]})
+            evicted=pictures[:-_MAX_PICTURE_EVIDENCE]
+            pictures=pictures[-_MAX_PICTURE_EVIDENCE:]
+            # Validate *all* retained real pictures before committing selection.
             self._pictures({**state,"pictures":pictures})
             state["pictures"]=pictures
             return {**args,"sha256":media["sha256"],"pixels_in_next_model_request":True,
+                    "selected_picture_count":len(pictures),
+                    "evicted_previous_selections":[
+                        {"job_id":p["job_id"],"path":p["path"]} for p in evicted],
                     "audio_reviewed":False,"continuous_motion_reviewed":False}
         if action in ("finish","question"):
             key="summary" if action=="finish" else "question"
