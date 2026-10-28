@@ -6,6 +6,7 @@ No pretrained model is bundled and no 'best screenwriter' claim is made.
 """
 from dataclasses import dataclass, field
 import base64
+import hashlib
 import json
 from urllib.parse import urlsplit
 from urllib.request import Request
@@ -70,9 +71,27 @@ class LocalCreativeModel:
         user_content=json.dumps(context,ensure_ascii=False,allow_nan=False)
         if images:
             content=[{"type":"text","text":user_content}]
-            for mime,raw in images:
+            evidence=context.get("picture_evidence") if isinstance(context,dict) else None
+            if evidence is not None and (not isinstance(evidence,list) or len(evidence)!=len(images)):
+                raise ValueError("Picture evidence count differs from actual vision inputs")
+            for index,(mime,raw) in enumerate(images):
                 if mime not in ("image/png","image/jpeg") or not isinstance(raw,bytes) or not 100<=len(raw)<=3000000:
                     raise ValueError("Bounded actual decoded model image required")
+                label={"image_index":index,"image_mime":mime}
+                if evidence is not None:
+                    meta=evidence[index]
+                    if not isinstance(meta,dict) or any(
+                            not isinstance(meta.get(key),str) or not meta[key]
+                            for key in ("job_id","path","sha256")):
+                        raise ValueError("Image input lacks original job/path/SHA witness")
+                    if hashlib.sha256(raw).hexdigest()!=meta["sha256"]:
+                        raise ValueError("Picture and encoded model image identity mismatch")
+                    label.update({"job_id":meta["job_id"],"path":meta["path"],
+                                  "sha256":meta["sha256"],"physical_bytes_verified_upstream":True})
+                # Each inline label is immediately followed by its own binary
+                # image. Positional assumptions are insufficient for a model
+                # comparing before/after frames from different film jobs.
+                content.append({"type":"text","text":json.dumps(label,ensure_ascii=False)})
                 content.append({"type":"image_url","image_url":{
                     "url":"data:"+mime+";base64,"+base64.b64encode(raw).decode("ascii")}})
             user_content=content
