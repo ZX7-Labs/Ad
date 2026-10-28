@@ -204,6 +204,36 @@ class ExactNativeEditorialReviewTests(unittest.TestCase):
             self.assertGreater(sum(len(track["source_frame_spans"])
                                    for track in ripple["sound_changes"]),0)
 
+            # Prove the original autonomous BODY process can execute, commit,
+            # reverify and safely REUSE an observed native review after a
+            # new process/controller instance. This is not a direct-call-only
+            # helper dressed up as a model-facing capability.
+            from studio_next.body_integration import run_body_project
+            film_ir={
+                "project":{"creative_intent":
+                    "Independently inspect source-attested editing revisions"},
+                "assets":[],
+                "shots":[{"id":"self-review",
+                    "purpose":"See true surviving original picture and audio",
+                    "duration_seconds":1.0}],
+                "tool_graph":[{
+                    "id":"observe-original-change",
+                    "tool_id":"body.mlt_owned_compare",
+                    "purpose":"Inspect source positions and soundtrack controls",
+                    "inputs":{"before_edit":original.name,
+                              "after_edit":"sound-gain.mlt"},
+                    "depends_on":[]}]}
+            first=run_body_project(film_ir,root,
+                                   db_name="original-review-proof.sqlite3")
+            self.assertEqual(first["status"],"all_tool_results_verified")
+            self.assertEqual(first["completed"],["observe-original-change"])
+            self.assertEqual(first["reused"],[])
+            resumed=run_body_project(film_ir,root,
+                                     db_name="original-review-proof.sqlite3")
+            self.assertEqual(resumed["status"],"all_tool_results_verified")
+            self.assertEqual(resumed["reused"],["observe-original-change"])
+            self.assertEqual(resumed["completed"],["observe-original-change"])
+
             # Reject fake or modified original facts, no read-only review output.
             forged=root/"forged-owned.mlt"
             forged.write_bytes(before.replace(b"zx7.original_sha256",
