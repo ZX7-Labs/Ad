@@ -135,6 +135,7 @@ def revise_owned_mlt_project(edit, operations, workspace, vault_root, output):
         "lossless_typed_native_roundtrip":True,
         "original_media_rights_rechecked":True,
         "prior_native_project_untouched":True,
+        "legacy_audio_bus_order_corrected":recovered["legacy_audio_bus_order_requires_migration"],
         **({"linked_editor_evidence":linked_report} if linked_report else {}),
         "creative_or_professional_release_approved":False,
     }

@@ -695,7 +695,8 @@ def body_catalog(workspace,*,vault_root=None):
     def compare_native_owned_mlt(inputs):
         old=_path_within(root,inputs["before_edit"],exists=True)
         new=_path_within(root,inputs["after_edit"],exists=True)
-        return compare_owned_mlt_projects(old,new,root,vault.root)
+        return compare_owned_mlt_projects(old,new,root,vault.root,
+                                          focus=inputs.get("focus","summary"))
 
     def revise_native_owned_mlt(inputs):
         prior=_path_within(root,inputs["edit"],exists=True)
@@ -712,10 +713,17 @@ def body_catalog(workspace,*,vault_root=None):
         source=_path_within(root,inputs["edit"],exists=True)
         dest=_body_output(root,inputs["out"],allowed=(".mp4",))
         gap_color=inputs.get("gap_color")
-        receipt=_commit_actual_body_output(dest,
-            lambda staged:render_owned_mlt(source,root,staged,
-                                            gap_color=gap_color))
-        return {**receipt,"director_selected_gap_color":gap_color}
+        evidence={}
+        def produce(stage):
+            evidence.update(render_owned_mlt(source,root,stage,gap_color=gap_color))
+        receipt=_commit_actual_body_output(dest,produce)
+        # Preserve measurements from this actual native execution, including
+        # disclosed repair of a historical post-mix bus-filter graph. A
+        # recovered publication has only its independently decoded witness;
+        # do not fabricate fresh execution measurements for that case.
+        return {**receipt,**{k:v for k,v in evidence.items()
+                if k not in ("path","sha256","bytes")},
+                "director_selected_gap_color":gap_color}
 
     def native_motion(inputs):
         source=_path_within(root,inputs["plan"],exists=True)
@@ -947,16 +955,16 @@ def body_catalog(workspace,*,vault_root=None):
         "write",bool(otio_ready and video_io),["edit","out"],import_strict_cut)
     add("body.mlt_owned_export","native MLT multi-track editable video-layer project",
         "Rights-attested video overlays, exact CFR in/out and gaps, native track blend and frame-keyframed opacity through measured MLT Cairo compositing. "
-        "Host-local XML with muted picture tracks and rights-attested original video audio or PCM WAV sound; independent per-bus gain and linear timeline keyframes via native MLT volume filter; no generated music or universal NLE claim.",
+        "Editable source-attested original video and WAV sound; independently authored dB gain, plus native stereo balance 0-left/0.5-center/1-right and frame-animated position on individual sound buses. All actual volume/panner plugins checked; not full NLE certification.",
         "write",bool(shutil.which("melt") and video_io),["plan","out"],export_native_owned_mlt)
     add("body.mlt_owned_import","reversible rights-attested native MLT timeline to typed edit plan",
-        "Reinspect physical source rights, original picture and sound, rational frame clock, upper-layer blend and native opacity; exact lossless XML rebuild required. Publishes immutable CAS-addressed JSON; rejects unsupported MLT effects instead of silently discarding them.",
+        "Reinspect exact original picture/sound rights and rational clock, native opacity, original-source gain and animated stereo balance; require complete lossless XML roundtrip. Publish immutable edit JSON and reject unsupported native plugins without loss.",
         "write",video_io,["edit","out"],import_native_owned_mlt)
     add("body.mlt_owned_compare","source-exact visual and soundtrack timeline revision evidence",
-        "Read both actual immutable native MLT projects, revalidate each original media right, fully reconstruct both typed graphs without loss and report exactly moved, inserted, replaced or preserved source-frame spans and authored effect/clip partition changes. Never claim pixel equivalence or artistic quality from timeline structure.",
+        "Read and reattest both original native MLT projects, then obtain a compact summary (default), a precise picture:N or sound:N track, or an explicitly requested all-track source-frame/clip/effect review. Always use exact native roundtrip and rights; never infer pixel equivalence or artistic quality from graph structure.",
         "read",video_io,["before_edit","after_edit"],compare_native_owned_mlt)
     add("body.mlt_owned_revision","non-destructive native MLT multitrack visual and sound revision",
-        "Execute author-authored source-attested JSON patches, group razor/ripple, signed-frame roll/slip/slide, or atomic cross-track picture/sound placements with explicit destination effect policy and no hidden ripple. Preserve every original source, media rights, frame clock and prior edit; prove native XML roundtrip and immutable publication. No complete NLE claim.",
+        "Execute source-attested JSON patches, linked razor/ripple, signed-frame roll/slip/slide, or atomic cross-track picture/sound placements with explicit effect policy. Retain author-controlled original sound gain, spatial stereo position, opacity and animation. Prove original rights, source/frame clocks, exact native XML roundtrip and immutable publication. No complete NLE claim.",
         "write",bool(shutil.which("melt") and video_io),["edit","operation","out"],revise_native_owned_mlt)
     add("body.mlt_owned_render","native MLT multitrack audiovisual MP4 rendering",
         "Render fully rights-verified native MLT original picture and audio with exact rational clock; "
@@ -1007,7 +1015,8 @@ def validate_witness(_tool_id,result):
                     not prior.is_relative_to(workspace) or
                     not after.is_relative_to(workspace)):
                 return False
-            actual=compare_owned_mlt_projects(prior,after,workspace,vault_root)
+            actual=compare_owned_mlt_projects(prior,after,workspace,vault_root,
+                                               focus=result["query_focus"])
             return actual==result
         except (ValueError,KeyError,TypeError,OSError,OverflowError):
             return False

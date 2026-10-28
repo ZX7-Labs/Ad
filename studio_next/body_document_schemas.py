@@ -92,7 +92,10 @@ _SCHEMAS = {
             "end_frame":SIZE}),minItems=1,maxItems=128)},{
                 "gain_db":number(-96,24),
                 "gain_keyframes":array(obj({"frame":number(0,integer=True),
-                    "gain_db":number(-96,24)}),minItems=2,maxItems=128)}),maxItems=4)})),
+                    "gain_db":number(-96,24)}),minItems=2,maxItems=128),
+                "pan":number(0,1),
+                "pan_keyframes":array(obj({"frame":number(0,integer=True),
+                    "pan":number(0,1)}),minItems=2,maxItems=128)}),maxItems=4)})),
     "body.mlt_owned_revision": ("operation", {"oneOf":[
         obj({"operations":array({"oneOf":[
             obj({"op":choice("add","replace","test"),
