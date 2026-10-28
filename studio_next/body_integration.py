@@ -906,16 +906,16 @@ def body_catalog(workspace,*,vault_root=None):
         "write",bool(otio_ready and video_io),["edit","out"],import_strict_cut)
     add("body.mlt_owned_export","native MLT multi-track editable video-layer project",
         "Rights-attested video overlays, exact CFR in/out and gaps, native track blend and frame-keyframed opacity through measured MLT Cairo compositing. "
-        "Host-local XML with muted picture tracks and rights-attested original video audio or PCM WAV sound; independent per-bus gain and linear timeline keyframes via native MLT volume filter; no generated music or universal NLE claim.",
+        "Host-local XML with explicitly muted picture and attested original video/WAV sound; director chooses independent bus dB gain and stereo position 0-left/0.5-center/1-right, including precise frame keyframes. Actual native volume and panner filters are required; no generated audio or complete NLE claim.",
         "write",bool(shutil.which("melt") and video_io),["plan","out"],export_native_owned_mlt)
     add("body.mlt_owned_import","reversible rights-attested native MLT timeline to typed edit plan",
-        "Reinspect physical source rights, original picture and sound, rational frame clock, upper-layer blend and native opacity; exact lossless XML rebuild required. Publishes immutable CAS-addressed JSON; rejects unsupported MLT effects instead of silently discarding them.",
+        "Reinspect actual source rights, original picture and audio, rational frame clock, upper-layer blend, native opacity, authored bus gain and stereo pan keyframes; require a complete lossless native XML roundtrip. Publish separate immutable CAS-addressed JSON; never discard unrecognized sound/visual controls.",
         "write",video_io,["edit","out"],import_native_owned_mlt)
     add("body.mlt_owned_compare","source-exact visual and soundtrack timeline revision evidence",
         "Read both actual immutable native MLT projects, revalidate each original media right, fully reconstruct both typed graphs without loss and report exactly moved, inserted, replaced or preserved source-frame spans and authored effect/clip partition changes. Never claim pixel equivalence or artistic quality from timeline structure.",
         "read",video_io,["before_edit","after_edit"],compare_native_owned_mlt)
     add("body.mlt_owned_revision","non-destructive native MLT multitrack visual and sound revision",
-        "Apply original source-attested JSON patches, linked razor/ripple, or signed-frame roll/slip/slide across director-selected native picture/audio clips. Preserve exact source identities; explicitly choose timeline-locked audio/opacity keyframes for local source-window edits, then prove native XML roundtrip, rights, physical clocks and atomic new-project publication. No complete NLE claim.",
+        "Apply original source-attested JSON patches, linked razor/ripple, or signed-frame roll/slip/slide across director-selected native picture/audio clips. Preserve original source identity and explicitly authored timeline-locked gain, stereo pan and opacity keyframes during local source-window edits; then prove native XML roundtrip, rights, physical clocks and atomic new-project publication. No complete NLE claim.",
         "write",bool(shutil.which("melt") and video_io),["edit","operation","out"],revise_native_owned_mlt)
     add("body.mlt_owned_render","native MLT multitrack audiovisual MP4 rendering",
         "Render fully rights-verified native MLT original picture and audio with exact rational clock; "
