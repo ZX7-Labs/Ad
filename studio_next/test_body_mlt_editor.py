@@ -578,6 +578,22 @@ class VerifiedMLTEditorialTests(unittest.TestCase):
                 {"op":"replace","path":"/tracks/1/clips/0/end_frame","value":6},
                 {"op":"replace","path":"/tracks/1/opacity_keyframes/0/opacity","value":0.75},
             ]}
+            from studio_next.body_document_schemas import document_contract
+            exact=document_contract("body.mlt_owned_revision")
+            self.assertEqual(exact["input_name"],"operation")
+            self.assertTrue(validate_document(
+                "body.mlt_owned_revision",instruction,"operation"))
+            for bad_command in (
+                {"operations":[{"op":"remove","path":"/tracks/0",
+                                "value":"not allowed"}]},
+                {"operations":[{"op":"replace","path":"/tracks/0"}]},
+                {"operations":[{"op":"execute_shell","path":"",
+                                "value":"no"}]},
+                {"operations":[]},
+            ):
+                with self.assertRaises(ValueError):
+                    validate_document("body.mlt_owned_revision",
+                                      bad_command,"operation")
             ops.write_text(json.dumps(instruction))
             new=root/"revised-native.mlt"
             evidence=revise_owned_mlt_project(old,ops,root,root/"vault",new)
