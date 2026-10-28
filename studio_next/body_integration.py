@@ -667,7 +667,8 @@ def body_catalog(workspace,*,vault_root=None):
     def compare_native_owned_mlt(inputs):
         old=_path_within(root,inputs["before_edit"],exists=True)
         new=_path_within(root,inputs["after_edit"],exists=True)
-        return compare_owned_mlt_projects(old,new,root,vault.root)
+        return compare_owned_mlt_projects(old,new,root,vault.root,
+                                          focus=inputs.get("focus","summary"))
 
     def revise_native_owned_mlt(inputs):
         prior=_path_within(root,inputs["edit"],exists=True)
@@ -912,7 +913,7 @@ def body_catalog(workspace,*,vault_root=None):
         "Reinspect physical source rights, original picture and sound, rational frame clock, upper-layer blend and native opacity; exact lossless XML rebuild required. Publishes immutable CAS-addressed JSON; rejects unsupported MLT effects instead of silently discarding them.",
         "write",video_io,["edit","out"],import_native_owned_mlt)
     add("body.mlt_owned_compare","source-exact visual and soundtrack timeline revision evidence",
-        "Read both actual immutable native MLT projects, revalidate each original media right, fully reconstruct both typed graphs without loss and report exactly moved, inserted, replaced or preserved source-frame spans and authored effect/clip partition changes. Never claim pixel equivalence or artistic quality from timeline structure.",
+        "Read and reattest both original native MLT projects, then obtain a compact summary (default), a precise picture:N or sound:N track, or an explicitly requested all-track source-frame/clip/effect review. Always use exact native roundtrip and rights; never infer pixel equivalence or artistic quality from graph structure.",
         "read",video_io,["before_edit","after_edit"],compare_native_owned_mlt)
     add("body.mlt_owned_revision","non-destructive native MLT multitrack visual and sound revision",
         "Execute author-authored source-attested JSON patches, group razor/ripple, signed-frame roll/slip/slide, or atomic cross-track picture/sound placements with explicit destination effect policy and no hidden ripple. Preserve every original source, media rights, frame clock and prior edit; prove native XML roundtrip and immutable publication. No complete NLE claim.",
@@ -962,7 +963,8 @@ def validate_witness(_tool_id,result):
                     not prior.is_relative_to(workspace) or
                     not after.is_relative_to(workspace)):
                 return False
-            actual=compare_owned_mlt_projects(prior,after,workspace,vault_root)
+            actual=compare_owned_mlt_projects(prior,after,workspace,vault_root,
+                                               focus=result["query_focus"])
             return actual==result
         except (ValueError,KeyError,TypeError,OSError,OverflowError):
             return False

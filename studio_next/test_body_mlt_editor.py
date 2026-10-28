@@ -1101,7 +1101,8 @@ class VerifiedMLTEditorialTests(unittest.TestCase):
             self.assertEqual(changed["audio_tracks"][1]["gain_db"],-6)
             reviewed=catalog.invoke("body.mlt_owned_compare",{
                 "before_edit":"placements-original.mlt",
-                "after_edit":"placements-edited.mlt"},
+                "after_edit":"placements-edited.mlt",
+                "focus":"all"},
                 allowed_access={"read"})
             self.assertTrue(reviewed["structural_changes_verified"])
             self.assertEqual(reviewed["before_frames"],8)
