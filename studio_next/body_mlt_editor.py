@@ -13,7 +13,6 @@ import hashlib
 import json
 import math
 import os
-import wave
 import subprocess
 from pathlib import Path
 import tempfile
@@ -21,6 +20,7 @@ import xml.etree.ElementTree as ET
 
 from .body_color_pipeline import _actual_bt709_source
 from .media_vault import MediaVault, sha256_file
+from .pcm_wave import inspect_pcm_wav
 from .precision_retime import _source_timebase
 from .delivery_audit import _probe_details
 from .composite_mix import _decoded_source_duration
@@ -203,15 +203,16 @@ def _single_recorded_audio_stream(path):
 
 
 def _audio_only_source_frames(path, fps):
-    """Count only complete original PCM samples at this project's frame clock."""
+    """Count exact original integer PCM samples on this project's frame clock.
+
+    Support standard and extensible PCM uniformly on Python 3.11 and later.
+    Do not interpret/convert the owner's original channel layout or codec.
+    """
     try:
-        with wave.open(str(path),"rb") as original:
-            samples=original.getnframes()
-            sample_rate=original.getframerate()
-            if samples<=0 or sample_rate<=0:
-                raise ValueError("Original WAV contains no physical PCM samples")
-            frames=(samples*fps.numerator)//(sample_rate*fps.denominator)
-    except (OSError,wave.Error) as exc:
+        source=inspect_pcm_wav(path)
+        frames=(source["frames"]*fps.numerator)//(
+            source["sample_rate"]*fps.denominator)
+    except (OSError,ValueError) as exc:
         raise ValueError("Native original WAV frame timing cannot be verified") from exc
     if frames<1:
         raise ValueError("Recorded PCM is shorter than a project frame")
