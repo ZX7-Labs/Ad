@@ -308,8 +308,8 @@ class MediaVaultProductionTests(unittest.TestCase):
         """Actual 5.1 PCM is a valid owner asset, never silently downmixed."""
         import struct
         from fractions import Fraction
-        from .pcm_wave import inspect_pcm_wav
-        from .body_mlt_editor import _audio_only_source_frames
+        from studio_next.pcm_wave import inspect_pcm_wav
+        from studio_next.body_mlt_editor import _audio_only_source_frames
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp)
             original=root/"owner-six-channel.wav"
