@@ -73,6 +73,23 @@ class FullPhysicalFilmDecodeQA(unittest.TestCase):
                 for i in range(len(emitted[0])-1)])
             self.assertIsNotNone(result["audio_measurements"])
             self.assertIn("primary audio",result["audio_measurements"]["measurement"])
+            # Original custody is the initial trust boundary: independently
+            # decode every track BEFORE rights-attesting the complete asset.
+            from studio_next.media_vault import verify_media_container
+            original_run=subprocess.run
+            physical_commands=[]
+            def recorded(argv,**kwargs):
+                if argv and argv[0]=="ffmpeg":
+                    physical_commands.append(argv)
+                return original_run(argv,**kwargs)
+            with patch("subprocess.run",side_effect=recorded):
+                verify_media_container(source,"video/mp4")
+            full_mapping=[c for c in physical_commands if "-xerror" in c]
+            self.assertEqual(len(full_mapping),1,physical_commands)
+            self.assertIn(["-map","0:v"],[full_mapping[0][i:i+2]
+                for i in range(len(full_mapping[0])-1)])
+            self.assertIn(["-map","0:a?"],[full_mapping[0][i:i+2]
+                for i in range(len(full_mapping[0])-1)])
 
     def test_never_invent_strict_limits_on_original_artistic_darkness_or_silence(self):
         with tempfile.TemporaryDirectory() as root:
