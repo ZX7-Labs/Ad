@@ -39,6 +39,40 @@ class NativeStereoPanTests(unittest.TestCase):
             (3.14159265359,"3.14159265359")):
             self.assertEqual(_gain_number(original),old_spelling)
 
+    def test_timeline_insert_delete_keeps_full_double_precision_of_authored_pan_gain(self):
+        from studio_next.body_mlt_linked_actions import _rekey,_sample
+        curves={
+            "pan":[{"frame":0,"pan":0.12345678901234568},
+                   {"frame":11,"pan":0.9876543210987654}],
+            "gain_db":[{"frame":0,"gain_db":-7.12345678901234},
+                       {"frame":11,"gain_db":-2.98765432109876}],
+        }
+        for name,keys in curves.items():
+            with self.subTest(control=name):
+                errors=[]
+                moved=_rekey(keys,"ripple_insert",5,2,name,True,errors)
+                at=[k[name] for k in moved if k["frame"]==7]
+                self.assertEqual(len(at),1)
+                self.assertEqual(at[0],_sample(keys,5,name))
+                before=[k[name] for k in moved if k["frame"]==4]
+                self.assertEqual(before,[_sample(keys,4,name)])
+                self.assertEqual(max(errors),0.0)
+                self.assertEqual(moved[-1][name],keys[-1][name])
+                errors=[]
+                deleted=_rekey(keys,"ripple_delete",5,2,name,True,errors)
+                new=[k[name] for k in deleted if k["frame"]==5]
+                self.assertEqual(new,[_sample(keys,7,name)])
+                self.assertEqual(max(errors),0.0)
+        # Cairo opacity currently has a proven 12-digit bridge; do not
+        # pretend this native visual backend also retains full float64.
+        keys=[{"frame":0,"opacity":0.12345678901234568},
+              {"frame":11,"opacity":0.9876543210987654}]
+        errors=[]
+        moved=_rekey(keys,"ripple_insert",5,2,"opacity",True,errors)
+        self.assertGreater(max(errors),0)
+        self.assertEqual(moved[1]["opacity"],
+                         float(format(_sample(keys,4,"opacity"),".12g")))
+
     def test_pan_is_explicit_finite_typed_source_animation_not_filter_syntax(self):
         self.assertEqual(_pan_animation({},12),"0.5")
         self.assertEqual(_pan_animation({"pan":0},12),"0")
