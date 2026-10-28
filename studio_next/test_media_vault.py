@@ -302,6 +302,61 @@ class MediaVaultProductionTests(unittest.TestCase):
                     owner_or_generator="fake-operator")
             self.assertFalse(list(vault.objects.rglob("*")))
 
+    @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"),
+                         "Actual original PCM and native decoder required")
+    def test_multichannel_extensible_pcm_keeps_exact_samples_on_python_311(self):
+        """Actual 5.1 PCM is a valid owner asset, never silently downmixed."""
+        import struct
+        from fractions import Fraction
+        from studio_next.pcm_wave import inspect_pcm_wav
+        from studio_next.body_mlt_editor import _audio_only_source_frames
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp)
+            original=root/"owner-six-channel.wav"
+            subprocess.run([
+                "ffmpeg","-hide_banner","-loglevel","error","-nostdin",
+                "-f","lavfi","-i",
+                "anullsrc=channel_layout=5.1:sample_rate=48000",
+                "-t","1","-c:a","pcm_s16le","-y",str(original)],
+                check=True,timeout=40)
+            physical=original.read_bytes()
+            fmt_at=physical.find(b"fmt ")
+            self.assertGreaterEqual(fmt_at,12)
+            self.assertEqual(struct.unpack_from("<H",physical,fmt_at+8)[0],
+                             65534, "Fixture must actually be extensible WAV")
+            observed=inspect_pcm_wav(original)
+            self.assertEqual((observed["channels"],observed["sample_rate"],
+                              observed["frames"],observed["sample_bits"]),
+                             (6,48000,48000,16))
+            self.assertEqual(_audio_only_source_frames(original,Fraction(12,1)),12)
+            vault=MediaVault(root/"vault")
+            admitted=vault.ingest(original,mime="audio/wav",
+                rights="owner_supplied",source_type="owner_upload",
+                source_id="verified-original-six-channel",
+                evidence="Native six-channel extensible PCM decoded",
+                owner_or_generator="recording-owner")
+            self.assertEqual(vault.inspect(admitted["asset_id"],
+                attestation_id=admitted["attestation_id"])["mime"],"audio/wav")
+            malformed=root/"forged-sound.wav"
+            original_bytes=bytearray(physical)
+            # Retain all RIFF sizes but change the extensible SubFormat to
+            # IEEE_FLOAT; an owner-supplied PCM claim must reject it.
+            original_bytes[fmt_at+8+24]=3
+            malformed.write_bytes(original_bytes)
+            with self.assertRaisesRegex(MediaCustodyError,
+                                        "authenticated integer PCM"):
+                vault.ingest(malformed,mime="audio/wav",rights="owner_supplied",
+                    source_type="owner_upload",source_id="invalid-float",
+                    evidence="Untrusted original codec claim",
+                    owner_or_generator="recording-owner")
+            malformed.write_bytes(physical[:-1])
+            with self.assertRaisesRegex(MediaCustodyError,
+                                        "more PCM samples"):
+                vault.ingest(malformed,mime="audio/wav",rights="owner_supplied",
+                    source_type="owner_upload",source_id="truncated-pcm",
+                    evidence="Untrusted original sample count",
+                    owner_or_generator="recording-owner")
+
     def test_wav_cannot_claim_unrecorded_pcm_audio_samples(self):
         import wave
         import struct
