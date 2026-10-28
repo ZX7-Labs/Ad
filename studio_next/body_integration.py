@@ -29,6 +29,7 @@ from .body_mlt_editor import export_owned_mlt,verify_owned_mlt_project
 from .body_mlt_render import render_owned_mlt
 from .body_mlt_roundtrip import import_owned_mlt_project
 from .body_mlt_revision import revise_owned_mlt_project
+from .body_mlt_relink import relink_owned_mlt_project
 from .body_mlt_compare import compare_owned_mlt_projects
 from .body_timecode import (frame_timecode_receipt,parse_timecode_receipt,
                             verify_timecode_receipt,native_mlt_timecode_receipt,
@@ -186,6 +187,7 @@ def _trusted_body_revision(tool_id):
         "body.mlt_owned_export":["body_mlt_editor.py","pcm_wave.py","media_vault.py","precision_retime.py","body_color_pipeline.py","delivery_audit.py","composite_mix.py"],
         "body.mlt_owned_render":["body_mlt_render.py","body_mlt_editor.py","pcm_wave.py","media_vault.py","precision_retime.py","production_qc.py","composite_mix.py"],
         "body.mlt_owned_import":["body_mlt_roundtrip.py","body_mlt_editor.py","body_materials.py","pcm_wave.py","media_vault.py","precision_retime.py","body_color_pipeline.py"],
+        "body.mlt_owned_relink":["body_mlt_relink.py","body_asset_links.py","body_mlt_roundtrip.py","body_mlt_editor.py","body_materials.py","media_vault.py","pcm_wave.py","precision_retime.py","body_color_pipeline.py"],
         "body.mlt_owned_compare":["body_mlt_compare.py","body_mlt_roundtrip.py","body_mlt_editor.py","body_materials.py","pcm_wave.py","media_vault.py","precision_retime.py","body_color_pipeline.py"],
         "body.mlt_owned_revision":["body_mlt_revision.py","body_mlt_linked_actions.py","body_mlt_local_edits.py","body_mlt_placements.py","body_project_revision.py","body_mlt_roundtrip.py","body_mlt_editor.py","body_materials.py","pcm_wave.py","media_vault.py","precision_retime.py","body_color_pipeline.py"],
         "body.otio_owned_import":["body_sequence_otio.py","body_sequence_cuts.py","media_vault.py","precision_retime.py","body_color_pipeline.py","composite_mix.py"],
@@ -235,6 +237,7 @@ def _trusted_body_revision(tool_id):
         "body.mlt_owned_export":["melt","ffmpeg","ffprobe"],
         "body.mlt_owned_render":["melt","ffmpeg","ffprobe"],
         "body.mlt_owned_import":["ffmpeg","ffprobe"],
+        "body.mlt_owned_relink":["ffmpeg","ffprobe"],
         "body.mlt_owned_compare":["ffmpeg","ffprobe"],
         "body.mlt_owned_revision":["melt","ffmpeg","ffprobe"],
         "body.otio_owned_import":["ffmpeg","ffprobe"],
@@ -696,6 +699,15 @@ def body_catalog(workspace,*,vault_root=None):
         dest=_body_output(root,inputs["out"],allowed=(".json",))
         return import_owned_mlt_project(source,root,vault.root,dest)
 
+    def relink_native_owned_mlt(inputs):
+        source=_path_within(root,inputs["edit"],exists=True)
+        dest=_body_output(root,inputs["out"],allowed=(".mlt",))
+        evidence={}
+        def produce(stage):
+            evidence.update(relink_owned_mlt_project(source,root,inputs["old_workspace"],stage))
+        output=_commit_actual_body_output(dest,produce)
+        return {**output,**{k:v for k,v in evidence.items() if k not in ("path","sha256","bytes")}}
+
     def compare_native_owned_mlt(inputs):
         old=_path_within(root,inputs["before_edit"],exists=True)
         new=_path_within(root,inputs["after_edit"],exists=True)
@@ -966,6 +978,9 @@ def body_catalog(workspace,*,vault_root=None):
     add("body.mlt_owned_import","reversible rights-attested native MLT timeline to typed edit plan",
         "Reinspect exact original picture/sound rights and rational clock, native layer geometry/rotation, opacity, original-source gain and animated stereo balance; require complete lossless XML roundtrip. Publish immutable edit JSON and reject unsupported native plugins without loss.",
         "write",video_io,["edit","out"],import_native_owned_mlt)
+    add("body.mlt_owned_relink","restore native MLT media links after verified workspace relocation",
+        "Rebind exact original picture/audio CAS and attestation identities on the new host; verify native effects, timing and lossless roundtrip. Preserve archived original bytes; never open old-host sources or reuse old execution receipts.",
+        "write",video_io,["edit","old_workspace","out"],relink_native_owned_mlt)
     add("body.mlt_owned_compare","source-exact visual and soundtrack timeline revision evidence",
         "Read and reattest both original native MLT projects, then obtain a compact summary (default), a precise picture:N or sound:N track, or an explicitly requested all-track source-frame/clip/effect review. Always use exact native roundtrip and rights; never infer pixel equivalence or artistic quality from graph structure.",
         "read",video_io,["before_edit","after_edit"],compare_native_owned_mlt)

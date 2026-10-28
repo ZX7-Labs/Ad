@@ -32,6 +32,7 @@ _SOURCE_FIELDS={
     "body.mlt_owned_export":("plan",),
     "body.mlt_owned_render":("edit",),
     "body.mlt_owned_import":("edit",),
+    "body.mlt_owned_relink":("edit",),
     "body.mlt_owned_revision":("edit","operation"),
     "body.mlt_owned_compare":("before_edit","after_edit"),
     "body.timeline_revision":("plan","operation"),
@@ -147,6 +148,12 @@ def fingerprint_physical_inputs(tool_id,inputs,workspace):
         p=_file(root,source)
         if p.is_file():
             found.add(p)
+            if p.suffix.lower()==".mlt" and tool_id=="body.mlt_owned_relink":
+                from .body_mlt_relink import inspect_relocated_mlt
+                inspected=inspect_relocated_mlt(p,root,inputs.get("old_workspace"))
+                found.add(inspected["report_path"])
+                for reference in inspected["references"]:
+                    found.add(reference["path"])
             if p.suffix.lower()==".mlt" and tool_id in ("body.mlt_owned_render","body.mlt_owned_import","body.mlt_owned_revision","body.mlt_owned_compare","body.mlt_owned_timecode_format","body.mlt_owned_timecode_parse"):
                 from .body_mlt_editor import verify_owned_mlt_project
                 import xml.etree.ElementTree as ET

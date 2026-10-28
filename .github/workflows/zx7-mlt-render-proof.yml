@@ -28,7 +28,7 @@ jobs:
         run: python -m compileall -q studio_next
       - name: Prove MLT original source-to-verified MP4 rendering
         run: |
-          python -m unittest studio_next.test_body_mlt_editor studio_next.test_body_mlt_pan studio_next.test_body_mlt_transform studio_next.test_body_mlt_masks -v
+          python -m unittest studio_next.test_body_mlt_editor studio_next.test_body_mlt_pan studio_next.test_body_mlt_transform studio_next.test_body_mlt_masks studio_next.test_body_mlt_relink -v
           python -m unittest studio_next.test_body_sequence_cuts studio_next.test_body_tool_contracts -v
       - name: Verify render failure never leaves untrusted output
         run: |

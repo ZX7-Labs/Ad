@@ -22,6 +22,7 @@ zx7-desktop = "studio_next.body_desktop:main"
 zx7-tools = "studio_next.body_capabilities:main"
 zx7-archive = "studio_next.body_archive:main"
 zx7-relink-otio = "studio_next.body_asset_links:main"
+zx7-relink-mlt = "studio_next.body_mlt_relink:main"
 
 [tool.setuptools.packages.find]
 include = ["studio_next", "motion_studio"]
