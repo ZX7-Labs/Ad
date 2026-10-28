@@ -176,7 +176,7 @@ def _trusted_body_revision(tool_id):
         "body.otio_owned_export":["body_sequence_otio.py","body_sequence_cuts.py","media_vault.py","precision_retime.py","body_color_pipeline.py","composite_mix.py"],
         "body.mlt_owned_export":["body_mlt_editor.py","media_vault.py","precision_retime.py","body_color_pipeline.py","delivery_audit.py","composite_mix.py"],
         "body.mlt_owned_render":["body_mlt_render.py","body_mlt_editor.py","media_vault.py","precision_retime.py","production_qc.py","composite_mix.py"],
-        "body.mlt_owned_import":["body_mlt_roundtrip.py","body_mlt_editor.py","media_vault.py","precision_retime.py","body_color_pipeline.py"],
+        "body.mlt_owned_import":["body_mlt_roundtrip.py","body_mlt_editor.py","body_materials.py","media_vault.py","precision_retime.py","body_color_pipeline.py"],
         "body.otio_owned_import":["body_sequence_otio.py","body_sequence_cuts.py","media_vault.py","precision_retime.py","body_color_pipeline.py","composite_mix.py"],
         "body.vector_png":["creative_asset_ops.py"],
         "body.film_thumbnail":["creative_asset_ops.py","delivery_audit.py"],
