@@ -178,7 +178,7 @@ def _trusted_body_revision(tool_id):
         "body.mlt_owned_export":["body_mlt_editor.py","pcm_wave.py","media_vault.py","precision_retime.py","body_color_pipeline.py","delivery_audit.py","composite_mix.py"],
         "body.mlt_owned_render":["body_mlt_render.py","body_mlt_editor.py","pcm_wave.py","media_vault.py","precision_retime.py","production_qc.py","composite_mix.py"],
         "body.mlt_owned_import":["body_mlt_roundtrip.py","body_mlt_editor.py","body_materials.py","pcm_wave.py","media_vault.py","precision_retime.py","body_color_pipeline.py"],
-        "body.mlt_owned_revision":["body_mlt_revision.py","body_project_revision.py","body_mlt_roundtrip.py","body_mlt_editor.py","body_materials.py","pcm_wave.py","media_vault.py","precision_retime.py","body_color_pipeline.py"],
+        "body.mlt_owned_revision":["body_mlt_revision.py","body_mlt_linked_actions.py","body_project_revision.py","body_mlt_roundtrip.py","body_mlt_editor.py","body_materials.py","pcm_wave.py","media_vault.py","precision_retime.py","body_color_pipeline.py"],
         "body.otio_owned_import":["body_sequence_otio.py","body_sequence_cuts.py","media_vault.py","precision_retime.py","body_color_pipeline.py","composite_mix.py"],
         "body.vector_png":["creative_asset_ops.py"],
         "body.film_thumbnail":["creative_asset_ops.py","delivery_audit.py"],
@@ -901,7 +901,7 @@ def body_catalog(workspace,*,vault_root=None):
         "Reinspect physical source rights, original picture and sound, rational frame clock, upper-layer blend and native opacity; exact lossless XML rebuild required. Publishes immutable CAS-addressed JSON; rejects unsupported MLT effects instead of silently discarding them.",
         "write",video_io,["edit","out"],import_native_owned_mlt)
     add("body.mlt_owned_revision","non-destructive native MLT multitrack visual and sound revision",
-        "Apply guarded creative JSON Pointer changes to recovered native picture and sound tracks. Verify every affected source, exact original clock and complete lossless XML roundtrip before publishing a new editable .mlt; prior project remains untouched.",
+        "Apply either guarded JSON Pointer changes or model-selected linked razor, ripple insert and ripple delete to exact source-attested picture/sound tracks. Preserve surviving source frames and authored gain/opacity automation, then prove full native XML roundtrip, media rights, timebase, immutable original and physical publication. No full NLE claim.",
         "write",bool(shutil.which("melt") and video_io),["edit","operation","out"],revise_native_owned_mlt)
     add("body.mlt_owned_render","native MLT multitrack audiovisual MP4 rendering",
         "Render exact SHA-attested MLT project to decoded H264 with explicit original-audio or picture-only delivery; "
