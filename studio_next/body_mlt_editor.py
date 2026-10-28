@@ -13,6 +13,7 @@ import hashlib
 import json
 import math
 import os
+import wave
 import subprocess
 from pathlib import Path
 import tempfile
@@ -140,6 +141,22 @@ def _single_recorded_audio_stream(path):
     return track["index"]
 
 
+def _audio_only_source_frames(path, fps):
+    """Count only complete original PCM samples at this project's frame clock."""
+    try:
+        with wave.open(str(path),"rb") as original:
+            samples=original.getnframes()
+            sample_rate=original.getframerate()
+            if samples<=0 or sample_rate<=0:
+                raise ValueError("Original WAV contains no physical PCM samples")
+            frames=(samples*fps.numerator)//(sample_rate*fps.denominator)
+    except (OSError,wave.Error) as exc:
+        raise ValueError("Native original WAV frame timing cannot be verified") from exc
+    if frames<1:
+        raise ValueError("Recorded PCM is shorter than a project frame")
+    return frames
+
+
 def validate_mlt_edit(plan,workspace,vault_root):
     """Verify every media byte and frame position before creating a project."""
     root=Path(workspace).resolve()
@@ -244,8 +261,9 @@ def validate_mlt_edit(plan,workspace,vault_root):
                     clip["source"]!="zx7:sha256:"+asset):
                 raise ValueError("MLT sound source has no matching authenticated original identity")
             record=vault.inspect(asset,attestation_id=att)
-            if record["mime"] not in ("video/mp4","video/quicktime","video/webm"):
-                raise ValueError("Initial MLT original-sound adapter requires authenticated video audio")
+            audio_only=record["mime"]=="audio/wav"
+            if not audio_only and record["mime"] not in ("video/mp4","video/quicktime","video/webm"):
+                raise ValueError("Native sound source requires owner-attested video audio or actual PCM WAV")
             file=Path(record["path"]).resolve()
             if not file.is_relative_to(root):
                 raise ValueError("Original sound escapes the owner's studio workspace")
@@ -255,13 +273,17 @@ def validate_mlt_edit(plan,workspace,vault_root):
             if end<=first or pos<end_at or pos+end-first>total:
                 raise ValueError("Original sound overlaps its track or exceeds the picture timeline")
             if asset not in sound_sources:
-                probe=_probe_details(file)
-                if not probe["audio_stream_present"]:
-                    raise ValueError("Audio track contains no physically recorded soundtrack")
+                if not audio_only:
+                    probe=_probe_details(file)
+                    if not probe["audio_stream_present"]:
+                        raise ValueError("Audio track contains no physically recorded soundtrack")
                 actual_audio_index=_single_recorded_audio_stream(file)
-                source_fps,frames=_source_timebase(file)
-                if source_fps!=fps:
-                    raise ValueError("Original soundtrack requires the authored rational frame clock")
+                if audio_only:
+                    frames=_audio_only_source_frames(file,fps)
+                else:
+                    source_fps,frames=_source_timebase(file)
+                    if source_fps!=fps:
+                        raise ValueError("Original soundtrack requires the authored rational frame clock")
                 available=_decoded_source_duration(file,"audio")
                 sound_sources[asset]={"path":file,"frames":frames,
                     "audio_seconds":available,"attestation":att,
@@ -623,22 +645,28 @@ def verify_owned_mlt_project(file_path):
             raise ValueError("MLT native producer is not an exact physical CAS source")
         vault=MediaVault(filename.parents[2])
         record=vault.inspect(digest,attestation_id=att)
-        if (Path(record["path"])!=filename or record["mime"] not in (
-                "video/mp4","video/quicktime","video/webm")):
-            raise ValueError("Native project lost its original licensed video/audio")
         is_sound=producer.get("id").startswith("audio-source-")
+        is_audio_only=record["mime"]=="audio/wav"
+        if (Path(record["path"])!=filename or
+            (record["mime"] not in ("video/mp4","video/quicktime","video/webm") and
+                not (is_sound and is_audio_only))):
+            raise ValueError("Native project lost its original licensed video/audio")
         if digest not in sources:
-            fps,count=_source_timebase(filename)
-            if fps!=expected_rate:
-                raise ValueError("MLT original footage/sound changed its frame clock")
+            if is_audio_only:
+                count=_audio_only_source_frames(filename,expected_rate)
+            else:
+                measured,count=_source_timebase(filename)
+                if measured!=expected_rate:
+                    raise ValueError("MLT original footage/sound changed its frame clock")
             sources[digest]={"frames":count}
         if is_sound:
             if props["audio_index"]!=str(_single_recorded_audio_stream(filename)):
                 raise ValueError("MLT original audio index does not match verified file")
             if "sound_seconds" not in sources[digest]:
-                probe=_probe_details(filename)
-                if not probe["audio_stream_present"]:
-                    raise ValueError("Recorded original sound is missing")
+                if not is_audio_only:
+                    probe=_probe_details(filename)
+                    if not probe["audio_stream_present"]:
+                        raise ValueError("Recorded original sound is missing")
                 _single_recorded_audio_stream(filename)
                 sources[digest]["sound_seconds"]=_decoded_source_duration(filename,"audio")
         else:
