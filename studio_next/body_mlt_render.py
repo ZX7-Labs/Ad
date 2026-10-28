@@ -72,7 +72,7 @@ def _require_native_audio_panner():
             "Native director-authored sound position requires installed MLT panner")
 
 
-def _require_native_transform():
+def _require_native_transform(service="qtblend"):
     """An installed transition is insufficient: geometry needs the Qt filter."""
     try:
         result=subprocess.run(["melt","-query","filters"],
@@ -80,8 +80,8 @@ def _require_native_transform():
     except (OSError,subprocess.SubprocessError) as exc:
         raise RuntimeError("Cannot inspect installed native layer transform") from exc
     plugins={row.strip().removeprefix("- ").strip() for row in result.stdout.splitlines()}
-    if result.returncode or "qtblend" not in plugins:
-        raise RuntimeError("Authored layer geometry requires native MLT qtblend filter")
+    if service not in ("qtblend","qtcrop") or result.returncode or service not in plugins:
+        raise RuntimeError("Authored layer geometry requires native MLT "+service+" filter")
 
 
 def _uncovered_picture_frames(xml,picture_tracks,frames,*,opaque_only=False):
@@ -231,6 +231,8 @@ def render_owned_mlt(edit,workspace,output,*,gap_color=None):
         _require_native_audio_panner()
     if "qtblend" in services:
         _require_native_transform()
+    if "qtcrop" in services:
+        _require_native_transform("qtcrop")
     profile=xml.find("profile")
     tractor=xml.find("tractor")
     if profile is None or tractor is None:

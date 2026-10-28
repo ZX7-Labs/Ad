@@ -72,6 +72,14 @@ _NATIVE_TRANSFORM["description"]=(
     "Upper-layer pixel rectangle and center rotation in degrees, applied before blending. "
     "Keys begin at film frame 0, interpolate linearly and hold after the last key; "
     "preserve fits centered within the rectangle; distort fills it independently on each axis.")
+_NATIVE_MASK=obj({"keyframes":array(obj({"frame":number(0,integer=True),
+    "x":number(-32768,32768),"y":number(-32768,32768),
+    "width":number(0,16384,positive=True),"height":number(0,16384,positive=True),
+    "rounding":number(0,1)}),minItems=1,maxItems=128)})
+_NATIVE_MASK["description"]=(
+    "Upper-layer alpha window in original source-canvas pixels BEFORE layer geometry; "
+    "outside is transparent. Linear film-frame keys begin at zero and hold after the last key. "
+    "Rounding 0 is rectangular; 1 uses half the shorter side as the corner radius.")
 
 _SCHEMAS = {
     "body.visual_graph": ("plan", visual_graph_contract()),
@@ -91,6 +99,7 @@ _SCHEMAS = {
             "audio": choice("intentional_silence")}), minItems=1, maxItems=128)},{
             "blend_mode":choice("normal","multiply","screen","overlay"),
             "transform":_NATIVE_TRANSFORM,
+            "mask":_NATIVE_MASK,
             "opacity":number(0,1),
             "opacity_keyframes":array(obj({"frame":number(0,integer=True),
                 "opacity":number(0,1)}),minItems=2,maxItems=128)}),

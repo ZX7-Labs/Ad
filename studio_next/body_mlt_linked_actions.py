@@ -128,7 +128,7 @@ def _canonical_generated(value,errors,field):
     # Opacity's current Cairo bridge remains 12-significant-digit limited;
     # record this actual engine-specific precision loss rather than assert
     # a universal high-precision native compositor.
-    result=(float(value) if field in ("gain_db","pan","x","y","width","height","rotation_degrees")
+    result=(float(value) if field in ("gain_db","pan","x","y","width","height","rotation_degrees","rounding")
             else float(format(float(value),".12g")))
     errors.append(abs(float(value)-result))
     return result
@@ -260,6 +260,10 @@ def apply_linked_editor_actions(plan,decision):
                     if key=="tracks" and "transform" in track:
                         from .body_mlt_transform import rekey_transform
                         track["transform"]=rekey_transform(track["transform"],
+                            kind,at,amount,retains_after,operation_errors)
+                    if key=="tracks" and "mask" in track:
+                        from .body_mlt_transform import rekey_geometry,MASK_FIELDS
+                        track["mask"]=rekey_geometry(track["mask"],MASK_FIELDS,
                             kind,at,amount,retains_after,operation_errors)
                     controls=(("opacity","opacity_keyframes",1),) if (
                         key=="tracks") else (

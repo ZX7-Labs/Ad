@@ -238,6 +238,8 @@ class NativeTransformProjectTests(unittest.TestCase):
             root=Path(temp);plan,file=original_fixtures.VerifiedMLTEditorialTests()._case(root)
             plan["tracks"][1]["clips"][0].update(position_frame=0,first_frame=0,end_frame=12)
             plan["tracks"][1].update(opacity=.5,transform=transform(geometry(x=8,y=8,width=24,height=12)))
+            plan["tracks"][1]["mask"]={"keyframes":[{
+                "frame":0,"x":0,"y":0,"width":64,"height":48,"rounding":1}]}
             green=root/"green.mp4";original_fixtures._movie(green,"lime")
             rec=MediaVault(root/"vault").ingest(green,mime="video/mp4",rights="owner_supplied",
                 source_type="owner_upload",source_id="green-fixture",evidence="FFmpeg generated fixture",

@@ -960,6 +960,7 @@ def body_catalog(workspace,*,vault_root=None):
     add("body.mlt_owned_export","native MLT multi-track editable video-layer project",
         "Rights-attested video overlays, exact CFR in/out and gaps, native track blend and frame-keyframed opacity through measured MLT Cairo compositing. "
         "Upper-layer pixel rectangles, centered fit/distort and rotation with authored film-frame animation before blending; reversible native geometry controls. "
+        "Animated source-space rounded-rectangle alpha windows before geometry; transparent outside and fully reversible native masks. "
         "Editable source-attested original video and WAV sound; independently authored dB gain, plus native stereo balance 0-left/0.5-center/1-right and frame-animated position on individual sound buses. All actual volume/panner plugins checked; not full NLE certification.",
         "write",bool(shutil.which("melt") and video_io),["plan","out"],export_native_owned_mlt)
     add("body.mlt_owned_import","reversible rights-attested native MLT timeline to typed edit plan",
