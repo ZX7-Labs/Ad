@@ -46,6 +46,55 @@ class ExactNativeEditorialReviewTests(unittest.TestCase):
         self.assertEqual(_source_at(_clip_intervals(b["clips"]),899999),
                          ("real-a","a",899999))
 
+    def test_500_random_different_source_clip_topologies_match_independent_oracle(self):
+        import random
+        rng=random.Random(0xA770)
+        def generate():
+            clips=[]
+            position=0
+            while position<73 and len(clips)<8:
+                position+=rng.randrange(0,5)
+                if position>=73:
+                    break
+                width=min(rng.randint(1,18),73-position)
+                first=rng.randrange(0,72)
+                clips.append({
+                    "source":"zx7:sha256:"+rng.choice(("a","b","c")),
+                    "asset_id":rng.choice(("a","b","c")),
+                    "attestation_id":"proof-"+str(rng.randrange(2)),
+                    "first_frame":first,"end_frame":first+width,
+                    "position_frame":position})
+                position+=width
+            return {"clips":clips}
+        def reference(track,frame):
+            for c in track["clips"]:
+                start=c["position_frame"]
+                length=c["end_frame"]-c["first_frame"]
+                if start<=frame<start+length:
+                    return c["asset_id"],c["attestation_id"],(
+                        c["first_frame"]+frame-start)
+            return None
+        checked=0
+        for seed in range(500):
+            first=generate()
+            second=generate()
+            report=_track_changes(first,second,"sound",0,73,73)
+            observed=set()
+            for span in report["source_frame_spans"]:
+                self.assertGreater(span["end_frame_exclusive"],
+                                   span["start_frame"])
+                observed.update(range(span["start_frame"],
+                                      span["end_frame_exclusive"]))
+            oracle={frame for frame in range(73)
+                    if reference(first,frame)!=reference(second,frame)}
+            self.assertEqual(observed,oracle,msg=("case",seed))
+            self.assertEqual(report["unchanged_original_source_frames"],
+                sum(reference(first,frame) is not None and
+                    reference(first,frame)==reference(second,frame)
+                    for frame in range(73)))
+            checked+=73
+        self.assertEqual(checked,36500)
+
     @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"),
                          "Real native physical source custody requires media decoders")
     def test_real_editor_review_distinguishes_razor_audio_gain_and_source_time(self):
