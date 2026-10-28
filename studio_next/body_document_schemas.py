@@ -115,7 +115,16 @@ _SCHEMAS = {
                     "clip":number(0,integer=True)}),maxItems=8),
                  "audio_targets":array(obj({"track":number(0,integer=True),
                     "clip":number(0,integer=True)}),maxItems=4),
-                 "automation":choice("lock_to_timeline")})
+                 "automation":choice("lock_to_timeline")}),
+            obj({"kind":choice("place"),
+                 "effects":choice("inherit_destination_track_at_film_time"),
+                 "placements":array(obj({
+                     "domain":choice("picture","sound"),
+                     "from_track":number(0,integer=True),
+                     "clip":number(0,integer=True),
+                     "to_track":number(0,integer=True),
+                     "at_frame":number(0,1000000,integer=True)}),
+                     minItems=1,maxItems=256)})
             ]},minItems=1,maxItems=128)})
         ]}),
     "body.timeline_revision": ("plan", _SEQUENCE),
