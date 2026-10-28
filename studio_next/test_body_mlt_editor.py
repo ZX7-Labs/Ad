@@ -661,6 +661,57 @@ class VerifiedMLTEditorialTests(unittest.TestCase):
             self.assertGreater(observations["animated"][1],
                 observations["unity"][1]*.65,observations)
 
+    @unittest.skipUnless(shutil.which("melt"),"Independent actual MLT sound-bus test required")
+    def test_independent_native_sound_bus_gains_never_attenuate_the_other_bus(self):
+        """Two audio tracks at disjoint times must have independent decoded levels."""
+        from array import array
+        from math import sqrt
+        from studio_next.body_integration import body_catalog
+        from studio_next.body_mlt_roundtrip import recover_original_mlt_plan
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);plan,source=self._case(root)
+            recorded=self._original_sound(root)
+            base={"source":"zx7:sha256:"+recorded["asset_id"],
+                "asset_id":recorded["asset_id"],
+                "attestation_id":recorded["attestation_id"],
+                "first_frame":0,"end_frame":4}
+            first=dict(base,position_frame=0)
+            second=dict(base,position_frame=8)
+            plan["audio_tracks"]=[{"clips":[first]},{"clips":[second]}]
+            engine=body_catalog(root)
+            observed={}
+            for case,attenuated_index in (("first",0),("second",1)):
+                authored=json.loads(json.dumps(plan))
+                authored["audio_tracks"][attenuated_index]["gain_db"]=-60
+                source.write_text(json.dumps(authored))
+                xml=f"independent-{case}.mlt"
+                movie=f"independent-{case}.mp4"
+                engine.invoke("body.mlt_owned_export",
+                    {"plan":"original.json","out":xml},allowed_access={"write"})
+                native=ET.parse(root/xml)
+                filters=native.findall("./tractor/filter")
+                self.assertEqual(len(filters),1)
+                props={p.get("name"):p.text for p in filters[0].findall("property")}
+                self.assertEqual(props["track"],str(2+attenuated_index))
+                self.assertEqual(recover_original_mlt_plan(root/xml,root,
+                    root/"vault")["plan"],authored)
+                engine.invoke("body.mlt_owned_render",
+                    {"edit":xml,"out":movie},allowed_access={"write"})
+                raw=subprocess.check_output(["ffmpeg","-hide_banner",
+                    "-loglevel","error","-nostdin","-xerror",
+                    "-i",str(root/movie),"-map","0:a:0",
+                    "-ar","48000","-ac","1","-f","s16le","-"],timeout=45)
+                pcm=array("h");pcm.frombytes(raw)
+                self.assertGreater(len(pcm),45000)
+                def power(start,end):
+                    values=pcm[int(start*48000):int(end*48000)]
+                    return sqrt(sum(v*v for v in values)/len(values))
+                observed[case]=(power(.10,.20),power(.78,.88))
+            self.assertLess(observed["first"][0],observed["first"][1]/8,observed)
+            self.assertLess(observed["second"][1],observed["second"][0]/8,observed)
+            self.assertGreater(observed["first"][1],500,observed)
+            self.assertGreater(observed["second"][0],500,observed)
+
     def test_same_layer_overlap_and_unmeasured_source_range_fail_closed(self):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp);plan,_=self._case(root)
