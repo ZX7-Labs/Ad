@@ -49,7 +49,7 @@ def _require_native_audio_volume():
             capture_output=True,text=True,timeout=40)
     except (OSError,subprocess.SubprocessError) as exc:
         raise RuntimeError("Cannot inspect native audio volume filter") from exc
-    if check.returncode or not any(row.strip()=="volume" for row in check.stdout.splitlines()):
+    if check.returncode or "volume" not in {row.strip().removeprefix("- ").strip() for row in check.stdout.splitlines()}:
         raise RuntimeError("Original sound gain requires installed MLT volume filter")
 
 
