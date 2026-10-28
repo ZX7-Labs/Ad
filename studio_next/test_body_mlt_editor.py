@@ -868,6 +868,153 @@ class VerifiedMLTEditorialTests(unittest.TestCase):
             self.assertTrue((root/"physical-gap.mlt").is_file())
             self.assertTrue((root/"physical-restored.mlt").is_file())
 
+    @unittest.skipUnless(shutil.which("melt"),
+                         "Real native MLT/FFmpeg model-driven film evidence required")
+    def test_model_signed_roll_slip_slide_preserve_native_rights_and_change_real_pixels(self):
+        """Physical original footage: visible signed windows, not XML-only claims."""
+        from studio_next.body_integration import body_catalog
+        from studio_next.media_vault import MediaVault
+        from studio_next.body_mlt_roundtrip import recover_original_mlt_plan
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp)
+            basic,_=self._case(root)
+            variant=root/"native-moving-camera.mp4"
+            subprocess.run(["ffmpeg","-hide_banner","-loglevel","error","-nostdin",
+                "-f","lavfi","-i","testsrc2=size=64x48:rate=12:duration=1",
+                "-frames:v","12","-c:v","libx264","-pix_fmt","yuv420p",
+                "-color_primaries","bt709","-color_trc","bt709",
+                "-colorspace","bt709","-y",str(variant)],
+                check=True,timeout=45)
+            moving=MediaVault(root/"vault").ingest(variant,mime="video/mp4",
+                rights="owner_supplied",source_type="owner_upload",
+                source_id="real-independent-moving-source",
+                evidence="Physical 12 distinct video test-source frames",
+                owner_or_generator="native-test-creator")
+            sound=self._original_sound(root)
+            red=basic["tracks"][0]["clips"][0]
+            def picture(selected,first,end,position):
+                result={key:selected[key] for key in (
+                    "source","asset_id","attestation_id")}
+                result.update({"position_frame":position,
+                    "first_frame":first,"end_frame":end,
+                    "audio":"intentional_silence"})
+                return result
+            moving_frame={
+                "source":"zx7:sha256:"+moving["asset_id"],
+                "asset_id":moving["asset_id"],
+                "attestation_id":moving["attestation_id"]}
+            def soundtrack(first,end,position):
+                return {"source":"zx7:sha256:"+sound["asset_id"],
+                    "asset_id":sound["asset_id"],
+                    "attestation_id":sound["attestation_id"],
+                    "position_frame":position,"first_frame":first,"end_frame":end}
+            plan={"frame_rate":{"numerator":12,"denominator":1},
+                "frame_size":{"width":64,"height":48},
+                "tracks":[{"clips":[picture(red,2,5,0),
+                                    picture(moving_frame,4,7,3),
+                                    picture(red,6,12,6)]}],
+                "audio_tracks":[{"clips":[soundtrack(2,5,0),
+                                          soundtrack(4,7,3),
+                                          soundtrack(6,12,6)],
+                    "gain_keyframes":[{"frame":0,"gain_db":-12},
+                                      {"frame":11,"gain_db":0}]}]}
+            plan_file=root/"native-window-plan.json"
+            plan_file.write_text(json.dumps(plan))
+            studio=body_catalog(root)
+            studio.invoke("body.mlt_owned_export",{
+                "plan":plan_file.name,"out":"source-windows.mlt"},
+                allowed_access={"write"})
+            original=(root/"source-windows.mlt").read_bytes()
+            original_plan=recover_original_mlt_plan(
+                root/"source-windows.mlt",root,root/"vault")["plan"]
+            source_bytes={str(path):path.read_bytes()
+                for path in (root/"red.mp4",variant,root/"sound-440.mp4")}
+            target={"picture_targets":[{"track":0,"clip":0}],
+                    "audio_targets":[{"track":0,"clip":0}]}
+            def emit(kind,clip,delta,outname):
+                command={"edits":[{
+                    "kind":kind,"delta_frames":delta,
+                    "picture_targets":[{"track":0,"clip":clip}],
+                    "audio_targets":[{"track":0,"clip":clip}],
+                    "automation":"lock_to_timeline"}]}
+                op=root/(outname+".json")
+                op.write_text(json.dumps(command))
+                result=studio.invoke("body.mlt_owned_revision",{
+                    "edit":"source-windows.mlt","operation":op.name,
+                    "out":outname+".mlt"},allowed_access={"write"})
+                self.assertEqual(result["frames"],12)
+                self.assertEqual(result["linked_editor_evidence"]["operations"][0]["kind"],
+                                 kind)
+                recovered=recover_original_mlt_plan(
+                    root/(outname+".mlt"),root,root/"vault")["plan"]
+                self.assertEqual(recovered["audio_tracks"][0]["gain_keyframes"],
+                                 original_plan["audio_tracks"][0]["gain_keyframes"])
+                self.assertEqual(recovered["tracks"][0]["clips"][1]["asset_id"],
+                                 moving["asset_id"])
+                self.assertEqual((root/"source-windows.mlt").read_bytes(),original)
+                return recovered
+            changed={}
+            for name,kind,clip in (
+                ("physical-roll","roll",0),
+                ("physical-slip","slip",1),
+                ("physical-slide","slide",1)):
+                changed[name]=emit(kind,clip,1,name)
+            self.assertEqual(changed["physical-roll"]["tracks"][0]["clips"][1]["position_frame"],4)
+            self.assertEqual(changed["physical-slip"]["tracks"][0]["clips"][1]["position_frame"],3)
+            self.assertEqual(changed["physical-slip"]["tracks"][0]["clips"][1]["first_frame"],5)
+            self.assertEqual(changed["physical-slide"]["tracks"][0]["clips"][1]["position_frame"],4)
+
+            def frame(movie,at):
+                raw=subprocess.check_output(["ffmpeg","-hide_banner",
+                    "-loglevel","error","-nostdin","-xerror",
+                    "-i",str(movie),"-vf",f"select=eq(n\\,{at})",
+                    "-vsync","0","-frames:v","1","-pix_fmt","rgb24",
+                    "-f","rawvideo","-"],timeout=45)
+                self.assertEqual(len(raw),64*48*3)
+                return raw
+            for native,name in (
+                ("source-windows.mlt","physical-original.mp4"),
+                ("physical-roll.mlt","physical-roll.mp4"),
+                ("physical-slip.mlt","physical-slip.mp4"),
+                ("physical-slide.mlt","physical-slide.mp4")):
+                studio.invoke("body.mlt_owned_render",{
+                    "edit":native,"out":name},allowed_access={"write"})
+                raw_sound=subprocess.check_output(["ffmpeg","-hide_banner",
+                    "-loglevel","error","-nostdin","-xerror",
+                    "-i",str(root/name),"-map","0:a:0","-ar","48000",
+                    "-ac","1","-f","s16le","-"],timeout=45)
+                self.assertGreaterEqual(len(raw_sound),46000*2)
+                self.assertGreater(len(set(raw_sound[:8000])),12)
+
+            source_frame3=frame(root/"physical-original.mp4",3)
+            red3=frame(root/"physical-roll.mp4",3)
+            self.assertGreater(sum(abs(a-b) for a,b in zip(source_frame3,red3)),
+                               50000)
+            self.assertGreater(sum(abs(a-b) for a,b in zip(
+                source_frame3,frame(root/"physical-slide.mp4",3))),50000)
+            self.assertGreater(sum(abs(a-b) for a,b in zip(
+                frame(root/"physical-original.mp4",4),
+                frame(root/"physical-slip.mp4",4))),500)
+
+            for kind,clip,outname in (("roll",0,"physical-roll"),
+                                      ("slip",1,"physical-slip"),
+                                      ("slide",1,"physical-slide")):
+                inverse=root/(outname+"-inverse.json")
+                inverse.write_text(json.dumps({"edits":[{
+                    "kind":kind,"delta_frames":-1,
+                    "picture_targets":[{"track":0,"clip":clip}],
+                    "audio_targets":[{"track":0,"clip":clip}],
+                    "automation":"lock_to_timeline"}]}))
+                studio.invoke("body.mlt_owned_revision",{
+                    "edit":outname+".mlt","operation":inverse.name,
+                    "out":outname+"-undone.mlt"},allowed_access={"write"})
+                native=recover_original_mlt_plan(
+                    root/(outname+"-undone.mlt"),root,root/"vault")["plan"]
+                self.assertEqual(native,original_plan)
+            for path,blob in source_bytes.items():
+                self.assertEqual(Path(path).read_bytes(),blob)
+            self.assertEqual((root/"source-windows.mlt").read_bytes(),original)
+
     def test_native_editor_patch_refuses_raced_commands_before_project_publication(self):
         from unittest.mock import patch
         import studio_next.body_mlt_revision as patch_engine
