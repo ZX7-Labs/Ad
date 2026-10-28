@@ -185,7 +185,9 @@ class LinkedNativeTimelineMathTests(unittest.TestCase):
                               for frame in authored_frames]
             kind=rng.choice(("ripple_insert","ripple_delete"))
             at=rng.randrange(0,11)
-            amount=rng.randrange(1,13-at)
+            # Preserve at least one genuine source frame on every selected
+            # native track; deleting the entire picture is correctly refused.
+            amount=rng.randrange(1,12-at)
             revised,details=apply_linked_editor_actions(plan,{
                 "edits":[action(kind,at,duration=amount)]})
             self.assertEqual(len(details["operations"]),1)
