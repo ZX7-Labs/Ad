@@ -34,7 +34,7 @@ jobs:
         run: python -m compileall -q studio_next motion_studio creative_director director_research voice_lab src scripts
       - name: Fast exact source-frame algebra and model-authored NLE ABI regression
         run: |
-          python -m unittest studio_next.test_body_mlt_linked_actions studio_next.test_body_mlt_local_edits -v
+          python -m unittest studio_next.test_body_mlt_linked_actions studio_next.test_body_mlt_local_edits studio_next.test_body_mlt_pan.NativeStereoPanTests.test_pan_is_explicit_finite_typed_source_animation_not_filter_syntax studio_next.test_body_mlt_pan.NativeStereoPanTests.test_ripple_keeps_original_stereo_position_at_every_source_frame -v
       - name: Prove source-frame diff is bounded and identifies graph-only splits
         run: python -m unittest studio_next.test_body_mlt_compare.ExactNativeEditorialReviewTests.test_source_address_interval_sweep_is_frame_exact_without_frame_explosion -v
       - name: Validate current Git tracked source inventory
