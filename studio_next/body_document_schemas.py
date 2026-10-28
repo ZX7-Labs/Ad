@@ -63,6 +63,15 @@ _AUDIO = obj({"id": TEXT, **_SOURCE_FIELDS, **_TIMING, "gain_db": number(-120, 1
 _SEQUENCE = obj({"frame_rate": RATE, "frame_size": obj({"width": SIZE, "height": SIZE}),
     "clips": array(obj({**_SOURCE_FIELDS, "first_frame": number(0, integer=True),
                        "end_frame": SIZE, "audio": SOUND}), minItems=1, maxItems=128)})
+_NATIVE_TRANSFORM = obj({"aspect":choice("preserve","distort"),
+    "keyframes":array(obj({"frame":number(0,integer=True),
+        "x":number(-32768,32768),"y":number(-32768,32768),
+        "width":number(0,16384,positive=True),"height":number(0,16384,positive=True),
+        "rotation_degrees":number(-36000,36000)}),minItems=1,maxItems=128)})
+_NATIVE_TRANSFORM["description"]=(
+    "Upper-layer pixel rectangle and center rotation in degrees, applied before blending. "
+    "Keys begin at film frame 0, interpolate linearly and hold after the last key; "
+    "preserve fits centered within the rectangle; distort fills it independently on each axis.")
 
 _SCHEMAS = {
     "body.visual_graph": ("plan", visual_graph_contract()),
@@ -81,6 +90,7 @@ _SCHEMAS = {
             "first_frame": number(0, integer=True), "end_frame": SIZE,
             "audio": choice("intentional_silence")}), minItems=1, maxItems=128)},{
             "blend_mode":choice("normal","multiply","screen","overlay"),
+            "transform":_NATIVE_TRANSFORM,
             "opacity":number(0,1),
             "opacity_keyframes":array(obj({"frame":number(0,integer=True),
                 "opacity":number(0,1)}),minItems=2,maxItems=128)}),

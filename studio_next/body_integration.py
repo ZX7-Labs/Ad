@@ -267,6 +267,10 @@ def _trusted_body_revision(tool_id):
     known=dependencies.get(tool_id)
     if known is None:
         raise ValueError("No verified implementation dependencies for "+tool_id)
+    if "body_mlt_editor.py" in known:
+        # Geometry participates in strict native validation, recovery and
+        # rendering. A bridge change must invalidate all affected cached tools.
+        known=[*known,"body_mlt_transform.py"]
     h=hashlib.sha256()
     for item in ("body_integration.py","body_publication.py","durable_sqlite.py",
                  "body_tool_contracts.py","body_document_schemas.py","registry.py")+tuple(known):
@@ -955,10 +959,11 @@ def body_catalog(workspace,*,vault_root=None):
         "write",bool(otio_ready and video_io),["edit","out"],import_strict_cut)
     add("body.mlt_owned_export","native MLT multi-track editable video-layer project",
         "Rights-attested video overlays, exact CFR in/out and gaps, native track blend and frame-keyframed opacity through measured MLT Cairo compositing. "
+        "Upper-layer pixel rectangles, centered fit/distort and rotation with authored film-frame animation before blending; reversible native geometry controls. "
         "Editable source-attested original video and WAV sound; independently authored dB gain, plus native stereo balance 0-left/0.5-center/1-right and frame-animated position on individual sound buses. All actual volume/panner plugins checked; not full NLE certification.",
         "write",bool(shutil.which("melt") and video_io),["plan","out"],export_native_owned_mlt)
     add("body.mlt_owned_import","reversible rights-attested native MLT timeline to typed edit plan",
-        "Reinspect exact original picture/sound rights and rational clock, native opacity, original-source gain and animated stereo balance; require complete lossless XML roundtrip. Publish immutable edit JSON and reject unsupported native plugins without loss.",
+        "Reinspect exact original picture/sound rights and rational clock, native layer geometry/rotation, opacity, original-source gain and animated stereo balance; require complete lossless XML roundtrip. Publish immutable edit JSON and reject unsupported native plugins without loss.",
         "write",video_io,["edit","out"],import_native_owned_mlt)
     add("body.mlt_owned_compare","source-exact visual and soundtrack timeline revision evidence",
         "Read and reattest both original native MLT projects, then obtain a compact summary (default), a precise picture:N or sound:N track, or an explicitly requested all-track source-frame/clip/effect review. Always use exact native roundtrip and rights; never infer pixel equivalence or artistic quality from graph structure.",

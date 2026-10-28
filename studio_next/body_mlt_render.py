@@ -72,6 +72,18 @@ def _require_native_audio_panner():
             "Native director-authored sound position requires installed MLT panner")
 
 
+def _require_native_transform():
+    """An installed transition is insufficient: geometry needs the Qt filter."""
+    try:
+        result=subprocess.run(["melt","-query","filters"],
+            capture_output=True,text=True,timeout=40)
+    except (OSError,subprocess.SubprocessError) as exc:
+        raise RuntimeError("Cannot inspect installed native layer transform") from exc
+    plugins={row.strip().removeprefix("- ").strip() for row in result.stdout.splitlines()}
+    if result.returncode or "qtblend" not in plugins:
+        raise RuntimeError("Authored layer geometry requires native MLT qtblend filter")
+
+
 def _uncovered_picture_frames(xml,picture_tracks,frames):
     """Find the actual timeline intervals with no playable picture source."""
     spans=[]
@@ -188,6 +200,8 @@ def render_owned_mlt(edit,workspace,output,*,gap_color=None):
         _require_native_audio_volume()
     if "panner" in services:
         _require_native_audio_panner()
+    if "qtblend" in services:
+        _require_native_transform()
     profile=xml.find("profile")
     tractor=xml.find("tractor")
     if profile is None or tractor is None:
@@ -315,9 +329,19 @@ def render_owned_mlt(edit,workspace,output,*,gap_color=None):
         # The material producer is part of the SEALED, worker-only native
         # graph. A consumer test_card is insufficient: actual decoded white
         # frames persisted despite a valid test_card resource.
-        run=subprocess.run(cmd,capture_output=True,text=True,timeout=7200)
+        native_env=os.environ.copy()
+        if os.name=="posix" and not native_env.get("DISPLAY"):
+            # MLT 7.22 Qt checks for DISPLAY before creating QApplication,
+            # even when Qt uses its offscreen platform. No X server or network
+            # exposure is needed; rendering remains in the native worker.
+            # src/modules/qt/common.cpp:createQApplicationIfNeeded
+            native_env["QT_QPA_PLATFORM"]="offscreen"
+            native_env["DISPLAY"]=":0"
+        run=subprocess.run(cmd,capture_output=True,text=True,timeout=7200,env=native_env)
         if run.returncode:
             raise RuntimeError("Verified MLT rendering failed: "+run.stderr[-1200:])
+        if re.search(r"failed to load (?:filter|transition|producer)",run.stderr,re.I):
+            raise RuntimeError("Native MLT did not load an authored service: "+run.stderr[-1200:])
         measured_rate,measured_frames=_source_timebase(encoded)
         if measured_rate!=fps or measured_frames!=frames:
             raise ValueError(f"Actual decoded MLT frame clock differs from original editing intent: expected {fps} ({frames} frames), decoded {measured_rate} ({measured_frames} frames)")
