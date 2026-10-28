@@ -5,7 +5,7 @@
   "fps": 12,
   "frames": 72,
   "samples": 12,
-  "denoise": true,
+  "denoise": false,
   "world": {
     "color": [
       0.009,
