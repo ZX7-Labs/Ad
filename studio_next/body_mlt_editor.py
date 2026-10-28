@@ -306,8 +306,8 @@ def validate_mlt_edit(plan,workspace,vault_root):
     resolved_sound=[]
     gains=[]
     for ti,track in enumerate(sound_tracks):
-        if not isinstance(track,dict) or "clips" not in track or
-                set(track)-{"clips","gain_db","gain_keyframes"}:
+        if (not isinstance(track,dict) or "clips" not in track or
+                set(track)-{"clips","gain_db","gain_keyframes"}):
             raise ValueError("MLT sound track needs original clips and typed gain controls")
         gains.append(_gain_animation(track,total))
         clips=track["clips"]
