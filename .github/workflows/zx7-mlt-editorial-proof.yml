@@ -29,7 +29,7 @@ jobs:
       - name: Check source syntax and exact editorial ABI
         run: |
           python -m compileall -q studio_next
-          python -m unittest studio_next.test_body_mlt_editor -v
+          python -m unittest studio_next.test_body_mlt_editor studio_next.test_body_mlt_compare -v
       - name: Regression of existing frame-accurate editing and source custody
         run: |
           python -m unittest studio_next.test_body_sequence_cuts studio_next.test_body_timeline_revision studio_next.test_body_tool_contracts -v
