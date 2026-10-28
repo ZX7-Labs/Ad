@@ -121,7 +121,7 @@ class ExactNativeEditorialReviewTests(unittest.TestCase):
                                       ("before_edit","after_edit"))
             self.assertEqual(abi["required"],["before_edit","after_edit"])
             self.assertEqual(set(abi["properties"]),
-                             {"before_edit","after_edit"})
+                             {"before_edit","after_edit","focus"})
             cat.invoke("body.mlt_owned_export",{
                 "plan":plan_file.name,"out":"revision-00.mlt"},
                 allowed_access={"write"})
@@ -140,7 +140,9 @@ class ExactNativeEditorialReviewTests(unittest.TestCase):
                              hashlib.sha256(before).hexdigest())
             self.assertFalse(baseline["decoded_pixel_or_audio_equivalence_proven"])
             self.assertTrue(baseline["exact_source_rights_and_native_roundtrips_rechecked"])
-            self.assertEqual(baseline["sound_changes"],[])
+            self.assertEqual(baseline["sound_change_summaries"],[])
+            self.assertNotIn("sound_changes",baseline)
+            self.assertNotIn("picture_changes",baseline)
 
             patches={
                 "sound-gain":{"operations":[
@@ -162,7 +164,8 @@ class ExactNativeEditorialReviewTests(unittest.TestCase):
                     "edit":original.name,"operation":command.name,
                     "out":target},allowed_access={"write"})
                 report=cat.invoke("body.mlt_owned_compare",{
-                    "before_edit":original.name,"after_edit":target},
+                    "before_edit":original.name,"after_edit":target,
+                    "focus":"all"},
                     allowed_access={"read"})
                 observations[mode]=report
                 self.assertTrue(report["structural_changes_verified"])
@@ -233,6 +236,41 @@ class ExactNativeEditorialReviewTests(unittest.TestCase):
             self.assertEqual(resumed["status"],"all_tool_results_verified")
             self.assertEqual(resumed["reused"],["observe-original-change"])
             self.assertEqual(resumed["completed"],["observe-original-change"])
+
+            # Compact Brain query first, precise selected source track second.
+            # No enormous all-shot document is dumped into model context.
+            digest_only=cat.invoke("body.mlt_owned_compare",{
+                "before_edit":original.name,"after_edit":"ripple.mlt"},
+                allowed_access={"read"})
+            self.assertEqual(digest_only["query_focus"],"summary")
+            self.assertNotIn("picture_changes",digest_only)
+            self.assertEqual(len(digest_only["picture_change_summaries"]),2)
+            self.assertGreater(digest_only["picture_change_summaries"][0][
+                "changed_original_source_frames"],0)
+            self.assertTrue(validate_witness("body.mlt_owned_compare",
+                                            digest_only))
+            shot=cat.invoke("body.mlt_owned_compare",{
+                "before_edit":original.name,"after_edit":"ripple.mlt",
+                "focus":"picture:1"},allowed_access={"read"})
+            self.assertEqual(shot["query_focus"],"picture:1")
+            self.assertNotIn("picture_changes",shot)
+            self.assertEqual(shot["selected_track"]["kind"],"picture")
+            self.assertEqual(shot["selected_track"]["track_index"],1)
+            self.assertIsNotNone(shot["selected_track"]["change"])
+            self.assertTrue(validate_witness("body.mlt_owned_compare",shot))
+            for illegal in ("picture:8","sound:4","picture:999",
+                            "../../secrets","all;sh",""):
+                with self.subTest(focus=illegal),self.assertRaises(ValueError):
+                    cat.invoke("body.mlt_owned_compare",{
+                        "before_edit":original.name,
+                        "after_edit":"ripple.mlt","focus":illegal},
+                        allowed_access={"read"})
+            for illegal in ("picture:7","sound:3"):
+                with self.subTest(outside=illegal),self.assertRaises(ValueError):
+                    cat.invoke("body.mlt_owned_compare",{
+                        "before_edit":original.name,
+                        "after_edit":"ripple.mlt","focus":illegal},
+                        allowed_access={"read"})
 
             # Reject fake or modified original facts, no read-only review output.
             forged=root/"forged-owned.mlt"
