@@ -11,6 +11,7 @@ from __future__ import annotations
 from fractions import Fraction
 import hashlib
 import os
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -53,7 +54,92 @@ def _require_native_audio_volume():
         raise RuntimeError("Original sound gain requires installed MLT volume filter")
 
 
-def render_owned_mlt(edit,workspace,output):
+def _uncovered_picture_frames(xml,picture_tracks,frames):
+    """Find the actual timeline intervals with no playable picture source."""
+    spans=[]
+    for playlist in xml.findall("playlist")[:picture_tracks]:
+        cursor=0
+        for item in playlist:
+            if item.tag=="blank":
+                cursor+=int(item.get("length"))
+            else:
+                count=int(item.get("out"))-int(item.get("in"))+1
+                spans.append((cursor,cursor+count))
+                cursor+=count
+        if cursor!=frames:
+            raise ValueError("Original native picture playlist does not match film clock")
+    if not spans:
+        return [(0,frames)]
+    gaps=[]
+    covered=0
+    for start,end in sorted(spans):
+        if start>covered:
+            gaps.append((covered,start))
+        covered=max(covered,end)
+    if covered<frames:
+        gaps.append((covered,frames))
+    return gaps
+
+
+def _worker_art_directed_matte(xml,frames,gap_color,picture_tracks):
+    """Give the signed MLT worker a trusted, full-clock color backing track.
+
+    MLT's consumer test_card property does not reliably replace WHITE
+    playlist blanks in the native Ubuntu renderer. A private generated
+    full-duration colour producer is composited as the LOWEST worker track.
+    All source-owned tracks, existing compositing transitions, sound buses,
+    native frame clocks and animated bus filters keep their relative order.
+    The original editable project never receives this worker-only producer.
+    """
+    if not 1<=picture_tracks<=8 or not 1<=frames<=1000000:
+        raise ValueError("Original picture count and frame clock not verified")
+    if not isinstance(gap_color,str) or not re.fullmatch(
+            r"#[0-9a-fA-F]{6}",gap_color):
+        raise ValueError("Worker matte needs an explicitly authored RGB value")
+    producers=xml.findall("producer")
+    playlists=xml.findall("playlist")
+    tractor=xml.find("tractor")
+    if (tractor is None or len(playlists)<picture_tracks or
+            len(tractor.findall("multitrack"))!=1):
+        raise ValueError("Exact source-owned native worker structure changed")
+
+    # MLT's built-in colour producer requires an RRGGBBAA resource string,
+    # NOT a model-authored plugin name, filesystem path or effect expression.
+    producer=ET.Element("producer",{"id":"zx7-worker-directed-matte",
+                                     "in":"0","out":str(frames-1)})
+    ET.SubElement(producer,"property",{"name":"mlt_service"}).text="colour"
+    ET.SubElement(producer,"property",{"name":"resource"}).text=(
+        "0x"+gap_color[1:].lower()+"ff")
+    xml.insert(1+len(producers),producer)
+
+    backing=ET.Element("playlist",{"id":"zx7-worker-matte-track"})
+    ET.SubElement(backing,"entry",{"producer":"zx7-worker-directed-matte",
+                                    "in":"0","out":str(frames-1)})
+    xml.insert(2+len(producers),backing)
+    multitrack=tractor.find("multitrack")
+    multitrack.insert(0,ET.Element("track",{
+        "producer":"zx7-worker-matte-track","hide":"audio"}))
+
+    # The worker-only matte increments absolute MLT track indices by one.
+    # Compensate EVERY existing transition/filter, including the separately
+    # mixed original sound buses, and preserve their original relative roles.
+    for transition in tractor.findall("transition"):
+        controls={p.get("name"):p for p in transition.findall("property")}
+        for name in ("a_track","b_track"):
+            item=controls.get(name)
+            if item is None or item.text is None or not item.text.isdecimal():
+                raise ValueError("Trusted original MLT composition index unavailable")
+            item.text=str(int(item.text)+1)
+    for filt in tractor.findall("filter"):
+        controls={p.get("name"):p for p in filt.findall("property")}
+        item=controls.get("track")
+        if item is None or item.text is None or not item.text.isdecimal():
+            raise ValueError("Trusted original MLT soundtrack filter index unavailable")
+        item.text=str(int(item.text)+1)
+    return xml
+
+
+def render_owned_mlt(edit,workspace,output,*,gap_color=None):
     """Publish a fully decoded, measured original-source video and sound mix."""
     root=Path(workspace).resolve()
     source=Path(edit).absolute()
@@ -103,6 +189,12 @@ def render_owned_mlt(edit,workspace,output):
             or profile.get("display_aspect_num")!=str(width)
             or profile.get("display_aspect_den")!=str(height)):
         raise ValueError("MLT declared film dimensions/timebase changed")
+    gaps=_uncovered_picture_frames(xml,verified["verified_mlt_tracks"],frames)
+    if gap_color is not None and (not isinstance(gap_color,str) or
+            not re.fullmatch(r"#[0-9a-fA-F]{6}",gap_color)):
+        raise ValueError("Director must author an exact RGB hex gap color, not MLT code")
+    if gaps and gap_color is None:
+        raise ValueError("Uncovered picture needs an explicit director-authored delivery gap_color; MLT defaults to an unapproved white test card")
     sources=[]
     for producer in xml.findall("producer"):
         props={p.get("name"):p.text for p in producer.findall("property")}
@@ -163,6 +255,9 @@ def render_owned_mlt(edit,workspace,output):
             if digest not in frozen:
                 raise ValueError("Sealed MLT references an unauthenticated producer")
             props["resource"].text=str(frozen[digest])
+        if gaps:
+            _worker_art_directed_matte(worker_xml,frames,gap_color,
+                                        verified["verified_mlt_tracks"])
         worker=Path(tmp)/"private-worker.mlt"
         with worker.open("xb") as output_xml:
             output_xml.write(ET.tostring(worker_xml,encoding="utf-8",
@@ -189,12 +284,28 @@ def render_owned_mlt(edit,workspace,output):
              "real_time=-1","threads=2"]
         if sound_present:
             cmd+=["acodec=aac","ab=192k","ar=48000","channels=2"]
+        # The material producer is part of the SEALED, worker-only native
+        # graph. A consumer test_card is insufficient: actual decoded white
+        # frames persisted despite a valid test_card resource.
         run=subprocess.run(cmd,capture_output=True,text=True,timeout=7200)
         if run.returncode:
             raise RuntimeError("Verified MLT rendering failed: "+run.stderr[-1200:])
         measured_rate,measured_frames=_source_timebase(encoded)
         if measured_rate!=fps or measured_frames!=frames:
             raise ValueError(f"Actual decoded MLT frame clock differs from original editing intent: expected {fps} ({frames} frames), decoded {measured_rate} ({measured_frames} frames)")
+        if gaps:
+            first=gaps[0][0]
+            decoded=subprocess.check_output(["ffmpeg","-hide_banner",
+                "-loglevel","error","-nostdin","-xerror","-i",str(encoded),
+                "-vf",f"select=eq(n\\,{first})","-vsync","0",
+                "-frames:v","1","-pix_fmt","rgb24","-f","rawvideo","-"],
+                timeout=90)
+            if len(decoded)!=width*height*3:
+                raise ValueError("Original rendered gap has no complete decoded RGB frame")
+            desired=bytes.fromhex(gap_color[1:])
+            if max(abs(decoded[k+i]-desired[i]) for k in range(0,len(decoded),3)
+                   for i in (0,1,2))>18:
+                raise ValueError("Native renderer did not reproduce director-authored gap color")
         probe=_probe_details(encoded)
         if probe["audio_stream_present"]!=sound_present:
             raise ValueError("MLT original recorded soundtrack was lost or an unauthorized audio stream appeared")
@@ -229,4 +340,7 @@ def render_owned_mlt(edit,workspace,output):
             "original_sound_intentionally_silent":not sound_present,
             "verified_original_audio_tracks":verified["verified_audio_tracks"],
             "full_decoded_picture":True,
+            "artist_selected_gap_color":gap_color,
+            "uncovered_picture_intervals_detected":len(gaps),
+            "sampled_director_gap_pixels_physically_verified":bool(gaps),
             "artistic_quality_approved":False}

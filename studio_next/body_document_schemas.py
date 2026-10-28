@@ -93,14 +93,31 @@ _SCHEMAS = {
                 "gain_db":number(-96,24),
                 "gain_keyframes":array(obj({"frame":number(0,integer=True),
                     "gain_db":number(-96,24)}),minItems=2,maxItems=128)}),maxItems=4)})),
-    "body.mlt_owned_revision": ("operation", obj({
-        "operations":array({"oneOf":[
+    "body.mlt_owned_revision": ("operation", {"oneOf":[
+        obj({"operations":array({"oneOf":[
             obj({"op":choice("add","replace","test"),
-                 "path":{"type":"string"},
-                 "value":{}}),
+                 "path":{"type":"string"},"value":{}}),
             obj({"op":choice("remove"),
-                 "path":{"type":"string"}})]},
-                 minItems=1,maxItems=512)})),
+                 "path":{"type":"string"}})]},minItems=1,maxItems=512)}),
+        obj({"edits":array({"oneOf":[
+            obj({"kind":choice("blade"),
+                 "frame":number(0,integer=True),
+                 "picture_tracks":array(number(0,integer=True),maxItems=8),
+                 "audio_tracks":array(number(0,integer=True),maxItems=4)}),
+            obj({"kind":choice("ripple_insert","ripple_delete"),
+                 "frame":number(0,integer=True),"frames":SIZE,
+                 "picture_tracks":array(number(0,integer=True),maxItems=8),
+                 "audio_tracks":array(number(0,integer=True),maxItems=4),
+                 "automation":choice("preserve_source_frame_values")}),
+            obj({"kind":choice("roll","slip","slide"),
+                 "delta_frames":number(-1000000,1000000,integer=True),
+                 "picture_targets":array(obj({"track":number(0,integer=True),
+                    "clip":number(0,integer=True)}),maxItems=8),
+                 "audio_targets":array(obj({"track":number(0,integer=True),
+                    "clip":number(0,integer=True)}),maxItems=4),
+                 "automation":choice("lock_to_timeline")})
+            ]},minItems=1,maxItems=128)})
+        ]}),
     "body.timeline_revision": ("plan", _SEQUENCE),
     "body.otio_owned_export": ("plan", _SEQUENCE),
     "body.retime": ("plan", obj({**_SOURCE_FIELDS, "source_fps": RATE,
