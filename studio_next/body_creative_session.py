@@ -42,7 +42,7 @@ Revision operations edit creative JSON only: {op:add|replace|test,path,value} or
 {op:remove,path}, with JSON Pointer paths. The original remains unchanged.
 submit:{film_ir}; observe:{job_id}; wait:{job_id,seconds};
 read:{tool_id,inputs} for registered READ tools only;
-read_picture:{job_id,path}; finish:{summary}; question:{question}.
+read_picture:{job_id,path}; unselect_picture:{job_id,path}; finish:{summary}; question:{question}.
 recall:{offset,limit} retrieves earlier saved decisions and receipts when needed.
 There is a finite turn/time budget. Finish only after checking your actual jobs,
 state remaining blockers honestly and do not equate technical success with
@@ -233,6 +233,17 @@ class CreativeSessions:
                 while self.coordinator.inspect(args["job_id"])["status"] in ("queued","running") and time.monotonic()<end:
                     time.sleep(min(.1,max(0,end-time.monotonic())))
             return self.coordinator.inspect(args["job_id"])
+        if action=="unselect_picture" and set(args)=={"job_id","path"}:
+            if any(not isinstance(args[k],str) or not args[k] for k in ("job_id","path")):
+                raise ValueError("Picture selection identity must be nonempty text")
+            selected=[p for p in state["pictures"]
+                      if (p["job_id"],p["path"])!=(args["job_id"],args["path"])]
+            if len(selected)==len(state["pictures"]):
+                raise ValueError("Selected picture not found")
+            state["pictures"]=selected
+            return {"unselected_picture":{"job_id":args["job_id"],"path":args["path"]},
+                    "selected_picture_count":len(selected),
+                    "original_artifacts_untouched":True}
         if action=="read_picture" and set(args)=={"job_id","path"}:
             signal.observe(args["job_id"])
             media=self.coordinator.inspect_media(args["job_id"],args["path"])
