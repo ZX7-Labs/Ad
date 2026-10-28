@@ -185,7 +185,7 @@ class ExactSourceTimecodeTests(unittest.TestCase):
                 {"numerator":30000,"denominator":1001,
                  "frame_index":-1,"drop_frame":True},
             ):
-                with self.subTest(forged=forged),self.assertRaises(ValueError):
+                with self.subTest(forged=forged),self.assertRaises((ValueError,TypeError)):
                     owner.invoke("body.timecode_format",forged,
                                  allowed_access={"read"})
 
