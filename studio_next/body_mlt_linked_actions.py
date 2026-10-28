@@ -15,6 +15,7 @@ import math
 
 from .body_mlt_local_edits import apply_local_window_action
 from .body_mlt_placements import apply_native_source_placements
+from .body_mlt_grade import GRADE_FIELDS
 
 
 def _int(value, name, lower=0, upper=1_000_000):
@@ -128,7 +129,7 @@ def _canonical_generated(value,errors,field):
     # Opacity's current Cairo bridge remains 12-significant-digit limited;
     # record this actual engine-specific precision loss rather than assert
     # a universal high-precision native compositor.
-    result=(float(value) if field in ("gain_db","pan","x","y","width","height","rotation_degrees","rounding")
+    result=(float(value) if field in ("gain_db","pan","x","y","width","height","rotation_degrees","rounding") or field in GRADE_FIELDS
             else float(format(float(value),".12g")))
     errors.append(abs(float(value)-result))
     return result
@@ -257,6 +258,10 @@ def apply_linked_editor_actions(plan,decision):
                     raise ValueError("Native clip budget exceeded by exact linked edit")
                 track["clips"]=clips
                 if kind!="blade":
+                    if key=="tracks" and "grade" in track:
+                        from .body_mlt_grade import rekey_grade
+                        track["grade"]=rekey_grade(track["grade"],
+                            kind,at,amount,retains_after,operation_errors)
                     if key=="tracks" and "transform" in track:
                         from .body_mlt_transform import rekey_transform
                         track["transform"]=rekey_transform(track["transform"],
