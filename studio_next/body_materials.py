@@ -15,6 +15,12 @@ from .font_registry import resolve_artist_font
 
 _SOURCE_FIELDS={
     "body.inspect":("source",),
+    # Pure SMPTE source-frame addresses have no physical file input; the
+    # verified rational clock and address fields remain in the trusted DAG
+    # input fingerprint. Empty tuple is a real registered adapter, not an
+    # imagined media-attestation claim.
+    "body.timecode_format":(),
+    "body.timecode_parse":(),
     "body.resolve_asset":(),
     "body.voice_inventory":("voice_assets",),
     "body.render_edit":("edit",),
