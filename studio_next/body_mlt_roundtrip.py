@@ -16,7 +16,8 @@ import xml.etree.ElementTree as ET
 
 from .body_document_schemas import validate_document
 from .body_mlt_editor import (
-    _verify_native_opacity, _verify_native_gain, build_mlt_xml, validate_mlt_edit,
+    _verify_native_opacity, _verify_native_gain, _verify_native_pan,
+    build_mlt_xml, validate_mlt_edit,
     verify_owned_mlt_project,
 )
 from .media_vault import sha256_file
@@ -125,14 +126,27 @@ def recover_original_mlt_plan(edit, workspace, vault_root):
             ti=int(properties["track"])-count
             if not 0<=ti<len(sounds):
                 raise ValueError("Native audio filter lost its original source identity")
-            encoded=_verify_native_gain(properties["level"],frames)
+            if properties["mlt_service"]=="volume":
+                encoded=_verify_native_gain(properties["level"],frames)
+                name="gain_db"
+                target="gain_keyframes"
+                neutral="0"
+            elif properties["mlt_service"]=="panner":
+                encoded=_verify_native_pan(properties["split"],frames)
+                name="pan"
+                target="pan_keyframes"
+                neutral="0.5"
+            else:
+                raise ValueError("Unrecognized original sound editor control")
             if "=" in encoded:
-                sounds[ti]["gain_keyframes"]=[
+                sounds[ti][target]=[
                     {"frame":int(key.split("=")[0]),
-                     "gain_db":float(key.split("=")[1])}
+                     name:float(key.split("=")[1])}
                     for key in encoded.split(";")]
-            elif encoded!="0":
-                sounds[ti]["gain_db"]=float(encoded)
+            else:
+                # A present neutral filter is an explicit owner edit.
+                # Skipping it would silently erase artist-intent metadata.
+                sounds[ti][name]=float(encoded)
         plan["audio_tracks"] = sounds
     validate_document("body.mlt_owned_export", plan)
     checked = validate_mlt_edit(plan, root, vault_root)
@@ -143,6 +157,14 @@ def recover_original_mlt_plan(edit, workspace, vault_root):
     # track gaps, original audio stream indices, blend modes, keyframes and all
     # source attestation properties must survive the reverse translation.
     replay = ET.fromstring(build_mlt_xml(plan, checked))
+    if verified["legacy_postmix_audio_filters"]:
+        # Reconstruct the historical representation for exact custody
+        # comparison. New exports intentionally place independent controls
+        # before mixing. Preserve old bytes and disclose that migration.
+        legacy_tractor=replay.find("tractor")
+        for filt in legacy_tractor.findall("filter"):
+            legacy_tractor.remove(filt)
+            legacy_tractor.append(filt)
     canonical = lambda node: ET.canonicalize(
         ET.tostring(node, encoding="unicode"), strip_text=True)
     if canonical(replay) != canonical(xml):
@@ -157,6 +179,7 @@ def recover_original_mlt_plan(edit, workspace, vault_root):
         "frames": frames,
         "fully_verified_rights": True,
         "lossless_typed_native_roundtrip": True,
+        "legacy_audio_bus_order_requires_migration":verified["legacy_postmix_audio_filters"],
         "creative_quality_approved": False,
     }
 
@@ -193,5 +216,6 @@ def import_owned_mlt_project(edit, workspace, vault_root, output):
         "verified_original_sound_tracks": recovered["original_sound_tracks"],
         "verified_original_frames": recovered["frames"],
         "lossless_typed_native_roundtrip": True,
+        "legacy_audio_bus_order_requires_migration":recovered["legacy_audio_bus_order_requires_migration"],
         "creative_quality_approved": False,
     }

@@ -18,7 +18,7 @@ import subprocess
 import tempfile
 import xml.etree.ElementTree as ET
 
-from .body_mlt_editor import verify_owned_mlt_project
+from .body_mlt_editor import verify_owned_mlt_project, _premix_audio_controls
 from .media_vault import MediaVault,sha256_file
 from .precision_retime import _source_timebase
 from .production_qc import full_decode_inspection
@@ -52,6 +52,24 @@ def _require_native_audio_volume():
         raise RuntimeError("Cannot inspect native audio volume filter") from exc
     if check.returncode or "volume" not in {row.strip().removeprefix("- ").strip() for row in check.stdout.splitlines()}:
         raise RuntimeError("Original sound gain requires installed MLT volume filter")
+
+
+def _require_native_audio_panner():
+    """A declared stereo position requires the actual installed native filter.
+
+    A valid MLT XML and successful H264 encode alone do NOT prove that a
+    missing external plugin moved any original physical channel samples.
+    """
+    try:
+        check=subprocess.run(["melt","-query","filters"],
+            capture_output=True,text=True,timeout=40)
+    except (OSError,subprocess.SubprocessError) as exc:
+        raise RuntimeError("Cannot inspect installed stereo panner") from exc
+    plugins={row.strip().removeprefix("- ").strip()
+             for row in check.stdout.splitlines()}
+    if check.returncode or "panner" not in plugins:
+        raise RuntimeError(
+            "Native director-authored sound position requires installed MLT panner")
 
 
 def _uncovered_picture_frames(xml,picture_tracks,frames):
@@ -163,8 +181,13 @@ def render_owned_mlt(edit,workspace,output,*,gap_color=None):
             p.text=="frei0r.cairoblend" for p in transition.findall("property"))
             for transition in xml.findall("./tractor/transition")):
         _require_native_frei0r_compositing()
-    if xml.findall("./tractor/filter"):
+    services={p.text for filt in xml.findall("./tractor/filter")
+              for p in filt.findall("property")
+              if p.get("name")=="mlt_service"}
+    if "volume" in services:
         _require_native_audio_volume()
+    if "panner" in services:
+        _require_native_audio_panner()
     profile=xml.find("profile")
     tractor=xml.find("tractor")
     if profile is None or tractor is None:
@@ -249,6 +272,11 @@ def render_owned_mlt(edit,workspace,output,*,gap_color=None):
         # producer nodes and private byte-sealed CAS copies. Never parse
         # arbitrary user XML into executable MLT options.
         worker_xml=ET.fromstring(sealed.read_bytes())
+        # Native field services execute in XML construction order. A bus
+        # filter planted after a mix operates on an already summed frame;
+        # opposite pan decisions can consequently erase another bus.
+        # Apply independently authored bus controls before any transitions.
+        _premix_audio_controls(worker_xml.find("tractor"))
         for producer in worker_xml.findall("producer"):
             props={p.get("name"):p for p in producer.findall("property")}
             digest=props["zx7.original_sha256"].text
@@ -336,6 +364,7 @@ def render_owned_mlt(edit,workspace,output,*,gap_color=None):
             "fps":{"numerator":fps.numerator,"denominator":fps.denominator},
             "width":width,"height":height,"source_assets":len(sources),
             "source_project_sha256":before,
+            "legacy_audio_bus_order_corrected_for_render":verified["legacy_postmix_audio_filters"],
             "native_multitrack_verified":bool(verified["verified_mlt_tracks"]>1),
             "original_sound_intentionally_silent":not sound_present,
             "verified_original_audio_tracks":verified["verified_audio_tracks"],
