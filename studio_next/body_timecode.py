@@ -126,6 +126,94 @@ def parse_timecode_receipt(timecode,numerator,denominator):
             **_receipt(index,numerator,denominator,drop)}
 
 
+def native_mlt_timecode_receipt(edit,workspace,*,vault_root,
+                                frame_index=None,timecode=None,
+                                drop_frame=None):
+    """Use the ACTUAL rights-attested editable project rational clock.
+
+    No model may invent the FPS, the original project length, or the source
+    scope. The two output shapes are read-only and the source frame index
+    must be inside the physically evidenced native picture timeline.
+    """
+    from pathlib import Path
+    from .media_vault import sha256_file
+    from .body_mlt_roundtrip import recover_original_mlt_plan
+
+    root=Path(workspace).resolve()
+    original=Path(edit)
+    if not original.is_absolute():
+        original=root/original
+    original=original.absolute()
+    if (original.suffix.lower()!=".mlt" or original.is_symlink()
+            or not original.is_file() or not original.is_relative_to(root)
+            or not original.resolve().is_relative_to(root)):
+        raise ValueError("Timecode must be anchored in actual workspace-owned native MLT")
+    vault=Path(vault_root).resolve()
+    if vault!=root/"vault":
+        raise ValueError("Native timecode source rights must use the owner vault")
+    sha=sha256_file(original)
+    evidence=recover_original_mlt_plan(original,root,vault)
+    if evidence["source_mlt_sha256"]!=sha or not evidence[
+            "lossless_typed_native_roundtrip"]:
+        raise ValueError("Cannot reconstruct exact original video clock and rights")
+    rate=evidence["plan"]["frame_rate"]
+    numerator=rate["numerator"]
+    denominator=rate["denominator"]
+    if (frame_index is not None and timecode is None and
+            type(drop_frame) is bool):
+        data=frame_timecode_receipt(frame_index,numerator,denominator,
+                                    drop_frame)
+        mode="format"
+    elif frame_index is None and isinstance(timecode,str) and drop_frame is None:
+        data=parse_timecode_receipt(timecode,numerator,denominator)
+        mode="parse"
+    else:
+        raise ValueError("Native clock query must contain one typed read operation")
+    if data["frame_index"]>=evidence["frames"]:
+        raise ValueError("SMPTE label exceeds physically attested edited movie frames")
+    if sha256_file(original)!=sha:
+        raise ValueError("Original owned video timecode clock changed during observation")
+    return {
+        **data,
+        "query_mode":mode,
+        "source_project_path":str(original),
+        "source_workspace_root":str(root),
+        "source_mlt_sha256":sha,
+        "source_movie_frames_verified":evidence["frames"],
+        "original_media_rights_and_roundtrip_rechecked":True,
+        "physical_picture_timecode_label_only":True,
+    }
+
+
+def verify_native_timecode_receipt(result,tool_id):
+    """Re-observe the actual owner's film on each reusable durable receipt."""
+    if not isinstance(result,dict):
+        return False
+    try:
+        if tool_id not in (
+                "body.mlt_owned_timecode_format","body.mlt_owned_timecode_parse"):
+            return False
+        workspace=result["source_workspace_root"]
+        source=result["source_project_path"]
+        if (not isinstance(workspace,str) or
+                not isinstance(source,str)):
+            return False
+        root=__import__("pathlib").Path(workspace)
+        if (not root.is_absolute() or root.is_symlink() or
+                root.resolve()!=root or
+                not __import__("pathlib").Path(source).is_relative_to(root)):
+            return False
+        args={"edit":source,"workspace":root,"vault_root":root/"vault"}
+        if tool_id=="body.mlt_owned_timecode_format":
+            args.update(frame_index=result["frame_index"],
+                        drop_frame=result["drop_frame"])
+        else:
+            args.update(timecode=result["input_timecode_label"])
+        return native_mlt_timecode_receipt(**args)==result
+    except (ValueError,KeyError,TypeError,OSError,OverflowError):
+        return False
+
+
 def verify_timecode_receipt(result,tool_id):
     """Re-evaluate the identical address and physical clock on durable replay."""
     if type(result) is not dict:
