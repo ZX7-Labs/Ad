@@ -180,6 +180,109 @@ class VerifiedMLTEditorialTests(unittest.TestCase):
             self.assertGreater(samples["overlay"][0],samples["overlay"][2]+70,
                 ("native overlay should preserve dominant red destination",samples))
 
+    def test_model_authored_opacity_rejects_missing_bounds_unsafe_syntax_and_bottom_fade(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);plan,source=self._case(root)
+            for value in (True,-0.1,1.01,float("nan"),float("inf"),"0.4;rm -rf"):
+                changed=json.loads(json.dumps(plan))
+                changed["tracks"][1]["opacity"]=value
+                with self.subTest(opacity=str(value)),self.assertRaises(ValueError):
+                    validate_mlt_edit(changed,root,root/"vault")
+            for keys in (
+                    [{"frame":1,"opacity":0.1},{"frame":2,"opacity":0.9}],
+                    [{"frame":0,"opacity":0.1},{"frame":0,"opacity":0.9}],
+                    [{"frame":0,"opacity":0.1},{"frame":12,"opacity":0.9}],
+                    [{"frame":0,"opacity":0.1},{"frame":5,"opacity":False}]):
+                changed=json.loads(json.dumps(plan))
+                changed["tracks"][1]["opacity_keyframes"]=keys
+                with self.subTest(keys=keys),self.assertRaises(ValueError):
+                    validate_mlt_edit(changed,root,root/"vault")
+            changed=json.loads(json.dumps(plan))
+            changed["tracks"][1]["opacity"]=0.3
+            changed["tracks"][1]["opacity_keyframes"]=[
+                {"frame":0,"opacity":0},{"frame":11,"opacity":1}]
+            with self.assertRaisesRegex(ValueError,"either fixed or animated"):
+                validate_mlt_edit(changed,root,root/"vault")
+            changed=json.loads(json.dumps(plan))
+            changed["tracks"][0]["opacity"]=0.8
+            with self.assertRaisesRegex(ValueError,"bottom"):
+                validate_mlt_edit(changed,root,root/"vault")
+            changed=json.loads(json.dumps(plan))
+            changed["tracks"][1]["opacity"]=0.5
+            self.assertTrue(validate_document("body.mlt_owned_export",changed))
+            source.write_text(json.dumps(changed))
+            edit=root/"safe-opacity.mlt"
+            export_owned_mlt(source,root,root/"vault",edit)
+            self.assertEqual(verify_owned_mlt_project(edit)["verified_mlt_tracks"],2)
+            original=edit.read_text()
+            self.assertIn('<property name="0">0.5</property>',original)
+            for malicious in ("nan","2","0=0;4|=1","0=0;4=1;bad","0=0;12=1",
+                              "0=0;4=1;4=0","0=0;5=1e309"):
+                edit.write_text(original.replace(
+                    '<property name="0">0.5</property>',
+                    '<property name="0">'+malicious+'</property>'))
+                with self.subTest(malicious=malicious),self.assertRaises(ValueError):
+                    verify_owned_mlt_project(edit)
+
+    @unittest.skipUnless(shutil.which("melt"),"Real native MLT and Cairo blending required")
+    def test_native_opacity_and_linear_keyframes_change_decoded_frames_not_just_xml(self):
+        from studio_next.body_integration import body_catalog
+        installed=subprocess.run(["melt","-query","transitions"],
+            capture_output=True,text=True,timeout=25,check=True)
+        self.assertIn("frei0r.cairoblend",installed.stdout)
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);plan,source=self._case(root)
+            body=body_catalog(root)
+            outputs={}
+            variants={
+                "hidden":{"opacity":0},
+                "half":{"opacity":0.5},
+                "fade":{"opacity_keyframes":[
+                    {"frame":0,"opacity":0},{"frame":5,"opacity":0},
+                    {"frame":7,"opacity":1},{"frame":11,"opacity":1}]},
+            }
+            for name,control in variants.items():
+                authored=json.loads(json.dumps(plan))
+                authored["tracks"][1].update(control)
+                self.assertTrue(validate_document("body.mlt_owned_export",authored))
+                source.write_text(json.dumps(authored))
+                edit=f"opacity-{name}.mlt";movie=f"opacity-{name}.mp4"
+                body.invoke("body.mlt_owned_export",{"plan":"original.json","out":edit},
+                    allowed_access={"write"})
+                self.assertEqual(verify_owned_mlt_project(root/edit)["verified_mlt_tracks"],2)
+                result=body.invoke("body.mlt_owned_render",{"edit":edit,"out":movie},
+                    allowed_access={"write"})
+                self.assertEqual(Path(result["path"]).resolve(),(root/movie).resolve())
+                observed=json.loads(subprocess.check_output([
+                    "ffprobe","-v","error","-count_frames","-select_streams","v:0",
+                    "-show_entries","stream=nb_read_frames",
+                    "-of","json",str(root/movie)],timeout=40))["streams"][0]
+                self.assertEqual(int(observed["nb_read_frames"]),12)
+                rgb=subprocess.check_output(["ffmpeg","-v","error","-xerror",
+                    "-i",str(root/movie),"-map","0:v:0",
+                    "-pix_fmt","rgb24","-f","rawvideo","-"],timeout=40)
+                pitch=64*48*3
+                self.assertEqual(len(rgb),12*pitch)
+                def center(frame):
+                    offset=frame*pitch+(24*64+32)*3
+                    return tuple(rgb[offset:offset+3])
+                outputs[name]={frame:center(frame) for frame in (0,5,6,7,11)}
+                self.assertGreater(outputs[name][0][0],outputs[name][0][2]+70)
+                self.assertGreater(outputs[name][11][0],outputs[name][11][2]+70)
+            hidden=outputs["hidden"][5]
+            half=outputs["half"][5]
+            fade_start=outputs["fade"][5]
+            fade_middle=outputs["fade"][6]
+            fade_end=outputs["fade"][7]
+            self.assertGreater(hidden[0],hidden[2]+70,outputs)
+            self.assertGreater(fade_start[0],fade_start[2]+70,outputs)
+            self.assertGreater(half[0],70,outputs)
+            self.assertGreater(half[2],70,outputs)
+            self.assertLess(abs(half[0]-half[2]),95,outputs)
+            self.assertGreater(fade_middle[0],45,outputs)
+            self.assertGreater(fade_middle[2],45,outputs)
+            self.assertGreater(fade_end[2],fade_end[0]+70,outputs)
+
     def test_same_layer_overlap_and_unmeasured_source_range_fail_closed(self):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp);plan,_=self._case(root)
