@@ -675,8 +675,11 @@ def body_catalog(workspace,*,vault_root=None):
     def render_native_owned_mlt(inputs):
         source=_path_within(root,inputs["edit"],exists=True)
         dest=_body_output(root,inputs["out"],allowed=(".mp4",))
-        return _commit_actual_body_output(dest,
-            lambda staged:render_owned_mlt(source,root,staged))
+        gap_color=inputs.get("gap_color")
+        receipt=_commit_actual_body_output(dest,
+            lambda staged:render_owned_mlt(source,root,staged,
+                                            gap_color=gap_color))
+        return {**receipt,"director_selected_gap_color":gap_color}
 
     def native_motion(inputs):
         source=_path_within(root,inputs["plan"],exists=True)
@@ -904,8 +907,9 @@ def body_catalog(workspace,*,vault_root=None):
         "Apply original source-attested JSON patches, linked razor/ripple, or signed-frame roll/slip/slide across director-selected native picture/audio clips. Preserve exact source identities; explicitly choose timeline-locked audio/opacity keyframes for local source-window edits, then prove native XML roundtrip, rights, physical clocks and atomic new-project publication. No complete NLE claim.",
         "write",bool(shutil.which("melt") and video_io),["edit","operation","out"],revise_native_owned_mlt)
     add("body.mlt_owned_render","native MLT multitrack audiovisual MP4 rendering",
-        "Render exact SHA-attested MLT project to decoded H264 with explicit original-audio or picture-only delivery; "
-        "both project and every original source are verified again at publish, no arbitrary command or plugin inputs.",
+        "Render fully rights-verified native MLT original picture and audio with exact rational clock; "
+        "if all picture tracks are blank, the creative brain must supply an explicit RGB gap_color "
+        "to prevent an unapproved white MLT test card. A true decoded frame is compared to the author-selected color.",
         "write",bool(shutil.which("melt") and video_io),["edit","out"],render_native_owned_mlt)
     add("body.vector_png","original vector art and thumbnail","Inkscape headless real vector to PNG",
         "write",bool(shutil.which("inkscape") and png_decoder),["source_svg","out","width","height"],vector_art)
