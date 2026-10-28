@@ -240,7 +240,7 @@ def _verify_native_pan(value,frames):
     return value
 
 
-def _single_recorded_audio_stream(path):
+def _single_recorded_audio_stream(path, *, require_stereo=False):
     """Require exactly one recorded original audio stream and supported channels.
 
     The currently published native MLT delivery is a two-channel AAC film.
@@ -262,6 +262,8 @@ def _single_recorded_audio_stream(path):
     track=streams[0]
     if type(track.get("channels")) is not int or track["channels"] not in (1,2):
         raise ValueError("Native MLT stereo delivery cannot silently downmix spatial/multichannel original audio")
+    if require_stereo and track["channels"]!=2:
+        raise ValueError("Native stereo panner cannot spatially balance one-channel original audio: explicit stereo conform is required")
     try:sample_rate=int(track["sample_rate"])
     except (KeyError,TypeError,ValueError) as exc:
         raise ValueError("Native MLT audio stream has no measured physical sample clock") from exc
@@ -375,6 +377,7 @@ def validate_mlt_edit(plan,workspace,vault_root):
     resolved_sound=[]
     gains=[]
     pans=[]
+    verified_stereo=set()
     for ti,track in enumerate(sound_tracks):
         if (not isinstance(track,dict) or "clips" not in track or
                 set(track)-{"clips","gain_db","gain_keyframes","pan","pan_keyframes"}):
@@ -412,7 +415,10 @@ def validate_mlt_edit(plan,workspace,vault_root):
                     probe=_probe_details(file)
                     if not probe["audio_stream_present"]:
                         raise ValueError("Audio track contains no physically recorded soundtrack")
-                actual_audio_index=_single_recorded_audio_stream(file)
+                has_pan="pan" in track or "pan_keyframes" in track
+                actual_audio_index=_single_recorded_audio_stream(
+                    file,require_stereo=has_pan)
+                if has_pan:verified_stereo.add(asset)
                 if audio_only:
                     frames=_audio_only_source_frames(file,fps)
                 else:
@@ -424,6 +430,11 @@ def validate_mlt_edit(plan,workspace,vault_root):
                     "audio_seconds":available,"attestation":att,
                     "audio_index":actual_audio_index}
             info=sound_sources[asset]
+            if ("pan" in track or "pan_keyframes" in track) and asset not in verified_stereo:
+                # A source can appear on another bus with no authored pan.
+                # Never trust a cached audio stream index as stereo proof.
+                _single_recorded_audio_stream(file,require_stereo=True)
+                verified_stereo.add(asset)
             if end>info["frames"] or float(Fraction(end,1)/fps)>info["audio_seconds"]+.015:
                 raise ValueError("Original soundtrack is shorter than the selected source cut")
             end_at=pos+end-first
