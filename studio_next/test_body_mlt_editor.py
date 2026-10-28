@@ -615,12 +615,24 @@ class VerifiedMLTEditorialTests(unittest.TestCase):
                 self.assertEqual(old.read_bytes(),old_bytes)
             with self.assertRaises(ValueError):
                 revise_owned_mlt_project(old,ops,root,root/"vault",new)
-            self.assertEqual(new.read_bytes(),Path(new).read_bytes())
+            self.assertEqual(hashlib.sha256(new.read_bytes()).hexdigest(),
+                             evidence["sha256"])
             available={tool["id"]:tool for tool in body_catalog(root).discover()}
             self.assertIn("body.mlt_owned_revision",available)
             self.assertIn("body.mlt_owned_revision",available)
             self.assertEqual(available["body.mlt_owned_revision"]["status"],
                              "installed" if shutil.which("melt") else "needs_setup")
+            if shutil.which("melt"):
+                ops.write_text(json.dumps(instruction))
+                receipt=body_catalog(root).invoke("body.mlt_owned_revision",{
+                    "edit":old.name,"operation":ops.name,
+                    "out":"director-new-project.mlt"},allowed_access={"write"})
+                self.assertEqual(receipt["prior_mlt_sha256"],
+                                 hashlib.sha256(old_bytes).hexdigest())
+                self.assertEqual(recover_original_mlt_plan(
+                    root/"director-new-project.mlt",root,root/"vault")["plan"],
+                    planned)
+
 
     def test_native_editor_patch_refuses_raced_commands_before_project_publication(self):
         from unittest.mock import patch
