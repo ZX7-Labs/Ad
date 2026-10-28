@@ -703,6 +703,41 @@ class VerifiedMLTEditorialTests(unittest.TestCase):
             self.assertGreater(measures[0],500)
             self.assertLess(measures[1],measures[0]/5)
             self.assertGreater(measures[1],measures[0]/10)
+            # Next independent AI decision: turn fixed gain into a real frame-
+            # automated curve. It must remain a separate editable revision,
+            # without changing the source, original edit or first revision.
+            curve={"operations":[
+                {"op":"test","path":"/audio_tracks/0/gain_db","value":-18.0},
+                {"op":"remove","path":"/audio_tracks/0/gain_db"},
+                {"op":"add","path":"/audio_tracks/0/gain_keyframes","value":[
+                    {"frame":0,"gain_db":-60},{"frame":4,"gain_db":-60},
+                    {"frame":8,"gain_db":0},{"frame":11,"gain_db":0}]}]}
+            (root/"automation-decision.json").write_text(json.dumps(curve))
+            engine.invoke("body.mlt_owned_revision",{
+                "edit":"sound-updated.mlt",
+                "operation":"automation-decision.json",
+                "out":"sound-animated.mlt"},allowed_access={"write"})
+            animated=recover_original_mlt_plan(root/"sound-animated.mlt",
+                                                root,root/"vault")["plan"]
+            self.assertEqual(animated["audio_tracks"][0]["gain_keyframes"],
+                             curve["operations"][2]["value"])
+            self.assertNotIn("gain_db",animated["audio_tracks"][0])
+            engine.invoke("body.mlt_owned_render",{
+                "edit":"sound-animated.mlt","out":"animated.mp4"},
+                allowed_access={"write"})
+            raw=subprocess.check_output(["ffmpeg","-hide_banner",
+                "-loglevel","error","-nostdin","-xerror",
+                "-i",str(root/"animated.mp4"),"-map","0:a:0","-ar","48000",
+                "-ac","1","-f","s16le","-"],timeout=45)
+            pcm=array("h");pcm.frombytes(raw)
+            early=pcm[round(.18*48000):round(.28*48000)]
+            late=pcm[round(.78*48000):round(.88*48000)]
+            self.assertGreater(len(early),4000)
+            self.assertGreater(len(late),4000)
+            def level(samples):
+                return sqrt(sum(v*v for v in samples)/len(samples))
+            self.assertGreater(level(late),level(early)*8)
+            self.assertGreater(level(late),measures[0]*.65)
             self.assertEqual((root/"sound-original.mlt").read_bytes(),original)
 
     def test_native_editor_patch_refuses_raced_commands_before_project_publication(self):
