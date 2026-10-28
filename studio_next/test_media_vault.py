@@ -379,8 +379,8 @@ class MediaVaultProductionTests(unittest.TestCase):
                        side_effect=without_ffmpeg):
                 with patch("subprocess.run",
                            side_effect=AssertionError("No FFmpeg executable installed")):
-                    self.assertTrue(verify_media_container(
-                        original,"audio/wav")["actual_file_bytes_checked"])
+                    self.assertIsNone(verify_media_container(
+                        original,"audio/wav"))
                     store=MediaVault(root/"vault")
                     receipt=store.ingest(original,mime="audio/wav",
                         rights="owner_supplied",source_type="owner_upload",
