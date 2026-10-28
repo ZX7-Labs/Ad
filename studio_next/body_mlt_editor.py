@@ -786,9 +786,9 @@ def _verify_exact_mlt_xml_tree(root):
             props=properties(filt,{"track","mlt_service",
                                    "channel","gang","start","split"})
             if (props["channel"]!="-1" or props["gang"]!="0" or
-                    props["start"]!="0.5" or
-                    not _verify_native_pan(props["split"],frames)):
+                    props["start"]!="0.5"):
                 raise ValueError("Native stereo balance contains unsafe channel policy")
+            _verify_native_pan(props["split"],frames)
             service_order=1
         try:
             track_index=int(props["track"])
