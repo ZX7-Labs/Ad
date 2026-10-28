@@ -589,7 +589,7 @@
       "items": [
         {
           "type": "text",
-          "text": "DOMAIN NAME  →  IP ADDRESS",
+          "text": "DOMAIN NAME  ->  IP ADDRESS",
           "at": [
             310,
             16
@@ -1510,7 +1510,7 @@
         },
         {
           "type": "text",
-          "text": "HTTP / 2   ·   200 OK",
+          "text": "HTTP / 2   /   200 OK",
           "at": [
             310,
             244
@@ -2247,7 +2247,7 @@
       "items": [
         {
           "type": "text",
-          "text": "CACHE HIT  ≠  SERVER ROUND TRIP",
+          "text": "CACHE HIT  !=  SERVER ROUND TRIP",
           "at": [
             310,
             16
@@ -2837,7 +2837,7 @@
         },
         {
           "type": "text",
-          "text": "≠   FINAL SCREEN",
+          "text": "!=   FINAL SCREEN",
           "at": [
             308,
             380
@@ -3778,7 +3778,7 @@
         },
         {
           "type": "text",
-          "text": "STATE  →  UPDATE",
+          "text": "STATE  ->  UPDATE",
           "at": [
             188,
             387
@@ -4063,7 +4063,7 @@
         },
         {
           "type": "text",
-          "text": "LAYERS → PIXELS",
+          "text": "LAYERS -> PIXELS",
           "at": [
             181,
             415
