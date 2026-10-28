@@ -99,9 +99,11 @@ def render_owned_mlt(edit,workspace,output):
         digest=props["zx7.original_sha256"]
         vault=MediaVault(file.parents[2])
         measured=vault.inspect(digest,attestation_id=props["zx7.attestation_id"])
-        if measured["path"]!=str(file) or measured["mime"] not in (
-                "video/mp4","video/webm","video/quicktime"):
-            raise ValueError("MLT export cannot follow modified original video source")
+        is_sound=producer.get("id","").startswith("audio-source-")
+        if (measured["path"]!=str(file) or
+            (measured["mime"] not in ("video/mp4","video/webm","video/quicktime")
+             and not (is_sound and measured["mime"]=="audio/wav"))):
+            raise ValueError("MLT export cannot follow modified original video or PCM sound")
         sources.append((file,digest,props["zx7.attestation_id"]))
     if not sources:
         raise ValueError("No original verified media in the edit")
