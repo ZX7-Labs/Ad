@@ -144,8 +144,8 @@ class ExactNativeEditorialReviewTests(unittest.TestCase):
                     "sound:4","picture:0;rm -rf /","track:0","summary\nall"):
             with self.subTest(selector=bad),self.assertRaises(ValueError):
                 _bounded_review_view(full,bad)
-        with self.assertRaises(ValueError):
-            _bounded_review_view(full,"sound:3")
+        self.assertIsNone(_bounded_review_view(full,"sound:3")[
+            "selected_track"]["change"])
 
     @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"),
                          "Real native physical source custody requires media decoders")
