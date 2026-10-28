@@ -92,5 +92,32 @@ class LocalModelVerifiedVisionTests(unittest.TestCase):
         self.assertEqual(base64.b64decode(parts[2]["image_url"]["url"].split(",",1)[1]),raw)
 
 
+    def test_real_tiny_png_is_not_rejected_by_an_arbitrary_size_floor(self):
+        from PIL import Image
+        stream=io.BytesIO()
+        Image.new("RGB",(1,1),(12,23,34)).save(stream,format="PNG")
+        pixel=stream.getvalue()
+        self.assertLess(len(pixel),100)
+        self.assertTrue(pixel.startswith(b"\x89PNG\r\n\x1a\n"))
+        client=LocalCreativeModel(LocalModelSettings(model_id="tiny-frame-fixture"))
+        class Reply:
+            def __enter__(self):return self
+            def __exit__(self,*args):return False
+            def read(self,size):
+                return b'{"choices":[{"finish_reason":"stop","message":{"content":"{}"}}]}'
+        captured=[]
+        def intercept(request,*,timeout):
+            captured.append(json.loads(request.data.decode()))
+            return Reply()
+        with patch("studio_next.providers.urlopen",side_effect=intercept):
+            self.assertEqual(client.decide_with_images({"frame":"one actual pixel"},
+                [("image/png",pixel)]),{})
+            with self.assertRaisesRegex(ValueError,"declared media type"):
+                client.decide_with_images({},[("image/png",b"invalid"*20)])
+            with self.assertRaisesRegex(ValueError,"declared media type"):
+                client.decide_with_images({},[("image/jpeg",pixel)])
+        self.assertEqual(len(captured),1)
+
+
 if __name__=="__main__":
     unittest.main()
