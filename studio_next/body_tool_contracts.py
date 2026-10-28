@@ -17,6 +17,8 @@ _ARG_TYPES={
     "after_bundle":"string","after_sha256":"string",
     "time_seconds":"number","expected":"object","source_witness":"object",
     "gap_color":"string","before_edit":"string","after_edit":"string","focus":"string",
+    "numerator":"integer","denominator":"integer","drop_frame":"boolean",
+    "timecode":"string",
 }
 _EXAMPLES_DISALLOWED=True
 
@@ -31,7 +33,7 @@ def real_operation_schema(tool_id,required):
         kind=_ARG_TYPES[name]
         meta={"type":kind}
         if kind=="integer":
-            meta["minimum"]=1
+            meta["minimum"]=0 if name=="frame_index" else 1
         if kind=="number":
             meta["minimum"]=0
         props[name]=meta
