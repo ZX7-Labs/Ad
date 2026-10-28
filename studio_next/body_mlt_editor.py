@@ -181,7 +181,13 @@ def _pan_number(value):
     """
     if type(value) not in (int,float) or not math.isfinite(value) or not 0<=value<=1:
         raise ValueError("MLT native stereo pan must be a finite position in [0,1]")
-    return format(float(value),".12g")
+    # Use the shortest IEEE-754 roundtrippable decimal for author-owned
+    # source values: the 12-significant-digit visual/gain convention would
+    # silently change an arbitrary original artist pan decision on import.
+    # Generated interpolation anchors are bounded and rounded separately.
+    if value==0 or value==1:
+        return str(int(value))
+    return repr(float(value))
 
 
 def _pan_animation(track,frames):
