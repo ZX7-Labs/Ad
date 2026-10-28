@@ -95,6 +95,32 @@ class NativeStereoPanTests(unittest.TestCase):
                                   {"clips":[dict(clip)],"pan":1}]
             with self.assertRaisesRegex(ValueError,"one-channel original audio"):
                 validate_mlt_edit(plan,root,root/"vault")
+            # A forged native .mlt can contain a *structurally recognized*
+            # panner even though its underlying owner recording is mono.
+            # Native import/render must reject this independently of the
+            # typed JSON plan path; otherwise pan becomes silent attenuation.
+            import xml.etree.ElementTree as ET
+            plan["audio_tracks"]=[{"clips":[dict(clip)]}]
+            native=root/"mono-original.mlt"
+            from studio_next.body_mlt_editor import export_owned_mlt
+            artifact=root/"source-record.json"
+            artifact.write_text(json.dumps(plan))
+            export_owned_mlt(artifact,root,root/"vault",native)
+            approved_bytes=native.read_bytes()
+            forged_xml=ET.fromstring(approved_bytes)
+            filt=ET.SubElement(forged_xml.find("tractor"),"filter",
+                               {"in":"0","out":"11"})
+            for key,value in (
+                ("track",str(len(plan["tracks"]))),
+                ("mlt_service","panner"),("channel","-1"),
+                ("gang","0"),("start","0.5"),("split","0")):
+                ET.SubElement(filt,"property",{"name":key}).text=value
+            forged=root/"mono-with-forged-native-pan.mlt"
+            forged.write_bytes(ET.tostring(forged_xml,encoding="utf-8",
+                                           xml_declaration=True)+b"\n")
+            with self.assertRaisesRegex(ValueError,"one-channel original audio"):
+                verify_owned_mlt_project(forged)
+            self.assertEqual(native.read_bytes(),approved_bytes)
             self.assertEqual(mono.read_bytes(),preserved)
 
     def test_ripple_keeps_original_stereo_position_at_every_source_frame(self):
