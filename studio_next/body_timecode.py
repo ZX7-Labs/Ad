@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import re
 from fractions import Fraction
+from pathlib import Path
 
 _LABEL=re.compile(r"(?P<h>[0-9]{2}):(?P<m>[0-9]{2}):(?P<s>[0-9]{2})(?P<mark>[:;])(?P<f>[0-9]{2})\Z")
 _DROP={Fraction(30000,1001):(30,2),Fraction(60000,1001):(60,4)}
@@ -135,7 +136,6 @@ def native_mlt_timecode_receipt(edit,workspace,*,vault_root,
     scope. The two output shapes are read-only and the source frame index
     must be inside the physically evidenced native picture timeline.
     """
-    from pathlib import Path
     from .media_vault import sha256_file
     from .body_mlt_roundtrip import recover_original_mlt_plan
 
@@ -198,10 +198,10 @@ def verify_native_timecode_receipt(result,tool_id):
         if (not isinstance(workspace,str) or
                 not isinstance(source,str)):
             return False
-        root=__import__("pathlib").Path(workspace)
+        root=Path(workspace)
         if (not root.is_absolute() or root.is_symlink() or
                 root.resolve()!=root or
-                not __import__("pathlib").Path(source).is_relative_to(root)):
+                not Path(source).is_relative_to(root)):
             return False
         args={"edit":source,"workspace":root,"vault_root":root/"vault"}
         if tool_id=="body.mlt_owned_timecode_format":
