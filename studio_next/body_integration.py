@@ -31,7 +31,8 @@ from .body_mlt_roundtrip import import_owned_mlt_project
 from .body_mlt_revision import revise_owned_mlt_project
 from .body_mlt_compare import compare_owned_mlt_projects
 from .body_timecode import (frame_timecode_receipt,parse_timecode_receipt,
-                            verify_timecode_receipt)
+                            verify_timecode_receipt,native_mlt_timecode_receipt,
+                            verify_native_timecode_receipt)
 from .creative_asset_ops import rasterize_original_svg,extract_director_selected_frame
 from .native_body_engines import render_original_blender,render_original_motion
 from .body_cgi import render_cgi_plan
@@ -171,6 +172,8 @@ def _trusted_body_revision(tool_id):
         "body.inspect":["delivery_audit.py"],
         "body.timecode_format":["body_timecode.py"],
         "body.timecode_parse":["body_timecode.py"],
+        "body.mlt_owned_timecode_format":["body_timecode.py","body_mlt_roundtrip.py","body_mlt_editor.py","pcm_wave.py","media_vault.py"],
+        "body.mlt_owned_timecode_parse":["body_timecode.py","body_mlt_roundtrip.py","body_mlt_editor.py","pcm_wave.py","media_vault.py"],
         "body.resolve_asset":["media_vault.py"],
         "body.voice_inventory":["voice_contract.py"],
         "body.render_edit":["edit_timeline.py"],
@@ -218,6 +221,8 @@ def _trusted_body_revision(tool_id):
         "body.inspect":["ffprobe"],
         "body.timecode_format":[],
         "body.timecode_parse":[],
+        "body.mlt_owned_timecode_format":["ffmpeg","ffprobe"],
+        "body.mlt_owned_timecode_parse":["ffmpeg","ffprobe"],
         "body.resolve_asset":[],
         "body.voice_inventory":[],
         "body.render_edit":["ffmpeg","ffprobe"],
@@ -357,6 +362,15 @@ def body_catalog(workspace,*,vault_root=None):
     def parse_smpte(inputs):
         return parse_timecode_receipt(inputs["timecode"],
             inputs["numerator"],inputs["denominator"])
+
+    def format_owned_smpte(inputs):
+        return native_mlt_timecode_receipt(inputs["edit"],root,
+            vault_root=vault.root,frame_index=inputs["frame_index"],
+            drop_frame=inputs["drop_frame"])
+
+    def parse_owned_smpte(inputs):
+        return native_mlt_timecode_receipt(inputs["edit"],root,
+            vault_root=vault.root,timecode=inputs["timecode"])
 
     def inspect(inputs):
         path=_path_within(root,inputs["source"],exists=True)
@@ -896,6 +910,12 @@ def body_catalog(workspace,*,vault_root=None):
     add("body.timecode_parse","verify original SMPTE timecode frame address",
         "Parse exact director-supplied HH:MM:SS:FF or HH:MM:SS;FF into a real frame index and rational elapsed clock; reject nonexistent skipped labels, all invented time bases and overflowing 24h epochs.",
         "read",True,["numerator","denominator","timecode"],parse_smpte)
+    add("body.mlt_owned_timecode_format","verified original native film timecode",
+        "Read actual source-attested editable MLT media and its measured rational FPS; convert one physically available editor frame index to authentic SMPTE timecode, with caller-chosen drop-label policy and no inferred FPS, content changes or media release claims.",
+        "read",video_io,["edit","frame_index","drop_frame"],format_owned_smpte)
+    add("body.mlt_owned_timecode_parse","verified native film timecode to original frame",
+        "Read an exact rights-verified original native MLT project, recover its actual rational FPS, and resolve an independently authored timecode label to an original frame inside the film; reject nonexistent skipped labels and edits beyond physical source frames.",
+        "read",video_io,["edit","timecode"],parse_owned_smpte)
     add("body.inspect","measure physical media","FFprobe validates actual source video",
         "read",bool(shutil.which("ffprobe")),["source"],inspect)
     add("body.render_edit","legacy editorial timeline (unattested rights label)",
@@ -969,6 +989,8 @@ def validate_witness(_tool_id,result):
         return False
     if _tool_id in ("body.timecode_format","body.timecode_parse"):
         return verify_timecode_receipt(result,_tool_id)
+    if _tool_id in ("body.mlt_owned_timecode_format","body.mlt_owned_timecode_parse"):
+        return verify_native_timecode_receipt(result,_tool_id)
     if _tool_id=="body.mlt_owned_compare":
         # A read-only observation has no exported artifact to hash. Recompute
         # the complete rights-attested native source/frame/effect comparison
