@@ -445,6 +445,98 @@ class VerifiedMLTEditorialTests(unittest.TestCase):
                 self.assertFalse((root/"must-not-publish.json").exists())
             native.write_text(before)
 
+    @unittest.skipUnless(shutil.which("melt"),"Physical MLT PCM source render required")
+    def test_original_pcm_wav_stem_native_editor_render_and_reversible_rights(self):
+        """An independently owned WAV soundtrack must survive the actual MLT engine."""
+        from array import array
+        from math import sqrt
+        from studio_next.body_integration import body_catalog
+        from studio_next.body_mlt_roundtrip import import_owned_mlt_project
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);plan,source=self._case(root)
+            wav=root/"owner-voiceover.wav"
+            subprocess.run(["ffmpeg","-hide_banner","-loglevel","error","-nostdin",
+                "-f","lavfi","-i","sine=frequency=440:sample_rate=48000:duration=1",
+                "-c:a","pcm_s16le","-y",str(wav)],check=True,timeout=30)
+            owner=MediaVault(root/"vault").ingest(wav,mime="audio/wav",
+                rights="owner_supplied",source_type="owner_upload",
+                source_id="original-independent-voice",evidence="Physically PCM-decoded voice fixture",
+                owner_or_generator="trusted-test-owner")
+            plan["audio_tracks"]=[{"clips":[{
+                "source":"zx7:sha256:"+owner["asset_id"],
+                "asset_id":owner["asset_id"],
+                "attestation_id":owner["attestation_id"],
+                "position_frame":4,"first_frame":0,"end_frame":4}]}]
+            self.assertTrue(validate_document("body.mlt_owned_export",plan))
+            source.write_text(json.dumps(plan))
+            catalog=body_catalog(root)
+            published=catalog.invoke("body.mlt_owned_export",
+                {"plan":"original.json","out":"owner-wav.mlt"},allowed_access={"write"})
+            self.assertEqual(verify_owned_mlt_project(published["path"])[
+                "verified_audio_tracks"],1)
+            root_xml=ET.parse(root/"owner-wav.mlt")
+            audio_node=next(p for p in root_xml.findall("producer")
+                if p.get("id","").startswith("audio-source-"))
+            props={p.get("name"):p.text for p in audio_node.findall("property")}
+            self.assertEqual(props["audio_index"],"0")
+            self.assertEqual(props["video_index"],"-1")
+            restored=import_owned_mlt_project(root/"owner-wav.mlt",root,
+                root/"vault",root/"owner-wav-restored.json")
+            self.assertTrue(restored["lossless_typed_native_roundtrip"])
+            self.assertEqual(json.loads((root/"owner-wav-restored.json").read_text()),plan)
+            film=catalog.invoke("body.mlt_owned_render",
+                {"edit":"owner-wav.mlt","out":"actual-PCM-voice.mp4"},
+                allowed_access={"write"})
+            self.assertTrue(film["audio_present"])
+            meta=json.loads(subprocess.check_output(["ffprobe","-v","error",
+                "-count_frames","-select_streams","v:0",
+                "-show_entries","stream=nb_read_frames","-of","json",
+                str(root/"actual-PCM-voice.mp4")],timeout=30))
+            self.assertEqual(int(meta["streams"][0]["nb_read_frames"]),12)
+            decoded=subprocess.check_output(["ffmpeg","-hide_banner","-loglevel",
+                "error","-nostdin","-xerror","-i",str(root/"actual-PCM-voice.mp4"),
+                "-map","0:a:0","-ar","48000","-ac","1",
+                "-f","s16le","-"],timeout=40)
+            sound=array("h");sound.frombytes(decoded)
+            self.assertGreater(len(sound),48000-4096)
+            def rms(start,end):
+                segment=sound[int(start*48000):int(end*48000)]
+                return sqrt(sum(x*x for x in segment)/len(segment))
+            quiet_before=rms(.07,.17)
+            original_voice=rms(.42,.55)
+            quiet_after=rms(.83,.93)
+            self.assertGreater(original_voice,1000,(quiet_before,original_voice,quiet_after))
+            self.assertLess(quiet_before,original_voice/15)
+            self.assertLess(quiet_after,original_voice/15)
+
+    def test_native_pcm_wav_sound_rejects_unsupported_video_or_overlong_source(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);plan,_=self._case(root)
+            wav=root/"owner-stem.wav"
+            subprocess.run(["ffmpeg","-hide_banner","-loglevel","error",
+                "-f","lavfi","-i","sine=frequency=760:sample_rate=48000:duration=1",
+                "-c:a","pcm_s16le","-y",str(wav)],check=True,timeout=30)
+            record=MediaVault(root/"vault").ingest(wav,mime="audio/wav",
+                rights="owner_supplied",source_type="owner_upload",
+                source_id="source-wav-stem",evidence="Verified PCM fixture",
+                owner_or_generator="source-owner")
+            audio={"source":"zx7:sha256:"+record["asset_id"],
+                "asset_id":record["asset_id"],"attestation_id":record["attestation_id"],
+                "position_frame":0,"first_frame":0,"end_frame":12}
+            valid=json.loads(json.dumps(plan))
+            valid["audio_tracks"]=[{"clips":[audio]}]
+            self.assertEqual(len(validate_mlt_edit(valid,root,root/"vault")[
+                "audio_tracks"]),1)
+            too_long=json.loads(json.dumps(valid))
+            too_long["audio_tracks"][0]["clips"][0]["end_frame"]=13
+            with self.assertRaises(ValueError):
+                validate_mlt_edit(too_long,root,root/"vault")
+            image_instead=json.loads(json.dumps(plan))
+            image_instead["tracks"][1]["clips"][0].update({
+                "source":audio["source"],"asset_id":audio["asset_id"],
+                "attestation_id":audio["attestation_id"]})
+            with self.assertRaisesRegex(ValueError,"verified source video"):
+                validate_mlt_edit(image_instead,root,root/"vault")
     def test_same_layer_overlap_and_unmeasured_source_range_fail_closed(self):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp);plan,_=self._case(root)
