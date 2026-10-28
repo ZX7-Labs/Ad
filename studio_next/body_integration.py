@@ -946,6 +946,26 @@ def validate_witness(_tool_id,result):
     """Physically revisit file and stored rights evidence on every resume."""
     if not isinstance(result,dict):
         return False
+    if _tool_id=="body.mlt_owned_compare":
+        # A read-only observation has no exported artifact to hash. Recompute
+        # the complete rights-attested native source/frame/effect comparison
+        # from both IMMUTABLE physical projects on every durable resume.
+        # Never accept a model-authored boolean or stale tool receipt as proof.
+        try:
+            workspace=Path(result["workspace_root"])
+            vault_root=Path(result["media_vault_root"])
+            prior=Path(result["before_edit_path"])
+            after=Path(result["after_edit_path"])
+            if (not workspace.is_absolute() or workspace.is_symlink() or
+                    workspace.resolve()!=workspace or
+                    vault_root!=workspace/"vault" or
+                    not prior.is_relative_to(workspace) or
+                    not after.is_relative_to(workspace)):
+                return False
+            actual=compare_owned_mlt_projects(prior,after,workspace,vault_root)
+            return actual==result
+        except (ValueError,KeyError,TypeError,OSError,OverflowError):
+            return False
     if _tool_id=="body.voice_inventory":
         from .voice_contract import voice_inventory
         try:return result["inventory"]==voice_inventory(result["model_dir"])
