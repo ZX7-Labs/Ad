@@ -98,7 +98,7 @@ class ExactNativeEditorialReviewTests(unittest.TestCase):
     @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"),
                          "Real native physical source custody requires media decoders")
     def test_real_editor_review_distinguishes_razor_audio_gain_and_source_time(self):
-        from studio_next.body_integration import body_catalog
+        from studio_next.body_integration import body_catalog,validate_witness
         from studio_next.body_mlt_roundtrip import recover_original_mlt_plan
         from studio_next.media_vault import sha256_file
         from studio_next.test_body_mlt_editor import VerifiedMLTEditorialTests
@@ -131,6 +131,11 @@ class ExactNativeEditorialReviewTests(unittest.TestCase):
                 "before_edit":original.name,"after_edit":original.name},
                 allowed_access={"read"})
             self.assertFalse(baseline["structural_changes_verified"])
+            self.assertTrue(validate_witness("body.mlt_owned_compare",baseline))
+            forged_receipt=dict(baseline,after_mlt_sha256="0"*64)
+            self.assertFalse(validate_witness("body.mlt_owned_compare",forged_receipt))
+            forged_authority=dict(baseline,workspace_root=str(root.parent))
+            self.assertFalse(validate_witness("body.mlt_owned_compare",forged_authority))
             self.assertEqual(baseline["before_mlt_sha256"],
                              hashlib.sha256(before).hexdigest())
             self.assertFalse(baseline["decoded_pixel_or_audio_equivalence_proven"])
@@ -161,6 +166,7 @@ class ExactNativeEditorialReviewTests(unittest.TestCase):
                     allowed_access={"read"})
                 observations[mode]=report
                 self.assertTrue(report["structural_changes_verified"])
+                self.assertTrue(validate_witness("body.mlt_owned_compare",report))
                 self.assertFalse(report["creative_or_professional_quality_approved"])
                 self.assertEqual(report["before_mlt_sha256"],sha256_file(original))
                 self.assertEqual(report["after_mlt_sha256"],sha256_file(root/target))
