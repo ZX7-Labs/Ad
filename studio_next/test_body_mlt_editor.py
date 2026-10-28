@@ -381,6 +381,14 @@ class VerifiedMLTEditorialTests(unittest.TestCase):
             source.write_text(json.dumps(plan))
             native=root/"original.mlt"
             export_owned_mlt(source,root,root/"vault",native)
+            # Durable operations must fingerprint the actual MLT and every
+            # separately attested video/audio CAS input, never only a filename.
+            from studio_next.body_materials import fingerprint_physical_inputs
+            materials=fingerprint_physical_inputs("body.mlt_owned_import",
+                {"edit":"original.mlt","out":"recovered.json"},root)
+            self.assertEqual(len(materials),4)
+            self.assertIn("original.mlt",[m["relative"] for m in materials])
+            self.assertIn(audio["asset_id"],[m["sha256"] for m in materials])
             self.assertEqual(recover_original_mlt_plan(native,root,root/"vault")["plan"],
                              plan)
             report=import_owned_mlt_project(native,root,root/"vault",
