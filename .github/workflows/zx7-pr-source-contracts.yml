@@ -42,6 +42,8 @@ jobs:
             studio_next.test_body_mlt_compare.ExactNativeEditorialReviewTests.test_bounded_model_queries_do_not_dump_all_private_clip_graphs -v
       - name: Verify no-drop or dropped-LABEL-only SMPTE clocks, 24h bounds and signed source-frame API
         run: python -m unittest studio_next.test_body_timecode -v
+      - name: Reject rounded NTSC source clocks before real retime execution
+        run: python -m unittest studio_next.test_exact_retime_clock -v
       - name: Verify typed layer geometry, immutable revisions and exact source-frame animation through ripple
         run: python -m unittest studio_next.test_body_mlt_transform studio_next.test_body_mlt_masks studio_next.test_body_mlt_relink -v
       - name: Validate current Git tracked source inventory
