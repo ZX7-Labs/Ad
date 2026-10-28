@@ -97,6 +97,12 @@ def _track_changes(original,updated,kind,index,old_frames,new_frames):
             "duration_frames":right-left,"type":kind_of_change,
             "before":_source_identity(b),
             "after":_source_identity(a)})
+    # Razor/split/rejoin can change the editable graph without moving a
+    # single decoded frame. Report this separately from source-pixel deltas.
+    old_clips=copy.deepcopy(original["clips"]) if original else None
+    new_clips=copy.deepcopy(updated["clips"]) if updated else None
+    editorial_partition_delta=(None if old_clips==new_clips else {
+        "before":old_clips,"after":new_clips})
     old_control=_track_control(original,kind)
     new_control=_track_control(updated,kind)
     controls=None
@@ -105,7 +111,8 @@ def _track_changes(original,updated,kind,index,old_frames,new_frames):
     return {"kind":kind,"track_index":index,
             "source_frame_spans":altered,
             "unchanged_original_source_frames":surviving,
-            "native_track_controls":controls}
+            "native_track_controls":controls,
+            "native_clip_partition_delta":editorial_partition_delta}
 
 
 def compare_owned_mlt_projects(before_edit,after_edit,workspace,vault_root):
@@ -145,7 +152,9 @@ def compare_owned_mlt_projects(before_edit,after_edit,workspace,vault_root):
                 lhs[index] if index<len(lhs) else None,
                 rhs[index] if index<len(rhs) else None,
                 kind,index,original["frames"],revised["frames"])
-            if report["source_frame_spans"] or report["native_track_controls"] is not None:
+            if (report["source_frame_spans"] or
+                    report["native_track_controls"] is not None or
+                    report["native_clip_partition_delta"] is not None):
                 target.append(report)
     if sha256_file(prior)!=sha_before or sha256_file(later)!=sha_after:
         raise ValueError("Native original or revised timeline changed during comparison")
