@@ -404,7 +404,9 @@ class VerifiedMLTEditorialTests(unittest.TestCase):
             root=Path(temp);plan,source=self._case(root)
             plan["tracks"][1]["blend_mode"]="multiply"
             third=json.loads(json.dumps(plan["tracks"][1]))
-            third["blend_mode"]="normal"
+            # Default source-over is represented by the native compositor,
+            # not by whether an optional JSON key was explicitly present.
+            third.pop("blend_mode",None)
             third["opacity"]=0.75
             plan["tracks"].append(third)
             source.write_text(json.dumps(plan))
