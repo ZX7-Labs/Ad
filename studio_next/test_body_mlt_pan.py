@@ -52,6 +52,51 @@ class NativeStereoPanTests(unittest.TestCase):
             with self.subTest(control=invalid),self.assertRaises(ValueError):
                 _pan_animation(invalid,12)
 
+    @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"),
+                         "Physical original mono/stereo identity needs real decoders")
+    def test_authoring_stereo_balance_never_silently_attenuates_mono_original(self):
+        """Native MLT channel=-1 changes mono volume, not stereo position.
+
+        Verify actual original source identity and the cached cross-bus case:
+        a source first admitted without stereo controls must not later be
+        accepted into another sound bus carrying an unproven pan instruction.
+        """
+        from studio_next.test_body_mlt_editor import VerifiedMLTEditorialTests
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary)
+            plan,_=VerifiedMLTEditorialTests()._case(root)
+            mono=root/"owner-original-mono.wav"
+            subprocess.run(["ffmpeg","-hide_banner","-loglevel","error",
+                "-nostdin","-f","lavfi","-i",
+                "sine=frequency=503:sample_rate=48000:duration=1",
+                "-ac","1","-c:a","pcm_s16le","-y",str(mono)],
+                check=True,timeout=35)
+            preserved=mono.read_bytes()
+            sound=MediaVault(root/"vault").ingest(mono,mime="audio/wav",
+                rights="owner_supplied",source_type="owner_upload",
+                source_id="physically-mono-not-stereo",
+                evidence="Verified 48000 physical mono original",
+                owner_or_generator="owner")
+            clip={"source":"zx7:sha256:"+sound["asset_id"],
+                  "asset_id":sound["asset_id"],
+                  "attestation_id":sound["attestation_id"],
+                  "position_frame":0,"first_frame":0,"end_frame":12}
+            plan["audio_tracks"]=[{"clips":[dict(clip)]}]
+            self.assertEqual(len(validate_mlt_edit(
+                plan,root,root/"vault")["audio_tracks"]),1)
+            for authored in ({"pan":0},{"pan":0.5},{"pan":1},
+                 {"pan_keyframes":[{"frame":0,"pan":0},
+                                    {"frame":11,"pan":1}]}):
+                plan["audio_tracks"]=[{"clips":[dict(clip)],**authored}]
+                with self.subTest(authored=authored),self.assertRaisesRegex(
+                         ValueError,"one-channel original audio"):
+                    validate_mlt_edit(plan,root,root/"vault")
+            plan["audio_tracks"]=[{"clips":[dict(clip)]},
+                                  {"clips":[dict(clip)],"pan":1}]
+            with self.assertRaisesRegex(ValueError,"one-channel original audio"):
+                validate_mlt_edit(plan,root,root/"vault")
+            self.assertEqual(mono.read_bytes(),preserved)
+
     def test_ripple_keeps_original_stereo_position_at_every_source_frame(self):
         source={"frame_rate":{"numerator":12,"denominator":1},
              "frame_size":{"width":64,"height":48},
@@ -211,7 +256,8 @@ class NativeStereoPanTests(unittest.TestCase):
                                      decision["operations"][0]["value"])
                 review=catalog.invoke("body.mlt_owned_compare",{
                     "before_edit":"center-original.mlt",
-                    "after_edit":name+"-native.mlt"},allowed_access={"read"})
+                    "after_edit":name+"-native.mlt",
+                    "focus":"all"},allowed_access={"read"})
                 self.assertEqual(len(review["sound_changes"]),1)
                 self.assertIsNotNone(
                     review["sound_changes"][0]["native_track_controls"])
