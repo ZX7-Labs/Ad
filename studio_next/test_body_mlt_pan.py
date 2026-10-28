@@ -123,6 +123,60 @@ class NativeStereoPanTests(unittest.TestCase):
             self.assertEqual(native.read_bytes(),approved_bytes)
             self.assertEqual(mono.read_bytes(),preserved)
 
+    @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"),
+                         "Real original sound file and native project recovery needed")
+    def test_authored_neutral_gain_and_center_pan_are_lossless_source_decisions(self):
+        """Omitted controls and explicitly neutral controls are NOT identical edits."""
+        from studio_next.test_body_mlt_editor import VerifiedMLTEditorialTests
+        from studio_next.body_mlt_editor import export_owned_mlt
+        from studio_next.body_mlt_compare import compare_owned_mlt_projects
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp)
+            plan,source=VerifiedMLTEditorialTests()._case(root)
+            track=root/"verified-stereo-neutral.wav"
+            subprocess.run(["ffmpeg","-hide_banner","-loglevel","error",
+                "-nostdin","-f","lavfi","-i",
+                "sine=frequency=437:sample_rate=48000:duration=1",
+                "-ac","2","-c:a","pcm_s16le","-y",str(track)],
+                check=True,timeout=45)
+            record=MediaVault(root/"vault").ingest(track,mime="audio/wav",
+                rights="owner_supplied",source_type="owner_upload",
+                source_id="native-neutral-stereo-owner",
+                evidence="Actual stereo PCM from original local encoder",
+                owner_or_generator="fixture-owner")
+            clip={"source":"zx7:sha256:"+record["asset_id"],
+                  "asset_id":record["asset_id"],
+                  "attestation_id":record["attestation_id"],
+                  "position_frame":0,"first_frame":0,"end_frame":12}
+            orig_bytes=track.read_bytes()
+            for name,controls in (
+                ("omitted",{}),("explicit-gain",{"gain_db":0}),
+                ("explicit-pan",{"pan":0.5}),
+                ("both-neutral",{"gain_db":0,"pan":0.5})):
+                project={**plan,"audio_tracks":[{"clips":[dict(clip)],
+                                                **controls}]}
+                source.write_text(json.dumps(project))
+                target=root/(name+".mlt")
+                export_owned_mlt(source,root,root/"vault",target)
+                original_native=target.read_bytes()
+                self.assertEqual(
+                    recover_original_mlt_plan(target,root,root/"vault")["plan"],
+                    project)
+                report=verify_owned_mlt_project(target)
+                self.assertEqual(report["verified_audio_tracks"],1)
+                self.assertEqual(original_native,target.read_bytes())
+            for name in ("explicit-gain","explicit-pan","both-neutral"):
+                summary=compare_owned_mlt_projects(
+                    root/"omitted.mlt",root/(name+".mlt"),
+                    root,root/"vault",focus="summary")
+                self.assertTrue(summary["structural_changes_verified"])
+                self.assertEqual(len(summary["sound_change_summaries"]),1)
+                self.assertTrue(summary["sound_change_summaries"][0][
+                    "authored_effect_controls_changed"])
+                self.assertEqual(summary["sound_change_summaries"][0][
+                    "changed_original_source_frames"],0)
+            self.assertEqual(track.read_bytes(),orig_bytes)
+
     def test_ripple_keeps_original_stereo_position_at_every_source_frame(self):
         source={"frame_rate":{"numerator":12,"denominator":1},
              "frame_size":{"width":64,"height":48},
