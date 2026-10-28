@@ -87,7 +87,7 @@ class LocalCreativeModel:
                     if hashlib.sha256(raw).hexdigest()!=meta["sha256"]:
                         raise ValueError("Picture and encoded model image identity mismatch")
                     label.update({"job_id":meta["job_id"],"path":meta["path"],
-                                  "sha256":meta["sha256"],"physical_bytes_verified_upstream":True})
+                                  "sha256":meta["sha256"],"image_payload_matches_evidence_sha256":True})
                 # Each inline label is immediately followed by its own binary
                 # image. Positional assumptions are insufficient for a model
                 # comparing before/after frames from different film jobs.
