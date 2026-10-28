@@ -12,6 +12,7 @@ from studio_next.body_mlt_editor import (
     validate_mlt_edit,build_mlt_xml,export_owned_mlt,verify_owned_mlt_project)
 from studio_next.media_vault import MediaVault
 from studio_next.body_document_schemas import validate_document
+from studio_next.body_mlt_roundtrip import import_owned_mlt_project, recover_original_mlt_plan
 
 
 def _movie(path,color):
@@ -362,6 +363,77 @@ class VerifiedMLTEditorialTests(unittest.TestCase):
                     green_dominant(7)
                     self.assertGreater(samples[6][1],25,(kind,samples))
                     self.assertGreater(samples[6][2],25,(kind,samples))
+
+    def test_original_native_mlt_edit_recovery_preserves_sound_opacity_and_rights(self):
+        from studio_next.body_integration import body_catalog
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);plan,source=self._case(root)
+            audio=self._original_sound(root)
+            plan["audio_tracks"]=[{"clips":[{
+                "source":"zx7:sha256:"+audio["asset_id"],
+                "asset_id":audio["asset_id"],
+                "attestation_id":audio["attestation_id"],
+                "position_frame":2,"first_frame":0,"end_frame":8}]}]
+            plan["tracks"][1]["blend_mode"]="screen"
+            plan["tracks"][1]["opacity_keyframes"]=[
+                {"frame":0,"opacity":0},{"frame":4,"opacity":1},
+                {"frame":11,"opacity":0.5}]
+            source.write_text(json.dumps(plan))
+            native=root/"original.mlt"
+            export_owned_mlt(source,root,root/"vault",native)
+            self.assertEqual(recover_original_mlt_plan(native,root,root/"vault")["plan"],
+                             plan)
+            report=import_owned_mlt_project(native,root,root/"vault",
+                                            root/"recovered.json")
+            self.assertEqual(report["verified_original_picture_tracks"],2)
+            self.assertEqual(report["verified_original_sound_tracks"],1)
+            self.assertEqual(json.loads((root/"recovered.json").read_text()),plan)
+            export_owned_mlt(root/"recovered.json",root,root/"vault",
+                             root/"replayed.mlt")
+            self.assertEqual(ET.canonicalize(native.read_text(),strip_text=True),
+                ET.canonicalize((root/"replayed.mlt").read_text(),strip_text=True))
+            with self.assertRaises(FileExistsError):
+                import_owned_mlt_project(native,root,root/"vault",root/"recovered.json")
+            receipt=body_catalog(root).invoke("body.mlt_owned_import",
+                {"edit":"original.mlt","out":"model-recovered.json"},allowed_access={"write"})
+            self.assertTrue(receipt["lossless_typed_native_roundtrip"])
+            self.assertEqual(json.loads((root/"model-recovered.json").read_text()),plan)
+
+    def test_native_mlt_reverse_three_layers_fails_closed_on_unrepresentable_changes(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);plan,source=self._case(root)
+            plan["tracks"][1]["blend_mode"]="multiply"
+            third=json.loads(json.dumps(plan["tracks"][1]))
+            third["blend_mode"]="normal"
+            third["opacity"]=0.75
+            plan["tracks"].append(third)
+            source.write_text(json.dumps(plan))
+            native=root/"three.mlt"
+            export_owned_mlt(source,root,root/"vault",native)
+            result=import_owned_mlt_project(native,root,root/"vault",
+                                            root/"three-recovered.json")
+            self.assertEqual(result["verified_original_picture_tracks"],3)
+            self.assertEqual(json.loads((root/"three-recovered.json").read_text()),plan)
+            export_owned_mlt(root/"three-recovered.json",root,root/"vault",
+                             root/"three-replayed.mlt")
+            self.assertEqual(ET.canonicalize(native.read_text(),strip_text=True),
+                ET.canonicalize((root/"three-replayed.mlt").read_text(),
+                                strip_text=True))
+            before=native.read_text()
+            for old,new in (
+                ('<property name="1">multiply</property>',
+                 '<property name="1">arbitrary_plugin</property>'),
+                ('<property name="0">0.75</property>',
+                 '<property name="0">0=0;4|=1</property>'),
+                ('<property name="mlt_service">frei0r.cairoblend</property>',
+                 '<property name="mlt_service">frei0r.random</property>')):
+                self.assertIn(old,before)
+                native.write_text(before.replace(old,new,1))
+                with self.subTest(replacement=new),self.assertRaises(ValueError):
+                    import_owned_mlt_project(native,root,root/"vault",
+                                             root/"must-not-publish.json")
+                self.assertFalse((root/"must-not-publish.json").exists())
+            native.write_text(before)
 
     def test_same_layer_overlap_and_unmeasured_source_range_fail_closed(self):
         with tempfile.TemporaryDirectory() as temp:
