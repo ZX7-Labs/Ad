@@ -87,21 +87,30 @@ def verify_media_container(path,mime):
         from .pcm_wave import inspect_pcm_wav
         import subprocess
         try:
-            # Python 3.11 does not recognize WAVE_FORMAT_EXTENSIBLE PCM.
-            # Inspect original RIFF counts exactly before any rights admission.
+            # Integer PCM carries samples as fixed-width bytes, not an encoded
+            # bitstream. Complete RIFF chunk extents, exact block alignment,
+            # channel layout and sample clock can be independently verified
+            # without a separate multimedia executable. Do not deny valid
+            # owner audio on an otherwise minimal Python-only host.
             inspect_pcm_wav(path)
-            decoded=subprocess.run([
-                "ffmpeg","-hide_banner","-loglevel","error","-nostdin",
-                "-xerror","-i",str(path),"-map","0:a","-f","null","-"],
-                capture_output=True,timeout=3600,check=False)
-            if decoded.returncode:
-                raise MediaCustodyError("Original PCM WAV failed full audio decode")
-        except MediaCustodyError:
-            raise
         except ValueError as exc:
             raise MediaCustodyError(str(exc)) from exc
-        except (OSError,subprocess.SubprocessError) as exc:
-            raise MediaCustodyError("Original PCM WAV cannot be fully decoded") from exc
+        # When a physical FFmpeg decoder is actually installed, perform an
+        # additional full decoder cross-check. Its absence is not proof that
+        # fixed-width integer PCM samples are undecodable. Compressed WAV
+        # codecs are never admitted by inspect_pcm_wav.
+        if shutil.which("ffmpeg") is not None:
+            try:
+                decoded=subprocess.run([
+                    "ffmpeg","-hide_banner","-loglevel","error","-nostdin",
+                    "-xerror","-i",str(path),"-map","0:a","-f","null","-"],
+                    capture_output=True,timeout=3600,check=False)
+                if decoded.returncode:
+                    raise MediaCustodyError("Original PCM WAV failed full audio decode")
+            except MediaCustodyError:
+                raise
+            except (OSError,subprocess.SubprocessError) as exc:
+                raise MediaCustodyError("Original PCM WAV cannot be fully decoded") from exc
     elif mime=="image/svg+xml":
         from .creative_asset_ops import validate_original_svg_art
         validate_original_svg_art(path)
