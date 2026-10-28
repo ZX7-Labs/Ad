@@ -283,6 +283,76 @@ class VerifiedMLTEditorialTests(unittest.TestCase):
             self.assertGreater(fade_middle[2],45,outputs)
             self.assertGreater(fade_end[2],fade_end[0]+70,outputs)
 
+    @unittest.skipUnless(shutil.which("melt"),"Actual MLT layer-stack compositor required")
+    def test_three_original_video_layers_restore_middle_after_upper_ends_or_fades(self):
+        """A third overlay must not erase the second one outside its real span."""
+        from studio_next.body_integration import body_catalog
+        installed=subprocess.run(["melt","-query","transitions"],
+            capture_output=True,text=True,timeout=25,check=True)
+        self.assertIn("qtblend",installed.stdout)
+        self.assertIn("frei0r.cairoblend",installed.stdout)
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);plan,source=self._case(root)
+            green=root/"green.mp4";_movie(green,"green")
+            original=MediaVault(root/"vault").ingest(green,mime="video/mp4",
+                rights="owner_supplied",source_type="owner_upload",
+                source_id="original-green-mid-layer",
+                evidence="Native FFmpeg source fixture",owner_or_generator="fixture")
+            middle={"source":"zx7:sha256:"+original["asset_id"],
+                "asset_id":original["asset_id"],
+                "attestation_id":original["attestation_id"],
+                "position_frame":2,"first_frame":0,"end_frame":8,
+                "audio":"intentional_silence"}
+            top=json.loads(json.dumps(plan["tracks"][1]["clips"][0]))
+            top["end_frame"]=6  # blue exists only at timeline frames 4..7
+            plan["tracks"]=[plan["tracks"][0],{"clips":[middle]},{"clips":[top]}]
+            body=body_catalog(root)
+            for kind,controls in (
+                ("opaque",{}),
+                ("fading",{"opacity_keyframes":[
+                    {"frame":0,"opacity":1},{"frame":5,"opacity":1},
+                    {"frame":7,"opacity":0},{"frame":11,"opacity":0}]})
+            ):
+                authored=json.loads(json.dumps(plan))
+                authored["tracks"][2].update(controls)
+                self.assertTrue(validate_document("body.mlt_owned_export",authored))
+                source.write_text(json.dumps(authored))
+                edit=f"three-{kind}.mlt";movie=f"three-{kind}.mp4"
+                body.invoke("body.mlt_owned_export",{"plan":"original.json","out":edit},
+                    allowed_access={"write"})
+                self.assertEqual(verify_owned_mlt_project(root/edit)["verified_mlt_tracks"],3)
+                rendered=body.invoke("body.mlt_owned_render",{"edit":edit,"out":movie},
+                    allowed_access={"write"})
+                self.assertEqual(Path(rendered["path"]).resolve(),(root/movie).resolve())
+                frame_count=json.loads(subprocess.check_output([
+                    "ffprobe","-v","error","-count_frames","-select_streams","v:0",
+                    "-show_entries","stream=nb_read_frames","-of","json",
+                    str(root/movie)],timeout=40))["streams"][0]
+                self.assertEqual(int(frame_count["nb_read_frames"]),12)
+                rgb=subprocess.check_output(["ffmpeg","-v","error","-xerror",
+                    "-i",str(root/movie),"-map","0:v:0",
+                    "-pix_fmt","rgb24","-f","rawvideo","-"],timeout=40)
+                pitch=64*48*3
+                self.assertEqual(len(rgb),12*pitch)
+                def center(frame):
+                    start=frame*pitch+(24*64+32)*3
+                    return tuple(rgb[start:start+3])
+                samples={n:center(n) for n in (0,3,5,6,7,8,11)}
+                def red(n):self.assertGreater(samples[n][0],samples[n][2]+70,(kind,samples))
+                def green_dominant(n):
+                    self.assertGreater(samples[n][1],samples[n][0]+40,(kind,samples))
+                    self.assertGreater(samples[n][1],samples[n][2]+40,(kind,samples))
+                def blue(n):self.assertGreater(samples[n][2],samples[n][0]+70,(kind,samples))
+                red(0);red(11)
+                green_dominant(3);green_dominant(8)
+                blue(5)
+                if kind=="opaque":
+                    blue(7)
+                else:
+                    green_dominant(7)
+                    self.assertGreater(samples[6][1],25,(kind,samples))
+                    self.assertGreater(samples[6][2],25,(kind,samples))
+
     def test_same_layer_overlap_and_unmeasured_source_range_fail_closed(self):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp);plan,_=self._case(root)
