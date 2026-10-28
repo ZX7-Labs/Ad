@@ -16,6 +16,7 @@ _ARG_TYPES={
     "before_bundle":"string","before_sha256":"string",
     "after_bundle":"string","after_sha256":"string",
     "time_seconds":"number","expected":"object","source_witness":"object",
+    "gap_color":"string",
 }
 _EXAMPLES_DISALLOWED=True
 
@@ -39,9 +40,11 @@ def real_operation_schema(tool_id,required):
         "body.blender3d":("assets_root",),
         "body.exr_passes":("assets_root",),
         "body.full_decode":("expected",),
+        "body.mlt_owned_render":("gap_color",),
     }.get(tool_id,())
     for name in optional:
-        props[name]={"type":_ARG_TYPES[name]}
+        props[name]=({"type":"string","pattern":"^#[0-9a-fA-F]{6}$"}
+                     if name=="gap_color" else {"type":_ARG_TYPES[name]})
     return {"type":"object",
             "additionalProperties":False,
             "required":list(required),
