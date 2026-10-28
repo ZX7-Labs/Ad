@@ -42,6 +42,17 @@ def _require_native_frei0r_compositing():
             "MLT Frei0r Cairo blending; arbitrary source-over substitution is forbidden")
 
 
+def _require_native_audio_volume():
+    """Do not silently ignore a director-authored native sound level filter."""
+    try:
+        check=subprocess.run(["melt","-query","filters"],
+            capture_output=True,text=True,timeout=40)
+    except (OSError,subprocess.SubprocessError) as exc:
+        raise RuntimeError("Cannot inspect native audio volume filter") from exc
+    if check.returncode or not any(row.strip()=="volume" for row in check.stdout.splitlines()):
+        raise RuntimeError("Original sound gain requires installed MLT volume filter")
+
+
 def render_owned_mlt(edit,workspace,output):
     """Publish a fully decoded, measured original-source video and sound mix."""
     root=Path(workspace).resolve()
@@ -66,6 +77,8 @@ def render_owned_mlt(edit,workspace,output):
             p.text=="frei0r.cairoblend" for p in transition.findall("property"))
             for transition in xml.findall("./tractor/transition")):
         _require_native_frei0r_compositing()
+    if xml.findall("./tractor/filter"):
+        _require_native_audio_volume()
     profile=xml.find("profile")
     tractor=xml.find("tractor")
     if profile is None or tractor is None:
