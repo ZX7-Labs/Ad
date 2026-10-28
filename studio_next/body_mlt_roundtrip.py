@@ -22,6 +22,7 @@ from .body_mlt_editor import (
 )
 from .media_vault import sha256_file
 from .body_mlt_transform import decode_transform,decode_mask
+from .body_mlt_grade import decode_grade
 
 
 def recover_original_mlt_plan(edit, workspace, vault_root):
@@ -123,15 +124,17 @@ def recover_original_mlt_plan(edit, workspace, vault_root):
     }
     for filt in tractor.findall("filter"):
         properties={p.get("name"):p.text for p in filt.findall("property")}
-        if properties["mlt_service"] in ("qtcrop","qtblend"):
+        if properties["mlt_service"] in ("lift_gamma_gain","qtcrop","qtblend"):
             ti=int(properties["track"])
-            if properties["mlt_service"]=="qtcrop":
+            if properties["mlt_service"]=="lift_gamma_gain":
+                tracks[ti]["grade"]=decode_grade(properties,frames)
+            elif properties["mlt_service"]=="qtcrop":
                 tracks[ti]["mask"]=decode_mask(properties,frames)
             else:tracks[ti]["transform"]=decode_transform(properties,frames)
     if sounds:
         for filt in tractor.findall("filter"):
             properties={p.get("name"):p.text for p in filt.findall("property")}
-            if properties["mlt_service"] in ("qtcrop","qtblend"):
+            if properties["mlt_service"] in ("lift_gamma_gain","qtcrop","qtblend"):
                 continue
             ti=int(properties["track"])-count
             if not 0<=ti<len(sounds):
