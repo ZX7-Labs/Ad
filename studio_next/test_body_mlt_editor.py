@@ -321,6 +321,16 @@ class VerifiedMLTEditorialTests(unittest.TestCase):
                 body.invoke("body.mlt_owned_export",{"plan":"original.json","out":edit},
                     allowed_access={"write"})
                 self.assertEqual(verify_owned_mlt_project(root/edit)["verified_mlt_tracks"],3)
+                # Do not force the optional Cairo plugin for a pure QtBlend
+                # source-over stack; mixed opacity stacks must use one family.
+                tree=ET.parse(root/edit)
+                services=[]
+                for transition in tree.findall("./tractor/transition"):
+                    props={p.get("name"):p.text for p in transition.findall("property")}
+                    services.append(props["mlt_service"])
+                self.assertEqual(services,
+                    ["qtblend","qtblend"] if kind=="opaque" else
+                    ["frei0r.cairoblend","frei0r.cairoblend"])
                 rendered=body.invoke("body.mlt_owned_render",{"edit":edit,"out":movie},
                     allowed_access={"write"})
                 self.assertEqual(Path(rendered["path"]).resolve(),(root/movie).resolve())
