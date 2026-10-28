@@ -254,6 +254,8 @@ class NativeStereoPanTests(unittest.TestCase):
             self.assertNotIn("pan",first["audio_tracks"][0])
 
             revisions={
+                "center":{"operations":[{"op":"add",
+                    "path":"/audio_tracks/0/pan","value":0.5}]},
                 "left":{"operations":[{"op":"add",
                     "path":"/audio_tracks/0/pan","value":0}]},
                 "right":{"operations":[{"op":"add",
@@ -308,6 +310,12 @@ class NativeStereoPanTests(unittest.TestCase):
                 vals=samples[2*lo+channel:2*hi:2]
                 return sqrt(sum(v*v for v in vals)/len(vals))
             lo=12000;hi=18000
+            center=channels("center")
+            center_l=rms(center,0,lo,hi)
+            center_r=rms(center,1,lo,hi)
+            self.assertGreater(center_l,300)
+            self.assertGreater(center_r,300)
+            self.assertLess(abs(center_l-center_r),max(center_l,center_r)*.12)
             ll=rms(left,0,lo,hi);lr=rms(left,1,lo,hi)
             rl=rms(right,0,lo,hi);rr=rms(right,1,lo,hi)
             self.assertGreater(ll,300)
