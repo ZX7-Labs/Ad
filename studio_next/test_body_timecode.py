@@ -156,6 +156,44 @@ class ExactSourceTimecodeTests(unittest.TestCase):
             dict(b,input_timecode_label="xx"),"body.timecode_parse"))
         self.assertFalse(verify_timecode_receipt(a,"body.fake_timecode"))
 
+    def test_durable_director_graph_revalidates_exact_original_clock_instead_of_fake_cached_proof(self):
+        from studio_next.body_integration import body_catalog,run_body_project
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            catalog=body_catalog(root)
+            self.assertEqual(catalog.trusted_material_fingerprint(
+                "body.timecode_format",{
+                    "numerator":30000,"denominator":1001,
+                    "frame_index":1800,"drop_frame":True}),[])
+            self.assertIn("body.timecode_format",
+                          catalog.committed_tool_revisions())
+            graph={
+                "project":{"creative_intent":
+                    "Show exact source-frame clock without modifying owner footage"},
+                "assets":[],
+                "shots":[{"id":"clock","purpose":
+                    "Address owner video frames exactly","duration_seconds":1}],
+                "tool_graph":[{"id":"source-clock","tool_id":"body.timecode_format",
+                    "purpose":"Author reversible frame-exact timecode label",
+                    "inputs":{"numerator":30000,"denominator":1001,
+                              "frame_index":1800,"drop_frame":True},
+                    "depends_on":[]}]}
+            first=run_body_project(graph,root,db_name="smpte-proof.sqlite3")
+            self.assertEqual(first["status"],"all_tool_results_verified")
+            self.assertEqual(first["reused"],[])
+            again=run_body_project(graph,root,db_name="smpte-proof.sqlite3")
+            self.assertEqual(again["status"],"all_tool_results_verified")
+            self.assertEqual(again["reused"],["source-clock"])
+            self.assertEqual(again["completed"],["source-clock"])
+            # Changing an *actual* rational frame index changes the trusted
+            # durable input key and must invalidate the previous observation.
+            changed=__import__("copy").deepcopy(graph)
+            changed["tool_graph"][0]["inputs"]["frame_index"]=1801
+            third=run_body_project(changed,root,db_name="smpte-proof.sqlite3")
+            self.assertEqual(third["status"],"all_tool_results_verified")
+            self.assertEqual(third["reused"],[])
+            self.assertEqual(third["completed"],["source-clock"])
+
     def test_actual_registered_read_tools_offer_stable_safe_rational_clocks(self):
         from studio_next.body_integration import body_catalog,validate_witness
         with tempfile.TemporaryDirectory() as tmp:
