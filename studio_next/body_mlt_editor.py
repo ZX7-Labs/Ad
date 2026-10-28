@@ -336,6 +336,13 @@ def build_mlt_xml(plan,checked):
         ET.SubElement(multitrack,"track",{"producer":f"track-{ti}","hide":"audio"})
     for ti in range(len(checked["audio_tracks"])):
         ET.SubElement(multitrack,"track",{"producer":f"audio-track-{ti}","hide":"video"})
+    # Preserve original Qt-only stacking when no track needs Cairo. When
+    # any upper layer uses opacity animation or non-normal blend, MLT 7.22's
+    # mixed Qt/Cairo tractor can hide the later overlay beneath an earlier
+    # Qt layer. A single compositor family prevents that measured failure.
+    uniform_cairo=len(checked["tracks"])>2 and any(
+        m!="normal" or a!="1" for m,a in
+        zip(checked["blend_modes"][1:],checked["opacities"][1:]))
     for ti in range(1,len(checked["tracks"])):
         transition=ET.SubElement(tractor,"transition",{
             "in":"0","out":str(checked["frames"]-1)})
@@ -345,7 +352,7 @@ def build_mlt_xml(plan,checked):
         # compositing. The actual FFmpeg-decode test guards this distinction.
         mode=checked["blend_modes"][ti]
         opacity=checked["opacities"][ti]
-        if mode=="normal" and opacity=="1":
+        if mode=="normal" and opacity=="1" and not uniform_cairo:
             _prop(transition,"mlt_service","qtblend")
             _prop(transition,"compositing",0)
         else:
@@ -556,7 +563,7 @@ def _verify_exact_mlt_xml_tree(root):
                 if props["1"] not in _CAIRO_MODES:
                     raise ValueError("MLT native visual blending mode is not allowlisted")
                 _verify_native_opacity(props["0"],frames)
-                if props["1"]=="normal" and props["0"]=="1":
+                if props["1"]=="normal" and props["0"]=="1" and picture_tracks<=2:
                     raise ValueError("Unnecessary Cairo source-over is not canonical")
                 expected={"a_track":"0","b_track":str(i+1),
                     "mlt_service":"frei0r.cairoblend","0":props["0"],"1":props["1"],

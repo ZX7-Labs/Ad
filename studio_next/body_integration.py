@@ -875,7 +875,7 @@ def body_catalog(workspace,*,vault_root=None):
         "Rights-attested video overlays, exact CFR in/out and gaps, native track blend and frame-keyframed opacity through measured MLT Cairo compositing. "
         "Host-local XML project with explicit video mute and optional actual owner-attested audio tracks; no generated music, effects, relinking or universal NLE claim.",
         "write",bool(shutil.which("melt") and video_io),["plan","out"],export_native_owned_mlt)
-    add("body.mlt_owned_render","native MLT multi-track video-only MP4 rendering",
+    add("body.mlt_owned_render","native MLT multitrack audiovisual MP4 rendering",
         "Render exact SHA-attested MLT project to decoded H264 with explicit original-audio or picture-only delivery; "
         "both project and every original source are verified again at publish, no arbitrary command or plugin inputs.",
         "write",bool(shutil.which("melt") and video_io),["edit","out"],render_native_owned_mlt)
