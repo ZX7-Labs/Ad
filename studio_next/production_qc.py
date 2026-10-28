@@ -60,7 +60,7 @@ def full_decode_inspection(file,*,expected=None,runner=None,max_seconds=7200):
         errors.append("Physical film duration deviates from original director's edit")
     run=runner or subprocess.run
     command=["ffmpeg","-hide_banner","-loglevel","error","-xerror",
-             "-nostdin","-i",str(file),"-map","0:v:0","-map","0:a:0?",
+             "-nostdin","-i",str(file),"-map","0:v","-map","0:a?",
              "-f","null","-"]
     decoded=run(command,capture_output=True,text=True,timeout=max_seconds,check=False)
     if decoded.returncode!=0:
@@ -77,7 +77,7 @@ def full_decode_inspection(file,*,expected=None,runner=None,max_seconds=7200):
             mean=_MEAN_VOLUME.findall(volume.stderr or "")
             sound={"max_volume_dbfs":peak[-1] if peak else None,
                    "mean_volume_dbfs":mean[-1] if mean else None,
-                   "measurement":"Entire actually decoded sound, not inferred quality"}
+                   "measurement":"Entire primary audio stream peak/mean; all picture and audio streams independently decoded above"}
     return {"path":str(file),"sha256":sha256_file(file),
             "bytes":file.stat().st_size,
             "width":source["width"],"height":source["height"],
