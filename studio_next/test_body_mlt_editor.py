@@ -650,6 +650,61 @@ class VerifiedMLTEditorialTests(unittest.TestCase):
                     planned)
 
 
+    @unittest.skipUnless(shutil.which("melt"),
+                         "Actual native MLT sound and film decoder required")
+    def test_model_creative_patch_affects_actual_independent_sound_gain(self):
+        """One AI command patches an immutable edit, changing *decoded* audio."""
+        from array import array
+        from math import sqrt
+        from studio_next.body_integration import body_catalog
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);plan,source=self._case(root)
+            sound=self._original_sound(root)
+            plan["audio_tracks"]=[{"clips":[{
+                "source":"zx7:sha256:"+sound["asset_id"],
+                "asset_id":sound["asset_id"],
+                "attestation_id":sound["attestation_id"],
+                "position_frame":0,"first_frame":0,"end_frame":12}]}]
+            source.write_text(json.dumps(plan))
+            engine=body_catalog(root)
+            first=engine.invoke("body.mlt_owned_export",{
+                "plan":source.name,"out":"sound-original.mlt"},
+                allowed_access={"write"})
+            original=(root/"sound-original.mlt").read_bytes()
+            operation={"operations":[
+                {"op":"test","path":"/audio_tracks/0/clips/0/first_frame","value":0},
+                {"op":"add","path":"/audio_tracks/0/gain_db","value":-18}]}
+            (root/"sound-decision.json").write_text(json.dumps(operation))
+            changed=engine.invoke("body.mlt_owned_revision",{
+                "edit":"sound-original.mlt","operation":"sound-decision.json",
+                "out":"sound-updated.mlt"},allowed_access={"write"})
+            self.assertEqual(changed["prior_mlt_sha256"],
+                             hashlib.sha256(original).hexdigest())
+            self.assertEqual((root/"sound-original.mlt").read_bytes(),original)
+            updated=recover_original_mlt_plan(root/"sound-updated.mlt",
+                                              root,root/"vault")["plan"]
+            self.assertEqual(updated["audio_tracks"][0]["gain_db"],-18.0)
+            self.assertEqual(updated["tracks"],plan["tracks"])
+            self.assertEqual(updated["audio_tracks"][0]["clips"],
+                             plan["audio_tracks"][0]["clips"])
+            measures=[]
+            for edit,out in (("sound-original.mlt","unmodified.mp4"),
+                             ("sound-updated.mlt","attenuated.mp4")):
+                engine.invoke("body.mlt_owned_render",{"edit":edit,"out":out},
+                              allowed_access={"write"})
+                raw=subprocess.check_output(["ffmpeg","-hide_banner",
+                    "-loglevel","error","-nostdin","-xerror",
+                    "-i",str(root/out),"-map","0:a:0","-ar","48000",
+                    "-ac","1","-f","s16le","-"],timeout=45)
+                samples=array("h");samples.frombytes(raw)
+                window=samples[12000:24000]
+                self.assertGreater(len(window),11000)
+                measures.append(sqrt(sum(v*v for v in window)/len(window)))
+            self.assertGreater(measures[0],500)
+            self.assertLess(measures[1],measures[0]/5)
+            self.assertGreater(measures[1],measures[0]/10)
+            self.assertEqual((root/"sound-original.mlt").read_bytes(),original)
+
     def test_native_editor_patch_refuses_raced_commands_before_project_publication(self):
         from unittest.mock import patch
         import studio_next.body_mlt_revision as patch_engine
