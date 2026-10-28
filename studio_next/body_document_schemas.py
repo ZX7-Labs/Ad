@@ -108,7 +108,14 @@ _SCHEMAS = {
                  "frame":number(0,integer=True),"frames":SIZE,
                  "picture_tracks":array(number(0,integer=True),maxItems=8),
                  "audio_tracks":array(number(0,integer=True),maxItems=4),
-                 "automation":choice("preserve_source_frame_values")})
+                 "automation":choice("preserve_source_frame_values")}),
+            obj({"kind":choice("roll","slip","slide"),
+                 "delta_frames":number(-1000000,1000000,integer=True),
+                 "picture_targets":array(obj({"track":number(0,integer=True),
+                    "clip":number(0,integer=True)}),maxItems=8),
+                 "audio_targets":array(obj({"track":number(0,integer=True),
+                    "clip":number(0,integer=True)}),maxItems=4),
+                 "automation":choice("lock_to_timeline")})
             ]},minItems=1,maxItems=128)})
         ]}),
     "body.timeline_revision": ("plan", _SEQUENCE),
