@@ -21,6 +21,7 @@ from .body_mlt_editor import (
     verify_owned_mlt_project,
 )
 from .media_vault import sha256_file
+from .body_mlt_transform import decode_transform
 
 
 def recover_original_mlt_plan(edit, workspace, vault_root):
@@ -120,9 +121,16 @@ def recover_original_mlt_plan(edit, workspace, vault_root):
         },
         "tracks": tracks,
     }
+    for filt in tractor.findall("filter"):
+        properties={p.get("name"):p.text for p in filt.findall("property")}
+        if properties["mlt_service"]=="qtblend":
+            ti=int(properties["track"])
+            tracks[ti]["transform"]=decode_transform(properties,frames)
     if sounds:
         for filt in tractor.findall("filter"):
             properties={p.get("name"):p.text for p in filt.findall("property")}
+            if properties["mlt_service"]=="qtblend":
+                continue
             ti=int(properties["track"])-count
             if not 0<=ti<len(sounds):
                 raise ValueError("Native audio filter lost its original source identity")
