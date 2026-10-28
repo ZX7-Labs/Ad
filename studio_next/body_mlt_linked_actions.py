@@ -245,8 +245,20 @@ def apply_linked_editor_actions(plan,decision):
                     field="opacity" if key=="tracks" else "gain_db"
                     prop="opacity_keyframes" if key=="tracks" else "gain_keyframes"
                     if prop in track:
-                        track[prop]=_rekey(track[prop],kind,at,amount,field,
-                                           retains_after,operation_errors)
+                        preserved=_rekey(track[prop],kind,at,amount,field,
+                                         retains_after,operation_errors)
+                        if len(preserved)==1:
+                            # Entire animation has collapsed to one physically
+                            # surviving timeline value. Native MLT requires
+                            # 2+ keyframes; use its equivalent exact scalar
+                            # only if non-default. Never add a fake keyframe.
+                            value=preserved[0][field]
+                            del track[prop]
+                            default=1 if key=="tracks" else 0
+                            if value!=default:
+                                track[field]=value
+                        else:
+                            track[prop]=preserved
         if not touched:
             raise ValueError("Linked edit did not change a source-attested native shot")
         errors=max(operation_errors,default=0.0)
