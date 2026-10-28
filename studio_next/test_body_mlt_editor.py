@@ -1028,6 +1028,133 @@ class VerifiedMLTEditorialTests(unittest.TestCase):
                 self.assertEqual(Path(path).read_bytes(),blob)
             self.assertEqual((root/"source-windows.mlt").read_bytes(),original)
 
+    @unittest.skipUnless(shutil.which("melt"),
+                         "Requires real native MLT picture/audio and independent FFmpeg")
+    def test_model_grouped_source_placement_rebuilds_real_edit_and_undo_without_mutating_media(self):
+        """Physically verify independent model choices across video and sound buses."""
+        from array import array
+        from math import sqrt
+        from studio_next.body_integration import body_catalog
+        from studio_next.body_mlt_roundtrip import recover_original_mlt_plan
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp)
+            previous,_=self._case(root)
+            red=previous["tracks"][0]["clips"][0]
+            blue=previous["tracks"][1]["clips"][0]
+            sound440=self._original_sound(root,440)
+            sound660=self._original_sound(root,660)
+            def video(original,first,end,position):
+                result={key:original[key] for key in (
+                    "source","asset_id","attestation_id","audio")}
+                result.update({"first_frame":first,"end_frame":end,
+                               "position_frame":position})
+                return result
+            def audio(source,first,end,position):
+                return {"source":"zx7:sha256:"+source["asset_id"],
+                    "asset_id":source["asset_id"],
+                    "attestation_id":source["attestation_id"],
+                    "first_frame":first,"end_frame":end,
+                    "position_frame":position}
+            plan={"frame_rate":{"numerator":12,"denominator":1},
+                "frame_size":{"width":64,"height":48},
+                "tracks":[
+                    {"clips":[video(red,0,4,0),video(blue,4,8,4)]},
+                    {"clips":[video(red,0,4,0),video(blue,4,8,4)],
+                     "blend_mode":"normal"}],
+                "audio_tracks":[
+                    {"clips":[audio(sound440,0,4,0),audio(sound440,4,8,4)]},
+                    {"clips":[audio(sound660,0,4,0),audio(sound660,4,8,4)],
+                     "gain_db":-6}]}
+            authored=root/"source-placements.json"
+            authored.write_text(json.dumps(plan))
+            source_bytes={str(path):path.read_bytes()
+                for path in (root/"red.mp4",root/"blue.mp4",
+                             root/"sound-440.mp4",root/"sound-660.mp4")}
+            catalog=body_catalog(root)
+            catalog.invoke("body.mlt_owned_export",{
+                "plan":authored.name,"out":"placements-original.mlt"},
+                allowed_access={"write"})
+            first=root/"placements-original.mlt"
+            pristine=first.read_bytes()
+            original=recover_original_mlt_plan(first,root,root/"vault")["plan"]
+            operation={"edits":[{
+                "kind":"place","effects":"inherit_destination_track_at_film_time",
+                "placements":[
+                    {"domain":"picture","from_track":0,"clip":1,
+                     "to_track":1,"at_frame":8},
+                    {"domain":"sound","from_track":0,"clip":1,
+                     "to_track":1,"at_frame":8}]}]}
+            (root/"director-place.json").write_text(json.dumps(operation))
+            evidence=catalog.invoke("body.mlt_owned_revision",{
+                "edit":first.name,"operation":"director-place.json",
+                "out":"placements-edited.mlt"},allowed_access={"write"})
+            self.assertEqual(evidence["frames"],12)
+            self.assertEqual(evidence["linked_editor_evidence"]["operations"][0]["kind"],
+                             "place")
+            self.assertEqual(len(evidence["linked_editor_evidence"]["operations"][0]["placements"]),2)
+            self.assertEqual(first.read_bytes(),pristine)
+            changed=recover_original_mlt_plan(root/"placements-edited.mlt",
+                                                root,root/"vault")["plan"]
+            self.assertEqual(changed["tracks"][1]["clips"][2]["position_frame"],8)
+            self.assertEqual(changed["audio_tracks"][1]["clips"][2]["asset_id"],
+                             sound440["asset_id"])
+            self.assertEqual(changed["audio_tracks"][1]["gain_db"],-6)
+            reviewed=catalog.invoke("body.mlt_owned_compare",{
+                "before_edit":"placements-original.mlt",
+                "after_edit":"placements-edited.mlt"},
+                allowed_access={"read"})
+            self.assertTrue(reviewed["structural_changes_verified"])
+            self.assertEqual(reviewed["before_frames"],8)
+            self.assertEqual(reviewed["after_frames"],12)
+            self.assertEqual(len(reviewed["picture_changes"]),2)
+            self.assertEqual(len(reviewed["sound_changes"]),2)
+            self.assertTrue(reviewed["exact_source_rights_and_native_roundtrips_rechecked"])
+            self.assertFalse(reviewed["decoded_pixel_or_audio_equivalence_proven"])
+            for name,out in (("placements-original.mlt","original-clip.mp4"),
+                             ("placements-edited.mlt","new-clip.mp4")):
+                catalog.invoke("body.mlt_owned_render",{
+                    "edit":name,"out":out},allowed_access={"write"})
+            def picture_frame(file,frame):
+                raw=subprocess.check_output(["ffmpeg","-hide_banner",
+                    "-loglevel","error","-nostdin","-xerror",
+                    "-i",str(file),"-vf",f"select=eq(n\\,{frame})",
+                    "-vsync","0","-frames:v","1","-pix_fmt","rgb24",
+                    "-f","rawvideo","-"],timeout=40)
+                self.assertEqual(len(raw),64*48*3)
+                center=(24*64+32)*3
+                return tuple(raw[center:center+3])
+            c5=picture_frame(root/"original-clip.mp4",5)
+            c9=picture_frame(root/"new-clip.mp4",9)
+            self.assertGreater(c5[2],c5[0]+75)
+            self.assertGreater(c9[2],c9[0]+75)
+            raw=subprocess.check_output(["ffmpeg","-hide_banner",
+                "-loglevel","error","-nostdin","-xerror",
+                "-i",str(root/"new-clip.mp4"),"-map","0:a:0","-ar","48000",
+                "-ac","1","-f","s16le","-"],timeout=40)
+            pcm=array("h");pcm.frombytes(raw)
+            late=pcm[round(.75*48000):round(.91*48000)]
+            self.assertGreater(len(late),7000)
+            self.assertGreater(sqrt(sum(x*x for x in late)/len(late)),100)
+
+            reverse={"edits":[{
+                "kind":"place","effects":"inherit_destination_track_at_film_time",
+                "placements":[
+                    {"domain":"picture","from_track":1,"clip":2,
+                     "to_track":0,"at_frame":4},
+                    {"domain":"sound","from_track":1,"clip":2,
+                     "to_track":0,"at_frame":4}]}]}
+            (root/"director-undo.json").write_text(json.dumps(reverse))
+            restored=catalog.invoke("body.mlt_owned_revision",{
+                "edit":"placements-edited.mlt","operation":"director-undo.json",
+                "out":"placements-restored.mlt"},allowed_access={"write"})
+            self.assertEqual(restored["frames"],8)
+            recovered=recover_original_mlt_plan(root/"placements-restored.mlt",
+                                                 root,root/"vault")["plan"]
+            self.assertEqual(recovered,original)
+            self.assertEqual(first.read_bytes(),pristine)
+            for filename,blob in source_bytes.items():
+                self.assertEqual(Path(filename).read_bytes(),blob)
+
     def test_native_editor_patch_refuses_raced_commands_before_project_publication(self):
         from unittest.mock import patch
         import studio_next.body_mlt_revision as patch_engine

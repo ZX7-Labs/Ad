@@ -14,6 +14,7 @@ import copy
 import math
 
 from .body_mlt_local_edits import apply_local_window_action
+from .body_mlt_placements import apply_native_source_placements
 
 
 def _int(value, name, lower=0, upper=1_000_000):
@@ -203,12 +204,16 @@ def apply_linked_editor_actions(plan,decision):
     max_precision_loss=0.0
     for action in decision["edits"]:
         if not isinstance(action,dict) or action.get("kind") not in (
-                "blade","ripple_insert","ripple_delete","roll","slip","slide"):
+                "blade","ripple_insert","ripple_delete","roll","slip","slide","place"):
             raise ValueError("Unsupported linked native editor operation")
         kind=action["kind"]
         if kind in ("roll","slip","slide"):
             result,window_evidence=apply_local_window_action(result,action)
             records.append(window_evidence)
+            continue
+        if kind=="place":
+            result,placement_evidence=apply_native_source_placements(result,action)
+            records.append(placement_evidence)
             continue
         required={"kind","frame","picture_tracks","audio_tracks"}
         if kind!="blade":
