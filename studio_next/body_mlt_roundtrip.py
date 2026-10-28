@@ -16,7 +16,8 @@ import xml.etree.ElementTree as ET
 
 from .body_document_schemas import validate_document
 from .body_mlt_editor import (
-    _verify_native_opacity, _verify_native_gain, build_mlt_xml, validate_mlt_edit,
+    _verify_native_opacity, _verify_native_gain, _verify_native_pan,
+    build_mlt_xml, validate_mlt_edit,
     verify_owned_mlt_project,
 )
 from .media_vault import sha256_file
@@ -125,14 +126,25 @@ def recover_original_mlt_plan(edit, workspace, vault_root):
             ti=int(properties["track"])-count
             if not 0<=ti<len(sounds):
                 raise ValueError("Native audio filter lost its original source identity")
-            encoded=_verify_native_gain(properties["level"],frames)
+            if properties["mlt_service"]=="volume":
+                encoded=_verify_native_gain(properties["level"],frames)
+                name="gain_db"
+                target="gain_keyframes"
+                neutral="0"
+            elif properties["mlt_service"]=="panner":
+                encoded=_verify_native_pan(properties["split"],frames)
+                name="pan"
+                target="pan_keyframes"
+                neutral="0.5"
+            else:
+                raise ValueError("Unrecognized original sound editor control")
             if "=" in encoded:
-                sounds[ti]["gain_keyframes"]=[
+                sounds[ti][target]=[
                     {"frame":int(key.split("=")[0]),
-                     "gain_db":float(key.split("=")[1])}
+                     name:float(key.split("=")[1])}
                     for key in encoded.split(";")]
-            elif encoded!="0":
-                sounds[ti]["gain_db"]=float(encoded)
+            elif encoded!=neutral:
+                sounds[ti][name]=float(encoded)
         plan["audio_tracks"] = sounds
     validate_document("body.mlt_owned_export", plan)
     checked = validate_mlt_edit(plan, root, vault_root)
