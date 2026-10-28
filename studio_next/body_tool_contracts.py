@@ -16,7 +16,7 @@ _ARG_TYPES={
     "before_bundle":"string","before_sha256":"string",
     "after_bundle":"string","after_sha256":"string",
     "time_seconds":"number","expected":"object","source_witness":"object",
-    "gap_color":"string","before_edit":"string","after_edit":"string",
+    "gap_color":"string","before_edit":"string","after_edit":"string","focus":"string",
 }
 _EXAMPLES_DISALLOWED=True
 
@@ -41,10 +41,13 @@ def real_operation_schema(tool_id,required):
         "body.exr_passes":("assets_root",),
         "body.full_decode":("expected",),
         "body.mlt_owned_render":("gap_color",),
+        "body.mlt_owned_compare":("focus",),
     }.get(tool_id,())
     for name in optional:
         props[name]=({"type":"string","pattern":"^#[0-9a-fA-F]{6}$"}
-                     if name=="gap_color" else {"type":_ARG_TYPES[name]})
+                     if name=="gap_color" else
+                     {"type":"string","pattern":"^(?:summary|all|picture:[0-7]|sound:[0-3])$"}
+                     if name=="focus" else {"type":_ARG_TYPES[name]})
     return {"type":"object",
             "additionalProperties":False,
             "required":list(required),
