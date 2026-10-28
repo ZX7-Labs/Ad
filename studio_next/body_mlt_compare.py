@@ -11,6 +11,7 @@ hour-long timeline into millions of frames or silently normalizes timebases.
 from __future__ import annotations
 
 import copy
+import re
 from pathlib import Path
 
 from .body_mlt_roundtrip import recover_original_mlt_plan
@@ -115,7 +116,56 @@ def _track_changes(original,updated,kind,index,old_frames,new_frames):
             "native_clip_partition_delta":editorial_partition_delta}
 
 
-def compare_owned_mlt_projects(before_edit,after_edit,workspace,vault_root):
+def _bounded_review_view(full,focus):
+    """Select only requested semantic evidence, never fabricate proof.
+
+    Summary never includes source filenames/clip payloads or all frames.
+    The Brain can ask for one precise picture/sound track when the summary
+    points to a change, then ask for an explicit full export if warranted.
+    Model-visible result is proportional to the exact review query.
+    """
+    if not isinstance(focus,str) or not re.fullmatch(
+            r"(?:summary|all|picture:[0-7]|sound:[0-3])",focus):
+        raise ValueError("Native review focus must be summary, all or one real track")
+    header={key:value for key,value in full.items()
+            if key not in ("picture_changes","sound_changes")}
+    header["query_focus"]=focus
+    def brief(items):
+        result=[]
+        for track in items:
+            spans=track["source_frame_spans"]
+            result.append({
+                "track_index":track["track_index"],
+                "changed_source_intervals":len(spans),
+                "changed_original_source_frames":sum(
+                    row["duration_frames"] for row in spans),
+                "native_clip_partitions_changed":
+                    track["native_clip_partition_delta"] is not None,
+                "authored_effect_controls_changed":
+                    track["native_track_controls"] is not None})
+        return result
+    header["picture_change_summaries"]=brief(full["picture_changes"])
+    header["sound_change_summaries"]=brief(full["sound_changes"])
+    if focus=="summary":
+        return header
+    if focus=="all":
+        return {**header,"picture_changes":full["picture_changes"],
+                "sound_changes":full["sound_changes"]}
+    kind,text=focus.split(":")
+    index=int(text)
+    size=max(full[kind+"_track_count_before"],
+             full[kind+"_track_count_after"])
+    if index>=size:
+        raise ValueError("Requested native track does not exist in either owner project")
+    label="picture_changes" if kind=="picture" else "sound_changes"
+    header["selected_track"]={
+        "kind":kind,"track_index":index,
+        "change":next((value for value in full[label]
+                       if value["track_index"]==index),None)}
+    return header
+
+
+def compare_owned_mlt_projects(before_edit,after_edit,workspace,vault_root,*,focus="summary"):
     """Read-only review of every picture/sound source address and effect state.
 
     Returns the exact finite semantic difference, not a creatively selected
@@ -160,7 +210,7 @@ def compare_owned_mlt_projects(before_edit,after_edit,workspace,vault_root):
         raise ValueError("Native original or revised timeline changed during comparison")
     changed=bool(canvas_changed or original["frames"]!=revised["frames"] or
                  picture or sound)
-    return {
+    return _bounded_review_view({
         "workspace_root":str(root),
         "media_vault_root":str(Path(vault_root).resolve()),
         "before_edit_path":str(prior),
@@ -182,4 +232,4 @@ def compare_owned_mlt_projects(before_edit,after_edit,workspace,vault_root):
         "exact_source_rights_and_native_roundtrips_rechecked":True,
         "decoded_pixel_or_audio_equivalence_proven":False,
         "creative_or_professional_quality_approved":False,
-    }
+    },focus)
