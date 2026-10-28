@@ -63,6 +63,57 @@ def action(kind,frame,*,duration=None):
 
 
 class LinkedNativeTimelineMathTests(unittest.TestCase):
+    def test_director_matte_worker_is_private_ordered_and_preserves_audio_mix(self):
+        """No hidden white card and no source-track or native bus remapping."""
+        import copy
+        import xml.etree.ElementTree as ET
+        from studio_next.body_mlt_render import _worker_art_directed_matte
+        root=ET.Element("mlt",{"version":"7"})
+        ET.SubElement(root,"profile")
+        for i in range(3):
+            ET.SubElement(root,"producer",{"id":f"p{i}"})
+        for i in range(3):
+            ET.SubElement(root,"playlist",{"id":f"track-{i}"})
+        tractor=ET.SubElement(root,"tractor")
+        mixer=ET.SubElement(tractor,"multitrack")
+        for i in range(3):
+            ET.SubElement(mixer,"track",{"producer":f"track-{i}"})
+        for a,b in ((0,1),(0,2)):
+            trans=ET.SubElement(tractor,"transition")
+            ET.SubElement(trans,"property",{"name":"a_track"}).text=str(a)
+            ET.SubElement(trans,"property",{"name":"b_track"}).text=str(b)
+        filt=ET.SubElement(tractor,"filter")
+        ET.SubElement(filt,"property",{"name":"track"}).text="2"
+        before=ET.tostring(root)
+        changed=_worker_art_directed_matte(
+            copy.deepcopy(root),12,"#a5390f",2)
+        self.assertEqual(ET.tostring(root),before)
+        self.assertEqual(changed.findall("producer")[-1].get("id"),
+                         "zx7-worker-directed-matte")
+        props={p.get("name"):p.text for p in changed.findall(
+            "producer")[-1].findall("property")}
+        self.assertEqual(props["mlt_service"],"colour")
+        self.assertEqual(props["resource"],"0xa5390fff")
+        self.assertEqual(changed.findall("playlist")[0].get("id"),
+                         "zx7-worker-matte-track")
+        self.assertEqual(len(changed.findall("playlist")),4)
+        self.assertEqual(len(changed.find("tractor/multitrack")),4)
+        self.assertEqual(changed.find("tractor/multitrack")[0].get(
+            "producer"),"zx7-worker-matte-track")
+        seen=[]
+        for transition in changed.findall("tractor/transition"):
+            values={p.get("name"):p.text
+                    for p in transition.findall("property")}
+            seen.append((values["a_track"],values["b_track"]))
+        self.assertEqual(seen,[("1","2"),("1","3")])
+        self.assertEqual(changed.find(
+            "tractor/filter/property").text,"3")
+        for color in ("black","0x000000ff","#ffffff;exec",
+                      "#0000",None):
+            with self.subTest(color=color),self.assertRaises(ValueError):
+                _worker_art_directed_matte(copy.deepcopy(root),12,color,2)
+        self.assertEqual(ET.tostring(root),before)
+
     def test_new_native_semantic_contract_is_discoverable_without_style_templates(self):
         contract=document_contract("body.mlt_owned_revision")
         self.assertEqual(contract["input_name"],"operation")
