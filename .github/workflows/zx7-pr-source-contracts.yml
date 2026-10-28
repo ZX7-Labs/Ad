@@ -34,7 +34,7 @@ jobs:
         run: python -m compileall -q studio_next motion_studio creative_director director_research voice_lab src scripts
       - name: Fast exact source-frame algebra and model-authored NLE ABI regression
         run: |
-          python -m unittest studio_next.test_body_mlt_linked_actions studio_next.test_body_mlt_local_edits -v
+          python -m unittest studio_next.test_body_mlt_linked_actions studio_next.test_body_mlt_local_edits studio_next.test_body_mlt_placements -v
       - name: Validate current Git tracked source inventory
         run: |
           python -m unittest discover -s scripts -p 'test_repo_audit.py' -v
