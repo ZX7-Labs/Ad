@@ -381,6 +381,11 @@ def validate_mlt_edit(plan,workspace,vault_root):
                 if measured!=fps:
                     raise ValueError("MLT cannot silently retime a different source clock")
                 sources[asset]={"path":source,"frames":frames,"attestation":att}
+            if sources[asset]["attestation"]!=att:
+                # The editable MLT producer is identified by this digest:
+                # reusing its bytes under a different rights attestation
+                # would silently discard the second creator's provenance.
+                raise ValueError("Native picture source has conflicting exact rights attestations")
             if exclusive>sources[asset]["frames"]:
                 raise ValueError("MLT cut exceeds actual decoded media frames")
             end_at=pos+(exclusive-first)
@@ -460,6 +465,8 @@ def validate_mlt_edit(plan,workspace,vault_root):
                     "audio_seconds":available,"attestation":att,
                     "audio_index":actual_audio_index}
             info=sound_sources[asset]
+            if info["attestation"]!=att:
+                raise ValueError("Native sound source has conflicting exact rights attestations")
             if ("pan" in track or "pan_keyframes" in track) and asset not in verified_stereo:
                 # A source can appear on another bus with no authored pan.
                 # Never trust a cached audio stream index as stereo proof.
