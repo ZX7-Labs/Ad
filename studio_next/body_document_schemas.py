@@ -90,6 +90,14 @@ _SCHEMAS = {
             "position_frame":number(0,integer=True),
             "first_frame":number(0,integer=True),
             "end_frame":SIZE}),minItems=1,maxItems=128)}),maxItems=4)})),
+    "body.mlt_owned_revision": ("operation", obj({
+        "operations":array({"oneOf":[
+            obj({"op":choice("add","replace","test"),
+                 "path":{"type":"string"},
+                 "value":{}}),
+            obj({"op":choice("remove"),
+                 "path":{"type":"string"}})]},
+                 minItems=1,maxItems=512)})),
     "body.timeline_revision": ("plan", _SEQUENCE),
     "body.otio_owned_export": ("plan", _SEQUENCE),
     "body.retime": ("plan", obj({**_SOURCE_FIELDS, "source_fps": RATE,
