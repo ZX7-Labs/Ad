@@ -345,7 +345,11 @@ def build_mlt_xml(plan,checked):
         # compositing. The actual FFmpeg-decode test guards this distinction.
         mode=checked["blend_modes"][ti]
         opacity=checked["opacities"][ti]
-        if mode=="normal" and opacity=="1":
+        # Do not mix QtBlend with Cairo compositor transitions inside
+        # a 3+ layer tractor: the real test showed a later Cairo overlay
+        # disappearing beneath an earlier Qt upper layer. Use one physical
+        # compositor family for the stack; preserve verified two-layer Qt.
+        if mode=="normal" and opacity=="1" and len(checked["tracks"])<=2:
             _prop(transition,"mlt_service","qtblend")
             _prop(transition,"compositing",0)
         else:
@@ -556,7 +560,7 @@ def _verify_exact_mlt_xml_tree(root):
                 if props["1"] not in _CAIRO_MODES:
                     raise ValueError("MLT native visual blending mode is not allowlisted")
                 _verify_native_opacity(props["0"],frames)
-                if props["1"]=="normal" and props["0"]=="1":
+                if props["1"]=="normal" and props["0"]=="1" and picture_tracks<=2:
                     raise ValueError("Unnecessary Cairo source-over is not canonical")
                 expected={"a_track":"0","b_track":str(i+1),
                     "mlt_service":"frei0r.cairoblend","0":props["0"],"1":props["1"],
