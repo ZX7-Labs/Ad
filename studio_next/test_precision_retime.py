@@ -111,6 +111,7 @@ class PhysicalRetimeTests(unittest.TestCase):
                          {"numerator":24,"denominator":1})
         self.assertAlmostEqual(result["physically_measured_output_audio_stream_seconds"],
                                2.5,delta=.064)
+        self.assertEqual(result["physically_measured_output_audio_sample_rate_hz"],48000)
         self.assertIsInstance(result["physically_decoded_output_frame_count"],int)
         self.assertLessEqual(abs(result["physically_decoded_output_frame_count"]-60),2)
         meta=_probe_details(self.root/"newly-edited.mp4")
@@ -137,6 +138,44 @@ class PhysicalRetimeTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError,"rate|frame count"):
                     render_retime(self.plan_file,self.root,self.root/"vault",dest)
             self.assertFalse(dest.exists())
+
+    def test_actual_sample_clock_is_measured_and_forged_44100_rate_is_not_assumed_48000(self):
+        from studio_next.precision_retime import _encoded_audio_sample_rate
+        for rate in ("44100","48000","96000"):
+            with self.subTest(rate=rate),patch(
+                "studio_next.precision_retime.subprocess.check_output",
+                return_value=json.dumps({"streams":[{
+                    "sample_rate":rate,"channels":2}]}).encode()):
+                self.assertEqual(_encoded_audio_sample_rate("/trusted/aac.mp4"),int(rate))
+        for wrong in ({"streams":[]},{"streams":[{},{}]},
+                      {"streams":[{"sample_rate":0}]},
+                      {"streams":[{"sample_rate":"untrusted"}]}):
+            with self.subTest(wrong=wrong),patch(
+                "studio_next.precision_retime.subprocess.check_output",
+                return_value=json.dumps(wrong).encode()):
+                with self.assertRaises(ValueError):
+                    _encoded_audio_sample_rate("/trusted/aac.mp4")
+
+    def test_real_44100_hz_original_audio_retains_its_independent_encoded_sample_clock(self):
+        source=self.root/"source-44100hz.mp4"
+        subprocess.run(["ffmpeg","-hide_banner","-loglevel","error","-y",
+            "-f","lavfi","-i","testsrc2=size=160x90:rate=24:duration=2",
+            "-f","lavfi","-i","sine=frequency=550:sample_rate=44100:duration=2",
+            "-c:v","libx264","-pix_fmt","yuv420p","-c:a","aac",
+            "-frames:v","48","-shortest",str(source)],check=True,timeout=40)
+        proof=self.vault.ingest(source,mime="video/mp4",rights="owner_supplied",
+            source_type="owner_upload",source_id="authentic-44100-original",
+            evidence="FFmpeg original soundtrack with physical 44.1k sample clock",
+            owner_or_generator="test")
+        self.plan.update(source=source.name,asset_id=proof["asset_id"],
+                         attestation_id=proof["attestation_id"])
+        self.save()
+        result=render_retime(self.plan_file,self.root,self.root/"vault",
+                             self.root/"sound-44100-output.mp4")
+        self.assertEqual(result["physically_measured_output_audio_sample_rate_hz"],44100)
+        self.assertAlmostEqual(result["physically_measured_output_audio_stream_seconds"],
+                               2.5,delta=3*1024/44100)
+        self.assertTrue(result["verified_physically"])
 
     def test_short_or_overlong_decoded_sound_cannot_pass_as_verified_audiovisual_output(self):
         from studio_next.precision_retime import _decoded_source_duration as real_duration
