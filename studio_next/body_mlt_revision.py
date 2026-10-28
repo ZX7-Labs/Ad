@@ -1,8 +1,7 @@
 """Non-destructive, rights-attested native video editor revisions.
 
-The director may change any *currently supported* typed visual/sound edit
-through guarded JSON Pointer operations, rather than one hardcoded sequence
-of creative gestures. Every revision is a new native editable MLT project.
+The director can use guarded JSON Pointer changes or exact linked razor/ripple
+operations across arbitrarily selected source-attested audiovisual tracks. Every revision is a new native editable MLT project.
 Unrecognized native effects fail closed on import; no rights/clock is invented.
 """
 from __future__ import annotations
@@ -17,6 +16,7 @@ from .body_document_schemas import validate_document
 from .body_mlt_editor import export_owned_mlt, validate_mlt_edit
 from .body_mlt_roundtrip import recover_original_mlt_plan
 from .body_project_revision import revise_document
+from .body_mlt_linked_actions import apply_linked_editor_actions
 from .media_vault import sha256_file
 
 
@@ -77,13 +77,18 @@ def revise_owned_mlt_project(edit, operations, workspace, vault_root, output):
                            parse_constant=_no_nonfinite)
     except (UnicodeError,json.JSONDecodeError,RecursionError) as exc:
         raise ValueError("Native revision must be a valid finite JSON document") from exc
-    if not isinstance(command,dict) or set(command)!={"operations"}:
-        raise ValueError("Revision must contain only the director-authored operations")
+    if (not isinstance(command,dict) or
+            set(command) not in ({"operations"},{"edits"})):
+        raise ValueError("Native revision must contain one explicitly authored edit grammar")
     validate_document("body.mlt_owned_revision",command,"operation")
     recovered=recover_original_mlt_plan(prior,root,vault_root)
     if recovered["source_mlt_sha256"]!=original_sha:
         raise ValueError("Original native timeline identity drifted during recovery")
-    candidate=revise_document(recovered["plan"],command["operations"])
+    linked_report={}
+    if "operations" in command:
+        candidate=revise_document(recovered["plan"],command["operations"])
+    else:
+        candidate,linked_report=apply_linked_editor_actions(recovered["plan"],command)
     if candidate==recovered["plan"]:
         raise ValueError("Native revision must change at least one actual creative decision")
     validate_document("body.mlt_owned_export",candidate)
@@ -130,5 +135,6 @@ def revise_owned_mlt_project(edit, operations, workspace, vault_root, output):
         "lossless_typed_native_roundtrip":True,
         "original_media_rights_rechecked":True,
         "prior_native_project_untouched":True,
+        **({"linked_editor_evidence":linked_report} if linked_report else {}),
         "creative_or_professional_release_approved":False,
     }
