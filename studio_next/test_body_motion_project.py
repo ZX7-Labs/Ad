@@ -210,8 +210,9 @@ class NativeMotionProjectTests(unittest.TestCase):
             def competing_encoder(argv,**kwargs):
                 # Produce an actual, completely decoded MP4 before testing
                 # the exclusive final publication race against another writer.
-                actual_encoder(argv,**kwargs)
+                completed=actual_encoder(argv,**kwargs)
                 target.write_bytes(b"independent other writer's bytes")
+                return completed
             with patch("studio_next.body_publication.require_published_source",return_value=source_sha):
                 with patch("studio_next.body_motion_project.subprocess.run",side_effect=competing_encoder):
                     with self.assertRaises(FileExistsError):
