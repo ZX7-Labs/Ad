@@ -79,6 +79,7 @@ def revise_owned_mlt_project(edit, operations, workspace, vault_root, output):
         raise ValueError("Native revision must be a valid finite JSON document") from exc
     if not isinstance(command,dict) or set(command)!={"operations"}:
         raise ValueError("Revision must contain only the director-authored operations")
+    validate_document("body.mlt_owned_revision",command,"operation")
     recovered=recover_original_mlt_plan(prior,root,vault_root)
     if recovered["source_mlt_sha256"]!=original_sha:
         raise ValueError("Original native timeline identity drifted during recovery")
