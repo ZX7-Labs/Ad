@@ -95,6 +95,58 @@ class ExactNativeEditorialReviewTests(unittest.TestCase):
             checked+=73
         self.assertEqual(checked,36500)
 
+    def test_bounded_model_queries_do_not_dump_all_private_clip_graphs(self):
+        from studio_next.body_mlt_compare import _bounded_review_view
+        from studio_next.body_tool_contracts import real_operation_schema
+        full={
+            "before_mlt_sha256":"a"*64,
+            "after_mlt_sha256":"b"*64,
+            "picture_track_count_before":8,"picture_track_count_after":8,
+            "sound_track_count_before":4,"sound_track_count_after":4,
+            "structural_changes_verified":True,
+            "picture_changes":[{
+                "kind":"picture","track_index":i,
+                "source_frame_spans":[{
+                    "start_frame":0,"end_frame_exclusive":2,
+                    "duration_frames":2,"type":"original_source_replaced_or_relinked",
+                    "before":{"asset_id":"a"*64},"after":{"asset_id":"b"*64}}],
+                "unchanged_original_source_frames":998,
+                "native_track_controls":None,
+                "native_clip_partition_delta":{
+                    "before":[{"asset_id":str(j)+"x"*1000} for j in range(80)],
+                    "after":[{"asset_id":str(j)+"y"*1000} for j in range(80)]
+                    }} for i in range(8)],
+            "sound_changes":[{
+                "kind":"sound","track_index":0,
+                "source_frame_spans":[],"unchanged_original_source_frames":1000,
+                "native_track_controls":{"before":{},"after":{"gain_db":-9}},
+                "native_clip_partition_delta":None}]}
+        brief=_bounded_review_view(full,"summary")
+        self.assertNotIn("picture_changes",brief)
+        self.assertNotIn("sound_changes",brief)
+        self.assertEqual(len(brief["picture_change_summaries"]),8)
+        self.assertEqual(len(brief["sound_change_summaries"]),1)
+        self.assertLess(len(json.dumps(brief)),3500)
+        selected=_bounded_review_view(full,"picture:5")
+        self.assertNotIn("picture_changes",selected)
+        self.assertEqual(selected["selected_track"]["track_index"],5)
+        self.assertEqual(selected["selected_track"]["kind"],"picture")
+        self.assertEqual(selected["selected_track"]["change"],
+                         full["picture_changes"][5])
+        all_details=_bounded_review_view(full,"all")
+        self.assertEqual(all_details["picture_changes"],full["picture_changes"])
+        self.assertGreater(len(json.dumps(all_details)),
+                           len(json.dumps(brief))*40)
+        abi=real_operation_schema("body.mlt_owned_compare",
+            ["before_edit","after_edit"])
+        self.assertEqual(abi["properties"]["focus"]["type"],"string")
+        for bad in ("",None,False,"../../root","picture:-1","picture:8",
+                    "sound:4","picture:0;rm -rf /","track:0","summary\nall"):
+            with self.subTest(selector=bad),self.assertRaises(ValueError):
+                _bounded_review_view(full,bad)
+        self.assertIsNone(_bounded_review_view(full,"sound:3")[
+            "selected_track"]["change"])
+
     @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"),
                          "Real native physical source custody requires media decoders")
     def test_real_editor_review_distinguishes_razor_audio_gain_and_source_time(self):
@@ -121,7 +173,7 @@ class ExactNativeEditorialReviewTests(unittest.TestCase):
                                       ("before_edit","after_edit"))
             self.assertEqual(abi["required"],["before_edit","after_edit"])
             self.assertEqual(set(abi["properties"]),
-                             {"before_edit","after_edit"})
+                             {"before_edit","after_edit","focus"})
             cat.invoke("body.mlt_owned_export",{
                 "plan":plan_file.name,"out":"revision-00.mlt"},
                 allowed_access={"write"})
@@ -140,7 +192,9 @@ class ExactNativeEditorialReviewTests(unittest.TestCase):
                              hashlib.sha256(before).hexdigest())
             self.assertFalse(baseline["decoded_pixel_or_audio_equivalence_proven"])
             self.assertTrue(baseline["exact_source_rights_and_native_roundtrips_rechecked"])
-            self.assertEqual(baseline["sound_changes"],[])
+            self.assertEqual(baseline["sound_change_summaries"],[])
+            self.assertNotIn("sound_changes",baseline)
+            self.assertNotIn("picture_changes",baseline)
 
             patches={
                 "sound-gain":{"operations":[
@@ -162,7 +216,8 @@ class ExactNativeEditorialReviewTests(unittest.TestCase):
                     "edit":original.name,"operation":command.name,
                     "out":target},allowed_access={"write"})
                 report=cat.invoke("body.mlt_owned_compare",{
-                    "before_edit":original.name,"after_edit":target},
+                    "before_edit":original.name,"after_edit":target,
+                    "focus":"all"},
                     allowed_access={"read"})
                 observations[mode]=report
                 self.assertTrue(report["structural_changes_verified"])
@@ -233,6 +288,41 @@ class ExactNativeEditorialReviewTests(unittest.TestCase):
             self.assertEqual(resumed["status"],"all_tool_results_verified")
             self.assertEqual(resumed["reused"],["observe-original-change"])
             self.assertEqual(resumed["completed"],["observe-original-change"])
+
+            # Compact Brain query first, precise selected source track second.
+            # No enormous all-shot document is dumped into model context.
+            digest_only=cat.invoke("body.mlt_owned_compare",{
+                "before_edit":original.name,"after_edit":"ripple.mlt"},
+                allowed_access={"read"})
+            self.assertEqual(digest_only["query_focus"],"summary")
+            self.assertNotIn("picture_changes",digest_only)
+            self.assertEqual(len(digest_only["picture_change_summaries"]),2)
+            self.assertGreater(digest_only["picture_change_summaries"][0][
+                "changed_original_source_frames"],0)
+            self.assertTrue(validate_witness("body.mlt_owned_compare",
+                                            digest_only))
+            shot=cat.invoke("body.mlt_owned_compare",{
+                "before_edit":original.name,"after_edit":"ripple.mlt",
+                "focus":"picture:1"},allowed_access={"read"})
+            self.assertEqual(shot["query_focus"],"picture:1")
+            self.assertNotIn("picture_changes",shot)
+            self.assertEqual(shot["selected_track"]["kind"],"picture")
+            self.assertEqual(shot["selected_track"]["track_index"],1)
+            self.assertIsNotNone(shot["selected_track"]["change"])
+            self.assertTrue(validate_witness("body.mlt_owned_compare",shot))
+            for illegal in ("picture:8","sound:4","picture:999",
+                            "../../secrets","all;sh",""):
+                with self.subTest(focus=illegal),self.assertRaises(ValueError):
+                    cat.invoke("body.mlt_owned_compare",{
+                        "before_edit":original.name,
+                        "after_edit":"ripple.mlt","focus":illegal},
+                        allowed_access={"read"})
+            for illegal in ("picture:7","sound:3"):
+                with self.subTest(outside=illegal),self.assertRaises(ValueError):
+                    cat.invoke("body.mlt_owned_compare",{
+                        "before_edit":original.name,
+                        "after_edit":"ripple.mlt","focus":illegal},
+                        allowed_access={"read"})
 
             # Reject fake or modified original facts, no read-only review output.
             forged=root/"forged-owned.mlt"
