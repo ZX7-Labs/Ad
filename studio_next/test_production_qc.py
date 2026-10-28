@@ -1,4 +1,7 @@
 import tempfile
+import shutil
+import subprocess
+import json
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -26,6 +29,10 @@ class FullPhysicalFilmDecodeQA(unittest.TestCase):
             self.assertFalse(result["aesthetic_or_human_approval"])
             self.assertEqual(len(calls),2)
             self.assertIn("-xerror",calls[0])
+            self.assertEqual(calls[0][calls[0].index("-map")+1],"0:v")
+            self.assertIn(["-map","0:a?"],[calls[0][i:i+2]
+                for i in range(len(calls[0])-1)])
+            self.assertNotIn("0:a:0?",calls[0])
 
     def test_decoder_failure_and_missing_sound_never_claim_success(self):
         with tempfile.TemporaryDirectory() as root:
@@ -37,6 +44,35 @@ class FullPhysicalFilmDecodeQA(unittest.TestCase):
                     expected={"require_audio":True})
             self.assertFalse(result["technical_delivery_verified"])
             self.assertEqual(len(result["delivery_mismatches"]),2)
+
+    @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"),
+                         "Real multi-track FFmpeg decoders required")
+    def test_actual_two_original_audio_streams_are_decoded_not_just_primary(self):
+        with tempfile.TemporaryDirectory() as temp:
+            source=Path(temp)/"two-original-soundtracks.mp4"
+            subprocess.run(["ffmpeg","-hide_banner","-loglevel","error",
+                "-f","lavfi","-i","color=c=green:s=64x48:r=12:d=1",
+                "-f","lavfi","-i","sine=frequency=440:duration=1",
+                "-f","lavfi","-i","sine=frequency=880:duration=1",
+                "-map","0:v:0","-map","1:a:0","-map","2:a:0",
+                "-c:v","libx264","-pix_fmt","yuv420p","-frames:v","12",
+                "-c:a","aac","-y",str(source)],check=True,timeout=40)
+            observed=json.loads(subprocess.check_output(["ffprobe","-v","error",
+                "-select_streams","a","-show_entries","stream=index",
+                "-of","json",str(source)],timeout=40))
+            self.assertEqual(len(observed["streams"]),2)
+            emitted=[]
+            def physical_run(argv,**kwargs):
+                emitted.append(argv)
+                return subprocess.run(argv,**kwargs)
+            result=full_decode_inspection(source,runner=physical_run,
+                expected={"width":64,"height":48,"require_audio":True})
+            self.assertTrue(result["technical_delivery_verified"],result)
+            self.assertEqual(emitted[0][emitted[0].index("-map")+1],"0:v")
+            self.assertIn(["-map","0:a?"],[emitted[0][i:i+2]
+                for i in range(len(emitted[0])-1)])
+            self.assertIsNotNone(result["audio_measurements"])
+            self.assertIn("primary audio",result["audio_measurements"]["measurement"])
 
     def test_never_invent_strict_limits_on_original_artistic_darkness_or_silence(self):
         with tempfile.TemporaryDirectory() as root:
