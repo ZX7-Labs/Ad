@@ -21,6 +21,8 @@ _SOURCE_FIELDS={
     # imagined media-attestation claim.
     "body.timecode_format":(),
     "body.timecode_parse":(),
+    "body.mlt_owned_timecode_format":("edit",),
+    "body.mlt_owned_timecode_parse":("edit",),
     "body.resolve_asset":(),
     "body.voice_inventory":("voice_assets",),
     "body.render_edit":("edit",),
@@ -145,7 +147,7 @@ def fingerprint_physical_inputs(tool_id,inputs,workspace):
         p=_file(root,source)
         if p.is_file():
             found.add(p)
-            if p.suffix.lower()==".mlt" and tool_id in ("body.mlt_owned_render","body.mlt_owned_import","body.mlt_owned_revision","body.mlt_owned_compare"):
+            if p.suffix.lower()==".mlt" and tool_id in ("body.mlt_owned_render","body.mlt_owned_import","body.mlt_owned_revision","body.mlt_owned_compare","body.mlt_owned_timecode_format","body.mlt_owned_timecode_parse"):
                 from .body_mlt_editor import verify_owned_mlt_project
                 import xml.etree.ElementTree as ET
                 verify_owned_mlt_project(p)
