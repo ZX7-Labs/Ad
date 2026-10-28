@@ -336,6 +336,13 @@ def build_mlt_xml(plan,checked):
         ET.SubElement(multitrack,"track",{"producer":f"track-{ti}","hide":"audio"})
     for ti in range(len(checked["audio_tracks"])):
         ET.SubElement(multitrack,"track",{"producer":f"audio-track-{ti}","hide":"video"})
+    # Preserve original Qt-only stacking when no track needs Cairo. When
+    # any upper layer uses opacity animation or non-normal blend, MLT 7.22's
+    # mixed Qt/Cairo tractor can hide the later overlay beneath an earlier
+    # Qt layer. A single compositor family prevents that measured failure.
+    uniform_cairo=len(checked["tracks"])>2 and any(
+        m!="normal" or a!="1" for m,a in
+        zip(checked["blend_modes"][1:],checked["opacities"][1:]))
     for ti in range(1,len(checked["tracks"])):
         transition=ET.SubElement(tractor,"transition",{
             "in":"0","out":str(checked["frames"]-1)})
@@ -345,11 +352,7 @@ def build_mlt_xml(plan,checked):
         # compositing. The actual FFmpeg-decode test guards this distinction.
         mode=checked["blend_modes"][ti]
         opacity=checked["opacities"][ti]
-        # Do not mix QtBlend with Cairo compositor transitions inside
-        # a 3+ layer tractor: the real test showed a later Cairo overlay
-        # disappearing beneath an earlier Qt upper layer. Use one physical
-        # compositor family for the stack; preserve verified two-layer Qt.
-        if mode=="normal" and opacity=="1" and len(checked["tracks"])<=2:
+        if mode=="normal" and opacity=="1" and not uniform_cairo:
             _prop(transition,"mlt_service","qtblend")
             _prop(transition,"compositing",0)
         else:
