@@ -62,7 +62,7 @@ def decode_grade(properties,frames):
     """Reject duplicate, unknown, noncanonical and expression-valued XML."""
     if (not isinstance(properties,dict) or set(properties)!=GRADE_NATIVE_FIELDS
             or properties.get("mlt_service")!="lift_gamma_gain"
-            or not isinstance(properties.get("track"),str)):
+            or properties.get("track") not in tuple(str(i) for i in range(8))):
         raise ValueError("Unapproved native RGB grading filter properties")
     tracks=[properties[field].split(";") if isinstance(properties[field],str) else []
             for field in GRADE_FIELDS]

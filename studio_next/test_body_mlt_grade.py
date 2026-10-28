@@ -70,6 +70,7 @@ class NativeRGBGradeContracts(unittest.TestCase):
 
     def test_grading_is_discoverable_without_any_fixed_style_or_art_direction(self):
         original=original_project()
+        original.pop("audio_tracks",None) # Synthetic unowned audio violates the real ownership schema.
         original["tracks"][0]["grade"]=grade(grade_key(0))
         self.assertTrue(validate_document("body.mlt_owned_export",original))
         controls=document_contract("body.mlt_owned_export")["json_schema"]
