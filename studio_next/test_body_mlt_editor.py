@@ -13,6 +13,7 @@ from studio_next.body_mlt_editor import (
 from studio_next.media_vault import MediaVault
 from studio_next.body_document_schemas import validate_document
 from studio_next.body_mlt_roundtrip import import_owned_mlt_project, recover_original_mlt_plan
+from studio_next.body_mlt_revision import revise_owned_mlt_project
 
 
 def _movie(path,color):
@@ -554,6 +555,136 @@ class VerifiedMLTEditorialTests(unittest.TestCase):
                 "position_frame":0,"first_frame":0,"end_frame":12}]}]
             with self.assertRaisesRegex(ValueError,"silently downmix"):
                 validate_mlt_edit(plan,root,root/"vault")
+
+    def test_native_editor_patch_preserves_original_and_all_effects_without_hidden_rewrite(self):
+        """Model-authored creative patches stay real editable source-owned projects."""
+        from studio_next.body_project_revision import selected_value
+        from studio_next.body_integration import body_catalog
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp)
+            plan,source=self._case(root)
+            plan["tracks"][1]["blend_mode"]="screen"
+            plan["tracks"][1]["opacity_keyframes"]=[
+                {"frame":0,"opacity":0.25},{"frame":11,"opacity":0.9}]
+            source.write_text(json.dumps(plan))
+            old=root/"first-native.mlt"
+            export_owned_mlt(source,root,root/"vault",old)
+            old_bytes=old.read_bytes()
+            ops=root/"authored-operations.json"
+            instruction={"operations":[
+                {"op":"test","path":"/tracks/1/clips/0/position_frame","value":4},
+                {"op":"replace","path":"/tracks/1/clips/0/position_frame","value":0},
+                {"op":"replace","path":"/tracks/1/clips/0/first_frame","value":0},
+                {"op":"replace","path":"/tracks/1/clips/0/end_frame","value":6},
+                {"op":"replace","path":"/tracks/1/opacity_keyframes/0/opacity","value":0.75},
+            ]}
+            ops.write_text(json.dumps(instruction))
+            new=root/"revised-native.mlt"
+            evidence=revise_owned_mlt_project(old,ops,root,root/"vault",new)
+            self.assertEqual(old.read_bytes(),old_bytes)
+            self.assertEqual(evidence["prior_mlt_sha256"],
+                             hashlib.sha256(old_bytes).hexdigest())
+            self.assertTrue(evidence["lossless_typed_native_roundtrip"])
+            recovered=recover_original_mlt_plan(new,root,root/"vault")
+            planned=json.loads(json.dumps(plan))
+            planned["tracks"][1]["clips"][0].update(
+                {"position_frame":0,"first_frame":0,"end_frame":6})
+            planned["tracks"][1]["opacity_keyframes"][0]["opacity"]=0.75
+            self.assertEqual(recovered["plan"],planned)
+            self.assertEqual(selected_value(planned,
+                "/tracks/1/opacity_keyframes/0/opacity"),0.75)
+            self.assertNotEqual(evidence["sha256"],
+                                hashlib.sha256(old_bytes).hexdigest())
+            self.assertEqual(evidence["picture_tracks"],2)
+            self.assertEqual(evidence["frames"],12)
+            for rejected_ops in (
+                [{"op":"test","path":"/tracks/1/blend_mode","value":"multiply"},
+                 {"op":"replace","path":"/tracks/1/blend_mode","value":"overlay"}],
+                [{"op":"replace","path":"/tracks/1/clips/0/asset_id","value":"0"*64}],
+                [{"op":"replace","path":"/tracks/1/opacity","value":0.4}],
+                [{"op":"replace","path":"/tracks/1/opacity_keyframes/0/opacity",
+                  "value":"0.2;rm -rf /"}],
+                [{"op":"remove","path":"/tracks/0/clips/0/attestation_id"}],
+            ):
+                ops.write_text(json.dumps({"operations":rejected_ops}))
+                dest=root/("rejected-"+str(len(rejected_ops))+"-"+
+                           hashlib.sha256(ops.read_bytes()).hexdigest()[:10]+".mlt")
+                with self.subTest(patch=rejected_ops),self.assertRaises(ValueError):
+                    revise_owned_mlt_project(old,ops,root,root/"vault",dest)
+                self.assertFalse(dest.exists())
+                self.assertEqual(old.read_bytes(),old_bytes)
+            with self.assertRaises(ValueError):
+                revise_owned_mlt_project(old,ops,root,root/"vault",new)
+            self.assertEqual(new.read_bytes(),Path(new).read_bytes())
+            available={tool["id"]:tool for tool in body_catalog(root).discover()}
+            self.assertIn("body.mlt_owned_revision",available)
+            self.assertIn("body.mlt_owned_revision",available)
+            self.assertEqual(available["body.mlt_owned_revision"]["status"],
+                             "installed" if shutil.which("melt") else "needs_setup")
+
+    def test_native_editor_patch_refuses_raced_commands_before_project_publication(self):
+        from unittest.mock import patch
+        import studio_next.body_mlt_revision as patch_engine
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);plan,source=self._case(root)
+            original=root/"original-race.mlt"
+            export_owned_mlt(source,root,root/"vault",original)
+            commands=root/"race-commands.json"
+            commands.write_text(json.dumps({"operations":[
+                {"op":"replace","path":"/tracks/1/clips/0/position_frame","value":0}]}))
+            output=root/"untrusted-race.mlt"
+            native=patch_engine.export_owned_mlt
+            def tamper(*args,**kwargs):
+                result=native(*args,**kwargs)
+                commands.write_text(json.dumps({"operations":[
+                    {"op":"remove","path":"/tracks/1/clips"}]}))
+                return result
+            with patch.object(patch_engine,"export_owned_mlt",side_effect=tamper):
+                with self.assertRaisesRegex(ValueError,"changed before publication"):
+                    revise_owned_mlt_project(original,commands,root,root/"vault",output)
+            self.assertFalse(output.exists())
+            self.assertTrue(verify_owned_mlt_project(original)["verified_mlt_tracks"])
+            self.assertFalse(list(root.rglob(".zx7-native-revision-*")))
+
+    @unittest.skipUnless(shutil.which("melt"),
+                         "Physical native MLT frame comparison requires actual editor")
+    def test_native_editor_patch_changes_actual_decoded_video_without_editing_source(self):
+        from studio_next.body_mlt_render import render_owned_mlt
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);plan,source=self._case(root)
+            original=root/"prior-physical.mlt"
+            export_owned_mlt(source,root,root/"vault",original)
+            commands=root/"creative-geometry.json"
+            commands.write_text(json.dumps({"operations":[
+                {"op":"replace","path":"/tracks/1/clips/0/position_frame","value":0},
+                {"op":"replace","path":"/tracks/1/clips/0/first_frame","value":0},
+                {"op":"replace","path":"/tracks/1/clips/0/end_frame","value":6}]}))
+            revised=root/"next-physical.mlt"
+            revise_owned_mlt_project(original,commands,root,root/"vault",revised)
+            originals={p.name:p.read_bytes() for p in root.glob("*.mp4")}
+            outputs=[]
+            for label,edit in (("old",original),("new",revised)):
+                movie=root/(label+"-actual-film.mp4")
+                render_owned_mlt(edit,root,movie)
+                outputs.append(movie)
+            self.assertEqual({p: (root/p).read_bytes()
+                for p in originals},originals)
+            def frame(file,index):
+                raw=subprocess.check_output(["ffmpeg","-hide_banner",
+                    "-loglevel","error","-nostdin","-xerror","-i",str(file),
+                    "-vf",f"select=eq(n\\,{index})","-vsync","0","-frames:v","1",
+                    "-pix_fmt","rgb24","-f","rawvideo","-"],timeout=30)
+                self.assertEqual(len(raw),64*48*3)
+                center=(24*64+32)*3
+                return tuple(raw[center:center+3])
+            old_early=frame(outputs[0],1)
+            new_early=frame(outputs[1],1)
+            old_late=frame(outputs[0],8)
+            new_late=frame(outputs[1],8)
+            self.assertGreater(old_early[0],old_early[2]+75)
+            self.assertGreater(new_early[2],new_early[0]+75)
+            self.assertGreater(old_late[2],old_late[0]+75)
+            self.assertGreater(new_late[0],new_late[2]+75)
 
     def test_same_layer_overlap_and_unmeasured_source_range_fail_closed(self):
         with tempfile.TemporaryDirectory() as temp:
