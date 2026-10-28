@@ -5263,7 +5263,7 @@
     {
       "id": "01-the-click",
       "narration": "You press Enter. One tiny action starts a chain of events your eyes will never see.",
-      "min_seconds": 7.2,
+      "min_seconds": 6.6,
       "voice_delay": 0.25,
       "tail": 0.45,
       "layers": [
@@ -5424,7 +5424,7 @@
     {
       "id": "02-name",
       "narration": "First, the browser needs an IP address. DNS translates names; a cached answer can make this step disappear.",
-      "min_seconds": 8.8,
+      "min_seconds": 7.2,
       "voice_delay": 0.25,
       "tail": 0.45,
       "layers": [
@@ -5585,7 +5585,7 @@
     {
       "id": "03-packets",
       "narration": "Requests travel through networks as packets. Routers forward them toward their destination, one hop at a time.",
-      "min_seconds": 8,
+      "min_seconds": 6.8,
       "voice_delay": 0.25,
       "tail": 0.45,
       "layers": [
@@ -5746,7 +5746,7 @@
     {
       "id": "04-tls",
       "narration": "For HTTPS, the browser checks the site's identity and establishes encryption before exchanging protected application data.",
-      "min_seconds": 8,
+      "min_seconds": 7,
       "voice_delay": 0.25,
       "tail": 0.45,
       "layers": [
@@ -5907,7 +5907,7 @@
     {
       "id": "05-request",
       "narration": "The browser sends an HTTP request: which resource it needs, and the information the server needs to respond.",
-      "min_seconds": 8.1,
+      "min_seconds": 6.7,
       "voice_delay": 0.25,
       "tail": 0.45,
       "layers": [
@@ -6068,7 +6068,7 @@
     {
       "id": "06-server",
       "narration": "A server may return a prepared file, query a database, or run application logic to create a response.",
-      "min_seconds": 7.8,
+      "min_seconds": 6.7,
       "voice_delay": 0.25,
       "tail": 0.45,
       "layers": [
@@ -6229,7 +6229,7 @@
     {
       "id": "07-cache",
       "narration": "A nearby cache may already hold reusable content. Less distance and less work can mean a faster answer.",
-      "min_seconds": 8,
+      "min_seconds": 6.9,
       "voice_delay": 0.25,
       "tail": 0.45,
       "layers": [
@@ -6390,7 +6390,7 @@
     {
       "id": "08-bytes",
       "narration": "The response can contain HTML, styles, scripts and images. But none of those files is the finished screen.",
-      "min_seconds": 8,
+      "min_seconds": 6.9,
       "voice_delay": 0.25,
       "tail": 0.45,
       "layers": [
@@ -6551,7 +6551,7 @@
     {
       "id": "09-dom",
       "narration": "The browser parses HTML into a document structure: elements nested inside other elements, ready to be styled.",
-      "min_seconds": 8,
+      "min_seconds": 6.8,
       "voice_delay": 0.25,
       "tail": 0.45,
       "layers": [
@@ -6712,7 +6712,7 @@
     {
       "id": "10-css",
       "narration": "Styles tell the browser about sizes, type, spacing and layout. Good hierarchy makes information easier to scan.",
-      "min_seconds": 7.8,
+      "min_seconds": 6.7,
       "voice_delay": 0.25,
       "tail": 0.45,
       "layers": [
@@ -6873,7 +6873,7 @@
     {
       "id": "11-js",
       "narration": "JavaScript can respond to input and update what you see. Many pages work with little or no JavaScript.",
-      "min_seconds": 8,
+      "min_seconds": 6.8,
       "voice_delay": 0.25,
       "tail": 0.45,
       "layers": [
@@ -7034,7 +7034,7 @@
     {
       "id": "12-paint",
       "narration": "Layout, painting and compositing turn those instructions into pixels. Smooth motion needs frames delivered on time.",
-      "min_seconds": 8,
+      "min_seconds": 7,
       "voice_delay": 0.25,
       "tail": 0.45,
       "layers": [
@@ -7195,7 +7195,7 @@
     {
       "id": "13-speed",
       "narration": "A slow page might wait for data, execute too much code, or spend too long laying out the screen.",
-      "min_seconds": 8,
+      "min_seconds": 6.8,
       "voice_delay": 0.25,
       "tail": 0.45,
       "layers": [
@@ -7356,7 +7356,7 @@
     {
       "id": "14-craft",
       "narration": "Compress what you send. Cache what you can. Prioritize what matters. Design the experience, not just the screenshot.",
-      "min_seconds": 8.2,
+      "min_seconds": 7,
       "voice_delay": 0.25,
       "tail": 0.45,
       "layers": [
@@ -7517,7 +7517,7 @@
     {
       "id": "15-ending",
       "narration": "So the next time a page appears instantly, remember the invisible choreography behind that single click.",
-      "min_seconds": 7.5,
+      "min_seconds": 6.8,
       "voice_delay": 0.25,
       "tail": 0.45,
       "layers": [
