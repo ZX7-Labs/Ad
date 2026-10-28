@@ -34,9 +34,9 @@ def _end(clip):
     return stop
 
 
-def _validate_track(track):
+def _validate_track(track,*,allow_empty=False):
     clips=track.get("clips") if isinstance(track,dict) else None
-    if not isinstance(clips,list) or not 1<=len(clips)<=128:
+    if not isinstance(clips,list) or len(clips)>128 or (not allow_empty and not clips):
         raise ValueError("Source placement cannot erase or overflow a native track")
     end=-1
     for clip in clips:
@@ -122,7 +122,7 @@ def apply_native_source_placements(plan,action):
             track["clips"]=[copy.deepcopy(c) for ci,c in enumerate(prior)
                             if ci not in moved]+insert[key].get(i,[])
             track["clips"].sort(key=lambda c:c["position_frame"])
-            _validate_track(track)
+            _validate_track(track,allow_empty=key=="tracks" and i>0)
             for k,v in source[key][i].items():
                 if k!="clips" and track.get(k)!=v:
                     raise AssertionError("Native track effect policy was violated")
