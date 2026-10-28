@@ -25,7 +25,8 @@ from .precision_retime import _source_timebase
 from .delivery_audit import _probe_details
 from .composite_mix import _decoded_source_duration
 from .body_mlt_transform import (
-    encode_transform, decode_transform, TRANSFORM_NATIVE_FIELDS)
+    encode_transform, decode_transform, TRANSFORM_NATIVE_FIELDS,
+    encode_mask, decode_mask, MASK_NATIVE_FIELDS)
 
 
 def _integer(v, label, low, high):
@@ -323,7 +324,7 @@ def validate_mlt_edit(plan,workspace,vault_root):
     blend_modes=[]
     for ti,track in enumerate(tracks):
         if (not isinstance(track,dict) or "clips" not in track or
-                set(track)-{"clips","blend_mode","opacity","opacity_keyframes","transform"}):
+                set(track)-{"clips","blend_mode","opacity","opacity_keyframes","transform","mask"}):
             raise ValueError("MLT track requires original clips and only a typed blend mode")
         mode=track.get("blend_mode","normal")
         if type(mode) is not str or mode not in _BLEND_MODES:
@@ -380,10 +381,11 @@ def validate_mlt_edit(plan,workspace,vault_root):
     opacities=[_opacity_animation(track,total) for track in tracks]
     if opacities[0]!="1":
         raise ValueError("MLT bottom picture track has no background to fade")
-    if "transform" in tracks[0]:
+    if "transform" in tracks[0] or "mask" in tracks[0]:
         raise ValueError("Native bottom picture transform needs an explicit editable backing layer")
     transforms=[encode_transform(t["transform"],total) if "transform" in t else None
                 for t in tracks]
+    masks=[encode_mask(t["mask"],total) if "mask" in t else None for t in tracks]
     sound_tracks=plan.get("audio_tracks",[])
     if not isinstance(sound_tracks,list) or len(sound_tracks)>4:
         raise ValueError("MLT authenticated sound supports up to four separate tracks")
@@ -459,7 +461,7 @@ def validate_mlt_edit(plan,workspace,vault_root):
             "sources":sources,"frames":total,"audio_tracks":resolved_sound,
             "audio_sources":sound_sources,"blend_modes":blend_modes,
             "opacities":opacities,"sound_gains":gains,"sound_pans":pans,
-            "transforms":transforms}
+            "transforms":transforms,"masks":masks}
 
 
 def build_mlt_xml(plan,checked):
@@ -522,6 +524,12 @@ def build_mlt_xml(plan,checked):
     # Qt geometry acts on the selected original frame BEFORE compositing.
     # A post-composition filter would also move already combined lower layers.
     for ti,transform in enumerate(checked["transforms"]):
+        mask=checked["masks"][ti]
+        if mask is not None:
+            filt=ET.SubElement(tractor,"filter",{"in":"0","out":str(checked["frames"]-1)})
+            _prop(filt,"track",ti)
+            for name,value in mask.items():
+                _prop(filt,name,value)
         if transform is not None:
             filt=ET.SubElement(tractor,"filter",{"in":"0","out":str(checked["frames"]-1)})
             _prop(filt,"track",ti)
@@ -763,7 +771,7 @@ def _verify_exact_mlt_xml_tree(root):
     filter_count=kinds.count("filter")
     premix=["multitrack"]+["filter"]*filter_count+["transition"]*transition_count
     legacy=["multitrack"]+["transition"]*transition_count+["filter"]*filter_count
-    if (kinds not in (premix,legacy) or filter_count>picture_tracks-1+2*sound_count):
+    if (kinds not in (premix,legacy) or filter_count>2*(picture_tracks-1)+2*sound_count):
         raise ValueError("MLT native transitions, filters or soundtrack counts altered")
     legacy_postmix=bool(filter_count and kinds!=premix)
     multitrack=tractor[0]
@@ -814,22 +822,28 @@ def _verify_exact_mlt_xml_tree(root):
     prior_sound_track=-1
     prior_service=-1
     prior_picture_track=0
+    prior_picture_service=-1
     audio_started=False
     for filt in tractor.findall("filter"):
         if filt.attrib!={"in":"0","out":str(frames-1)}:
             raise ValueError("Native audio filter has unauthorized execution span")
         controls={p.get("name"):p.text for p in filt.findall("property")}
         service=controls.get("mlt_service")
-        if service=="qtblend":
-            props=properties(filt,TRANSFORM_NATIVE_FIELDS)
-            decode_transform(props,frames)
+        if service in ("qtcrop","qtblend"):
+            is_mask=service=="qtcrop"
+            props=properties(filt,MASK_NATIVE_FIELDS if is_mask else TRANSFORM_NATIVE_FIELDS)
+            (decode_mask if is_mask else decode_transform)(props,frames)
+            picture_service=0 if is_mask else 1
             try:picture_index=int(props["track"])
             except (TypeError,ValueError) as exc:
                 raise ValueError("Native transform picture track is invalid") from exc
             if (str(picture_index)!=props["track"] or audio_started or legacy_postmix
-                    or not prior_picture_track<picture_index<picture_tracks):
+                    or not 1<=picture_index<picture_tracks
+                    or picture_index<prior_picture_track
+                    or picture_index==prior_picture_track and picture_service<=prior_picture_service):
                 raise ValueError("Native transform must precede composition on one upper picture track")
             prior_picture_track=picture_index
+            prior_picture_service=picture_service
             continue
         if service not in ("volume","panner"):
             raise ValueError("No arbitrary native audio filter may execute")
