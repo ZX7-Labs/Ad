@@ -113,6 +113,30 @@ class NativeRGBGradeContracts(unittest.TestCase):
             self.assertEqual(original,pristine)
 
 
+@unittest.skipUnless(all(shutil.which(command) for command in
+                     ("melt","ffmpeg","ffprobe")),
+                     "Full native tool fingerprint proof requires installed renderer")
+class NativeRGBGradeCodeIdentity(unittest.TestCase):
+    def test_color_engine_code_mutation_invalidates_all_affected_operation_revisions(self):
+        from studio_next.body_integration import _trusted_body_revision
+        ids=("body.mlt_owned_export","body.mlt_owned_render",
+             "body.mlt_owned_import","body.mlt_owned_relink",
+             "body.mlt_owned_compare","body.mlt_owned_revision",
+             "body.mlt_owned_timecode_format","body.mlt_owned_timecode_parse")
+        read=Path.read_bytes
+        def modified(file):
+            content=read(file)
+            if file.name=="body_mlt_grade.py":
+                return content+b"\\n# proposed upgraded grading math\\n"
+            return content
+        for tool in ids:
+            with self.subTest(tool=tool):
+                previous=_trusted_body_revision(tool)
+                with patch.object(Path,"read_bytes",modified):
+                    changed=_trusted_body_revision(tool)
+                self.assertNotEqual(previous,changed)
+
+
 @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"),
                      "Native RGB grade source custody requires actual FFmpeg")
 class NativeRGBGradeProjectTests(unittest.TestCase):
