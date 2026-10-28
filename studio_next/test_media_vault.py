@@ -389,6 +389,38 @@ class MediaVaultProductionTests(unittest.TestCase):
                         owner_or_generator="recording-owner")
                     self.assertEqual(store.inspect(receipt["asset_id"],
                         attestation_id=receipt["attestation_id"])["mime"],"audio/wav")
+                    # Genuine WAVE_FORMAT_EXTENSIBLE multi-channel PCM must
+                    # also be admitted on 3.11 without stdlib wave support or
+                    # an installed external decoder. No downmix is performed.
+                    import struct
+                    pcm_guid=bytes.fromhex("0100000000001000800000aa00389b71")
+                    fmt=(struct.pack("<HHIIHHH",65534,6,48000,576000,12,16,22)
+                         +struct.pack("<HI",16,0x3f)+pcm_guid)
+                    samples=b"\0"*(12*96)
+                    riff=(b"WAVE"+b"fmt "+struct.pack("<I",len(fmt))+fmt+
+                          b"data"+struct.pack("<I",len(samples))+samples)
+                    multi=root/"true-six-channel-extensible.wav"
+                    multi.write_bytes(b"RIFF"+struct.pack("<I",len(riff))+riff)
+                    from studio_next.pcm_wave import inspect_pcm_wav
+                    self.assertEqual(inspect_pcm_wav(multi)["channels"],6)
+                    confirmed=store.ingest(multi,mime="audio/wav",
+                        rights="owner_supplied",source_type="owner_upload",
+                        source_id="six-channel-raw-original",
+                        evidence="Measured uncompressed 5.1 PCM bytes",
+                        owner_or_generator="recording-owner")
+                    self.assertEqual(store.inspect(confirmed["asset_id"],
+                        attestation_id=confirmed["attestation_id"])["mime"],"audio/wav")
+                    forged=bytearray(multi.read_bytes())
+                    forged[12+8+24]=3  # Non-PCM IEEE float subtype is forbidden.
+                    nonpcm=root/"fake-float-channel.wav"
+                    nonpcm.write_bytes(forged)
+                    with self.assertRaisesRegex(MediaCustodyError,
+                                                "authenticated integer PCM"):
+                        store.ingest(nonpcm,mime="audio/wav",
+                            rights="owner_supplied",source_type="owner_upload",
+                            source_id="unproven-multichannel-codec",
+                            evidence="Unverified incompatible PCM subtype",
+                            owner_or_generator="recording-owner")
                     fake=root/"short-original.wav"
                     fake.write_bytes(recorded[:-2])
                     with self.assertRaisesRegex(MediaCustodyError,
