@@ -194,6 +194,104 @@ class ExactSourceTimecodeTests(unittest.TestCase):
             self.assertEqual(third["reused"],[])
             self.assertEqual(third["completed"],["source-clock"])
 
+    @unittest.skipUnless(
+        __import__("shutil").which("ffmpeg") and __import__("shutil").which("ffprobe"),
+        "Actual source video and precise native project clock require decoders")
+    def test_native_smpte_tools_refuse_invented_frame_rate_or_unrecorded_picture(self):
+        """True 30000/1001 source clock, MLT rights, edit length and native receipt."""
+        import copy
+        import json
+        import hashlib
+        import subprocess
+        from studio_next.media_vault import MediaVault
+        from studio_next.body_mlt_editor import export_owned_mlt
+        from studio_next.body_integration import body_catalog,validate_witness
+        from studio_next.body_mlt_roundtrip import recover_original_mlt_plan
+        from studio_next.body_timecode import native_mlt_timecode_receipt
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            encoded=root/"original-ntsc-video.mp4"
+            subprocess.run(["ffmpeg","-hide_banner","-loglevel","error",
+                "-nostdin","-f","lavfi","-i",
+                "testsrc2=size=64x48:rate=30000/1001:duration=1",
+                "-frames:v","30","-c:v","libx264","-pix_fmt","yuv420p",
+                "-color_primaries","bt709","-color_trc","bt709",
+                "-colorspace","bt709","-y",str(encoded)],
+                check=True,timeout=45)
+            source_bytes=encoded.read_bytes()
+            owner=MediaVault(root/"vault").ingest(encoded,mime="video/mp4",
+                rights="owner_supplied",source_type="owner_upload",
+                source_id="actual-original-ntsc-30000-1001",
+                evidence="Exact 30-frame self-recorded source movie",
+                owner_or_generator="fixture-creator")
+            plan={"frame_rate":{"numerator":30000,"denominator":1001},
+                  "frame_size":{"width":64,"height":48},
+                  "tracks":[{"clips":[{
+                      "source":"zx7:sha256:"+owner["asset_id"],
+                      "asset_id":owner["asset_id"],
+                      "attestation_id":owner["attestation_id"],
+                      "position_frame":0,"first_frame":0,"end_frame":30,
+                      "audio":"intentional_silence"}]}]}
+            authored=root/"verified-source-plan.json"
+            authored.write_text(json.dumps(plan))
+            native=root/"author-original-native.mlt"
+            export_owned_mlt(authored,root,root/"vault",native)
+            original=native.read_bytes()
+            self.assertEqual(recover_original_mlt_plan(
+                native,root,root/"vault")["frames"],30)
+            catalog=body_catalog(root)
+            before=catalog.invoke("body.mlt_owned_timecode_format",{
+                "edit":native.name,"frame_index":29,
+                "drop_frame":True},allowed_access={"read"})
+            self.assertEqual(before["timecode_label"],"00:00:00;29")
+            self.assertEqual(before["frame_index"],29)
+            self.assertEqual(before["rate_numerator"],30000)
+            self.assertEqual(before["rate_denominator"],1001)
+            self.assertEqual(before["source_movie_frames_verified"],30)
+            self.assertEqual(before["source_mlt_sha256"],
+                             hashlib.sha256(original).hexdigest())
+            self.assertTrue(before["original_media_rights_and_roundtrip_rechecked"])
+            self.assertTrue(validate_witness(
+                "body.mlt_owned_timecode_format",before))
+            after=catalog.invoke("body.mlt_owned_timecode_parse",{
+                "edit":native.name,"timecode":"00:00:00;29"},
+                allowed_access={"read"})
+            self.assertEqual(after["frame_index"],29)
+            self.assertTrue(validate_witness(
+                "body.mlt_owned_timecode_parse",after))
+            for malformed in (
+                {"edit":native.name,"frame_index":30,"drop_frame":True},
+                {"edit":native.name,"frame_index":1800,"drop_frame":True},
+                {"edit":native.name,"frame_index":29,"drop_frame":"true"},
+            ):
+                with self.subTest(inputs=malformed),self.assertRaises((
+                        ValueError,TypeError)):
+                    catalog.invoke("body.mlt_owned_timecode_format",malformed,
+                                   allowed_access={"read"})
+            with self.assertRaises(ValueError):
+                catalog.invoke("body.mlt_owned_timecode_parse",{
+                    "edit":native.name,"timecode":"00:01:00;02"},
+                    allowed_access={"read"})
+            forged=dict(before,rate_numerator=24)
+            self.assertFalse(validate_witness(
+                "body.mlt_owned_timecode_format",forged))
+            forged=dict(before,source_mlt_sha256="0"*64)
+            self.assertFalse(validate_witness(
+                "body.mlt_owned_timecode_format",forged))
+            forged=dict(before,source_workspace_root=str(root.parent))
+            self.assertFalse(validate_witness(
+                "body.mlt_owned_timecode_format",forged))
+            # A structurally valid native project with an untrusted source
+            # claim must never obtain a genuine verified timecode label.
+            unsafe=root/"fake-owner-native.mlt"
+            unsafe.write_bytes(original.replace(
+                b"zx7.original_sha256",b"forged.original_sha256"))
+            with self.assertRaises(ValueError):
+                native_mlt_timecode_receipt(unsafe,root,
+                    vault_root=root/"vault",frame_index=1,drop_frame=True)
+            self.assertEqual(native.read_bytes(),original)
+            self.assertEqual(encoded.read_bytes(),source_bytes)
+
     def test_actual_registered_read_tools_offer_stable_safe_rational_clocks(self):
         from studio_next.body_integration import body_catalog,validate_witness
         with tempfile.TemporaryDirectory() as tmp:
