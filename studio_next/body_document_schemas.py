@@ -92,7 +92,8 @@ _SCHEMAS = {
             "end_frame":SIZE}),minItems=1,maxItems=128)},{
                 "gain_db":number(-96,24),
                 "gain_keyframes":array(obj({"frame":number(0,integer=True),
-                    "gain_db":number(-96,24)}),minItems=2,maxItems=128)}),maxItems=4)})),
+                    "gain_db":number(-96,24)}),minItems=2,maxItems=128)}),maxItems=4),
+        "gap_color": COLOR})),
     "body.mlt_owned_revision": ("operation", {"oneOf":[
         obj({"operations":array({"oneOf":[
             obj({"op":choice("add","replace","test"),
