@@ -1099,6 +1099,17 @@ class VerifiedMLTEditorialTests(unittest.TestCase):
             self.assertEqual(changed["audio_tracks"][1]["clips"][2]["asset_id"],
                              sound440["asset_id"])
             self.assertEqual(changed["audio_tracks"][1]["gain_db"],-6)
+            reviewed=catalog.invoke("body.mlt_owned_compare",{
+                "before_edit":"placements-original.mlt",
+                "after_edit":"placements-edited.mlt"},
+                allowed_access={"read"})
+            self.assertTrue(reviewed["structural_changes_verified"])
+            self.assertEqual(reviewed["before_frames"],8)
+            self.assertEqual(reviewed["after_frames"],12)
+            self.assertEqual(len(reviewed["picture_changes"]),2)
+            self.assertEqual(len(reviewed["sound_changes"]),2)
+            self.assertTrue(reviewed["exact_source_rights_and_native_roundtrips_rechecked"])
+            self.assertFalse(reviewed["decoded_pixel_or_audio_equivalence_proven"])
             for name,out in (("placements-original.mlt","original-clip.mp4"),
                              ("placements-edited.mlt","new-clip.mp4")):
                 catalog.invoke("body.mlt_owned_render",{
