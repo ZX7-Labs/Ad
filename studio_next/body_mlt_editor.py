@@ -334,8 +334,9 @@ def validate_mlt_edit(plan,workspace,vault_root):
             raise ValueError("The original bottom video track has no lower layer to blend")
         blend_modes.append(mode)
         clips=track["clips"]
-        if not isinstance(clips,list) or not 1<=len(clips)<=128:
-            raise ValueError("MLT track requires 1..128 actual source clips")
+        if (not isinstance(clips,list) or len(clips)>128 or
+                ti==0 and not clips):
+            raise ValueError("The bottom original picture must have source clips; empty upper edit tracks are legal")
         end_at=0
         checked=[]
         for i,clip in enumerate(clips):
@@ -766,6 +767,10 @@ def _verify_exact_mlt_xml_tree(root):
                     raise ValueError("MLT original gap has unapproved attributes")
             else:
                 raise ValueError("MLT playlist contains unsupported service")
+    # An empty upper lane is an editable destination, not missing footage.
+    # The original bottom lane must still contain an attested backing image.
+    if not any(item.tag=="entry" for item in playlists[0]):
+        raise ValueError("A native project cannot publish without a bottom original picture")
     tractor=direct[-1]
     if (set(tractor.attrib)!={"id","in","out"} or
         tractor.get("id")!="zx7-tractor" or tractor.get("in")!="0"):
