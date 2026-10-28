@@ -271,9 +271,10 @@ def _trusted_body_revision(tool_id):
     if known is None:
         raise ValueError("No verified implementation dependencies for "+tool_id)
     if "body_mlt_editor.py" in known:
-        # Geometry participates in strict native validation, recovery and
-        # rendering. A bridge change must invalidate all affected cached tools.
-        known=[*known,"body_mlt_transform.py"]
+        # Source geometry and all nine RGB grading curves participate in
+        # strict native validation, recovery, rendering and review. A change
+        # to either bridge invalidates every affected cached operation.
+        known=[*known,"body_mlt_transform.py","body_mlt_grade.py"]
     h=hashlib.sha256()
     for item in ("body_integration.py","body_publication.py","durable_sqlite.py",
                  "body_tool_contracts.py","body_document_schemas.py","registry.py")+tuple(known):
