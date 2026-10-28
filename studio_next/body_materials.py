@@ -23,6 +23,7 @@ _SOURCE_FIELDS={
     "body.sequence_cuts":("plan",),
     "body.mlt_owned_export":("plan",),
     "body.mlt_owned_render":("edit",),
+    "body.mlt_owned_import":("edit",),
     "body.timeline_revision":("plan","operation"),
     "body.otio":("edit",),
     "body.otio_owned_export":("plan",),
@@ -136,7 +137,7 @@ def fingerprint_physical_inputs(tool_id,inputs,workspace):
         p=_file(root,source)
         if p.is_file():
             found.add(p)
-            if p.suffix.lower()==".mlt" and tool_id=="body.mlt_owned_render":
+            if p.suffix.lower()==".mlt" and tool_id in ("body.mlt_owned_render","body.mlt_owned_import"):
                 from .body_mlt_editor import verify_owned_mlt_project
                 import xml.etree.ElementTree as ET
                 verify_owned_mlt_project(p)
