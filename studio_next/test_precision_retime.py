@@ -109,6 +109,8 @@ class PhysicalRetimeTests(unittest.TestCase):
         self.assertTrue(result["verified_physically"])
         self.assertEqual(result["physically_verified_rational_output_clock"],
                          {"numerator":24,"denominator":1})
+        self.assertAlmostEqual(result["physically_measured_output_audio_stream_seconds"],
+                               2.5,delta=.064)
         self.assertIsInstance(result["physically_decoded_output_frame_count"],int)
         self.assertLessEqual(abs(result["physically_decoded_output_frame_count"]-60),2)
         meta=_probe_details(self.root/"newly-edited.mp4")
@@ -135,6 +137,21 @@ class PhysicalRetimeTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError,"rate|frame count"):
                     render_retime(self.plan_file,self.root,self.root/"vault",dest)
             self.assertFalse(dest.exists())
+
+    def test_short_or_overlong_decoded_sound_cannot_pass_as_verified_audiovisual_output(self):
+        from studio_next.precision_retime import _decoded_source_duration as real_duration
+        for case,seconds in (("missing-tail",0.5),("unapproved-extra-sound",10.0)):
+            def misleading_stream_seconds(path,kind):
+                if kind=="audio" and Path(path).name=="original-speed-revision.mp4":
+                    return seconds
+                return real_duration(path,kind)
+            target=self.root/(case+".mp4")
+            with self.subTest(case=case),patch(
+                    "studio_next.precision_retime._decoded_source_duration",
+                    side_effect=misleading_stream_seconds):
+                with self.assertRaisesRegex(RuntimeError,"soundtrack duration"):
+                    render_retime(self.plan_file,self.root,self.root/"vault",target)
+            self.assertFalse(target.exists())
 
     def test_actual_motion_compensated_slow_motion_uses_native_flow_and_real_sound(self):
         installed=subprocess.run(["ffmpeg","-hide_banner","-filters"],
