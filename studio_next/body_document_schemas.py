@@ -80,6 +80,16 @@ _NATIVE_MASK["description"]=(
     "Upper-layer alpha window in original source-canvas pixels BEFORE layer geometry; "
     "outside is transparent. Linear film-frame keys begin at zero and hold after the last key. "
     "Rounding 0 is rectangular; 1 uses half the shorter side as the corner radius.")
+_NATIVE_GRADE_FIELDS={name:number(0 if name.startswith("lift_") else .01,5)
+    for kind in ("lift","gamma","gain") for channel in ("r","g","b")
+    for name in (kind+"_"+channel,)}
+_NATIVE_GRADE=obj({"keyframes":array(obj({
+    "frame":number(0,integer=True),**_NATIVE_GRADE_FIELDS}),minItems=1,maxItems=128)})
+_NATIVE_GRADE["description"]=(
+    "Native MLT display-referred per-picture-track lift/gamma/gain on original BT.709 source. "
+    "Nine independently authored RGB channels, each evaluated on the film-frame clock. "
+    "All nine controls per keyframe, linear interpolation and last-key hold. "
+    "This is not an ACES/scene-linear or HDR-mastering transformation.")
 
 _SCHEMAS = {
     "body.visual_graph": ("plan", visual_graph_contract()),
@@ -100,6 +110,7 @@ _SCHEMAS = {
             "blend_mode":choice("normal","multiply","screen","overlay"),
             "transform":_NATIVE_TRANSFORM,
             "mask":_NATIVE_MASK,
+            "grade":_NATIVE_GRADE,
             "opacity":number(0,1),
             "opacity_keyframes":array(obj({"frame":number(0,integer=True),
                 "opacity":number(0,1)}),minItems=2,maxItems=128)}),
