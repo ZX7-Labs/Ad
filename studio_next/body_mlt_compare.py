@@ -62,7 +62,7 @@ def _track_control(track,kind):
         return None
     if kind=="picture":
         return {key:copy.deepcopy(track[key])
-            for key in ("blend_mode","opacity","opacity_keyframes","transform","mask")
+            for key in ("blend_mode","opacity","opacity_keyframes","transform","mask","grade")
             if key in track}
     return {key:copy.deepcopy(track[key])
         for key in ("gain_db","gain_keyframes","pan","pan_keyframes")
