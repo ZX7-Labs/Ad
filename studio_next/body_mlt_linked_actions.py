@@ -153,7 +153,12 @@ def _rekey(keys,kind,at,amount,field,retains_after,errors):
         if before[-1]["frame"]!=at-1:
             before.append(_bound(keys,at-1,field,errors))
         if keys and not any(k["frame"]==at for k in keys):
-            after.insert(0,_bound(keys,at+amount,field,errors))
+            # This later timeline frame must carry the ORIGINAL boundary
+            # value at source time `at`, not the value from `at+amount`.
+            # Otherwise a ripple insert silently changes opacity/sound.
+            boundary=_bound(keys,at,field,errors)
+            boundary["frame"]=at+amount
+            after.insert(0,boundary)
         return before+after
     end=at+amount
     after=[{**k,"frame":k["frame"]-amount} for k in keys if k["frame"]>=end]
