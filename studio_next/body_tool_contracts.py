@@ -16,7 +16,7 @@ _ARG_TYPES={
     "before_bundle":"string","before_sha256":"string",
     "after_bundle":"string","after_sha256":"string",
     "time_seconds":"number","expected":"object","source_witness":"object",
-    "gap_color":"string",
+    "gap_color":"string","before_edit":"string","after_edit":"string",
 }
 _EXAMPLES_DISALLOWED=True
 
