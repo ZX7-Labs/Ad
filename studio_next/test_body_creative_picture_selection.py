@@ -62,7 +62,7 @@ class CreativePictureSelectionTests(unittest.TestCase):
                              ["frame-1.png","frame-2.png","frame-3.png","frame-4.png"])
             images=self.coordinator.creative_sessions._pictures(self.state)
             self.assertEqual(len(images),4)
-            self.assertTrue(all(mime=="image/png" and data.startswith(b"\\x89PNG")
+            self.assertTrue(all(mime=="image/png" and data.startswith(b"\x89PNG")
                                 for mime,data in images))
             duplicate=self._read("original","frame-2.png")
             self.assertEqual(duplicate["selected_picture_count"],4)
