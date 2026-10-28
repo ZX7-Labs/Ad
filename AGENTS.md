@@ -1,5 +1,7 @@
 # Product intent
 
+Before modifying any subsystem, read [CAPABILITIES.md](CAPABILITIES.md) for the complete A–L creative scope, the cross-domain quality standard, and the independently measurable acceptance gates. It is a product contract, not a model prompt or a claim of implementation.
+
 Build one coherent creative system that an AI model can operate as an artist
 operates professional creative software. The AI supplies ideas and creative
 decisions; BODY supplies the working capabilities, project state, feedback and
