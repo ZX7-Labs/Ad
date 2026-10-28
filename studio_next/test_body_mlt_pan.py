@@ -498,13 +498,16 @@ class NativeStereoPanTests(unittest.TestCase):
             for transition in mixers:
                 controls={c.get("name"):c.text
                           for c in transition.findall("property")}
-                self.assertEqual(controls["accepts_blanks"],"1")
+                self.assertNotIn("accepts_blanks",controls)
                 self.assertEqual(controls["sum"],"1")
                 self.assertEqual(controls["a_track"],"0")
-            # Removing the native media-blanks policy must never pass
-            # as a verified copy of the source-authentic stereo project.
+            # Forcing a hidden picture frame as the audio accumulator
+            # bypasses MLT's first-audible-track search and loses a bus.
+            # Reject that unsupported native routing, including on import.
             forged=preserved.replace(
-                b'<property name="accepts_blanks">1</property>',b"",1)
+                b'<property name="mlt_service">mix</property>',
+                b'<property name="mlt_service">mix</property>'
+                b'<property name="accepts_blanks">1</property>',1)
             self.assertNotEqual(forged,preserved)
             candidate=root/"untrusted-silent-second-bus.mlt"
             candidate.write_bytes(forged)
@@ -542,9 +545,143 @@ class NativeStereoPanTests(unittest.TestCase):
             self.assertGreater(right880,left880*5)
             self.assertGreater(left440,left880*4)
             self.assertGreater(right880,right440*4)
+
+            # Exercise the exported native graph directly as another MLT
+            # editor would. A worker-only correction must not hide broken
+            # native interchange that reapplies one bus's pan to the mix.
+            direct=root/"direct-native.mp4"
+            subprocess.run(["melt",str(native),"-consumer",f"avformat:{direct}",
+                "frame_rate_num=12","frame_rate_den=1","width=64","height=48",
+                "progressive=1","vcodec=libx264","pix_fmt=yuv420p",
+                "acodec=aac","ar=48000","channels=2","an=0",
+                "real_time=-1","threads=2"],capture_output=True,check=True,timeout=60)
+            direct_raw=subprocess.check_output(["ffmpeg","-hide_banner",
+                "-loglevel","error","-nostdin","-xerror","-i",str(direct),
+                "-map","0:a:0","-ar","48000","-ac","2","-f","s16le","-"],
+                timeout=60)
+            pcm=array("h");pcm.frombytes(direct_raw)
+            self.assertGreater(energy(0,440),70)
+            self.assertGreater(energy(1,880),70)
+            self.assertGreater(energy(0,440),energy(1,440)*5)
+            self.assertGreater(energy(1,880),energy(0,880)*5)
+
+            # Previously released gain-only graphs put controls after the
+            # mixers. Preserve those documents, expose their legacy order,
+            # and make explicit native revisions export the corrected order.
+            old_xml=ET.fromstring(preserved)
+            old_tractor=old_xml.find("tractor")
+            for filt in old_tractor.findall("filter"):
+                old_tractor.remove(filt)
+                old_tractor.append(filt)
+            legacy=root/"legacy-postmix.mlt"
+            legacy_bytes=ET.tostring(old_xml,encoding="utf-8")
+            legacy.write_bytes(legacy_bytes)
+            old_report=verify_owned_mlt_project(legacy)
+            self.assertTrue(old_report["legacy_postmix_audio_filters"])
+            restored=recover_original_mlt_plan(legacy,root,root/"vault")
+            self.assertEqual(restored["plan"]["audio_tracks"],base["audio_tracks"])
+            self.assertTrue(restored["legacy_audio_bus_order_requires_migration"])
+            from studio_next.body_mlt_compare import compare_owned_mlt_projects
+            comparison=compare_owned_mlt_projects(legacy,native,root,root/"vault")
+            self.assertTrue(comparison["native_audio_execution_order_changed"])
+            old_render=catalog.invoke("body.mlt_owned_render",{
+                "edit":legacy.name,"out":"legacy-repaired-render.mp4"},
+                allowed_access={"write"})
+            self.assertTrue(old_render["legacy_audio_bus_order_corrected_for_render"])
+            old_raw=subprocess.check_output(["ffmpeg","-hide_banner",
+                "-loglevel","error","-nostdin","-xerror",
+                "-i",str(root/"legacy-repaired-render.mp4"),"-map","0:a:0",
+                "-ar","48000","-ac","2","-f","s16le","-"],timeout=60)
+            pcm=array("h");pcm.frombytes(old_raw)
+            self.assertGreater(energy(0,440),70)
+            self.assertGreater(energy(1,880),70)
+            self.assertEqual(legacy.read_bytes(),legacy_bytes)
             self.assertEqual(native.read_bytes(),preserved)
+
+            # One original recording may legitimately be reused on two
+            # separately controlled buses. Opposite balances must not
+            # destructively modify a shared source-frame audio buffer.
+            reused=copy.deepcopy(base)
+            reused["audio_tracks"][1]["clips"]=copy.deepcopy(
+                reused["audio_tracks"][0]["clips"])
+            same=root/"reused-original.json"
+            same.write_text(json.dumps(reused))
+            catalog.invoke("body.mlt_owned_export",{
+                "plan":same.name,"out":"reused-original.mlt"},allowed_access={"write"})
+            catalog.invoke("body.mlt_owned_render",{
+                "edit":"reused-original.mlt","out":"reused-original.mp4"},
+                allowed_access={"write"})
+            same_raw=subprocess.check_output(["ffmpeg","-hide_banner","-loglevel",
+                "error","-nostdin","-xerror","-i",str(root/"reused-original.mp4"),
+                "-map","0:a:0","-ar","48000","-ac","2","-f","s16le","-"],
+                timeout=60)
+            pcm=array("h");pcm.frombytes(same_raw)
+            same_left=energy(0,440);same_right=energy(1,440)
+            self.assertGreater(same_left,70)
+            self.assertGreater(same_right,70)
+            self.assertLess(abs(same_left-same_right),max(same_left,same_right)*.15)
             for filename,old in raw_bytes.items():
                 self.assertEqual(Path(filename).read_bytes(),old)
+
+    @unittest.skipUnless(shutil.which("melt"),"Native four-bus audio evidence required")
+    def test_four_buses_with_picture_and_sound_gaps_preserve_every_original_tone(self):
+        """A late first bus cannot hide the others or corrupt worker track indices."""
+        from studio_next.body_integration import body_catalog
+        from studio_next.test_body_mlt_editor import VerifiedMLTEditorialTests
+        from math import cos,sin,pi,hypot
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary)
+            plan,source=VerifiedMLTEditorialTests()._case(root)
+            # This forces a worker-only backing track and shifts every
+            # native track index. Original audio still starts at frame 0.
+            plan["tracks"][0]["clips"][0].update(
+                {"position_frame":2,"end_frame":10})
+            plan["audio_tracks"]=[]
+            for index,(freq,pan,gain) in enumerate(
+                    ((440,0,-6),(880,1,-12),(1320,0,-9),(1760,1,-3))):
+                path=root/f"four-bus-{index}.wav"
+                subprocess.run(["ffmpeg","-hide_banner","-loglevel","error",
+                    "-nostdin","-f","lavfi","-i",
+                    f"sine=frequency={freq}:sample_rate=48000:duration=1",
+                    "-ac","2","-c:a","pcm_s16le","-y",str(path)],
+                    check=True,timeout=35)
+                record=MediaVault(root/"vault").ingest(path,mime="audio/wav",
+                    rights="owner_supplied",source_type="owner_upload",
+                    source_id=f"owned-{freq}",evidence="Self-created stereo PCM",
+                    owner_or_generator="fixture-creator")
+                start=6 if index==0 else 0
+                plan["audio_tracks"].append({"pan":pan,"gain_db":gain,
+                    "clips":[{"source":"zx7:sha256:"+record["asset_id"],
+                        "asset_id":record["asset_id"],
+                        "attestation_id":record["attestation_id"],
+                        "first_frame":0,"end_frame":12-start,
+                        "position_frame":start}]})
+            source.write_text(json.dumps(plan))
+            body=body_catalog(root)
+            body.invoke("body.mlt_owned_export",{
+                "plan":source.name,"out":"four-buses.mlt"},allowed_access={"write"})
+            result=body.invoke("body.mlt_owned_render",{
+                "edit":"four-buses.mlt","out":"four-buses.mp4",
+                "gap_color":"#000000"},allowed_access={"write"})
+            self.assertEqual(result["verified_original_audio_tracks"],4)
+            self.assertTrue(result["sampled_director_gap_pixels_physically_verified"])
+            raw=subprocess.check_output(["ffmpeg","-hide_banner","-loglevel","error",
+                "-nostdin","-xerror","-i",result["path"],"-map","0:a:0",
+                "-ac","2","-ar","48000","-f","s16le","-"],timeout=60)
+            pcm=array("h");pcm.frombytes(raw)
+            def tone(channel,freq,start):
+                count=9600;offset=int(start*48000);phase=2*pi*freq/48000
+                return hypot(sum(pcm[2*i+channel]*cos(phase*i)
+                                 for i in range(offset,offset+count)),
+                             sum(pcm[2*i+channel]*sin(phase*i)
+                                 for i in range(offset,offset+count)))/count
+            self.assertLess(tone(0,440,.2),5)
+            for freq,channel in ((440,0),(880,1),(1320,0),(1760,1)):
+                with self.subTest(original_frequency=freq):
+                    measured=tone(channel,freq,.6)
+                    self.assertGreater(measured,100)
+                    self.assertGreater(measured,tone(1-channel,freq,.6)*8)
+                    if freq!=440:self.assertGreater(tone(channel,freq,.2),100)
 
 
 if __name__=="__main__":

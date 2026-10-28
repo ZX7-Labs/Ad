@@ -157,6 +157,14 @@ def recover_original_mlt_plan(edit, workspace, vault_root):
     # track gaps, original audio stream indices, blend modes, keyframes and all
     # source attestation properties must survive the reverse translation.
     replay = ET.fromstring(build_mlt_xml(plan, checked))
+    if verified["legacy_postmix_audio_filters"]:
+        # Reconstruct the historical representation for exact custody
+        # comparison. New exports intentionally place independent controls
+        # before mixing. Preserve old bytes and disclose that migration.
+        legacy_tractor=replay.find("tractor")
+        for filt in legacy_tractor.findall("filter"):
+            legacy_tractor.remove(filt)
+            legacy_tractor.append(filt)
     canonical = lambda node: ET.canonicalize(
         ET.tostring(node, encoding="unicode"), strip_text=True)
     if canonical(replay) != canonical(xml):
@@ -171,6 +179,7 @@ def recover_original_mlt_plan(edit, workspace, vault_root):
         "frames": frames,
         "fully_verified_rights": True,
         "lossless_typed_native_roundtrip": True,
+        "legacy_audio_bus_order_requires_migration":verified["legacy_postmix_audio_filters"],
         "creative_quality_approved": False,
     }
 
@@ -207,5 +216,6 @@ def import_owned_mlt_project(edit, workspace, vault_root, output):
         "verified_original_sound_tracks": recovered["original_sound_tracks"],
         "verified_original_frames": recovered["frames"],
         "lossless_typed_native_roundtrip": True,
+        "legacy_audio_bus_order_requires_migration":recovered["legacy_audio_bus_order_requires_migration"],
         "creative_quality_approved": False,
     }

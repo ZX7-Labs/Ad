@@ -685,10 +685,17 @@ def body_catalog(workspace,*,vault_root=None):
         source=_path_within(root,inputs["edit"],exists=True)
         dest=_body_output(root,inputs["out"],allowed=(".mp4",))
         gap_color=inputs.get("gap_color")
-        receipt=_commit_actual_body_output(dest,
-            lambda staged:render_owned_mlt(source,root,staged,
-                                            gap_color=gap_color))
-        return {**receipt,"director_selected_gap_color":gap_color}
+        evidence={}
+        def produce(stage):
+            evidence.update(render_owned_mlt(source,root,stage,gap_color=gap_color))
+        receipt=_commit_actual_body_output(dest,produce)
+        # Preserve measurements from this actual native execution, including
+        # disclosed repair of a historical post-mix bus-filter graph. A
+        # recovered publication has only its independently decoded witness;
+        # do not fabricate fresh execution measurements for that case.
+        return {**receipt,**{k:v for k,v in evidence.items()
+                if k not in ("path","sha256","bytes")},
+                "director_selected_gap_color":gap_color}
 
     def native_motion(inputs):
         source=_path_within(root,inputs["plan"],exists=True)

@@ -547,15 +547,14 @@ def build_mlt_xml(plan,checked):
         _prop(transition,"mlt_service","mix")
         _prop(transition,"start",1)
         _prop(transition,"sum",1)
-        # Kdenlive and MLT transition_get_frame use accepts_blanks=1 for
-        # proper chained two-or-more sound bus mixdown when picture track 0
-        # is intentionally audio-hidden. Without it, an overlapping later
-        # original sound bus may disappear from the physical master.
-        _prop(transition,"accepts_blanks",1)
+        # Keep MLT's search for the first audible A frame. Picture tracks
+        # explicitly hide audio; accepts_blanks=1 pins A to hidden track 0
+        # and transition_get_frame then skips the mix. A later sound bus
+        # consequently replaces earlier ones instead of summing them.
+        # See MLT v7.22.0 src/framework/mlt_transition.c.
         _prop(transition,"always_active",1)
-    # The installed native MLT filter applies the gain to the selected
-    # audio track BEFORE the tractor mix, retaining separate artist buses.
-    # Track is a verified internal index, never native input from a model.
+    # Controls must be planted before transitions in the native field. The
+    # track index alone cannot isolate a bus after another service mixes it.
     for ti,level in enumerate(checked["sound_gains"]):
         if level!="0" or "gain_db" in plan["audio_tracks"][ti]:
             # An explicit unity-level decision is part of the editable
@@ -579,8 +578,21 @@ def build_mlt_xml(plan,checked):
             # We verified this condition in the native C filter source.
             _prop(filt,"start",0.5)
             _prop(filt,"split",position)
+    _premix_audio_controls(tractor)
     ET.indent(root,space="  ")
     return ET.tostring(root,encoding="utf-8",xml_declaration=True)+b"\n"
+
+
+def _premix_audio_controls(tractor):
+    """Order trusted bus filters before transitions, preserving gain/pan order.
+
+    MLT's XML reader plants field services in document order. See v7.22.0
+    src/modules/xml/producer_xml.c and src/framework/mlt_field.c. This helper
+    only receives a generated or independently allowlisted native graph.
+    """
+    for index,filt in enumerate(tractor.findall("filter"),start=1):
+        tractor.remove(filt)
+        tractor.insert(index,filt)
 
 
 def export_owned_mlt(plan_path,workspace,vault_root,output):
@@ -733,11 +745,12 @@ def _verify_exact_mlt_xml_tree(root):
         raise ValueError("MLT original film frame budget exceeded")
     transition_count=picture_tracks-1+sound_count
     kinds=[x.tag for x in tractor]
-    if (kinds[:1+transition_count] !=
-            ["multitrack"]+["transition"]*transition_count or
-            any(tag!="filter" for tag in kinds[1+transition_count:]) or
-            len(kinds)>1+transition_count+2*sound_count):
+    filter_count=kinds.count("filter")
+    premix=["multitrack"]+["filter"]*filter_count+["transition"]*transition_count
+    legacy=["multitrack"]+["transition"]*transition_count+["filter"]*filter_count
+    if (kinds not in (premix,legacy) or filter_count>2*sound_count):
         raise ValueError("MLT native transitions, filters or soundtrack counts altered")
+    legacy_postmix=bool(filter_count and kinds!=premix)
     multitrack=tractor[0]
     if multitrack.attrib or len(multitrack)!=playlist_count:
         raise ValueError("MLT native tractor tracks invalid")
@@ -753,11 +766,10 @@ def _verify_exact_mlt_xml_tree(root):
         is_sound=i>=picture_tracks-1
         if is_sound:
             props=properties(transition,{"a_track","b_track",
-                "mlt_service","always_active","start","sum","accepts_blanks"})
+                "mlt_service","always_active","start","sum"})
             expected={"a_track":"0",
                 "b_track":str(picture_tracks+i-(picture_tracks-1)),
-                "mlt_service":"mix","start":"1","sum":"1",
-                "accepts_blanks":"1","always_active":"1"}
+                "mlt_service":"mix","start":"1","sum":"1","always_active":"1"}
         else:
             # Strictly distinguish the Qt source-over operation and approved
             # Cairo native blend. Arbitrary Frei0r plugin names and parameters
@@ -834,7 +846,8 @@ def _verify_exact_mlt_xml_tree(root):
             duration+=count
         if duration!=frames:
             raise ValueError("MLT native sound or picture track duration mismatch")
-    return {"picture_tracks":picture_tracks,"sound_tracks":sound_count}
+    return {"picture_tracks":picture_tracks,"sound_tracks":sound_count,
+            "legacy_postmix_audio_filters":legacy_postmix}
 
 def verify_owned_mlt_project(file_path):
     """Physically accept only allowlisted native MLT services and original media."""
@@ -947,4 +960,5 @@ def verify_owned_mlt_project(file_path):
     return {"verified_original_sources":len(verified_sources),
             "verified_mlt_tracks":structure["picture_tracks"],
             "verified_audio_tracks":structure["sound_tracks"],
+            "legacy_postmix_audio_filters":structure["legacy_postmix_audio_filters"],
             "native_mlt_render_measured":False}

@@ -18,7 +18,7 @@ import subprocess
 import tempfile
 import xml.etree.ElementTree as ET
 
-from .body_mlt_editor import verify_owned_mlt_project
+from .body_mlt_editor import verify_owned_mlt_project, _premix_audio_controls
 from .media_vault import MediaVault,sha256_file
 from .precision_retime import _source_timebase
 from .production_qc import full_decode_inspection
@@ -272,6 +272,11 @@ def render_owned_mlt(edit,workspace,output,*,gap_color=None):
         # producer nodes and private byte-sealed CAS copies. Never parse
         # arbitrary user XML into executable MLT options.
         worker_xml=ET.fromstring(sealed.read_bytes())
+        # Native field services execute in XML construction order. A bus
+        # filter planted after a mix operates on an already summed frame;
+        # opposite pan decisions can consequently erase another bus.
+        # Apply independently authored bus controls before any transitions.
+        _premix_audio_controls(worker_xml.find("tractor"))
         for producer in worker_xml.findall("producer"):
             props={p.get("name"):p for p in producer.findall("property")}
             digest=props["zx7.original_sha256"].text
@@ -359,6 +364,7 @@ def render_owned_mlt(edit,workspace,output,*,gap_color=None):
             "fps":{"numerator":fps.numerator,"denominator":fps.denominator},
             "width":width,"height":height,"source_assets":len(sources),
             "source_project_sha256":before,
+            "legacy_audio_bus_order_corrected_for_render":verified["legacy_postmix_audio_filters"],
             "native_multitrack_verified":bool(verified["verified_mlt_tracks"]>1),
             "original_sound_intentionally_silent":not sound_present,
             "verified_original_audio_tracks":verified["verified_audio_tracks"],

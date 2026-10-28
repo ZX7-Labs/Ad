@@ -209,7 +209,9 @@ def compare_owned_mlt_projects(before_edit,after_edit,workspace,vault_root,*,foc
                 target.append(report)
     if sha256_file(prior)!=sha_before or sha256_file(later)!=sha_after:
         raise ValueError("Native original or revised timeline changed during comparison")
-    changed=bool(canvas_changed or original["frames"]!=revised["frames"] or
+    audio_order_changed=(original["legacy_audio_bus_order_requires_migration"]!=
+                         revised["legacy_audio_bus_order_requires_migration"])
+    changed=bool(canvas_changed or audio_order_changed or original["frames"]!=revised["frames"] or
                  picture or sound)
     return _bounded_review_view({
         "workspace_root":str(root),
@@ -224,6 +226,7 @@ def compare_owned_mlt_projects(before_edit,after_edit,workspace,vault_root,*,foc
         "before_frame_size":copy.deepcopy(first["frame_size"]),
         "after_frame_size":copy.deepcopy(second["frame_size"]),
         "frame_size_changed":canvas_changed,
+        "native_audio_execution_order_changed":audio_order_changed,
         "picture_track_count_before":len(first["tracks"]),
         "picture_track_count_after":len(second["tracks"]),
         "sound_track_count_before":len(first.get("audio_tracks",[])),
