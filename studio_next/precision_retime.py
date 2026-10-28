@@ -204,8 +204,13 @@ def plan_retime(plan,root,vault_root,*,probe=None):
     # Dependency injection here is used only for isolated tests.
     if probe is None:
         measured,physical_frame_count=_source_timebase(source)
-        if abs(measured-fps)/fps>Fraction(1,1000):
-            raise ValueError("Actual source rate differs from the selected frame timebase")
+        if measured!=fps:
+            # 24 vs 24000/1001 (and 30/60 equivalents) differs by exactly
+            # 0.1%. A tolerance silently changes the source-frame clock and
+            # accumulates seconds of drift on long edits. A decoded CFR clock
+            # is rational, not a rounded display label; conforming it must be
+            # an explicit separate artist decision.
+            raise ValueError(f"Selected source rate {fps} differs from the exact original frame timebase {measured}")
         if any(item["end"]>physical_frame_count for item in allparts):
             raise ValueError("Selected original edit reaches beyond source footage")
         if audio=="preserve_source":
