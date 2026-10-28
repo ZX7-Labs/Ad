@@ -131,13 +131,13 @@ def apply_local_window_action(plan,action):
             after=revised[key][track]
             outcome=_local_one(after,action["kind"],index,delta)
             for field in ("opacity","opacity_keyframes","gain_db","gain_keyframes",
-                          "pan","pan_keyframes","blend_mode","transform","mask"):
+                          "pan","pan_keyframes","blend_mode","transform","mask","grade"):
                 if before.get(field)!=after.get(field):
                     raise AssertionError("Timeline-locked native track effect was changed")
             if len(after["clips"])!=len(before["clips"]):
                 raise AssertionError("Native window editor silently deleted a source clip")
             for old,edited in zip(before["clips"],after["clips"]):
-                for field in ("source","asset_id","attestation_id","audio"):
+                for field in ("source","asset_id","attestation_id","audio","clip_grade"):
                     if field in old and old[field]!=edited[field]:
                         raise AssertionError("Original source media and rights were substituted")
             evidence.append({"domain":"picture" if key=="tracks" else "sound",

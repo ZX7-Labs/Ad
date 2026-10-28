@@ -53,11 +53,18 @@ def recover_original_mlt_plan(edit, workspace, vault_root):
         props = {p.get("name"): p.text for p in producer.findall("property")}
         digest = props["zx7.original_sha256"]
         attestation = props["zx7.attestation_id"]
+        native=producer.find("filter")
+        clip_grade=None
+        if native is not None:
+            clock=int(native.get("out"))+1
+            data={p.get("name"):p.text for p in native.findall("property")}
+            clip_grade=decode_grade({"track":"0",**data},clock)
         producers[producer.get("id")] = {
             "source": "zx7:sha256:" + digest,
             "asset_id": digest,
             "attestation_id": attestation,
             "audio": producer.get("id").startswith("audio-source-"),
+            "clip_grade":clip_grade,
         }
 
     playlists = xml.findall("playlist")
@@ -86,6 +93,8 @@ def recover_original_mlt_plan(edit, workspace, vault_root):
             }
             if not is_sound:
                 clip["audio"] = "intentional_silence"
+                if media["clip_grade"] is not None:
+                    clip["clip_grade"]=media["clip_grade"]
             clips.append(clip)
             at += clip["end_frame"] - clip["first_frame"]
         if at != frames or not clips:
