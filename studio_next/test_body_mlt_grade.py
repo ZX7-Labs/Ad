@@ -120,7 +120,7 @@ class NativeRGBGradeProjectTests(unittest.TestCase):
         plan,file=original_fixtures.VerifiedMLTEditorialTests()._case(root)
         plan["tracks"][0]["grade"]=grade(grade_key(0,lift_g=0.15),
                                          grade_key(11,lift_g=0.8))
-        plan["tracks"][1]["grade"]=grade(grade_key(0,gamma_b=2))
+        plan["tracks"][1]["grade"]=grade(grade_key(0,gamma_b=2,gain_b=0.3))
         file.write_text(json.dumps(plan))
         edit=root/"graded-original.mlt"
         export_owned_mlt(file,root,root/"vault",edit)
@@ -198,6 +198,14 @@ class NativeRGBGradeProjectTests(unittest.TestCase):
             self.assertGreater(new_last[1],new_first[1]+30,
                                (new_first,new_last,"animated grade was inert"))
             self.assertLess(abs(old_first[1]-old_last[1]),15)
+            # The upper blue original starts at film frame 4. Its independent
+            # gain wheel darkens only that source; no LUT or prescribed look
+            # is applied to the bottom source or owner-original files.
+            untouched_blue=pixel(original_frames[6],32,24)
+            graded_blue=pixel(revised_frames[6],32,24)
+            self.assertGreater(untouched_blue[2],210)
+            self.assertLess(graded_blue[2],untouched_blue[2]-30,
+                            (untouched_blue,graded_blue,"upper RGB gain was inert"))
             # If the native filter disappears, never silently render a look
             # different from the one the AI authored.
             with patch("studio_next.body_mlt_render._require_native_grade",
