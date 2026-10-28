@@ -35,8 +35,11 @@ jobs:
       - name: Fast exact source-frame algebra and model-authored NLE ABI regression
         run: |
           python -m unittest studio_next.test_body_mlt_linked_actions studio_next.test_body_mlt_local_edits studio_next.test_body_mlt_placements -v
-      - name: Prove source-frame diff is bounded and identifies graph-only splits
-        run: python -m unittest studio_next.test_body_mlt_compare.ExactNativeEditorialReviewTests.test_source_address_interval_sweep_is_frame_exact_without_frame_explosion -v
+      - name: Prove source-frame diff is exact and AI queries cannot dump unrelated private clips
+        run: |
+          python -m unittest \
+            studio_next.test_body_mlt_compare.ExactNativeEditorialReviewTests.test_source_address_interval_sweep_is_frame_exact_without_frame_explosion \
+            studio_next.test_body_mlt_compare.ExactNativeEditorialReviewTests.test_bounded_model_queries_do_not_dump_all_private_clip_graphs -v
       - name: Validate current Git tracked source inventory
         run: |
           python -m unittest discover -s scripts -p 'test_repo_audit.py' -v
