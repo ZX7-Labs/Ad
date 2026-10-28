@@ -119,20 +119,24 @@ def _sample(keys,at,field):
     return keys[-1][field]
 
 
-def _canonical_generated(value,errors):
+def _canonical_generated(value,errors,field):
     if type(value) not in (int,float) or not math.isfinite(value):
         raise ValueError("Native editor effect control is not finite")
-    # The current independently verified native MLT bridge emits precisely
-    # twelve significant decimal figures. Preserve exact source values and
-    # record only the interpolation rounding forced by this backend; do not
-    # advertise scene-linear/high-precision acceptance from MLT alone.
-    result=float(format(float(value),".12g"))
+    # Original artist gain and stereo pan are preserved with full float64
+    # binary roundtrip in the native MLT bridge. Do not invent a 12-digit
+    # restriction on newly calculated time-domain automation anchors.
+    # Opacity's current Cairo bridge remains 12-significant-digit limited;
+    # record this actual engine-specific precision loss rather than assert
+    # a universal high-precision native compositor.
+    result=(float(value) if field in ("gain_db","pan")
+            else float(format(float(value),".12g")))
     errors.append(abs(float(value)-result))
     return result
 
 
 def _bound(keys,frame,field,errors):
-    return {"frame":frame,field:_canonical_generated(_sample(keys,frame,field),errors)}
+    return {"frame":frame,
+            field:_canonical_generated(_sample(keys,frame,field),errors,field)}
 
 
 def _rekey(keys,kind,at,amount,field,retains_after,errors):
