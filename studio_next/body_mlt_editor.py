@@ -551,7 +551,9 @@ def build_mlt_xml(plan,checked):
             _prop(filt,"mlt_service","volume")
             _prop(filt,"level",level)
         position=checked["sound_pans"][ti]
-        if position!="0.5":
+        if position!="0.5" or "pan" in plan["audio_tracks"][ti]:
+            # A deliberately authored neutral stereo position is distinct
+            # from an absent control: keep it losslessly editable.
             filt=ET.SubElement(tractor,"filter",{"in":"0",
                  "out":str(checked["frames"]-1)})
             _prop(filt,"track",len(checked["tracks"])+ti)
@@ -785,7 +787,7 @@ def _verify_exact_mlt_xml_tree(root):
                                    "channel","gang","start","split"})
             if (props["channel"]!="-1" or props["gang"]!="0" or
                     props["start"]!="0.5" or
-                    _verify_native_pan(props["split"],frames)=="0.5"):
+                    not _verify_native_pan(props["split"],frames)):
                 raise ValueError("Native stereo balance contains unsafe channel policy")
             service_order=1
         try:
