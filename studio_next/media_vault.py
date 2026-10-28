@@ -84,23 +84,24 @@ def verify_media_container(path,mime):
             except (OSError,ValueError,SyntaxError) as exc:
                 raise MediaCustodyError("Claimed original PNG is not pixel-decodable") from exc
     elif mime=="audio/wav":
-        import wave
+        from .pcm_wave import inspect_pcm_wav
+        import subprocess
         try:
-            with wave.open(str(path),"rb") as audio:
-                if audio.getnframes()<1 or audio.getframerate()<1:
-                    raise MediaCustodyError("Decoded sound file has no actual samples")
-                expected=(audio.getnframes()*audio.getnchannels()*
-                          audio.getsampwidth())
-                counted=0
-                while True:
-                    block=audio.readframes(65536)
-                    if not block:break
-                    counted+=len(block)
-                if counted!=expected:
-                    raise MediaCustodyError(
-                        "Original WAV claimed more PCM samples than physically recorded")
-        except wave.Error as exc:
-            raise MediaCustodyError("WAV identity is not backed by actual PCM") from exc
+            # Python 3.11 does not recognize WAVE_FORMAT_EXTENSIBLE PCM.
+            # Inspect original RIFF counts exactly before any rights admission.
+            inspect_pcm_wav(path)
+            decoded=subprocess.run([
+                "ffmpeg","-hide_banner","-loglevel","error","-nostdin",
+                "-xerror","-i",str(path),"-map","0:a","-f","null","-"],
+                capture_output=True,timeout=3600,check=False)
+            if decoded.returncode:
+                raise MediaCustodyError("Original PCM WAV failed full audio decode")
+        except MediaCustodyError:
+            raise
+        except ValueError as exc:
+            raise MediaCustodyError(str(exc)) from exc
+        except (OSError,subprocess.SubprocessError) as exc:
+            raise MediaCustodyError("Original PCM WAV cannot be fully decoded") from exc
     elif mime=="image/svg+xml":
         from .creative_asset_ops import validate_original_svg_art
         validate_original_svg_art(path)
