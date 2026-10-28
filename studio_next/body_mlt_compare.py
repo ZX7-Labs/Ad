@@ -161,6 +161,10 @@ def compare_owned_mlt_projects(before_edit,after_edit,workspace,vault_root):
     changed=bool(canvas_changed or original["frames"]!=revised["frames"] or
                  picture or sound)
     return {
+        "workspace_root":str(root),
+        "media_vault_root":str(Path(vault_root).resolve()),
+        "before_edit_path":str(prior),
+        "after_edit_path":str(later),
         "before_mlt_sha256":sha_before,
         "after_mlt_sha256":sha_after,
         "frame_rate":copy.deepcopy(first["frame_rate"]),
