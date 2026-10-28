@@ -85,6 +85,12 @@ class NativeRGBGradeContracts(unittest.TestCase):
         rng=random.Random(734521)
         for case in range(100):
             original=original_project()
+            # The original fixture also contains Cairo opacity automation,
+            # whose known 12-significant-digit renderer quantization belongs
+            # to an independent effect, not to these nine RGB channels.
+            # Isolate the requested source-grade precision claim; all active
+            # grade fields must remain binary64 exact on surviving frames.
+            original["tracks"][1].pop("opacity_keyframes",None)
             original["tracks"][1]["clips"][0].update(
                 first_frame=0,end_frame=12,position_frame=0)
             positions=[0]+sorted(rng.sample(range(1,12),4))
