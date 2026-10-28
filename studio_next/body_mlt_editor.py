@@ -544,7 +544,9 @@ def build_mlt_xml(plan,checked):
     # audio track BEFORE the tractor mix, retaining separate artist buses.
     # Track is a verified internal index, never native input from a model.
     for ti,level in enumerate(checked["sound_gains"]):
-        if level!="0":
+        if level!="0" or "gain_db" in plan["audio_tracks"][ti]:
+            # An explicit unity-level decision is part of the editable
+            # original project, even when physically neutral.
             filt=ET.SubElement(tractor,"filter",{"in":"0",
                  "out":str(checked["frames"]-1)})
             _prop(filt,"track",len(checked["tracks"])+ti)
@@ -779,8 +781,7 @@ def _verify_exact_mlt_xml_tree(root):
             raise ValueError("No arbitrary native audio filter may execute")
         if service=="volume":
             props=properties(filt,{"track","mlt_service","level"})
-            if _verify_native_gain(props["level"],frames)=="0":
-                raise ValueError("Native unity gain filter is not canonical")
+            _verify_native_gain(props["level"],frames)
             service_order=0
         else:
             props=properties(filt,{"track","mlt_service",
