@@ -257,6 +257,10 @@ def apply_linked_editor_actions(plan,decision):
                     raise ValueError("Native clip budget exceeded by exact linked edit")
                 track["clips"]=clips
                 if kind!="blade":
+                    if key=="tracks" and "grade" in track:
+                        from .body_mlt_grade import rekey_grade
+                        track["grade"]=rekey_grade(track["grade"],
+                            kind,at,amount,retains_after,operation_errors)
                     if key=="tracks" and "transform" in track:
                         from .body_mlt_transform import rekey_transform
                         track["transform"]=rekey_transform(track["transform"],
