@@ -16,7 +16,7 @@ import xml.etree.ElementTree as ET
 
 from .body_document_schemas import validate_document
 from .body_mlt_editor import (
-    _verify_native_opacity, build_mlt_xml, validate_mlt_edit,
+    _verify_native_opacity, _verify_native_gain, build_mlt_xml, validate_mlt_edit,
     verify_owned_mlt_project,
 )
 from .media_vault import sha256_file
@@ -120,6 +120,19 @@ def recover_original_mlt_plan(edit, workspace, vault_root):
         "tracks": tracks,
     }
     if sounds:
+        for filt in tractor.findall("filter"):
+            properties={p.get("name"):p.text for p in filt.findall("property")}
+            ti=int(properties["track"])-count
+            if not 0<=ti<len(sounds):
+                raise ValueError("Native audio filter lost its original source identity")
+            encoded=_verify_native_gain(properties["level"],frames)
+            if "=" in encoded:
+                sounds[ti]["gain_keyframes"]=[
+                    {"frame":int(key.split("=")[0]),
+                     "gain_db":float(key.split("=")[1])}
+                    for key in encoded.split(";")]
+            elif encoded!="0":
+                sounds[ti]["gain_db"]=float(encoded)
         plan["audio_tracks"] = sounds
     validate_document("body.mlt_owned_export", plan)
     checked = validate_mlt_edit(plan, root, vault_root)
