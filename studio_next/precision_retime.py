@@ -312,7 +312,24 @@ def render_retime(plan_path,workspace,vault_root,output,*,runner=None,probe=None
         if not actual["audio_stream_present"]:
             raise RuntimeError("Time-remapped production dropped its explicit soundtrack")
         verified=runner is None and probe is None
+        decoded_frame_count=None
         if verified:
+            # Physical delivery has its OWN frame clock. A correct original
+            # source fps and a successful encode do not establish that the
+            # renderer retained a constant, monotone output frame timeline.
+            decoded_rate,decoded_frame_count=_source_timebase(encoded)
+            if decoded_rate!=checked["fps"]:
+                raise RuntimeError("Retimed picture lost its exact authored output frame rate")
+            exact_expected_frames=sum(
+                (Fraction(part["end"]-part["first"],1)/part["speed"]
+                 for part in checked["parts"]),Fraction())
+            # Each separately retimed segment incurs at most half a decoded
+            # frame of quantization, with one final encoder boundary allowance.
+            # This is not an excuse for missing/duplicated PTS: _source_timebase
+            # verifies all physical frame presentation gaps independently.
+            quantization_budget=Fraction(len(checked["parts"])+2,2)
+            if abs(Fraction(decoded_frame_count,1)-exact_expected_frames)>quantization_budget:
+                raise RuntimeError("Retimed film frame count exceeds exact segment quantization budget")
             qa=full_decode_inspection(encoded,expected={
                 "width":checked["width"],"height":checked["height"],
                 "require_audio":True})
@@ -342,5 +359,9 @@ def render_retime(plan_path,workspace,vault_root,output,*,runner=None,probe=None
             "no_creative_defaults":True,
             "sealed_original_cas_during_decode":True,
             "full_picture_and_sound_decoder_completed":verified,
+            "physically_decoded_output_frame_count":decoded_frame_count,
+            "physically_verified_rational_output_clock":(
+                {"numerator":checked["fps"].numerator,
+                 "denominator":checked["fps"].denominator} if verified else None),
             "verified_physically":verified,
             "fake_runner_or_probe_injected":not verified}
