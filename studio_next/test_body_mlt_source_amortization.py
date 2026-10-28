@@ -110,10 +110,20 @@ class RepeatedNativeSourceCustodyTests(unittest.TestCase):
                 counts[(digest,attestation_id)]=counts.get((digest,attestation_id),0)+1
                 return actual(vault,digest,attestation_id=attestation_id)
             with patch.object(MediaVault,"inspect",count):
-                validate_mlt_edit(amended,root,root/"vault")
+                with self.assertRaisesRegex(ValueError,"conflicting exact rights"):
+                    validate_mlt_edit(amended,root,root/"vault")
             self.assertEqual(counts[(first["asset_id"],first["attestation_id"])],1)
             self.assertEqual(counts[(first["asset_id"],second["attestation_id"])],1)
-            self.assertEqual(len(counts),3)
+            # The producer binds one exact attestation to the original source;
+            # a genuine different grant is valid ONLY when explicitly chosen
+            # consistently across all uses of that native producer.
+            for clip in amended["tracks"][0]["clips"]:
+                clip["attestation_id"]=second["attestation_id"]
+            counts.clear()
+            with patch.object(MediaVault,"inspect",count):
+                self.assertEqual(validate_mlt_edit(amended,root,root/"vault")["frames"],96)
+            self.assertEqual(len(counts),2)
+            self.assertEqual(counts[(first["asset_id"],second["attestation_id"])],1)
             amended["tracks"][0]["clips"][2]["attestation_id"]="0"*64
             with self.assertRaises(ValueError):
                 validate_mlt_edit(amended,root,root/"vault")
