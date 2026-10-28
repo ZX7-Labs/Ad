@@ -29,6 +29,7 @@ from .body_mlt_editor import export_owned_mlt,verify_owned_mlt_project
 from .body_mlt_render import render_owned_mlt
 from .body_mlt_roundtrip import import_owned_mlt_project
 from .body_mlt_revision import revise_owned_mlt_project
+from .body_mlt_compare import compare_owned_mlt_projects
 from .creative_asset_ops import rasterize_original_svg,extract_director_selected_frame
 from .native_body_engines import render_original_blender,render_original_motion
 from .body_cgi import render_cgi_plan
@@ -178,6 +179,7 @@ def _trusted_body_revision(tool_id):
         "body.mlt_owned_export":["body_mlt_editor.py","pcm_wave.py","media_vault.py","precision_retime.py","body_color_pipeline.py","delivery_audit.py","composite_mix.py"],
         "body.mlt_owned_render":["body_mlt_render.py","body_mlt_editor.py","pcm_wave.py","media_vault.py","precision_retime.py","production_qc.py","composite_mix.py"],
         "body.mlt_owned_import":["body_mlt_roundtrip.py","body_mlt_editor.py","body_materials.py","pcm_wave.py","media_vault.py","precision_retime.py","body_color_pipeline.py"],
+        "body.mlt_owned_compare":["body_mlt_compare.py","body_mlt_roundtrip.py","body_mlt_editor.py","body_materials.py","pcm_wave.py","media_vault.py","precision_retime.py","body_color_pipeline.py"],
         "body.mlt_owned_revision":["body_mlt_revision.py","body_mlt_linked_actions.py","body_mlt_local_edits.py","body_project_revision.py","body_mlt_roundtrip.py","body_mlt_editor.py","body_materials.py","pcm_wave.py","media_vault.py","precision_retime.py","body_color_pipeline.py"],
         "body.otio_owned_import":["body_sequence_otio.py","body_sequence_cuts.py","media_vault.py","precision_retime.py","body_color_pipeline.py","composite_mix.py"],
         "body.vector_png":["creative_asset_ops.py"],
@@ -222,6 +224,7 @@ def _trusted_body_revision(tool_id):
         "body.mlt_owned_export":["melt","ffmpeg","ffprobe"],
         "body.mlt_owned_render":["melt","ffmpeg","ffprobe"],
         "body.mlt_owned_import":["ffmpeg","ffprobe"],
+        "body.mlt_owned_compare":["ffmpeg","ffprobe"],
         "body.mlt_owned_revision":["melt","ffmpeg","ffprobe"],
         "body.otio_owned_import":["ffmpeg","ffprobe"],
         "body.vector_png":["inkscape"],
@@ -661,6 +664,11 @@ def body_catalog(workspace,*,vault_root=None):
         dest=_body_output(root,inputs["out"],allowed=(".json",))
         return import_owned_mlt_project(source,root,vault.root,dest)
 
+    def compare_native_owned_mlt(inputs):
+        old=_path_within(root,inputs["before_edit"],exists=True)
+        new=_path_within(root,inputs["after_edit"],exists=True)
+        return compare_owned_mlt_projects(old,new,root,vault.root)
+
     def revise_native_owned_mlt(inputs):
         prior=_path_within(root,inputs["edit"],exists=True)
         ops=_path_within(root,inputs["operation"],exists=True)
@@ -903,6 +911,9 @@ def body_catalog(workspace,*,vault_root=None):
     add("body.mlt_owned_import","reversible rights-attested native MLT timeline to typed edit plan",
         "Reinspect physical source rights, original picture and sound, rational frame clock, upper-layer blend and native opacity; exact lossless XML rebuild required. Publishes immutable CAS-addressed JSON; rejects unsupported MLT effects instead of silently discarding them.",
         "write",video_io,["edit","out"],import_native_owned_mlt)
+    add("body.mlt_owned_compare","source-exact visual and soundtrack timeline revision evidence",
+        "Read both actual immutable native MLT projects, revalidate each original media right, fully reconstruct both typed graphs without loss and report exactly moved, inserted, replaced or preserved source-frame spans and authored effect/clip partition changes. Never claim pixel equivalence or artistic quality from timeline structure.",
+        "read",video_io,["before_edit","after_edit"],compare_native_owned_mlt)
     add("body.mlt_owned_revision","non-destructive native MLT multitrack visual and sound revision",
         "Apply original source-attested JSON patches, linked razor/ripple, or signed-frame roll/slip/slide across director-selected native picture/audio clips. Preserve exact source identities; explicitly choose timeline-locked audio/opacity keyframes for local source-window edits, then prove native XML roundtrip, rights, physical clocks and atomic new-project publication. No complete NLE claim.",
         "write",bool(shutil.which("melt") and video_io),["edit","operation","out"],revise_native_owned_mlt)
