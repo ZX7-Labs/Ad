@@ -228,7 +228,10 @@ def render_owned_mlt(edit,workspace,output,*,gap_color=None):
             # MLT defines all-blank frames as WHITE test cards by default.
             # Override only with a physically verified director-selected
             # 24-bit color, not an aesthetic color chosen by BODY code.
-            card="color:"+gap_color.lower()
+            # MLT documented colour producer accepts 0xRRGGBBAA. Its
+            # consumer test_card is a producer *resource*, not an FFmpeg
+            # color expression or arbitrary plugin name.
+            card="colour:0x"+gap_color[1:].lower()+"ff"
             cmd+=["test_card="+card]
             run_env={**os.environ,"MLT_TEST_CARD":card}
         run=subprocess.run(cmd,capture_output=True,text=True,
