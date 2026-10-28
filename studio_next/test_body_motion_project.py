@@ -194,11 +194,16 @@ class NativeMotionProjectTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp);bundle,source_sha,frame=self._export_fixture(root)
             target=root/"original.png"
+            from studio_next.body_publication import sync_published_file
             with patch("studio_next.body_publication.require_published_source",return_value=source_sha):
-                export_motion_media(bundle,target,fps=24)
-                self.assertEqual(target.read_bytes(),frame)
-                with self.assertRaises(FileExistsError):
+                with patch("studio_next.body_publication.sync_published_file",
+                           wraps=sync_published_file) as synced:
                     export_motion_media(bundle,target,fps=24)
+                    self.assertEqual(target.read_bytes(),frame)
+                    with self.assertRaises(FileExistsError):
+                        export_motion_media(bundle,target,fps=24)
+                self.assertEqual(synced.call_count,1)
+                self.assertEqual(synced.call_args.args[0],target)
             self.assertEqual(target.read_bytes(),frame)
             self.assertEqual(list(root.glob(".zx7-motion-export-*")),[])
 
