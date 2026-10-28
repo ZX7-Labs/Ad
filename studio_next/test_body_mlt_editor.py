@@ -83,6 +83,103 @@ class VerifiedMLTEditorialTests(unittest.TestCase):
                 with self.subTest(field=field),self.assertRaises(ValueError):
                     validate_mlt_edit(changed,root,root/"vault")
 
+    def test_only_typed_native_blend_modes_can_change_owned_video_layers(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);plan,plan_file=self._case(root)
+            plan["tracks"][1]["blend_mode"]="multiply"
+            self.assertTrue(validate_document("body.mlt_owned_export",plan))
+            checked=validate_mlt_edit(plan,root,root/"vault")
+            self.assertEqual(checked["blend_modes"],["normal","multiply"])
+            plan_file.write_text(json.dumps(plan))
+            exported=root/"multiplied.mlt"
+            export_owned_mlt(plan_file,root,root/"vault",exported)
+            self.assertEqual(verify_owned_mlt_project(exported)["verified_mlt_tracks"],2)
+            doc=exported.read_text()
+            if shutil.which("melt"):
+                from unittest.mock import patch
+                from studio_next.body_mlt_render import render_owned_mlt
+                with patch(
+                    "studio_next.body_mlt_render._require_native_frei0r_compositing",
+                    side_effect=RuntimeError("native Cairo compositor unavailable")):
+                    with self.assertRaisesRegex(RuntimeError,"compositor unavailable"):
+                        render_owned_mlt(exported,root,root/"untrusted-effects.mp4")
+                self.assertFalse((root/"untrusted-effects.mp4").exists())
+            self.assertIn('<property name="mlt_service">frei0r.cairoblend</property>',doc)
+            self.assertIn('<property name="1">multiply</property>',doc)
+            rejected=doc.replace(
+                '<property name="1">multiply</property>',
+                '<property name="1">arbitrary_plugin</property>')
+            self.assertNotEqual(doc,rejected)
+            exported.write_text(rejected)
+            with self.assertRaisesRegex(ValueError,"allowlisted"):
+                verify_owned_mlt_project(exported)
+            for invalid in ("arbitrary_plugin","multiply;rm -rf /",3,None):
+                modified=json.loads(json.dumps(plan))
+                modified["tracks"][1]["blend_mode"]=invalid
+                with self.subTest(blend=invalid),self.assertRaises(ValueError):
+                    validate_mlt_edit(modified,root,root/"vault")
+            modified=json.loads(json.dumps(plan))
+            modified["tracks"][0]["blend_mode"]="screen"
+            with self.assertRaisesRegex(ValueError,"bottom"):
+                validate_mlt_edit(modified,root,root/"vault")
+
+    @unittest.skipUnless(shutil.which("melt"),"Real MLT QtBlend runtime required")
+    def test_original_native_multiply_screen_and_overlay_have_measured_pixel_effects(self):
+        from studio_next.body_integration import body_catalog
+        installed=subprocess.run(["melt","-query","transitions"],
+            capture_output=True,text=True,timeout=25,check=True)
+        self.assertIn("qtblend",installed.stdout,
+            "The installed native MLT editor does not advertise the qtblend service")
+        self.assertIn("frei0r.cairoblend",installed.stdout,
+            "The independent Cairo native blending plugin is unavailable; "
+            "the editor must never claim imaginary multiply/screen/overlay")
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);plan,source=self._case(root)
+            body=body_catalog(root)
+            samples={}
+            for mode in ("normal","multiply","screen","overlay"):
+                plan["tracks"][1]["blend_mode"]=mode
+                source.write_text(json.dumps(plan))
+                edit=f"edit-{mode}.mlt";movie=f"composed-{mode}.mp4"
+                body.invoke("body.mlt_owned_export",{
+                    "plan":"original.json","out":edit},allowed_access={"write"})
+                output=body.invoke("body.mlt_owned_render",{
+                    "edit":edit,"out":movie},allowed_access={"write"})
+                self.assertEqual(Path(output["path"]).resolve(),(root/movie).resolve())
+                decoded=json.loads(subprocess.check_output([
+                    "ffprobe","-v","error","-count_frames",
+                    "-select_streams","v:0",
+                    "-show_entries","stream=nb_read_frames,width,height",
+                    "-of","json",str(root/movie)],timeout=40))["streams"][0]
+                self.assertEqual(int(decoded["nb_read_frames"]),12)
+                self.assertEqual((decoded["width"],decoded["height"]),(64,48))
+                rgb=subprocess.check_output(["ffmpeg","-v","error","-xerror",
+                    "-i",str(root/movie),"-map","0:v:0",
+                    "-pix_fmt","rgb24","-f","rawvideo","-"],timeout=40)
+                pitch=64*48*3
+                self.assertEqual(len(rgb),12*pitch)
+                def center(frame):
+                    offset=frame*pitch+(24*64+32)*3
+                    return tuple(rgb[offset:offset+3])
+                samples[mode]=center(5)
+                # Blending applies only while the second authored track exists.
+                # Every mode must restore the exact owned picture after it.
+                background=center(0)
+                after_overlay=center(11)
+                self.assertGreater(background[0],background[2]+70)
+                self.assertGreater(after_overlay[0],after_overlay[2]+70)
+                self.assertLess(max(abs(a-b) for a,b in zip(
+                    background,after_overlay)),35,
+                    (mode,"unintended full-timeline color transformation"))
+            self.assertGreater(samples["normal"][2],samples["normal"][0]+70)
+            self.assertLess(sum(samples["multiply"]),120,
+                ("native multiply must physically darken red × blue",samples))
+            self.assertGreater(samples["screen"][0],150,samples)
+            self.assertGreater(samples["screen"][2],150,samples)
+            self.assertLess(samples["screen"][1],110,samples)
+            self.assertGreater(samples["overlay"][0],samples["overlay"][2]+70,
+                ("native overlay should preserve dominant red destination",samples))
+
     def test_same_layer_overlap_and_unmeasured_source_range_fail_closed(self):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp);plan,_=self._case(root)
