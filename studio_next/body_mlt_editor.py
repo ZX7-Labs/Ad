@@ -547,6 +547,11 @@ def build_mlt_xml(plan,checked):
         _prop(transition,"mlt_service","mix")
         _prop(transition,"start",1)
         _prop(transition,"sum",1)
+        # Kdenlive and MLT transition_get_frame use accepts_blanks=1 for
+        # proper chained two-or-more sound bus mixdown when picture track 0
+        # is intentionally audio-hidden. Without it, an overlapping later
+        # original sound bus may disappear from the physical master.
+        _prop(transition,"accepts_blanks",1)
         _prop(transition,"always_active",1)
     # The installed native MLT filter applies the gain to the selected
     # audio track BEFORE the tractor mix, retaining separate artist buses.
@@ -748,10 +753,11 @@ def _verify_exact_mlt_xml_tree(root):
         is_sound=i>=picture_tracks-1
         if is_sound:
             props=properties(transition,{"a_track","b_track",
-                "mlt_service","always_active","start","sum"})
+                "mlt_service","always_active","start","sum","accepts_blanks"})
             expected={"a_track":"0",
                 "b_track":str(picture_tracks+i-(picture_tracks-1)),
-                "mlt_service":"mix","start":"1","sum":"1","always_active":"1"}
+                "mlt_service":"mix","start":"1","sum":"1",
+                "accepts_blanks":"1","always_active":"1"}
         else:
             # Strictly distinguish the Qt source-over operation and approved
             # Cairo native blend. Arbitrary Frei0r plugin names and parameters
