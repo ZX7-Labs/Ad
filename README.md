@@ -37,6 +37,7 @@ dependencies are available through `.[vfx_exr,vfx_tracking]`.
 ## Project and checks
 
 - [AGENTS.md](AGENTS.md): product intent and development direction.
+- [CAPABILITIES.md](CAPABILITIES.md): full original A–L capability scope, engineering invariants and release gates.
 - `studio_next/`: execution, project controls, service, clients and tests.
 - `motion_studio/`: existing 2D compositor and sample projects.
 - `creative_director/`, `director_research/`, `voice_lab/`: optional research tools.
