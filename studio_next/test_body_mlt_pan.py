@@ -261,5 +261,83 @@ class NativeStereoPanTests(unittest.TestCase):
             self.assertEqual((root/"left-native.mlt").read_text(),forged)
 
 
+    @unittest.skipUnless(shutil.which("melt"),
+                         "Genuine two-original-audio-bus MLT stereo evidence required")
+    def test_two_original_sound_buses_keep_distinct_panned_tones_with_native_gain(self):
+        """Real frequencies prove one bus was not silently routed to the other."""
+        from math import cos,sin,pi,sqrt
+        from studio_next.body_integration import body_catalog
+        from studio_next.test_body_mlt_editor import VerifiedMLTEditorialTests
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary)
+            base,source_plan=VerifiedMLTEditorialTests()._case(root)
+            sources=[]
+            raw_bytes={}
+            for frequency in (440,880):
+                original=root/f"recorded-{frequency}.wav"
+                subprocess.run(["ffmpeg","-hide_banner","-loglevel","error",
+                    "-nostdin","-f","lavfi","-i",
+                    f"sine=frequency={frequency}:sample_rate=48000:duration=1",
+                    "-ac","2","-c:a","pcm_s16le","-y",str(original)],
+                    check=True,timeout=35)
+                raw_bytes[str(original)]=original.read_bytes()
+                sources.append(MediaVault(root/"vault").ingest(original,
+                    mime="audio/wav",rights="owner_supplied",
+                    source_type="owner_upload",
+                    source_id=f"self-created-independent-{frequency}-tone",
+                    evidence="Physical original stereo sound source",
+                    owner_or_generator="fixture-creator"))
+            base["audio_tracks"]=[]
+            for record,position in zip(sources,(0,1)):
+                base["audio_tracks"].append({
+                    "clips":[{
+                        "source":"zx7:sha256:"+record["asset_id"],
+                        "asset_id":record["asset_id"],
+                        "attestation_id":record["attestation_id"],
+                        "first_frame":0,"end_frame":12,"position_frame":0}],
+                    "gain_db":-6,"pan":position})
+            source_plan.write_text(json.dumps(base))
+            catalog=body_catalog(root)
+            catalog.invoke("body.mlt_owned_export",{
+                "plan":source_plan.name,"out":"separate-native-stereo-buses.mlt"},
+                allowed_access={"write"})
+            native=root/"separate-native-stereo-buses.mlt"
+            preserved=native.read_bytes()
+            edited=recover_original_mlt_plan(native,root,root/"vault")["plan"]
+            self.assertEqual(edited["audio_tracks"],base["audio_tracks"])
+            catalog.invoke("body.mlt_owned_render",{
+                "edit":native.name,"out":"separate-native-stereo-buses.mp4"},
+                allowed_access={"write"})
+            raw=subprocess.check_output(["ffmpeg","-hide_banner",
+                "-loglevel","error","-nostdin","-xerror",
+                "-i",str(root/"separate-native-stereo-buses.mp4"),
+                "-map","0:a:0","-ar","48000","-ac","2",
+                "-f","s16le","-"],timeout=60)
+            pcm=array("h");pcm.frombytes(raw)
+            self.assertGreaterEqual(len(pcm),92000)
+            def energy(channel,freq):
+                start=12000
+                count=12000
+                phase=2*pi*freq/48000
+                real=sum(pcm[2*i+channel]*cos(phase*i)
+                         for i in range(start,start+count))
+                imag=sum(pcm[2*i+channel]*sin(phase*i)
+                         for i in range(start,start+count))
+                return sqrt(real*real+imag*imag)/count
+            left440=energy(0,440)
+            right440=energy(1,440)
+            left880=energy(0,880)
+            right880=energy(1,880)
+            self.assertGreater(left440,70)
+            self.assertGreater(right880,70)
+            self.assertGreater(left440,right440*5)
+            self.assertGreater(right880,left880*5)
+            self.assertGreater(left440,left880*4)
+            self.assertGreater(right880,right440*4)
+            self.assertEqual(native.read_bytes(),preserved)
+            for filename,old in raw_bytes.items():
+                self.assertEqual(Path(filename).read_bytes(),old)
+
+
 if __name__=="__main__":
     unittest.main()
