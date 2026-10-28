@@ -489,6 +489,28 @@ class NativeStereoPanTests(unittest.TestCase):
                 allowed_access={"write"})
             native=root/"separate-native-stereo-buses.mlt"
             preserved=native.read_bytes()
+            from xml.etree import ElementTree as ET
+            xml=ET.fromstring(preserved)
+            mixers=[t for t in xml.findall("./tractor/transition")
+                    if any(c.get("name")=="mlt_service" and c.text=="mix"
+                           for c in t.findall("property"))]
+            self.assertEqual(len(mixers),2)
+            for transition in mixers:
+                controls={c.get("name"):c.text
+                          for c in transition.findall("property")}
+                self.assertEqual(controls["accepts_blanks"],"1")
+                self.assertEqual(controls["sum"],"1")
+                self.assertEqual(controls["a_track"],"0")
+            # Removing the native media-blanks policy must never pass
+            # as a verified copy of the source-authentic stereo project.
+            forged=preserved.replace(
+                b'<property name="accepts_blanks">1</property>',b"",1)
+            self.assertNotEqual(forged,preserved)
+            candidate=root/"untrusted-silent-second-bus.mlt"
+            candidate.write_bytes(forged)
+            with self.assertRaises(ValueError):
+                verify_owned_mlt_project(candidate)
+            self.assertEqual(native.read_bytes(),preserved)
             edited=recover_original_mlt_plan(native,root,root/"vault")["plan"]
             self.assertEqual(edited["audio_tracks"],base["audio_tracks"])
             catalog.invoke("body.mlt_owned_render",{
