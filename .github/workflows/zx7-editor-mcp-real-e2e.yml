@@ -56,6 +56,12 @@ jobs:
             --source "$GITHUB_WORKSPACE/third_party/velorn" \
             --xvfb-binary /usr/bin/Xvfb \
             --display 127.0.0.1:95
+      - name: Diagnose isolated native editor startup without hiding failures
+        if: failure()
+        run: |
+          find /tmp -maxdepth 6 -type f -name launcher.log \
+            -path '/tmp/zx7-editor-mcp-*/state/session-*/launcher.log' \
+            -print -exec tail -n 120 {} \\;
       - name: Recheck pinned native source remains unchanged
         if: always()
         run: |
