@@ -164,10 +164,16 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
             SimpleNamespace(type="text", text="Missing native asset")])
         model = ScriptedModel([
             decision("invoke", tool="get_timeline", inputs={}),
-            decision("finish", summary="Stopped after a real native error")])
-        result = await NativeCreativeControl(session, model).run("Test error")
-        self.assertEqual([ev["kind"] for ev in result["events"]][-2:],
-                         ["native_tool_reported_error", "model_finished"])
+            decision("invoke", tool="update_text_clip", inputs={"clipId": "must-not-write"})])
+        with tempfile.TemporaryDirectory() as root:
+            receipt = Path(root) / "model-failure.jsonl"
+            result = await NativeCreativeControl(session, model, receipt_path=receipt).run("Test error")
+            self.assertEqual(result["status"], "native_error_requires_state_reconciliation")
+            self.assertEqual(result["events"][-1]["kind"], "native_tool_reported_error")
+            self.assertTrue(result["events"][-1]["must_reconcile_native_state"])
+            self.assertEqual(len(session.calls), 1)
+            self.assertNotIn("Missing native asset", receipt.read_text())
+            self.assertIn("error_sha256", receipt.read_text())
         self.assertFalse(result["native_editing_capability_complete"])
 
     async def test_audio_content_not_silently_translated_to_language_or_approved(self):
