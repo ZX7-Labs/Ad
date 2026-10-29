@@ -50,6 +50,15 @@ jobs:
           npm ci --no-audit --no-fund
           npm run build
           test -s dist/index.html
+      - name: Enable Chromium's intended SUID sandbox rather than disabling it
+        working-directory: third_party/velorn
+        run: |
+          helper="$PWD/node_modules/electron/dist/chrome-sandbox"
+          test -f "$helper"
+          sudo chown root:root "$helper"
+          sudo chmod 4755 "$helper"
+          test "$(stat -c '%u:%a' "$helper")" = "0:4755"
+          echo "ELECTRON SANDBOX: ROOT-OWNED 4755 HELPER VERIFIED (no --no-sandbox)"
       - name: Run original SDK client through owned native Electron app and whole A/V export
         run: |
           python -u engines/velorn/mcp-e2e.py \
@@ -59,9 +68,12 @@ jobs:
       - name: Diagnose isolated native editor startup without hiding failures
         if: failure()
         run: |
-          find /tmp -maxdepth 6 -type f -name launcher.log \
-            -path '/tmp/zx7-editor-mcp-*/state/session-*/launcher.log' \
-            -print -exec tail -n 120 {} +
+          for log in /tmp/zx7-editor-mcp-*/state/session-*/launcher.log; do
+            if test -f "$log"; then
+              echo "NATIVE EDITOR DIAGNOSTICS: $log"
+              tail -n 120 "$log"
+            fi
+          done
       - name: Recheck pinned native source remains unchanged
         if: always()
         run: |
