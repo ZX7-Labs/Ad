@@ -46,6 +46,9 @@ jobs:
       - name: Verify existing strict native OTIO behavior with actual library
         run: |
           python -m unittest studio_next.test_body_sequence_otio -v
+      - name: Exercise existing composition and automation regression suites
+        run: |
+          python -m unittest studio_next.test_composite_mix studio_next.test_body_audio_automation -v
       - name: Preserve diagnostic measurements even if a later experiment fails
         if: always()
         uses: actions/upload-artifact@v4
