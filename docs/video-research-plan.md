@@ -20,9 +20,11 @@ and [CAPABILITIES.md](../CAPABILITIES.md).
 
 ## Global constraints
 
-* Research, comparisons, architecture, acceptance strategy and implementation
-  planning precede further product coding. Experiments must remain identifiable
-  as research and must not silently alter registered runtime behavior.
+* Uncertain engine selections and major redesigns require research, comparative
+  evidence, architecture and acceptance planning. The owner now authorizes
+  implementation of reproduced, bounded defects with isolation and physical
+  verification. Research experiments remain explicitly separate from runtime
+  behavior; an experiment's success is not production acceptance.
 * Preserve originals, rights, native editable state, existing tests and history.
 * No public owner assets, generated showcase films, credentials or model weights
   in source control. Synthetic test fixtures may be generated on demand.
