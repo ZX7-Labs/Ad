@@ -180,9 +180,10 @@ def create_editor_server(client, *, allowed_access=frozenset({"read"}),
                             abandon_on_cancel=False)
                 total_bytes = 0
                 for (png, receipt), at in zip(observations, times):
+                    if not isinstance(png, bytes) or not isinstance(receipt, dict):
+                        raise ValueError("Invalid independent decoder observation")
                     total_bytes += len(png)
-                    if (not isinstance(png, bytes) or
-                            not isinstance(receipt, dict) or
+                    if (
                             receipt.get("export_sha256") != digest or
                             receipt.get("png_sha256") != hashlib.sha256(png).hexdigest() or
                             receipt.get("sampled_video_seconds_requested") != at or
