@@ -54,12 +54,13 @@ def verify_native_editor_export(path: str, *, policy: EditorPathPolicy,
         raise EditorAccessError("Native export path must be absolute")
     if not isinstance(policy, EditorPathPolicy):
         raise TypeError("A trusted editor host policy is required")
-    if not policy("inspect_export_file", {"path": path}, "read"):
-        raise EditorAccessError("Export observation is outside authorized native roots")
+    if not policy("inspect_export_file", {"path": path}, "read") or not Path(
+            path).resolve().is_relative_to(policy.outputs_root):
+        raise EditorAccessError("Export observation requires the host's dedicated output root")
     source = Path(path)
     if source.suffix.lower() not in VIDEO_EXTENSIONS:
         raise ValueError("Expected a supported native video export")
-    if not _no_path_symlinks(source, (policy.projects_root, policy.outputs_root)):
+    if not _no_path_symlinks(source, (policy.outputs_root,)):
         raise EditorAccessError("Export observation refuses symbolic-link indirection")
     before = _file_identity(source)
     report = inspector(source, expected=expected, max_seconds=max_seconds)
