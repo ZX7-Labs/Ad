@@ -11,6 +11,7 @@ brand/font presets, forced scene counts or genre-based edits.
 from __future__ import annotations
 
 import copy
+from fractions import Fraction
 import json
 import math
 import os
@@ -148,6 +149,36 @@ def _decoded_source_duration(path,kind):
     if not math.isfinite(duration) or duration<=0:
         raise ValueError("Original "+kind+" stream has no finite decodable duration")
     return duration
+
+def _audio_sample_index(seconds, rate):
+    """Half-even quantization of legacy decimal seconds to integer samples.
+
+    Float multiplication can nudge an exact half-sample to the wrong side
+    of its tie. The existing validated seconds input remains unchanged.
+    """
+    return round(Fraction(str(seconds)) * rate)
+
+
+def _decoded_audio_sample_rate(path):
+    """Read the first decoded audio stream's native sample clock.
+
+    Sample indices, not approximate float timestamps, determine physical
+    source trims. This lookup is performed only on rights-checked media.
+    """
+    try:
+        raw = subprocess.check_output(
+            ["ffprobe", "-v", "error", "-select_streams", "a:0",
+             "-show_entries", "stream=sample_rate", "-of", "json", str(path)],
+            timeout=45)
+        streams = json.loads(raw)["streams"]
+        rate = int(streams[0]["sample_rate"])
+    except (OSError, ValueError, TypeError, KeyError, IndexError,
+            subprocess.SubprocessError) as exc:
+        raise ValueError("Original audio sample rate cannot be established") from exc
+    if not 1 <= rate <= 768000:
+        raise ValueError("Original audio sample rate is outside supported bounds")
+    return rate
+
 
 def validate_composition(plan,workspace,vault):
     if not isinstance(plan,dict) or set(plan)!={"canvas","video_layers","audio_tracks"}:
@@ -322,6 +353,11 @@ def actual_composite_command(plan,workspace,vault,out):
     base="bg"
     args=["ffmpeg","-hide_banner","-loglevel","error","-nostdin","-y"]
     music=[]
+    source_audio_rates={}
+    bus_rate=48000
+    bus_end_samples=_audio_sample_index(secs,bus_rate)
+    if bus_end_samples<=0:
+        raise ValueError("Composition duration is shorter than one audio sample")
     native_input_index=0
     for index,row in enumerate(inputs):
         layer=row["layer"]
@@ -391,8 +427,19 @@ def actual_composite_command(plan,workspace,vault,out):
                 f"enable='between(t,{start},{start+duration})':format=auto[{output}]")
             base=output
         else:
-            lag=round(start*1000)
-            effects=(f"[{source_index}:a:0]atrim=start={source_in}:duration={duration},"
+            # Quantize once to each source's real sample clock and to the
+            # output bus clock. Millisecond delays silently shift audio.
+            if row["file"] not in source_audio_rates:
+                source_audio_rates[row["file"]]=_decoded_audio_sample_rate(row["file"])
+            source_rate=source_audio_rates[row["file"]]
+            source_first=_audio_sample_index(source_in,source_rate)
+            source_length=_audio_sample_index(duration,source_rate)
+            if source_length<=0:
+                raise ValueError("Audio trim is shorter than one source sample")
+            source_end=source_first+source_length
+            lag_samples=_audio_sample_index(start,bus_rate)
+            effects=(f"[{source_index}:a:0]atrim=start_sample={source_first}:"
+                f"end_sample={source_end},"
                 "asetpts=PTS-STARTPTS,aresample=48000,"
                 f"aformat=channel_layouts=stereo,volume={layer['gain_db']}dB")
             balance=float(layer.get("stereo_balance",0))
@@ -407,7 +454,8 @@ def actual_composite_command(plan,workspace,vault,out):
             envelope=_gain_automation_expression(layer)
             if envelope is not None:
                 effects+=","+envelope
-            effects+=f",adelay={lag}|{lag},apad,atrim=duration={secs}[audio{index}]"
+            effects+=(f",adelay={lag_samples}S:all=1,apad,"
+                      f"atrim=end_sample={bus_end_samples}[audio{index}]")
             filters.append(effects)
             music.append(f"[audio{index}]")
     if "color_semantics" in c:

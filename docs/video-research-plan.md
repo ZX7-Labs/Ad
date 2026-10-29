@@ -20,9 +20,11 @@ and [CAPABILITIES.md](../CAPABILITIES.md).
 
 ## Global constraints
 
-* Research, comparisons, architecture, acceptance strategy and implementation
-  planning precede further product coding. Experiments must remain identifiable
-  as research and must not silently alter registered runtime behavior.
+* Uncertain engine selections and major redesigns require research, comparative
+  evidence, architecture and acceptance planning. The owner now authorizes
+  implementation of reproduced, bounded defects with isolation and physical
+  verification. Research experiments remain explicitly separate from runtime
+  behavior; an experiment's success is not production acceptance.
 * Preserve originals, rights, native editable state, existing tests and history.
 * No public owner assets, generated showcase films, credentials or model weights
   in source control. Synthetic test fixtures may be generated on demand.
@@ -53,8 +55,9 @@ The architecture and initial source survey are written. A clean 108-case audio
 matrix, actual three-track MLT/FFmpeg revision comparison and eight real OTIO
 tests have run. Their [compact results](../research/foundation-evidence.json)
 are preserved with reproducible probes. The next tasks expand the native trial
-and resolve worker isolation/protocol constraints before product coding. Do not mark
-the entire research phase done while critical comparisons are unexecuted.
+and resolve worker isolation/protocol constraints while verified, isolated repairs
+proceed. Do not mark the entire research phase done while critical comparisons
+remain unexecuted.
 
 The owner explicitly asked for independent decisions and no repetitive approval
 questions. Continue within that authorization. A missing measurement is not
@@ -82,7 +85,15 @@ channel counts, subprocess status and explicit scope.
 Local first matrix: 108 cases, 16 matching, 56 decoded timing mismatches, 36
 BODY command rejections; largest observed decoded offset 24 samples at 48 kHz.
 Small float source trims were serialized as scientific notation rejected by
-FFmpeg's duration parser. This is baseline defect evidence, not a fixed runtime.
+FFmpeg's duration parser. This is baseline defect evidence at commit
+`dff5bd2b8dea2eab75d8bf02ee1f8d1a4807d63d`, not a claim that the
+old revision passed. The isolated repair in PR #52 now quantizes legacy
+source trims to the decoded source sample rate and places bus audio in 48 kHz
+samples. Physical CI at
+[run 40813825730](https://github.com/ZX7-Labs/Zx7-creative-studio-/actions/runs/40813825730)
+measured 108/108 matching cases, zero execution errors and zero observed sample
+offset on its tested PR revision. It is a bounded PCM precision result, not
+full audio or video field certification.
 The committed workflow repeats the probes on actual Ubuntu MLT/FFmpeg and
 uploads receipts. A green research workflow means measurement completed;
 inspect its conformance fields before making any product claim.

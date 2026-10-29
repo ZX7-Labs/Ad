@@ -153,11 +153,15 @@ already surpasses competitors, or that tradeoffs and future defects disappear.
 Earn conclusions through evidence; challenge your own assumptions, preserve
 what works, and invent only where an identifiable benefit justifies it.
 
-**Current instruction, superseding older engineering handoffs: finish the
-research, comparisons, architecture, design and implementation planning before
-starting further product coding.** The owner has explicitly authorized this
-documentation update and removal of clearly obsolete temporary documentation.
-That authorization is not a request to merge feature PRs or restart coding.
+**Current owner instruction (29 October 2026): full end-to-end engineering
+authority is delegated, including product coding and redesign when justified.**
+The earlier research-before-all-code stage no longer blocks a narrow,
+reproduced and testable repair. Major engine selection, architectural rewrites
+and destructive migration still require source inspection, comparative evidence,
+preservation and independent verification. The owner permits rebuilding if it
+actually improves the outcome; this is not a mandate to erase useful source,
+tests, editable projects or history. Continue without routine approval
+questions while respecting irreversible-operation, security and spending gates.
 
 ### 1. The actual product and its users
 

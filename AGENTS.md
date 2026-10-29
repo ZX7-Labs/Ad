@@ -27,12 +27,15 @@ exposing a small subset of it does not complete a creative field.
 
 # Development direction
 
-The owner's current instruction is research and design first: complete the
-full comparative investigation, architecture, acceptance strategy and
-implementation plan before further product coding. The detailed Astra mandate
-is in [CAPABILITIES.md](CAPABILITIES.md#astra-owners-complete-mandate-and-current-stage).
-The present documentation update is explicitly authorized. Older handoffs that
-say to resume feature coding or merge PRs do not override this stage.
+The owner's 29 October 2026 instruction delegates end-to-end architecture,
+engineering and implementation authority, including redesign when evidence
+justifies it. Do not interpret permission to rebuild as a reason to discard
+verified, useful code, native editable projects, originals or recovery history.
+Reproduce defects, use isolated changes and real tests; do not request repeated
+technical approvals for ordinary reversible work. Research remains mandatory
+before speculative backend selection, destructive migration or unsupported
+quality claims. The complete mandate remains in
+[CAPABILITIES.md](CAPABILITIES.md#astra-owners-complete-mandate-and-current-stage).
 
 Current engineering choices, source-backed comparisons and unchecked research
 gates are preserved in [docs/architecture.md](docs/architecture.md),
