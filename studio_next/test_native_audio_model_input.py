@@ -94,6 +94,10 @@ class ScriptedAudioModel:
     def __init__(self):self.decisions=0;self.audio_input=None
     def decide(self,context):
         self.decisions+=1
+        if self.decisions == 1:
+            return {"action":"invoke","arguments":{"tool":"zx7_verify_native_export",
+                           "inputs":{"path":"/host/verified.mp4"}},
+                    "reason":"test fixture must verify export first"}
         return {"action":"invoke","arguments":{"tool":"zx7_observe_verified_export_audio",
                        "inputs":{"path":"/host/verified.mp4","start_seconds":1,
                                  "duration_seconds":1}},"reason":"test fixture requests actual WAV"}
@@ -110,10 +114,18 @@ class Session:
         self.calls=0
     async def list_tools(self):
         return SimpleNamespace(tools=[SimpleNamespace(
+            name="zx7_verify_native_export",description="Independently verified export",
+            input_schema={"type":"object"}), SimpleNamespace(
             name="zx7_observe_verified_export_audio",description="Source-bound native audio",
             input_schema={"type":"object"})])
     async def call_tool(self,name,inputs):
         self.calls+=1
+        if name == "zx7_verify_native_export":
+            return SimpleNamespace(is_error=False, content=[SimpleNamespace(
+                type="text", text=json.dumps({
+                    "physical_export_verified": True,
+                    "native_export_sha256": "a"*64,
+                    "human_or_artistic_quality_approved": False}))])
         r=receipt(self.audio)
         if self.corrupt:r["wav_sha256"]="f"*64
         return SimpleNamespace(is_error=False,content=[
@@ -132,13 +144,15 @@ class ActualNativeAudioRoutingTests(unittest.IsolatedAsyncioTestCase):
             result=await NativeCreativeControl(session,model,receipt_path=p,max_turns=4).run(
                 "Review the scene's sound")
             self.assertEqual(result["status"],"model_finished_unverified")
-            self.assertEqual(session.calls,1)
+            self.assertEqual(session.calls,2)
             ctx,received=model.audio_input
             self.assertEqual(received,[("audio/wav",audio)])
             self.assertEqual(ctx["audio_evidence"]["wav_sha256"],hashlib.sha256(audio).hexdigest())
             serialized=p.read_text()
             self.assertNotIn(base64.b64encode(audio).decode()[:100],serialized)
             self.assertIn('"audio_sent_to_model_for_next_decision":true',serialized)
+            self.assertIn('"independently_verified_export_sha256":"'+("a"*64)+'"',serialized)
+            self.assertIn('"observed_export_sha256":"'+("a"*64)+'"',serialized)
             self.assertFalse(result["artistic_quality_independently_approved"])
 
     async def test_source_mismatch_rejected_before_model_listening(self):
