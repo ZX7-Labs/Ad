@@ -221,5 +221,64 @@
     "studio_next/body_mlt_editor.py": "08fc59698d6953a74c1d0acf9d850902c0f79ae3e0529b6a31102a7f7886fa2e",
     "studio_next/body_mlt_render.py": "8560e3a970fcfe25a2a80b7f04698e89542dd720e9579e8a104853fd443a3dea",
     "studio_next/body_mlt_revision.py": "70b58d63a509724a2072f0ea0ba6919fbb1fb7d24cde79e6593870e058c2796d"
+  },
+  "browser_motion": {
+    "source_commit": "ce59bb8f2c4e9e4fadb748c7f613cab1989bc097",
+    "workflow_run_id": 40812941034,
+    "workflow_url": "https://github.com/ZX7-Labs/Zx7-creative-studio-/actions/runs/40812941034",
+    "browser_job_id": 123247289463,
+    "browser_job_conclusion": "success",
+    "artifact_id": 12870952993,
+    "artifact_url": "https://github.com/ZX7-Labs/Zx7-creative-studio-/actions/runs/40812941034/artifacts/12870952993",
+    "artifact_zip_sha256": "e00e188aea946e996bb5904de4e371a3d824f20cbe1f1ec9335399a730e0871b",
+    "artifact_zip_size_bytes": 1642,
+    "npm_package": "@hyperframes/engine",
+    "npm_package_version": "0.8.214",
+    "upstream_source_snapshot": "a5496b1887950777b78ed5ac2bff3505961cb5fe",
+    "upstream_source_license": "Apache-2.0 at repository root; full source-to-package build equivalence not established",
+    "browser": "HeadlessChrome/153.0.8010.36",
+    "capture_mode": "screenshot",
+    "rates": [
+      {
+        "numerator": 12,
+        "denominator": 1
+      },
+      {
+        "numerator": 30000,
+        "denominator": 1001
+      }
+    ],
+    "authored_capture_order": [
+      0,
+      7,
+      3,
+      11,
+      7,
+      0
+    ],
+    "captured_frames": 12,
+    "acceptance_unit_tests": {
+      "passed": 5,
+      "failed": 0
+    },
+    "capture_coverage_passed": true,
+    "fixed_fixture_geometry_passed": true,
+    "pixel_exact_svg_reference_passed": true,
+    "repeated_out_of_order_frames_passed": true,
+    "trial_acceptance_passed": true,
+    "worker_isolation_verified": false,
+    "fixture_seek_implementation": "Authored HTML implements window.__hf.seek; does not prove general animation semantics",
+    "scope": "Synthetic opaque 64x48 browser rectangle capture vs independent Inkscape SVG RGB reference, no runtime changes",
+    "not_established": [
+      "upstream published package reproducible source-build parity",
+      "transitive license distribution audit",
+      "untrusted code worker isolation",
+      "GSAP/CSS animation behavior",
+      "motion/art direction quality",
+      "audio",
+      "WebGPU",
+      "performance ranking",
+      "autonomous model"
+    ]
   }
 }
