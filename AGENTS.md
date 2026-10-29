@@ -1,6 +1,6 @@
 # Product intent
 
-Before modifying any subsystem, read [CAPABILITIES.md](CAPABILITIES.md) for the complete A–L creative scope, the cross-domain quality standard, and the independently measurable acceptance gates. It is a product contract, not a model prompt or a claim of implementation.
+Astra and other engineering agents: read this file, then read [CAPABILITIES.md](CAPABILITIES.md) for the complete A–L creative scope, the cross-domain quality standard, and the independently measurable acceptance gates. It is a product contract, not a model prompt or a claim of implementation.
 
 Build one coherent creative system that an AI model can operate as an artist
 operates professional creative software. The AI supplies ideas and creative
@@ -26,6 +26,15 @@ native capabilities into the common project workflow. Installing an engine or
 exposing a small subset of it does not complete a creative field.
 
 # Development direction
+
+The owner's current instruction is research and design first: complete the
+full comparative investigation, architecture, acceptance strategy and
+implementation plan before further product coding. The detailed Astra mandate
+is in [CAPABILITIES.md](CAPABILITIES.md#astra-owners-complete-mandate-and-current-stage).
+The present documentation update is explicitly authorized. Older handoffs that
+say to resume feature coding or merge PRs do not override this stage.
+
+After that research and design stage:
 
 Complete one creative field to a reliable professional production standard before
 expanding into the next. The current focus is existing video-editing completion
