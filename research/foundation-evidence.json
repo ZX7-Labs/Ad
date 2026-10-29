@@ -280,5 +280,30 @@
       "performance ranking",
       "autonomous model"
     ]
+  },
+  "worker_boundary_trial": {
+    "schema": 1,
+    "source_commit": "0b59c6852e8ffc879fe3958878bb7ec554a0ce43",
+    "probe_sha256": "9e9ec3dee4c63759c18441327f4010549ee3991590538b137fc6c77c8cb9a8cc",
+    "launch_supported": false,
+    "boundary_checks_passed": false,
+    "full_worker_isolation_verified": false,
+    "scope": "Fixed synthetic worker input/output, host-file/environment and host-loopback separation",
+    "not_established": [
+      "resource exhaustion containment",
+      "process-tree cancellation",
+      "GPU isolation",
+      "hostile native-project safety",
+      "kernel escape resistance"
+    ],
+    "bubblewrap_version": "bubblewrap 0.9.0",
+    "launch_exit_code": 1,
+    "stderr": "bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted\n",
+    "blocked_reason": "Requested isolation profile could not execute its fixed worker",
+    "workflow_run_id": 40839439200,
+    "workflow_url": "https://github.com/ZX7-Labs/Zx7-creative-studio-/actions/runs/40839439200",
+    "artifact_id": 12882275934,
+    "measurement_job_conclusion": "success",
+    "meaning": "Measurement completed; the requested boundaries did not execute and did not pass"
   }
 }

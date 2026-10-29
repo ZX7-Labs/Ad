@@ -126,8 +126,14 @@ it is diagnostic, not a product remedy or approved epsilon policy.
       do not call trusted Python plugins sandboxed.
 - [ ] Specify capability descriptors, revision preconditions, loss reports and
       modality-aware observations using examples from the R1/R2 workloads.
-- [ ] Assess whether existing publication/leases can implement multi-artifact
+- [x] Assess whether existing publication/leases can implement multi-artifact
       commits and stale-worker fencing without a second coordinator.
+
+Assessment: retain the current SQLite owner/input checks and publication
+journal, but bind the changing admitted attempt to publication/head promotion.
+The current publication context does not carry the lease owner. The architecture
+records this gap and proposed protocol fields; no concurrent-head safety or
+implemented protocol claim follows from this source assessment.
 
 Current-host preliminary result: a fixed `bwrap` profile launching only
 `/usr/bin/true` with isolated user/PID/network namespaces failed with a denied
@@ -140,6 +146,13 @@ and separation from a listening host-loopback socket. The `worker-boundaries`
 research CI job records availability and checks separately. Even a passed
 boundary probe does not establish resource limits, process-tree cancellation,
 GPU containment or hostile native-file safety; those R3 gates remain open.
+
+Actual Ubuntu 24.04 CI measurement on `0b59c6852e8ffc879fe3958878bb7ec554a0ce43`
+also rejected the requested profile: bubblewrap 0.9.0 reported `Failed RTM_NEWADDR:
+Operation not permitted`. The research job completed, but `launch_supported`
+and `boundary_checks_passed` are both false. Do not retry by removing network
+isolation. The [compact evidence](../research/foundation-evidence.json) retains
+the result and run/artifact identities after ephemeral CI files expire.
 
 ## R4: Bounded native browser-motion eligibility trial
 

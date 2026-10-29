@@ -100,6 +100,28 @@ and evidence level. Query details lazily rather than loading every schema into
 every model turn. Host configuration determines authority; model text cannot
 grant privileges, install plugins or declare its own result trustworthy.
 
+The proposed next protocol version uses the following transport-independent
+fields. They are design contracts, not already implemented service methods:
+
+| Envelope | Required fields and behavior |
+|---|---|
+| Capability descriptor | `operation_id`, `schema_revision`, `engine_identity`, `parameter_schema_digest`, `availability`, `evidence`, `required_grants`, `native_artifact_types`, `limitations`; availability is not quality acceptance |
+| Revision request | `project_id`, `expected_revision`, `operation_id`, `schema_revision`, `arguments`, `request_id`; reject a stale parent before worker admission |
+| Host admission | `attempt_id`, project/node/input identities, reserved resources and granted capabilities; created by the host, never accepted from model arguments |
+| Operation result | `request_id`, `attempt_id`, status, immutable artifact references, native state delta, conversion losses and verification references; a worker result alone cannot move the project head |
+| Observation | artifact digest, exact represented interval, modality, sampling/transform details and observer identity; absence of audio/video input remains explicit |
+
+Exact time is `{ticks, rate:{numerator,denominator}}`, with integer ticks and
+positive integer rate components, reduced on validation. A source reference
+binds bytes and the separate rights attestation. Native object/parameter paths
+are engine-owned identifiers; this envelope does not prescribe their artistic
+values or replace the engine's schema. Legacy tools retain their existing IDs
+and argument schemas behind explicit compatibility adapters.
+
+Use stable error codes for parent conflicts, unavailable capability, refused
+grant, revoked source, unsupported conversion and reconciliation-required
+effects. Never transform one of these into a fictitious successful artifact.
+
 The model may choose structured edits or procedural authoring. Structured edits
 should use native introspection: RNA properties, node ports, timeline handles,
 curve interpolation and collection methods. Programmatic authoring is allowed
@@ -207,6 +229,16 @@ a fenced attempt identity so a stale worker cannot publish after reassignment.
 Retries depend on trusted idempotence and side-effect reconciliation. A remote
 model call of uncertain completion needs its own request identity/receipt;
 do not assume exactly-once execution from a local SQLite row.
+
+Source audit: `DurableFilmGraph.complete()` and lease renewal check the current
+owner plus input fingerprint, so reuse that database protection. However,
+`body_publication.physical_tool_attempt()` currently carries project/node/input/
+tool identities without the changing lease owner. This inspection does not
+establish end-to-end stale-worker fencing at file publication. Before enabling
+concurrent revision promotion, bind its attempt to the current host admission
+and verify it at head advancement. Immutable stale output may remain an orphan;
+it must never become the accepted project head. Test the actual lease-takeover
+and publication crash windows before declaring that gate passed.
 
 ## Worker trust and extension mechanism
 
