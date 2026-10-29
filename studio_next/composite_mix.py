@@ -419,8 +419,9 @@ def actual_composite_command(plan,workspace,vault,out):
         else:
             # Quantize once to each source's real sample clock and to the
             # output bus clock. Millisecond delays silently shift audio.
-            source_rate=source_audio_rates.setdefault(
-                row["file"],_decoded_audio_sample_rate(row["file"]))
+            if row["file"] not in source_audio_rates:
+                source_audio_rates[row["file"]]=_decoded_audio_sample_rate(row["file"])
+            source_rate=source_audio_rates[row["file"]]
             source_first=round(source_in*source_rate)
             source_length=round(duration*source_rate)
             if source_length<=0:
