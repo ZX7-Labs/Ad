@@ -27,12 +27,14 @@ exposing a small subset of it does not complete a creative field.
 
 # Development direction
 
-The owner's current instruction is research and design first: complete the
-full comparative investigation, architecture, acceptance strategy and
-implementation plan before further product coding. The detailed Astra mandate
-is in [CAPABILITIES.md](CAPABILITIES.md#astra-owners-complete-mandate-and-current-stage).
-The present documentation update is explicitly authorized. Older handoffs that
-say to resume feature coding or merge PRs do not override this stage.
+The owner's latest instruction authorizes autonomous end-to-end engineering,
+including substantial redesign where evidence justifies it. The prior
+research-only coding freeze is superseded. Compare viable alternatives before
+irreversible decisions, but do not turn research into a reason to postpone
+verified runtime defects. Keep existing source, owner assets, tests and project
+history; replace working systems only with tested superiority, compatibility
+proof and a reversible migration. The product contract remains
+[CAPABILITIES.md](CAPABILITIES.md#astra-owners-complete-mandate-and-current-stage).
 
 Current engineering choices, source-backed comparisons and unchecked research
 gates are preserved in [docs/architecture.md](docs/architecture.md),
@@ -40,8 +42,6 @@ gates are preserved in [docs/architecture.md](docs/architecture.md),
 [docs/video-research-plan.md](docs/video-research-plan.md). Read those before
 repeating experiments or proposing a rewrite. They are design/evidence records,
 not new product requirements or a claim that research gates have passed.
-
-After that research and design stage:
 
 Complete one creative field to a reliable professional production standard before
 expanding into the next. The current focus is existing video-editing completion

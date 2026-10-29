@@ -37,9 +37,12 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y ffmpeg melt frei0r-plugins
           python -m pip install 'opentimelineio==0.18.1'
-      - name: Record unchanged adapter audio timing, including mismatches
+      - name: Verify 108 real-decoder audio sample-clock cases
         run: |
-          python scripts/research_audio_clock.py --out output/foundation/audio-clock.json --summary-out output/foundation/audio-clock-summary.json
+          python scripts/research_audio_clock.py --out output/foundation/audio-clock.json --summary-out output/foundation/audio-clock-summary.json --require-conformance
+      - name: Check actual composition and editable audio automation regressions
+        run: |
+          python -m unittest studio_next.test_composite_mix studio_next.test_body_audio_automation -v
       - name: Compare native MLT and FFmpeg source frames before and after revision
         run: |
           python scripts/research_native_editor.py --probe-activation --out output/foundation/native-editor.json

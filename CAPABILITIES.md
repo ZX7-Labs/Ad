@@ -153,11 +153,15 @@ already surpasses competitors, or that tradeoffs and future defects disappear.
 Earn conclusions through evidence; challenge your own assumptions, preserve
 what works, and invent only where an identifiable benefit justifies it.
 
-**Current instruction, superseding older engineering handoffs: finish the
-research, comparisons, architecture, design and implementation planning before
-starting further product coding.** The owner has explicitly authorized this
-documentation update and removal of clearly obsolete temporary documentation.
-That authorization is not a request to merge feature PRs or restart coding.
+**Current instruction, superseding the previous research-only freeze: proceed
+with independent end-to-end engineering.** The owner delegates choices of
+architecture, implementation and verification, including replacing an existing
+subsystem when measured evidence warrants it. Research remains mandatory where
+it changes a consequential decision, but does not block correcting a reproduced
+defect. Preserve valuable work, originals, recoverability and an independently
+verifiable path back; do not delete the repository or discard capabilities by
+default simply because rewriting is permitted. A–L completion still requires
+actual full-field evidence, not the number of commits or passing smoke tests.
 
 ### 1. The actual product and its users
 
@@ -323,7 +327,7 @@ native controls with a narrower demo, or create a second competing system
 without a reviewed migration rationale. Some current adapters intentionally
 accept narrow subsets; that is not the final scope of the product.
 
-### 7. Architecture and planning deliverables before coding
+### 7. Architecture, planning and executable engineering contracts
 
 Prepare one coherent reviewable design that covers:
 

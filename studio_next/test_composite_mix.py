@@ -58,7 +58,7 @@ class LayeredProductionCompositingTests(unittest.TestCase):
             self.assertIn("overlay=x=140:y=-40",graph)
             self.assertIn("colorchannelmixer=aa=0.5",graph)
             self.assertIn("volume=-6.1dB",graph)
-            self.assertIn("adelay=450|450",graph)
+            self.assertIn("adelay=21600S:all=1",graph)
             self.assertEqual(cmd[0],"ffmpeg")
 
     def test_one_unverified_clip_or_changed_byte_blocks_edit(self):
