@@ -55,6 +55,8 @@ jobs:
         run: python -m unittest studio_next.test_exact_retime_clock -v
       - name: Verify typed layer geometry, immutable revisions and exact source-frame animation through ripple
         run: python -m unittest studio_next.test_body_mlt_transform studio_next.test_body_mlt_masks studio_next.test_body_mlt_relink -v
+      - name: Verify release evidence distinguishes success, skipped tests and failures
+        run: python -m unittest discover -s scripts -p 'test_release_test_summary.py' -v
       - name: Validate current Git tracked source inventory
         run: |
           python -m unittest discover -s scripts -p 'test_repo_audit.py' -v
