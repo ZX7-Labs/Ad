@@ -36,7 +36,7 @@ def _local_schema_references(schema):
 
 def create_editor_server(client, *, allowed_access=frozenset({"read"}),
                          export_verifier=None, frame_observer=None,
-                         audio_observer=None):
+                         audio_observer=None, audio_timeline_observer=None):
     """Return the official SDK server; discovery never expands host grants.
 
     Dependencies are imported here so the stdlib BODY remains usable without
@@ -68,12 +68,16 @@ def create_editor_server(client, *, allowed_access=frozenset({"read"}),
     observed_frame_name = "zx7_observe_verified_export_frame"
     observed_samples_name = "zx7_observe_verified_export_samples"
     observed_audio_name = "zx7_observe_verified_export_audio"
+    observed_audio_timeline_name = "zx7_observe_verified_export_audio_timeline"
     verified_exports = {}
     if frame_observer is not None and (export_verifier is None or not callable(frame_observer)):
         raise ValueError("Frame observation requires a real host export verifier")
     if audio_observer is not None and (export_verifier is None or not callable(audio_observer)):
         raise ValueError("Audio observation requires a real host export verifier")
-    if any(tool in native for tool in (observed_frame_name, observed_samples_name, observed_audio_name)):
+    if audio_timeline_observer is not None and (export_verifier is None or not callable(audio_timeline_observer)):
+        raise ValueError("Audio timeline requires the full host export verifier")
+    if any(tool in native for tool in (observed_frame_name, observed_samples_name,
+                                       observed_audio_name, observed_audio_timeline_name)):
         raise ValueError("Native editor tool name collides with BODY observation")
     if export_verifier is not None:
         if not callable(export_verifier) or verified_export_name in native:
@@ -140,6 +144,22 @@ def create_editor_server(client, *, allowed_access=frozenset({"read"}),
                          "not spatial mastering, transcript or full-film listening"),
             inputSchema=audio_schema)
         validators[observed_audio_name] = jsonschema.Draft202012Validator(audio_schema)
+    if audio_timeline_observer is not None and "read" in access:
+        temporal_schema = {"type": "object", "properties": {
+            "path": {"type": "string"},
+            "start_seconds": {"type": "number", "minimum": 0},
+            "duration_seconds": {"type": "number", "exclusiveMinimum": 0,
+                                 "maximum": 300},
+            "bins": {"type": "integer", "minimum": 2, "maximum": 256}},
+            "required": ["path", "start_seconds", "duration_seconds", "bins"],
+            "additionalProperties": False}
+        tools[observed_audio_timeline_name] = types.Tool(
+            name=observed_audio_timeline_name,
+            description=("Observe independently decoded, per-time-bin native video audio "
+                         "peak/RMS for a bounded interval; diagnostic 8 kHz mono, not "
+                         "original PTS, LUFS, multichannel master or artistic quality"),
+            inputSchema=temporal_schema)
+        validators[observed_audio_timeline_name] = jsonschema.Draft202012Validator(temporal_schema)
     lock = anyio.Lock()
     inspection_capacity = anyio.CapacityLimiter(1)
 
@@ -259,6 +279,37 @@ def create_editor_server(client, *, allowed_access=frozenset({"read"}),
             except (ValueError, OSError, subprocess.SubprocessError) as exc:
                 verified_exports.pop(identity, None)
                 return failed("Verified native audio observation failed: " + str(exc))
+        if name == observed_audio_timeline_name:
+            identity = str(Path(arguments["path"]).resolve())
+            digest = verified_exports.get(identity)
+            if digest is None:
+                return failed("Independently verify these physical export bytes before audio analysis")
+            try:
+                values = (arguments["start_seconds"], arguments["duration_seconds"])
+                if any(type(v) not in (int, float) or not math.isfinite(v) for v in values):
+                    raise ValueError("Audio timeline timestamps must be finite")
+                async with inspection_capacity:
+                    with anyio.CancelScope(shield=True):
+                        receipt = await anyio.to_thread.run_sync(
+                            lambda: audio_timeline_observer(
+                                arguments["path"], verified_sha256=digest,
+                                start_seconds=arguments["start_seconds"],
+                                duration_seconds=arguments["duration_seconds"],
+                                bins=arguments["bins"]),
+                            abandon_on_cancel=False)
+                if (not isinstance(receipt, dict) or
+                        receipt.get("kind") != "verified_native_editor_audio_temporal_envelope" or
+                        receipt.get("export_sha256") != digest or
+                        receipt.get("requested_start_seconds") != arguments["start_seconds"] or
+                        receipt.get("requested_duration_seconds") != arguments["duration_seconds"] or
+                        not isinstance(receipt.get("intervals"), list) or
+                        len(receipt["intervals"]) != arguments["bins"]):
+                    raise ValueError("Audio timeline lacked source-bound temporal evidence")
+                return types.CallToolResult(is_error=False, content=[
+                    types.TextContent(type="text", text=json.dumps(receipt, allow_nan=False))])
+            except (ValueError, OSError, subprocess.SubprocessError) as exc:
+                verified_exports.pop(identity, None)
+                return failed("Verified audio timeline failed: " + str(exc))
         try:
             # Do not abandon a possibly applied write on protocol cancellation.
             # The lock stays held until the bounded native HTTP call finishes.
@@ -300,10 +351,12 @@ def main(argv=None):
         export_verifier = None
         frame_observer = None
         audio_observer = None
+        audio_timeline_observer = None
         if config.verify_native_exports:
             from .body_editor_export import verify_native_editor_export
             from .body_editor_frame import observe_verified_export_frame
             from .body_editor_audio import observe_verified_export_audio
+            from .body_editor_audio_timeline import observe_verified_export_audio_timeline
             export_verifier = lambda path, expected=None: verify_native_editor_export(
                 path, policy=config._policy, expected=expected)
             frame_observer = lambda path, verified_sha256, at_seconds: observe_verified_export_frame(
@@ -312,9 +365,14 @@ def main(argv=None):
             audio_observer = lambda path, verified_sha256, start_seconds, duration_seconds: observe_verified_export_audio(
                 path, policy=config._policy, verified_sha256=verified_sha256,
                 start_seconds=start_seconds, duration_seconds=duration_seconds)
+            audio_timeline_observer = lambda path, verified_sha256, start_seconds, duration_seconds, bins: observe_verified_export_audio_timeline(
+                path, policy=config._policy, verified_sha256=verified_sha256,
+                start_seconds=start_seconds, duration_seconds=duration_seconds,
+                bins=bins)
         server = create_editor_server(config.client(), allowed_access=config.allowed_access,
                                       export_verifier=export_verifier, frame_observer=frame_observer,
-                                      audio_observer=audio_observer)
+                                      audio_observer=audio_observer,
+                                      audio_timeline_observer=audio_timeline_observer)
 
         async def serve():
             from mcp.server.stdio import stdio_server
