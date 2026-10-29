@@ -32,6 +32,35 @@ self-criticism must meet the same high bar. Compare leading current and
 historical practices and useful ideas from other scientific fields; invent or
 combine methods only when evidence shows an improvement.
 
+## Ownership, open-source scope and replaceable extensions
+
+ZX7 BODY is the independently designed software product. Creative models,
+plugins and skills are replaceable attachments, not the definition of BODY or
+a mandatory vendor service. Integrating mature open-source code does not remove
+the need for a coherent ZX7 architecture, project model and control boundary.
+
+The owner's clarified constraint is a free/open-source, self-hostable system:
+no paid service or third-party hosted AI API is a required runtime dependency.
+Local IPC/HTTP between BODY and an independently running local model or engine
+is an internal transport, not a dependency on a hosted service. Keep that
+distinction explicit in documentation and discovery.
+
+For adopted software retain accessible complete upstream source at an exact
+revision, applicable licenses/notices, any patches and reproducible build
+instructions. Decide packaging/vendoring after selection; a package download
+or an executable alone does not fulfill the source-availability requirement.
+Weights, voices and other assets are separately licensed artifacts and remain
+separately managed from public source code. Do not promise their eligibility
+from a code repository license or require all optional models to be installed.
+An older open-source release is eligible only under its actual license; later
+closed or restricted additions do not inherit that permission.
+
+Engineering research may use source hosting, package registries and research
+tools to obtain and inspect material. Those tools must not become hidden
+runtime requirements of the delivered BODY. Audit actual existing network/model
+routes and identify optional external features rather than claiming that all
+historical code already conforms.
+
 ## Complete A–L capability map (no entire row certified)
 
 Original source contracts specify twelve mutually dependent domains. Existing

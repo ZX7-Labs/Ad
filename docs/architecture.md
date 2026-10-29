@@ -26,7 +26,15 @@ BODY provides editable instruments, actual project state, safe execution,
 observation, history and delivery. Advertising is an important workload, not a
 mandatory genre. Hindi/Hinglish is a required evaluation case.
 
-The product is a software system, not a newly trained model. A planner, a video
+The product is an independently designed, self-hostable open-source BODY.
+Models, plugins and skills are replaceable attachments. No paid service or
+third-party hosted AI API is a required runtime dependency; local engine/model
+IPC or loopback HTTP is an internal transport. Source hosting and research tools
+used during engineering are not delivered runtime dependencies. Adopted engines
+need complete accessible pinned source, notices, patches and reproducible builds;
+do not confuse an installed binary with a source-complete deliverable.
+
+A planner, a video
 generator and an audiovisual critic may be different models. None substitutes
 for an editable production environment. Ordinary operation must not require
 the owner to author a scene JSON or manually assemble the tool calls.

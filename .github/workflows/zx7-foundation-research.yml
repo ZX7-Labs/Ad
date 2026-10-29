@@ -5,12 +5,14 @@ on:
     paths:
       - "scripts/research_audio_clock.py"
       - "scripts/research_native_editor.py"
+      - "research/browser-engine/**"
       - ".github/workflows/zx7-foundation-research.yml"
   pull_request:
     branches: [main]
     paths:
       - "scripts/research_audio_clock.py"
       - "scripts/research_native_editor.py"
+      - "research/browser-engine/**"
       - ".github/workflows/zx7-foundation-research.yml"
   workflow_dispatch:
 permissions:
@@ -50,5 +52,34 @@ jobs:
         with:
           name: zx7-foundation-differential
           path: output/foundation/
+          retention-days: 14
+          if-no-files-found: warn
+  browser-motion:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Install actual vector reference renderer and decoder
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg inkscape
+      - name: Install locked research-only browser engine without package install scripts
+        working-directory: research/browser-engine
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Install browser pinned by the installed Puppeteer version
+        working-directory: research/browser-engine
+        run: ./node_modules/.bin/puppeteer browsers install chrome-headless-shell
+      - name: Measure actual seeking at integer and NTSC rates against native SVG reference
+        working-directory: research/browser-engine
+        run: node probe.mjs --out ../../output/foundation/browser-motion.json
+      - name: Preserve browser measurements
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zx7-browser-foundation-differential
+          path: output/foundation/browser-motion.json
           retention-days: 14
           if-no-files-found: warn

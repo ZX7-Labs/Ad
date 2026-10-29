@@ -28,6 +28,9 @@ and [CAPABILITIES.md](../CAPABILITIES.md).
   in source control. Synthetic test fixtures may be generated on demand.
 * No paid compute or public deployment is assumed. Real model/human quality
   acceptance is distinct from technical correctness.
+* BODY is the independent product; models/plugins/skills are replaceable.
+  No paid service or third-party hosted AI API is required at runtime. Keep
+  complete accessible pinned engine source, licenses, patches and build recipes.
 * Preserve Python >=3.11 and existing tool IDs; schema changes are versioned.
 * Do not introduce a second asset store, scheduler or competing instruction file.
 
@@ -130,6 +133,27 @@ Current-host preliminary result: a fixed `bwrap` profile launching only
 `/usr/bin/true` with isolated user/PID/network namespaces failed with a denied
 NETLINK_ROUTE socket. Full isolation is unverified. Keep arbitrary-code execution
 disabled on this host; do not weaken the profile just to pass the launch.
+
+## R4: Bounded native browser-motion eligibility trial
+
+**Research-only files:** `research/browser-engine/{package.json,package-lock.json,probe.mjs}`.
+**Purpose:** Determine whether the actual candidate can seek/repeat simple native
+art at integer and NTSC rates before investing in an adapter or a larger craft
+comparison. The existing Inkscape renderer supplies an independent vector
+geometry reference. This trial does not select an overall animation winner.
+
+- [x] Resolve the published package and inspect its real API/source instead of
+      implementing from the README's outdated call signatures.
+- [ ] Run the locked 0.8.214 package with actual Chrome, Inkscape and FFmpeg;
+      compare requested geometry and repeated out-of-order captures at both rates.
+- [ ] Record capture path, browser/dependency identities, warnings, limitations
+      and actual source/build availability before deciding whether to proceed.
+
+The local package install completed. Browser installation timed out through the
+configured proxy; no local render result is claimed. The research CI has a
+bounded browser job to execute the same fixture on its actual host. The
+upstream browser launch includes `--no-sandbox`; a trusted fixed-fixture render
+cannot certify an untrusted creative-code worker. Model inference is not involved.
 
 ## P1: Exact composition clock and audio contract (after research gate)
 
