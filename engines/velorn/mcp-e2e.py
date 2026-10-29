@@ -83,7 +83,7 @@ async def exercise(options):
 
     async with connected() as session:
         discovered = (await session.list_tools()).tools
-        assert {tool.name for tool in discovered} == set(tools) | {"zx7_verify_native_export", "zx7_observe_verified_export_frame", "zx7_observe_verified_export_samples"}
+        assert {tool.name for tool in discovered} == set(tools) | {"zx7_verify_native_export", "zx7_observe_verified_export_frame", "zx7_observe_verified_export_samples", "zx7_observe_verified_export_audio"}
         from studio_next.body_editor_client import LocalEditorClient
         native = {tool["name"]: tool for tool in LocalEditorClient(
             "http://127.0.0.1:19790/mcp", allowed_tools={}).list_tools()}
@@ -176,6 +176,23 @@ async def exercise(options):
             png = base64.b64decode(block.data, validate=True)
             assert png.startswith(bytes.fromhex("89504e470d0a1a0a"))
             assert hashlib.sha256(png).hexdigest() == evidence["png_sha256"]
+        # Expose an actual short WAV payload for compatible audio-capable brains.
+        audio_observed = await session.call_tool("zx7_observe_verified_export_audio", {
+            "path": str(output), "start_seconds": 0.25, "duration_seconds": 1.0})
+        assert not audio_observed.is_error and len(audio_observed.content) == 2, audio_observed
+        audio_receipt = json.loads(audio_observed.content[0].text)
+        assert audio_observed.content[1].type == "audio"
+        assert audio_observed.content[1].mime_type == "audio/wav"
+        wav_bytes = base64.b64decode(audio_observed.content[1].data, validate=True)
+        assert wav_bytes.startswith(b"RIFF")
+        assert audio_receipt["wav_sha256"] == hashlib.sha256(wav_bytes).hexdigest()
+        assert audio_receipt["export_sha256"] == digest(output)
+        assert audio_receipt["full_film_listening_or_spatial_mix_verified"] is False
+        import io
+        import wave
+        with wave.open(io.BytesIO(wav_bytes), "rb") as decoded:
+            assert (decoded.getnchannels(), decoded.getframerate(), decoded.getsampwidth()) == (1, 16000, 2)
+            assert decoded.getnframes() > 8000
 
     async with connected() as session:
         await call(session, "open_project", {"projectPath": str(project), "previewOnly": False})
@@ -198,7 +215,8 @@ async def exercise(options):
     assert .03 < audio_rms < .2
     receipt = {"success": True, "kind": "scripted official SDK client; no autonomous model evaluation",
         "transport": "standard MCP stdio; Python SDK 2.3.0", "nativeSchemasUnchanged": True,
-        "discoveredGrantedTools": len(tools), "additionalVerifiedBodyTools": 3, "physicalVisualFrameObserved": True,
+        "discoveredGrantedTools": len(tools), "additionalVerifiedBodyTools": 4, "physicalVisualFrameObserved": True,
+        "physicalBoundedSourceAudioObserved": True,
         "physicalSparseTemporalFramesObserved": True,
         "physicalEditorExportIndependentlyDecoded": True,
         "deniedNetworkTool": True, "deniedOutsideImport": True,
