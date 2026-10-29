@@ -261,11 +261,19 @@ class NativeCreativeControl:
                     raise
                 if _field(result, "is_error", _field(result, "isError", False)):
                     texts = [_field(x, "text") for x in _field(result, "content", ())
-                             if _field(x, "type") == "text"]
+                             if _field(x, "type") == "text" and
+                             isinstance(_field(x, "text"), str)]
+                    # A reported native error does not prove a write never
+                    # happened. Stop; the next session must reconcile the
+                    # actual saved state before issuing another mutation.
                     self._append({"kind": "native_tool_reported_error", "turn": turn,
-                                  "tool": native_name, "message": str(texts)[:2000],
+                                  "tool": native_name,
+                                  "error_sha256": hashlib.sha256(
+                                      _wire(texts).encode("utf-8")).hexdigest(),
+                                  "must_reconcile_native_state": True,
                                   "no_automatic_retry": True})
-                    continue
+                    outcome = "native_error_requires_state_reconciliation"
+                    break
                 try:
                     texts, images = _native_content(result)
                     hashes = _source_bound_images(texts, images)
