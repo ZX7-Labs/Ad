@@ -20,8 +20,9 @@ def plain(identity="clip-1", typ="video", start=0, duration=12):
 
 
 class NativeReadClient:
-    def __init__(self, clips=None):
+    def __init__(self, clips=None, *, direct=False):
         self.clips = clips if clips is not None else [plain()]
+        self.direct = direct
         self.allowed_tools = {"get_timeline": "read", "inspect_clip": "read", "split_clip": "write"}
         self.calls = []
         self.truncate = False
@@ -31,10 +32,11 @@ class NativeReadClient:
         if name not in self.allowed_tools:
             raise EditorAccessError("No permission to observe real native state")
         if name == "get_timeline":
-            value = {"timeline": {"clips": [
+            payload = {"clips": [
                 {"id": c["id"], "type": c["type"],
                  "startTime": c["startTime"], "duration": c["duration"]}
-                for c in self.clips], "clipLimitApplied": None}}
+                for c in self.clips], "clipLimitApplied": None}
+            value = {**payload, "timeline": "Artist timeline"} if self.direct else {"timeline": payload}
         elif name == "inspect_clip":
             found = next(c for c in self.clips if c["id"] == arguments["clipId"])
             value = {"clip": found}
@@ -59,6 +61,14 @@ class NativeSplitGuardTests(unittest.TestCase):
         self.assertFalse(result["professional_lossless_split_proven"])
         self.assertEqual([x[0] for x in client.calls], ["get_timeline", "inspect_clip"])
         self.assertEqual(client.clips[0]["duration"], 12)
+
+    def test_actual_native_direct_clip_list_and_timeline_name_are_read_correctly(self):
+        # Native standalone read tools may include a summary/name alongside
+        # top-level clips; that must not be mistaken for a nested timeline.
+        client = NativeReadClient(direct=True)
+        result = self.check(client)
+        self.assertEqual(result["preflighted_plain_source_clips"], ["clip-1"])
+        self.assertEqual([x[0] for x in client.calls], ["get_timeline", "inspect_clip"])
 
     def test_realistic_saved_animated_title_refused_without_any_write(self):
         title = plain(typ="text")
