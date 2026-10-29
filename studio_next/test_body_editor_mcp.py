@@ -93,10 +93,11 @@ class EditorMCPTests(unittest.IsolatedAsyncioTestCase):
         self.thread.join()
 
     async def with_session(self, check, *, access=frozenset({"read", "write"}),
-                           export_verifier=None, frame_observer=None):
+                           export_verifier=None, frame_observer=None, audio_observer=None):
         server = create_editor_server(self.client, allowed_access=access,
                                       export_verifier=export_verifier,
-                                      frame_observer=frame_observer)
+                                      frame_observer=frame_observer,
+                                      audio_observer=audio_observer)
         async with create_client_server_memory_streams() as (client_streams, server_streams):
             async with anyio.create_task_group() as group:
                 group.start_soon(server.run, *server_streams, server.create_initialization_options())
@@ -385,6 +386,83 @@ class EditorMCPTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(invalid.content), 1)
             self.assertIn("oversized", invalid.content[0].text.lower())
         await self.with_session(check, export_verifier=verifier, frame_observer=observer)
+
+    async def test_verified_native_audio_is_real_mcp_audio_content_not_only_a_metric(self):
+        digest = "d" * 64
+        wav_bytes = b"RIFF" + b"native-audio-wav-test" * 5
+        heard = []
+        def verifier(path, expected=None):
+            self.assertEqual(path, "/trusted/audio-movie.mp4")
+            return {"physical_export_verified": True, "native_export_sha256": digest}
+        def observer(path, verified_sha256, start_seconds, duration_seconds):
+            heard.append((path, verified_sha256, start_seconds, duration_seconds))
+            return wav_bytes, {
+                "kind": "verified_native_editor_bounded_audio_excerpt",
+                "export_sha256": verified_sha256,
+                "wav_sha256": hashlib.sha256(wav_bytes).hexdigest(),
+                "requested_start_seconds": start_seconds,
+                "requested_duration_seconds": duration_seconds,
+                "full_film_listening_or_spatial_mix_verified": False,
+                "human_or_artistic_quality_approved": False,
+            }
+        async def check(session):
+            tool = "zx7_observe_verified_export_audio"
+            catalog = {x.name for x in (await session.list_tools()).tools}
+            self.assertIn(tool, catalog)
+            query = {"path": "/trusted/audio-movie.mp4",
+                     "start_seconds": .25, "duration_seconds": 1.25}
+            self.assertTrue((await session.call_tool(tool, query)).is_error)
+            self.assertFalse((await session.call_tool("zx7_verify_native_export", {
+                "path": query["path"]})).is_error)
+            result = await session.call_tool(tool, query)
+            self.assertFalse(result.is_error, result)
+            self.assertEqual(len(result.content), 2)
+            self.assertEqual(result.content[1].type, "audio")
+            self.assertEqual(result.content[1].mime_type, "audio/wav")
+            self.assertEqual(base64.b64decode(result.content[1].data), wav_bytes)
+            receipt = json.loads(result.content[0].text)
+            self.assertFalse(receipt["full_film_listening_or_spatial_mix_verified"])
+            self.assertEqual(receipt["wav_sha256"], hashlib.sha256(wav_bytes).hexdigest())
+            self.assertEqual(heard, [(query["path"], digest, .25, 1.25)])
+            for invalid in (
+                {"path": query["path"], "start_seconds": -1, "duration_seconds": 1},
+                {"path": query["path"], "start_seconds": 0, "duration_seconds": 4},
+                {"path": query["path"], "start_seconds": 0, "duration_seconds": 0},
+                {"path": "/trusted/other.mp4", "start_seconds": 0, "duration_seconds": 1},
+            ):
+                self.assertTrue((await session.call_tool(tool, invalid)).is_error)
+            self.assertEqual(len(heard), 1)
+            self.assertFalse(any(row["method"] == "tools/call" for row in self.requests))
+        await self.with_session(check, export_verifier=verifier, audio_observer=observer)
+
+        async def deny_no_read(session):
+            catalog = {x.name for x in (await session.list_tools()).tools}
+            self.assertNotIn("zx7_observe_verified_export_audio", catalog)
+        await self.with_session(deny_no_read, access=frozenset({"write"}),
+                                export_verifier=verifier, audio_observer=observer)
+
+    async def test_invalid_audio_witness_invalidates_its_verified_source(self):
+        def verifier(path, expected=None):
+            return {"physical_export_verified": True, "native_export_sha256": "e" * 64}
+        def invalid_observer(path, verified_sha256, start_seconds, duration_seconds):
+            wav = b"RIFF" + b"a" * 50
+            return wav, {"export_sha256": verified_sha256,
+                         "wav_sha256": "0" * 64,
+                         "requested_start_seconds": start_seconds,
+                         "requested_duration_seconds": duration_seconds}
+        async def check(session):
+            self.assertFalse((await session.call_tool("zx7_verify_native_export", {
+                "path": "/trusted/audio.mp4"})).is_error)
+            query = {"path": "/trusted/audio.mp4", "start_seconds": 0.5,
+                     "duration_seconds": 1}
+            invalid = await session.call_tool("zx7_observe_verified_export_audio", query)
+            self.assertTrue(invalid.is_error)
+            self.assertEqual(len(invalid.content), 1)
+            again = await session.call_tool("zx7_observe_verified_export_audio", query)
+            self.assertTrue(again.is_error)
+            self.assertIn("verify", again.content[0].text.lower())
+        await self.with_session(check, export_verifier=verifier,
+                                audio_observer=invalid_observer)
 
     async def test_readonly_decode_does_not_block_native_editing(self):
         """Long-running physical inspection cannot monopolize editor RPC locks."""
