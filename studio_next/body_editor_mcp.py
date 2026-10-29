@@ -101,6 +101,7 @@ def create_editor_server(client, *, allowed_access=frozenset({"read"}),
             inputSchema=frame_schema)
         validators[observed_frame_name] = jsonschema.Draft202012Validator(frame_schema)
     lock = anyio.Lock()
+    inspection_capacity = anyio.CapacityLimiter(1)
 
     def failed(message):
         return types.CallToolResult(is_error=True,
@@ -120,7 +121,7 @@ def create_editor_server(client, *, allowed_access=frozenset({"read"}),
             return failed("Invalid native tool arguments: " + exc.message)
         if name == verified_export_name:
             try:
-                async with lock:
+                async with inspection_capacity:
                     with anyio.CancelScope(shield=True):
                         proof = await anyio.to_thread.run_sync(
                             lambda: export_verifier(arguments["path"], expected=arguments.get("expected")),
@@ -141,7 +142,7 @@ def create_editor_server(client, *, allowed_access=frozenset({"read"}),
             if digest is None:
                 return failed("Independently verify these physical export bytes before observing a frame")
             try:
-                async with lock:
+                async with inspection_capacity:
                     with anyio.CancelScope(shield=True):
                         png, receipt = await anyio.to_thread.run_sync(
                             lambda: frame_observer(arguments["path"],
