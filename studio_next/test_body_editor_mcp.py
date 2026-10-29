@@ -93,11 +93,13 @@ class EditorMCPTests(unittest.IsolatedAsyncioTestCase):
         self.thread.join()
 
     async def with_session(self, check, *, access=frozenset({"read", "write"}),
-                           export_verifier=None, frame_observer=None, audio_observer=None):
+                           export_verifier=None, frame_observer=None, audio_observer=None,
+                           audio_timeline_observer=None):
         server = create_editor_server(self.client, allowed_access=access,
                                       export_verifier=export_verifier,
                                       frame_observer=frame_observer,
-                                      audio_observer=audio_observer)
+                                      audio_observer=audio_observer,
+                                      audio_timeline_observer=audio_timeline_observer)
         async with create_client_server_memory_streams() as (client_streams, server_streams):
             async with anyio.create_task_group() as group:
                 group.start_soon(server.run, *server_streams, server.create_initialization_options())
@@ -463,6 +465,75 @@ class EditorMCPTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("verify", again.content[0].text.lower())
         await self.with_session(check, export_verifier=verifier,
                                 audio_observer=invalid_observer)
+
+    async def test_verified_temporal_audio_proof_is_source_bound_and_read_only(self):
+        digest = "9" * 64
+        requests = []
+        def verifier(path, expected=None):
+            self.assertEqual(path, "/trusted/long-video.mp4")
+            return {"physical_export_verified": True, "native_export_sha256": digest}
+        def observer(path, verified_sha256, start_seconds, duration_seconds, bins):
+            requests.append((path, verified_sha256, start_seconds, duration_seconds, bins))
+            return {"kind": "verified_native_editor_audio_temporal_envelope",
+                    "export_sha256": verified_sha256,
+                    "requested_start_seconds": start_seconds,
+                    "requested_duration_seconds": duration_seconds,
+                    "intervals": [{"sample_peak_normalized": 0.1,
+                                   "rms_dbfs": -25.0} for _ in range(bins)],
+                    "exact_original_audio_pts_proven": False,
+                    "human_or_artistic_quality_approved": False}
+        async def check(session):
+            name = "zx7_observe_verified_export_audio_timeline"
+            self.assertIn(name, [tool.name for tool in (await session.list_tools()).tools])
+            args = {"path": "/trusted/long-video.mp4",
+                    "start_seconds": 3.5, "duration_seconds": 10.0, "bins": 12}
+            self.assertTrue((await session.call_tool(name, args)).is_error)
+            self.assertFalse((await session.call_tool("zx7_verify_native_export", {
+                "path": args["path"]})).is_error)
+            result = await session.call_tool(name, args)
+            self.assertFalse(result.is_error, result)
+            self.assertEqual(len(result.content), 1)
+            receipt = json.loads(result.content[0].text)
+            self.assertEqual(receipt["export_sha256"], digest)
+            self.assertEqual(len(receipt["intervals"]), 12)
+            self.assertFalse(receipt["human_or_artistic_quality_approved"])
+            self.assertEqual(requests, [(args["path"], digest, 3.5, 10.0, 12)])
+            for invalid in (
+                {**args, "duration_seconds": 301}, {**args, "bins": 257},
+                {**args, "bins": True}, {**args, "start_seconds": float("nan")},
+                {**args, "start_seconds": -1}, {**args, "path": "/trusted/other.mp4"}):
+                self.assertTrue((await session.call_tool(name, invalid)).is_error)
+            self.assertEqual(len(requests), 1)
+            self.assertFalse(any(x["method"] == "tools/call" for x in self.requests))
+        await self.with_session(check, export_verifier=verifier, audio_timeline_observer=observer)
+        async def deny_no_read(session):
+            self.assertNotIn("zx7_observe_verified_export_audio_timeline",
+                             [tool.name for tool in (await session.list_tools()).tools])
+        await self.with_session(deny_no_read, access=frozenset({"write"}),
+                                export_verifier=verifier, audio_timeline_observer=observer)
+
+    async def test_bad_audio_timeline_receipt_clears_trust_without_partial_data(self):
+        def verifier(path, expected=None):
+            return {"physical_export_verified": True, "native_export_sha256": "a" * 64}
+        def wrong(path, verified_sha256, start_seconds, duration_seconds, bins):
+            return {"kind": "verified_native_editor_audio_temporal_envelope",
+                    "export_sha256": "f" * 64,
+                    "requested_start_seconds": start_seconds,
+                    "requested_duration_seconds": duration_seconds,
+                    "intervals": [1] * bins}
+        async def check(session):
+            self.assertFalse((await session.call_tool("zx7_verify_native_export", {
+                "path": "/trusted/video.mp4"})).is_error)
+            args = {"path": "/trusted/video.mp4", "start_seconds": 0,
+                    "duration_seconds": 2, "bins": 4}
+            bad = await session.call_tool("zx7_observe_verified_export_audio_timeline", args)
+            self.assertTrue(bad.is_error)
+            self.assertEqual(len(bad.content), 1)
+            again = await session.call_tool("zx7_observe_verified_export_audio_timeline", args)
+            self.assertTrue(again.is_error)
+            self.assertIn("verify", again.content[0].text.lower())
+        await self.with_session(check, export_verifier=verifier,
+                                audio_timeline_observer=wrong)
 
     async def test_readonly_decode_does_not_block_native_editing(self):
         """Long-running physical inspection cannot monopolize editor RPC locks."""

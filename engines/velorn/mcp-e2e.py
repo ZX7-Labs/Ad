@@ -83,7 +83,7 @@ async def exercise(options):
 
     async with connected() as session:
         discovered = (await session.list_tools()).tools
-        assert {tool.name for tool in discovered} == set(tools) | {"zx7_verify_native_export", "zx7_observe_verified_export_frame", "zx7_observe_verified_export_samples", "zx7_observe_verified_export_audio"}
+        assert {tool.name for tool in discovered} == set(tools) | {"zx7_verify_native_export", "zx7_observe_verified_export_frame", "zx7_observe_verified_export_samples", "zx7_observe_verified_export_audio", "zx7_observe_verified_export_audio_timeline"}
         from studio_next.body_editor_client import LocalEditorClient
         native = {tool["name"]: tool for tool in LocalEditorClient(
             "http://127.0.0.1:19790/mcp", allowed_tools={}).list_tools()}
@@ -188,6 +188,16 @@ async def exercise(options):
         assert audio_receipt["wav_sha256"] == hashlib.sha256(wav_bytes).hexdigest()
         assert audio_receipt["export_sha256"] == digest(output)
         assert audio_receipt["full_film_listening_or_spatial_mix_verified"] is False
+        overview = await call(session, "zx7_observe_verified_export_audio_timeline", {
+            "path": str(output), "start_seconds": 0, "duration_seconds": 2,
+            "bins": 8})
+        assert overview["kind"] == "verified_native_editor_audio_temporal_envelope"
+        assert overview["export_sha256"] == digest(output)
+        assert len(overview["intervals"]) == 8
+        assert overview["observed_pcm_samples"] >= 15840
+        assert all((entry["rms_dbfs"] is not None and entry["rms_dbfs"] > -55)
+                   for entry in overview["intervals"])
+        assert not overview["human_or_artistic_quality_approved"]
         import io
         import wave
         with wave.open(io.BytesIO(wav_bytes), "rb") as decoded:
@@ -215,8 +225,9 @@ async def exercise(options):
     assert .03 < audio_rms < .2
     receipt = {"success": True, "kind": "scripted official SDK client; no autonomous model evaluation",
         "transport": "standard MCP stdio; Python SDK 2.3.0", "nativeSchemasUnchanged": True,
-        "discoveredGrantedTools": len(tools), "additionalVerifiedBodyTools": 4, "physicalVisualFrameObserved": True,
+        "discoveredGrantedTools": len(tools), "additionalVerifiedBodyTools": 5, "physicalVisualFrameObserved": True,
         "physicalBoundedSourceAudioObserved": True,
+        "physicalTemporalAudioEnvelopeObserved": True,
         "physicalSparseTemporalFramesObserved": True,
         "physicalEditorExportIndependentlyDecoded": True,
         "deniedNetworkTool": True, "deniedOutsideImport": True,

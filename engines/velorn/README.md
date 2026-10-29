@@ -90,6 +90,18 @@ original spatial mix, full-film sync, music quality, dialogue fidelity or
 professional mastering. Audio-capable clients may listen to it directly;
 clients that ignore MCP audio content will not gain hearing by magic.
 Refresh the full-export proof after modifying the file or reconnecting.
+For temporal audio inspection, a separately namespaced read-only
+`zx7_observe_verified_export_audio_timeline` operation derives bounded 8 kHz
+mono peak/RMS time buckets from **actual decoded** authorized native export
+bytes already independently verified by SHA256 in the same session. Request
+a start time, duration up to five minutes and 2–256 bins; longer projects can
+be inspected in separate windows. It observes relative time-bucket signal
+energy and silence, not exact original audio PTS, true peak, integrated LUFS,
+multichannel spatial sound, speech comprehension or artistic quality. The
+read-only operation never returns raw source audio, never accepts arbitrary
+host paths or stale export bytes, and has explicit CPU, output and disk budgets.
+This is a supplementary diagnostic next to actual bounded WAV listening.
+
 The verifier cannot establish editing originality, artistic acceptance,
 source rights or OS process isolation. The import and editing tools retain
 their exact upstream schemas; this BODY-owned tool is deliberately namespaced.
