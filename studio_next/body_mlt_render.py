@@ -73,7 +73,7 @@ def _require_native_audio_panner():
 
 
 def _require_native_tone(services):
-    """Reject an unavailable Frei0r effect before making director-visible media."""
+    """Reject unavailable original-source Frei0r effects before any film publication."""
     required={"frei0r.contrast0r","frei0r.saturat0r"} & set(services)
     if not required:return
     try:
@@ -250,7 +250,7 @@ def render_owned_mlt(edit,workspace,output,*,gap_color=None):
             p.text=="frei0r.cairoblend" for p in transition.findall("property"))
             for transition in xml.findall("./tractor/transition")):
         _require_native_frei0r_compositing()
-    services={p.text for filt in xml.findall("./tractor/filter")
+    services={p.text for filt in xml.findall(".//filter")
               for p in filt.findall("property")
               if p.get("name")=="mlt_service"}
     if "lift_gamma_gain" in services:
