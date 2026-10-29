@@ -3,7 +3,7 @@
 This is the **enduring product and engineering contract**, not a progress diary,
 creative-model prompt, chat handoff or certificate of readiness. The companion
 [ENGINEERING_STANDARD.md](ENGINEERING_STANDARD.md) defines the implementer's
-independent working method and the owner's final-video timing requirement. Read it with
+independent working method, delegated readiness decision and demonstration at a capability transition. Read it with
 `AGENTS.md`, `README.md`, real code and the **latest GitHub CI**. Historical
 original decisions remain in Git history; this contract preserves their full
 scope without treating old claims as current measurements.
@@ -130,13 +130,16 @@ independent creative acceptance and support of realistic workloads.
 is the first active completion field**, rather than shallow expansion into all
 domains. Native MLT editing, FFmpeg compositing, OTIO exchange, retiming,
 original-source audio and review need to form one coherent reversible
-artist-operated system. After one field passes its **full** professional
-technical and human acceptance criteria, produce the owner's original polished
-1–2 minute video **using the completed field**, preserving its editable source
-and real evidence; **only after that final demonstration** advance to the next
-dependency-based field. Internal short synthetic movies and CI exports remain
-engineering tests, never the promised final video. Prior "green" tests on a
-subset never certify the entire field.
+artist-operated system. The engineering lead independently judges when this field has reached a
+defensible professional completion level, based on relevant creative, technical,
+safety, source-rights, usability and actual real-model evidence; there is no
+fixed owner-prescribed checklist or mandatory demo duration. **When choosing
+to transition to the next capability**, show the owner a concrete original
+video created with the capability now considered complete. Choose its length,
+creative approach and evidence autonomously. Then continue to the next field
+without unnecessary permission pauses. Short internal synthetic clips and CI
+exports are development evidence, not that transition showcase; green tests
+alone do not establish field completion.
 
 At the end of each engineering cycle, prefer concrete verified work and an
 honest unresolved gate over progress prose. Keep durable intent in this contract,
