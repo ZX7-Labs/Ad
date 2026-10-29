@@ -5,6 +5,7 @@ on:
     paths:
       - "scripts/research_audio_clock.py"
       - "scripts/research_native_editor.py"
+      - "scripts/research_worker_isolation.py"
       - "research/browser-engine/**"
       - ".github/workflows/zx7-foundation-research.yml"
   pull_request:
@@ -12,6 +13,7 @@ on:
     paths:
       - "scripts/research_audio_clock.py"
       - "scripts/research_native_editor.py"
+      - "scripts/research_worker_isolation.py"
       - "research/browser-engine/**"
       - ".github/workflows/zx7-foundation-research.yml"
   workflow_dispatch:
@@ -21,6 +23,24 @@ concurrency:
   group: zx7-foundation-research-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 jobs:
+  worker-boundaries:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install open-source worker isolation tool
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y bubblewrap
+      - name: Measure supported boundaries without weakening the profile
+        run: python3 scripts/research_worker_isolation.py --out output/foundation/worker-boundaries.json
+      - name: Preserve boundary measurements including unavailable profiles
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zx7-worker-boundary-research
+          path: output/foundation/worker-boundaries.json
+          retention-days: 14
   physical-differential:
     runs-on: ubuntu-24.04
     timeout-minutes: 15

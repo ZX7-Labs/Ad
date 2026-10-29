@@ -134,6 +134,13 @@ Current-host preliminary result: a fixed `bwrap` profile launching only
 NETLINK_ROUTE socket. Full isolation is unverified. Keep arbitrary-code execution
 disabled on this host; do not weaken the profile just to pass the launch.
 
+`scripts/research_worker_isolation.py` now repeats a fixed worker profile on
+the actual host: read-only input, allowed output, hidden host file/environment
+and separation from a listening host-loopback socket. The `worker-boundaries`
+research CI job records availability and checks separately. Even a passed
+boundary probe does not establish resource limits, process-tree cancellation,
+GPU containment or hostile native-file safety; those R3 gates remain open.
+
 ## R4: Bounded native browser-motion eligibility trial
 
 **Research-only files:** `research/browser-engine/{package.json,package-lock.json,probe.mjs}`.
