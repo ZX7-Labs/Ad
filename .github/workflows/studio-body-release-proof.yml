@@ -1,5 +1,11 @@
 name: "ZX7 BODY — Installed Package, Desktop and Physical Crash Proof"
 on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/studio-body-release-proof.yml"
+      - "scripts/release_test_summary.py"
+      - "scripts/test_release_test_summary.py"
   workflow_dispatch:
 permissions:
   contents: read
@@ -15,21 +21,23 @@ jobs:
       - name: Install actual free native media tools and physical desktop display
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y blender ffmpeg inkscape xvfb python3-tk fonts-dejavu-core fonts-noto-core
+          sudo apt-get install -y blender ffmpeg inkscape melt frei0r-plugins xvfb python3-tk fonts-dejavu-core fonts-noto-core
           python -m pip install --no-cache-dir "numpy>=1.26,<3" "Pillow>=10,<13" "opentimelineio>=0.17,<1" "fonttools>=4,<5"
+          python -m pip install --no-cache-dir '.[editor]'
       - name: Verify complete contracts, real process death, pause/restart/resume and actual graphical client
         env:
           ZX7_DESKTOP_QA_PNG: ${{ github.workspace }}/output/body-release-proof/desktop-qa.png
         run: |
           mkdir -p output/body-release-proof
           python -m compileall -q studio_next motion_studio
+          python -m unittest discover -s scripts -p 'test_release_test_summary.py' -v
           set -o pipefail
           xvfb-run -a python -m unittest discover -s studio_next -p 'test_*.py' -v 2>&1 | tee output/body-release-proof/all-tests.log
       - name: Build and install the actual wheel into a separate Python environment
         run: |
           python -m pip wheel --no-deps --wheel-dir output/body-release-proof/wheels .
           python -m venv --system-site-packages "$RUNNER_TEMP/zx7-body-installed"
-          "$RUNNER_TEMP/zx7-body-installed/bin/python" -m pip install --no-deps output/body-release-proof/wheels/*.whl
+          "$RUNNER_TEMP/zx7-body-installed/bin/python" -m pip install --ignore-installed --no-deps output/body-release-proof/wheels/*.whl
           python -m venv "$RUNNER_TEMP/zx7-body-minimal"
           "$RUNNER_TEMP/zx7-body-minimal/bin/python" -m pip install --no-deps output/body-release-proof/wheels/*.whl
           "$RUNNER_TEMP/zx7-body-minimal/bin/python" -I - <<'PY'
@@ -48,6 +56,7 @@ jobs:
           import os, studio_next
           installed=Path(studio_next.__file__).resolve()
           assert not installed.is_relative_to(Path(os.environ['GITHUB_WORKSPACE']).resolve()), installed
+          assert installed.is_relative_to(Path(os.environ['RUNNER_TEMP'])/'zx7-body-installed'), installed
           print('ACTUAL SEPARATELY INSTALLED BODY PACKAGE',installed)
           PY
           "$RUNNER_TEMP/zx7-body-installed/bin/python" -u -m studio_next.body_native_proof --out "$GITHUB_WORKSPACE/output/body-release-proof/native"
@@ -56,22 +65,24 @@ jobs:
       - name: Save exact release evidence without certifying artistic quality
         run: |
           python - <<'PY'
-          import hashlib,json,os,re,sqlite3
+          import hashlib,json,os,sqlite3
+          from scripts.release_test_summary import parse_unittest_summary
           from pathlib import Path
           root=Path('output/body-release-proof')
           log=(root/'all-tests.log').read_text()
-          match=re.search(r'Ran (\d+) tests',log)
-          assert match and re.search(r'^OK\s*$',log,re.M),log[-2000:]
+          total, skipped = parse_unittest_summary(log)
+          assert not any('test_body_editor_mcp.' in line and ' ... skipped ' in line
+                         for line in log.splitlines()), 'Official native MCP SDK tests were not executed'
           physical=json.loads((root/'native/verified-native-body-result.json').read_text())
           assert physical['real_3d_rendered'] and physical['real_2d_rendered']
           assert physical['exact_all_nodes_resumed']
           assert (root/'desktop-qa.png').is_file()
           release={
             'source_commit':os.environ['GITHUB_SHA'],
-            'tests_run':int(match[1]),
-            'tests_discovered':int(match[1]),
-            'tests_skipped':len(re.findall(r' \.\.\. skipped ',log)),
-            'tests_passed':int(match[1])-len(re.findall(r' \.\.\. skipped ',log)),
+            'tests_run':total,
+            'tests_discovered':total,
+            'tests_skipped':skipped,
+            'tests_passed':total-skipped,
             'tests_failed':0,
             'tests_errors':0,
             'actual_gui_and_authenticated_media_roundtrip':True,
