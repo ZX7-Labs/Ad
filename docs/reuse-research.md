@@ -135,6 +135,8 @@ old names or search result snippets as dependency locks.
 | Existing selected baseline tests | 121 run, 113 passed, 8 skipped for OTIO | Earlier source/contract sample, not all tests or full native release suite |
 | Enable actual OTIO in research dependency directory | Previously skipped 8 OTIO tests all passed in 16.944 s | Their intentional strict bridge scope remains unchanged |
 | Sample-clock differential, 48 kHz impulse placed at sample 1 | BODY-generated audio branch peaks at sample 0; FFmpeg sample-unit reference peaks at 1 | Lossless PCM diagnostic, video branch sunk; not AAC delivery or a separate autonomous model |
+| Expanded local sample-clock matrix | 108 cases: 16 matching, 56 decoded timing mismatches, 36 generated-command rejections; maximum decoded error 24 samples | 44.1/48 kHz mono/stereo, 3 source trims and 9 placements; both routes use the current stereo bus |
+| Local three-track source-frame trial | FFmpeg baseline 12/12 frames matched; revised edit 11/12, with the intended top layer absent at frame 7 | 12 fps opaque diagnostic plates only; local MLT absent, native comparison must run separately |
 
 The sample-clock result specifically implicates `round(start*1000)` in the
 composition adapter. FFmpeg supports `adelay` sample units. One measured failure
@@ -142,6 +144,20 @@ is enough to reject a universal sample-accurate placement claim; it does not
 prove every trim, retime or bus operation wrong. A comprehensive remedy needs
 source trims, duration, channel policy, resampling and legacy schema migration,
 not merely replacing one literal filter string.
+
+The expanded matrix also established a distinct serialization failure:
+`source_in=1/44100` becomes `2.2675736961451248e-05` in `atrim`, which the
+installed FFmpeg duration parser rejects. The sample-unit reference executes.
+Both timing quantization and accepted-value serialization belong in the remedy.
+The source-frame revision mismatch needs native comparison and timestamp tracing
+before assigning a root cause; do not guess that it is an inclusive-end error.
+
+Reproduce with `python scripts/research_audio_clock.py --out /tmp/audio-clock.json`
+and `python scripts/research_native_editor.py --out /tmp/native-editor.json`.
+The second requires real MLT; its explicit `--ffmpeg-only` mode reports partial
+coverage. `.github/workflows/zx7-foundation-research.yml` runs both native probes
+and the actual OTIO tests. Measurement completion is separate from conformance:
+inspect the reports, or use `--require-conformance` on the audio probe.
 
 Host observations: Python 3.12.14; FFmpeg/FFprobe, Inkscape and `bwrap` present;
 Blender, MLT `melt` and Docker absent. OTIO was loaded from a research-only

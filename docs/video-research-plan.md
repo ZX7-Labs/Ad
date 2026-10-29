@@ -65,15 +65,23 @@ permission to manufacture success or skip the research-first requirement.
 authored source/output sample indices, decoded actual/reference indices,
 channel counts, subprocess status and explicit scope.
 
-- [ ] Generate deterministic isolated impulses; attest their actual bytes.
-- [ ] Compile the unchanged BODY audio branch, sink its video branch and render
+- [x] Generate deterministic isolated impulses; attest their actual bytes.
+- [x] Compile the unchanged BODY audio branch, sink its video branch and render
       lossless PCM. Render an independent FFmpeg sample-unit reference.
-- [ ] Exercise offsets around sample/millisecond boundaries, nonzero source
+- [x] Exercise offsets around sample/millisecond boundaries, nonzero source
       trims, mono/stereo and 44.1/48 kHz inputs. Record mismatches; a mismatch is
       a research result, not a reason to adjust the oracle.
-- [ ] Fail the probe on missing tools, bad decode or reference disagreement;
+- [x] Fail the probe on missing tools, bad decode or reference disagreement;
       distinguish successful measurement of a BODY defect from conformance.
 - [ ] Commit the probe and compact synthetic results; rerun from a clean checkout.
+
+Local first matrix: 108 cases, 16 matching, 56 decoded timing mismatches, 36
+BODY command rejections; largest observed decoded offset 24 samples at 48 kHz.
+Small float source trims were serialized as scientific notation rejected by
+FFmpeg's duration parser. This is baseline defect evidence, not a fixed runtime.
+The committed workflow repeats the probes on actual Ubuntu MLT/FFmpeg and
+uploads receipts. A green research workflow means measurement completed;
+inspect its conformance fields before making any product claim.
 
 ## R2: Native project and renderer comparison
 

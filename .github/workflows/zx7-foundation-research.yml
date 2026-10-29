@@ -1,0 +1,54 @@
+name: ZX7 Reproducible Foundation Research
+on:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/research_audio_clock.py"
+      - "scripts/research_native_editor.py"
+      - ".github/workflows/zx7-foundation-research.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "scripts/research_audio_clock.py"
+      - "scripts/research_native_editor.py"
+      - ".github/workflows/zx7-foundation-research.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: zx7-foundation-research-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  physical-differential:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      QT_QPA_PLATFORM: offscreen
+      LC_ALL: C
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install actual open native engines and editorial exchange library
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg melt frei0r-plugins
+          python -m pip install 'opentimelineio==0.18.1'
+      - name: Record unchanged adapter audio timing, including mismatches
+        run: |
+          python scripts/research_audio_clock.py --out output/foundation/audio-clock.json --summary-out output/foundation/audio-clock-summary.json
+      - name: Compare native MLT and FFmpeg source frames before and after revision
+        run: |
+          python scripts/research_native_editor.py --out output/foundation/native-editor.json
+      - name: Verify existing strict native OTIO behavior with actual library
+        run: |
+          python -m unittest studio_next.test_body_sequence_otio -v
+      - name: Preserve diagnostic measurements even if a later experiment fails
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zx7-foundation-differential
+          path: output/foundation/
+          retention-days: 14
+          if-no-files-found: warn
