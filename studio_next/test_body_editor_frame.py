@@ -49,11 +49,14 @@ class NativeEditorVisualFeedbackTests(unittest.TestCase):
         original = subprocess.run
         calls = []
         def inspect_command(command, **kwargs):
-            calls.append((command, kwargs))
-            self.assertEqual(kwargs.get("stderr"), subprocess.DEVNULL)
-            self.assertNotEqual(kwargs.get("stdout"), subprocess.PIPE)
-            self.assertIn("-fs", command)
-            self.assertEqual(command[command.index("-fs") + 1], str(4 * 1024 * 1024))
+            # subprocess.check_output internally delegates to subprocess.run;
+            # constrain these assertions to the actual FFmpeg image command.
+            if command[0] == "ffmpeg":
+                calls.append((command, kwargs))
+                self.assertEqual(kwargs.get("stderr"), subprocess.DEVNULL)
+                self.assertNotEqual(kwargs.get("stdout"), subprocess.PIPE)
+                self.assertIn("-fs", command)
+                self.assertEqual(command[command.index("-fs") + 1], str(4 * 1024 * 1024))
             return original(command, **kwargs)
         from unittest.mock import patch
         with patch("studio_next.body_editor_frame.subprocess.run",
