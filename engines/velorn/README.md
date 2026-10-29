@@ -64,7 +64,8 @@ against concurrent changes, validates optional target dimensions/duration/audio
 and returns an explicitly non-artistic result. It is separately identified
 from the 77 granted native controls. Host configuration
 `"verify_native_exports": true` opts in; the default is disabled.
-Only files under the canonical authorized project/output roots may be inspected.
+Only files in the dedicated authorized output root can be observed; original
+project/staging media are intentionally not exposed through this new tool.
 After a successful source-bound export proof in the same MCP session,
 `zx7_observe_verified_export_frame` can return an actual decoder-produced
 PNG image plus a factual source/timestamp receipt to a visual-capable AI client.
