@@ -69,6 +69,9 @@ jobs:
       - name: Install locked research-only browser engine without package install scripts
         working-directory: research/browser-engine
         run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Test research receipt gates before native rendering
+        working-directory: research/browser-engine
+        run: node --test evaluate.test.mjs
       - name: Install browser pinned by the installed Puppeteer version
         working-directory: research/browser-engine
         run: ./node_modules/.bin/puppeteer browsers install chrome-headless-shell
