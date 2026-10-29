@@ -215,6 +215,20 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(NativeCreativeControlError, "out of budget"):
             await NativeCreativeControl(session, model).run("Listen to my mix")
 
+    async def test_controller_is_single_use_so_verified_export_proof_cannot_leak(self):
+        session = FakeSession()
+        model = ScriptedModel([
+            decision("invoke", tool="zx7_verify_native_export",
+                     inputs={"path": "/host/test.mp4"}),
+            decision("finish", summary="Fixture ended, not independently reviewed")])
+        controller = NativeCreativeControl(session, model, max_turns=2)
+        first = await controller.run("First source-bound model session")
+        self.assertEqual(first["status"], "model_finished_unverified")
+        self.assertTrue(controller._verified_exports)
+        with self.assertRaisesRegex(NativeCreativeControlError, "single-use"):
+            await controller.run("Second session may not inherit first export proof")
+        self.assertEqual(len([c for c in session.calls if c[0] == "zx7_verify_native_export"]), 1)
+
     async def test_nonexistent_or_duplicate_native_tool_descriptors_refused(self):
         session = FakeSession()
         session.tools.append(session.tools[0])
