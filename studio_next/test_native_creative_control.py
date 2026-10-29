@@ -176,12 +176,13 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("error_sha256", receipt.read_text())
         self.assertFalse(result["native_editing_capability_complete"])
 
-    async def test_audio_content_not_silently_translated_to_language_or_approved(self):
+    async def test_audio_content_without_proof_not_silently_translated_to_language(self):
         session = FakeSession()
         session.custom_response = SimpleNamespace(is_error=False, content=[
-            SimpleNamespace(type="audio", data=base64.b64encode(b"RIFF").decode())])
+            SimpleNamespace(type="audio", mime_type="audio/wav",
+                            data=base64.b64encode(b"RIFF").decode())])
         model = ScriptedModel([decision("invoke", tool="get_timeline", inputs={})])
-        with self.assertRaisesRegex(NativeCreativeControlError, "audio-capable"):
+        with self.assertRaisesRegex(NativeCreativeControlError, "out of budget"):
             await NativeCreativeControl(session, model).run("Listen to my mix")
 
     async def test_nonexistent_or_duplicate_native_tool_descriptors_refused(self):
