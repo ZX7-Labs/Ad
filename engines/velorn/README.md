@@ -77,9 +77,18 @@ scene-linear/HDR fidelity or artistic acceptance. The additional
 requested timestamps and returns multiple separate genuine decoded PNGs with
 per-frame source-bound hash receipts. At most 8 MiB of raw PNG bytes may be
 returned in one call. It is a sparse temporal visual observation, **not**
-continuous motion playback or an audio/listening test. Both observation tools
+continuous motion playback or an audio/listening test. The visual observation tools
 are read-only and require successful full physical verification earlier in
 the same session; a failed sample clears that permission for the source.
+The additional read-only `zx7_observe_verified_export_audio` tool serves a
+**genuine short 16 kHz mono PCM WAV** as standard MCP `AudioContent` with
+its own source-bound hash, requested interval, actual sample count and
+basic preview-level signal statistics. It requires the same exact export proof
+and denies stale or unapproved sources. The excerpt is at most three seconds;
+downmixing/resampling explicitly prevents interpreting it as proof of the
+original spatial mix, full-film sync, music quality, dialogue fidelity or
+professional mastering. Audio-capable clients may listen to it directly;
+clients that ignore MCP audio content will not gain hearing by magic.
 Refresh the full-export proof after modifying the file or reconnecting.
 The verifier cannot establish editing originality, artistic acceptance,
 source rights or OS process isolation. The import and editing tools retain
