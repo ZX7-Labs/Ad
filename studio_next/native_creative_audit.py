@@ -73,7 +73,10 @@ def read_native_journal(path: Path):
     if not lines or len(lines) > 1024 or any(not line or len(line) > 128 * 1024
                                               for line in lines):
         raise NativeJournalError("Journal exceeds audit limits or has empty records")
-    events = [_strict_json(line.decode("utf-8")) for line in lines]
+    try:
+        events = [_strict_json(line.decode("utf-8")) for line in lines]
+    except UnicodeDecodeError as exc:
+        raise NativeJournalError("Journal is not UTF-8") from exc
     return events
 
 
@@ -214,10 +217,17 @@ def main():
     p.add_argument("--journal", type=Path, required=True)
     p.add_argument("--host-editor-config", type=Path, required=True)
     args = p.parse_args()
-    from .body_editor_client import _load_json
-    # This is an offline audit of owner-owned grant facts, never model-supplied.
-    config = _load_json(args.host_editor_config.read_text(encoding="utf-8"))
-    grants = config.get("allowed_tools")
+    from .body_editor_policy import load_editor_config
+    # The SAME real policy loader that launches the editor validates grants
+    # and roots. Extra ZX7 sensor names are inserted ONLY when the actual
+    # host config enabled them and the read capability was owner-granted.
+    config = load_editor_config(args.host_editor_config)
+    grants = dict(config.allowed_tools)
+    if config.verify_native_exports and "read" in config.allowed_access:
+        extras = {_EXPORT, *_OBSERVERS}
+        if any(name in grants for name in extras):
+            raise NativeJournalError("Namespaced BODY sensors collide with native grants")
+        grants.update({name: "read" for name in extras})
     outcome = audit_native_journal(read_native_journal(args.journal),
                                    host_tool_access=grants)
     print(json.dumps(outcome, indent=2, sort_keys=True))
