@@ -37,7 +37,7 @@ async def exercise(options):
     config = fixture / "editor.json"
     config.write_text(json.dumps({"endpoint": "http://127.0.0.1:19790/mcp", "projects_root": str(projects),
         "staging_root": str(staging), "outputs_root": str(outputs), "allowed_tools": tools,
-        "allowed_access": ["read", "write"]}))
+        "allowed_access": ["read", "write"], "verify_native_exports": True}))
     ffmpeg, ffprobe = shutil.which("ffmpeg"), shutil.which("ffprobe")
     assert ffmpeg and ffprobe, "Install FFmpeg and FFprobe for independent decoding"
     def run(argv):
@@ -82,12 +82,13 @@ async def exercise(options):
 
     async with connected() as session:
         discovered = (await session.list_tools()).tools
-        assert {tool.name for tool in discovered} == set(tools)
+        assert {tool.name for tool in discovered} == set(tools) | {"zx7_verify_native_export"}
         from studio_next.body_editor_client import LocalEditorClient
         native = {tool["name"]: tool for tool in LocalEditorClient(
             "http://127.0.0.1:19790/mcp", allowed_tools={}).list_tools()}
         for tool in discovered:
-            assert tool.input_schema == native[tool.name]["inputSchema"]
+            if tool.name in native:
+                assert tool.input_schema == native[tool.name]["inputSchema"]
         assert (await session.call_tool("queue_prompt_generation_batch", {})).is_error
         assert (await session.call_tool("create_project", {"name": "Bad", "width": "wrong"})).is_error
         await call(session, "create_project", {"name": "MCP native edit", "width": 320, "height": 180, "fps": 24, "previewOnly": False})
@@ -141,6 +142,12 @@ async def exercise(options):
             await asyncio.sleep(.2)
         inspection = await call(session, "inspect_export_file", {"path": str(output), "width": 320, "height": 180, "durationSeconds": 2})
         assert inspection["ready"], inspection
+        proof = await call(session, "zx7_verify_native_export", {
+            "path": str(output),
+            "expected": {"width": 320, "height": 180,
+                         "duration_seconds": 2, "require_audio": True}})
+        assert proof["physical_export_verified"] and not proof["artistic_quality_approved"], proof
+        assert proof["native_export_sha256"] == digest(output), proof
 
     async with connected() as session:
         await call(session, "open_project", {"projectPath": str(project), "previewOnly": False})
@@ -163,7 +170,9 @@ async def exercise(options):
     assert .03 < audio_rms < .2
     receipt = {"success": True, "kind": "scripted official SDK client; no autonomous model evaluation",
         "transport": "standard MCP stdio; Python SDK 2.3.0", "nativeSchemasUnchanged": True,
-        "discoveredGrantedTools": len(discovered), "deniedNetworkTool": True, "deniedOutsideImport": True,
+        "discoveredGrantedTools": len(tools), "additionalVerifiedBodyTools": 1,
+        "physicalEditorExportIndependentlyDecoded": True,
+        "deniedNetworkTool": True, "deniedOutsideImport": True,
         "existingSourceExportDenied": True, "outsideNativeDocumentDenied": True,
         "invalidNativeArgumentsRejected": True, "editableTracks": 3, "savedVersions": 2,
         "processRestartReopenPassed": True, "frames": 48, "fps": "24/1", "audioCodec": "aac",

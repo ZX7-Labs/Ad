@@ -85,5 +85,6 @@
     "add_dip_to_black": "write",
     "export_timeline": "write",
     "export_fcpxml": "write"
-  }
+  },
+  "verify_native_exports": true
 }

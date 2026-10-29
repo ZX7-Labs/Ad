@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import subprocess
 from pathlib import Path
 import sys
 
@@ -30,7 +31,8 @@ def _local_schema_references(schema):
             _local_schema_references(item)
 
 
-def create_editor_server(client, *, allowed_access=frozenset({"read"})):
+def create_editor_server(client, *, allowed_access=frozenset({"read"}),
+                         export_verifier=None):
     """Return the official SDK server; discovery never expands host grants.
 
     Dependencies are imported here so the stdlib BODY remains usable without
@@ -58,7 +60,29 @@ def create_editor_server(client, *, allowed_access=frozenset({"read"})):
         validator.check_schema(schema)
         validators[name] = validator(schema)
         tools[name] = types.Tool.model_validate(native[name])
+    verified_export_name = "zx7_verify_native_export"
+    if export_verifier is not None:
+        if not callable(export_verifier) or verified_export_name in native:
+            raise ValueError("Invalid host export verifier or native tool name collision")
+        if "read" in access:
+            schema = {"type": "object",
+                      "properties": {
+                          "path": {"type": "string"},
+                          "expected": {"type": "object",
+                                       "properties": {
+                                           "width": {"type": "integer", "minimum": 1},
+                                           "height": {"type": "integer", "minimum": 1},
+                                           "duration_seconds": {"type": "number", "exclusiveMinimum": 0},
+                                           "require_audio": {"type": "boolean"}},
+                                       "additionalProperties": False}},
+                      "required": ["path"], "additionalProperties": False}
+            tools[verified_export_name] = types.Tool(
+                name=verified_export_name,
+                description="Decode and independently verify an authorized finished native video export; not an artistic-quality score",
+                inputSchema=schema)
+            validators[verified_export_name] = jsonschema.Draft202012Validator(schema)
     lock = anyio.Lock()
+    inspection_capacity = anyio.CapacityLimiter(1)
 
     def failed(message):
         return types.CallToolResult(is_error=True,
@@ -76,6 +100,17 @@ def create_editor_server(client, *, allowed_access=frozenset({"read"})):
             validators[name].validate(arguments)
         except jsonschema.ValidationError as exc:
             return failed("Invalid native tool arguments: " + exc.message)
+        if name == verified_export_name:
+            try:
+                async with inspection_capacity:
+                    with anyio.CancelScope(shield=True):
+                        proof = await anyio.to_thread.run_sync(
+                            lambda: export_verifier(arguments["path"], expected=arguments.get("expected")),
+                            abandon_on_cancel=False)
+                return types.CallToolResult(is_error=False, content=[
+                    types.TextContent(type="text", text=json.dumps(proof, allow_nan=False))])
+            except (ValueError, OSError, subprocess.SubprocessError) as exc:
+                return failed("Independent native export verification failed: " + str(exc))
         try:
             # Do not abandon a possibly applied write on protocol cancellation.
             # The lock stays held until the bounded native HTTP call finishes.
@@ -114,7 +149,13 @@ def main(argv=None):
                               "staging_root": str(config.staging_root),
                               "outputs_root": str(config.outputs_root)}, allow_nan=False))
             return 0
-        server = create_editor_server(config.client(), allowed_access=config.allowed_access)
+        export_verifier = None
+        if config.verify_native_exports:
+            from .body_editor_export import verify_native_editor_export
+            export_verifier = lambda path, expected=None: verify_native_editor_export(
+                path, policy=config._policy, expected=expected)
+        server = create_editor_server(config.client(), allowed_access=config.allowed_access,
+                                      export_verifier=export_verifier)
 
         async def serve():
             from mcp.server.stdio import stdio_server
