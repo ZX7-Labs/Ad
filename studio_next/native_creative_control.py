@@ -207,6 +207,7 @@ class NativeCreativeControl:
         self._last_audio: list[tuple[str, bytes]] = []
         self._last_audio_evidence: dict | None = None
         self._verified_exports: set[str] = set()
+        self._started = False
         self._receipt = None
 
     def _append(self, event: dict):
@@ -253,6 +254,11 @@ class NativeCreativeControl:
         return await asyncio.to_thread(self.model.decide, context)
 
     async def run(self, brief: str) -> dict:
+        # This instance owns one source identity ledger and one write history.
+        # Never reuse old physical-media authorization in a second session.
+        if self._started:
+            raise NativeCreativeControlError("A native creative controller is single-use")
+        self._started = True
         if not isinstance(brief, str) or not 1 <= len(brief.strip()) <= 32_000:
             raise NativeCreativeControlError("An ordinary owner's creative brief is required")
         available = (await self.session.list_tools()).tools
