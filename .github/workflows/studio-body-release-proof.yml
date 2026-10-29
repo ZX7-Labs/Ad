@@ -37,7 +37,7 @@ jobs:
         run: |
           python -m pip wheel --no-deps --wheel-dir output/body-release-proof/wheels .
           python -m venv --system-site-packages "$RUNNER_TEMP/zx7-body-installed"
-          "$RUNNER_TEMP/zx7-body-installed/bin/python" -m pip install --no-deps output/body-release-proof/wheels/*.whl
+          "$RUNNER_TEMP/zx7-body-installed/bin/python" -m pip install --ignore-installed --no-deps output/body-release-proof/wheels/*.whl
           python -m venv "$RUNNER_TEMP/zx7-body-minimal"
           "$RUNNER_TEMP/zx7-body-minimal/bin/python" -m pip install --no-deps output/body-release-proof/wheels/*.whl
           "$RUNNER_TEMP/zx7-body-minimal/bin/python" -I - <<'PY'
@@ -56,6 +56,7 @@ jobs:
           import os, studio_next
           installed=Path(studio_next.__file__).resolve()
           assert not installed.is_relative_to(Path(os.environ['GITHUB_WORKSPACE']).resolve()), installed
+          assert installed.is_relative_to(Path(os.environ['RUNNER_TEMP'])/'zx7-body-installed'), installed
           print('ACTUAL SEPARATELY INSTALLED BODY PACKAGE',installed)
           PY
           "$RUNNER_TEMP/zx7-body-installed/bin/python" -u -m studio_next.body_native_proof --out "$GITHUB_WORKSPACE/output/body-release-proof/native"
