@@ -110,7 +110,11 @@ def preflight_non_destructive_native_split(client, arguments: dict, *,
     timeline_data = _native_json(client.call(
         "get_timeline", {"includeClips": True, "limit": 1000},
         allowed_access=allowed_access), "get_timeline")
-    timeline = timeline_data.get("timeline", timeline_data)
+    # Pinned native MCP versions expose either clips at the top level
+    # (with a sibling timeline name/summary) or inside a timeline object.
+    # Only a full list of exact clip identities can authorize a write.
+    timeline = (timeline_data if isinstance(timeline_data.get("clips"), list)
+                else timeline_data.get("timeline"))
     if (not isinstance(timeline, dict) or
             not isinstance(timeline.get("clips"), list) or
             timeline.get("clipLimitApplied") is not None):
