@@ -46,6 +46,9 @@ jobs:
       - name: Verify existing strict native OTIO behavior with actual library
         run: |
           python -m unittest studio_next.test_body_sequence_otio -v
+      - name: Enforce actual BODY sample placement against real decoded PCM
+        run: |
+          python -m unittest studio_next.test_composite_sample_clock -v
       - name: Preserve diagnostic measurements even if a later experiment fails
         if: always()
         uses: actions/upload-artifact@v4
