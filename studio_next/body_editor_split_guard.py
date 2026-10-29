@@ -100,55 +100,62 @@ def preflight_non_destructive_native_split(client, arguments: dict, *,
     and the editor's supported automatic time-based targeting are both checked.
     A clip whose attributes are unknown is not assumed lossless.
     """
-    if "read" not in allowed_access or not {"get_timeline", "inspect_clip"}.issubset(
-            client.allowed_tools) or any(
-                client.allowed_tools[name] != "read"
-                for name in ("get_timeline", "inspect_clip")):
+    if "read" not in allowed_access or client.allowed_tools.get("inspect_clip") != "read":
         raise EditorAccessError("Native split requires host-granted read inspection; no unsafe fallback")
     if not isinstance(arguments, dict):
         raise EditorAccessError("Native split requires object arguments")
-    timeline_data = _native_json(client.call(
-        "get_timeline", {"includeClips": True, "limit": 1000},
-        allowed_access=allowed_access), "get_timeline")
-    # Pinned native MCP versions expose either clips at the top level
-    # (with a sibling timeline name/summary) or inside a timeline object.
-    # Only a full list of exact clip identities can authorize a write.
-    timeline = (timeline_data if isinstance(timeline_data.get("clips"), list)
-                else timeline_data.get("timeline"))
-    if (not isinstance(timeline, dict) or
-            not isinstance(timeline.get("clips"), list) or
-            timeline.get("clipLimitApplied") is not None):
-        raise EditorAccessError("Native split requires a complete untruncated timeline")
-    clips = timeline["clips"]
-    if not all(isinstance(c, dict) and isinstance(c.get("id"), str) for c in clips):
-        raise EditorAccessError("Native timeline has incomplete clip references")
-    clip_by_id = {clip["id"]: clip for clip in clips}
-    if len(clip_by_id) != len(clips):
-        raise EditorAccessError("Native timeline has ambiguous duplicate clip identity")
+    time_value = arguments.get("timeSeconds", arguments.get("time"))
+    if time_value is None:
+        raise EditorAccessError("Explicit split time needed for non-destructive target inspection")
+    at = _finite_time(time_value)
     if arguments.get("clipId") is not None:
         ids = [arguments["clipId"]]
     elif arguments.get("clipIds") is not None:
         ids = arguments["clipIds"]
     else:
-        at = arguments.get("timeSeconds", arguments.get("time"))
-        if at is None:
-            raise EditorAccessError("Explicit split time needed for non-destructive target inspection")
-        when = _finite_time(at)
-        ids = [clip["id"] for clip in clips if (
-            type(clip.get("startTime")) in (int, float) and
-            type(clip.get("duration")) in (int, float) and
-            clip["startTime"] < when < clip["startTime"] + clip["duration"])]
+        # Implicit targeting at the playhead requires the WHOLE timeline;
+        # never guess which clips a native razor might modify.
+        if client.allowed_tools.get("get_timeline") != "read":
+            raise EditorAccessError("Automatic split targets require host-granted full timeline inspection")
+        timeline_data = _native_json(client.call(
+            "get_timeline", {"includeClips": True, "limit": 1000},
+            allowed_access=allowed_access), "get_timeline")
+        timeline = (timeline_data if isinstance(timeline_data.get("clips"), list)
+                    else timeline_data.get("timeline"))
+        if (not isinstance(timeline, dict) or
+                not isinstance(timeline.get("clips"), list) or
+                timeline.get("clipLimitApplied") is not None):
+            raise EditorAccessError("Native split requires a complete untruncated timeline")
+        clips = timeline["clips"]
+        if not all(isinstance(c, dict) and isinstance(c.get("id"), str) and
+                   type(c.get("startTime")) in (int, float) and
+                   type(c.get("duration")) in (int, float) and
+                   math.isfinite(c["startTime"]) and
+                   math.isfinite(c["duration"]) for c in clips):
+            raise EditorAccessError("Native timeline has incomplete clip references")
+        if len({clip["id"] for clip in clips}) != len(clips):
+            raise EditorAccessError("Native timeline has ambiguous duplicate clip identity")
+        ids = [clip["id"] for clip in clips if
+               clip["startTime"] < at < clip["startTime"] + clip["duration"]]
     if (not isinstance(ids, list) or not ids or len(ids) > 1000 or
-            any(not isinstance(i, str) or not i or i not in clip_by_id for i in ids) or
+            any(not isinstance(i, str) or not i for i in ids) or
             len(set(ids)) != len(ids)):
-        raise EditorAccessError("Native split targets must resolve uniquely in current full timeline")
+        raise EditorAccessError("Native split targets must resolve uniquely")
     checked = []
     for identity in ids:
-        detail = _native_json(client.call(
-            "inspect_clip", {"clipId": identity}, allowed_access=allowed_access), "inspect_clip")
+        try:
+            detail = _native_json(client.call(
+                "inspect_clip", {"clipId": identity}, allowed_access=allowed_access), "inspect_clip")
+        except (ValueError, KeyError, StopIteration) as exc:
+            raise EditorAccessError("Native split target does not exist or cannot be inspected") from exc
         clip = detail.get("clip", detail)
         if not isinstance(clip, dict) or clip.get("id") != identity:
             raise EditorAccessError("Native split inspection changed clip identity")
+        start, duration = clip.get("startTime"), clip.get("duration")
+        if (type(start) not in (int, float) or type(duration) not in (int, float) or
+                not math.isfinite(start) or not math.isfinite(duration) or
+                not start < at < start + duration):
+            raise EditorAccessError("Native split time is not strictly inside the inspected clip")
         reasons = _unsafe_features(clip)
         if reasons:
             raise EditorAccessError(
