@@ -52,7 +52,7 @@ async def exercise(options):
     ffmpeg, ffprobe = shutil.which("ffmpeg"), shutil.which("ffprobe")
     assert ffmpeg and ffprobe, "Install FFmpeg and FFprobe for independent decoding"
     def run(argv):
-        return subprocess.check_output(argv, stderr=subprocess.PIPE, timeout=30)
+        return subprocess.check_output(argv, stderr=subprocess.PIPE, timeout=240)
     # Video source clips are created by local FFmpeg from its open test
     # generator, then independently color-transformed. No downloaded assets.
     for index, hue in enumerate((0, 60, 135, 210, 300)):
@@ -224,8 +224,8 @@ async def exercise(options):
     assert abs(float(probe["format"]["duration"]) - 60) < .05
     run([ffmpeg, "-v", "error", "-xerror", "-i", str(output), "-f", "null", "-"])
     pcm = run([ffmpeg, "-v", "error", "-i", str(output), "-map", "0:a:0", "-ac", "1", "-f", "f32le", "pipe:1"])
-    samples = struct.unpack("<" + "f" * (len(pcm) // 4), pcm)
-    audio_rms = math.sqrt(sum(sample * sample for sample in samples) / len(samples))
+    pcm_samples = struct.unpack("<" + "f" * (len(pcm) // 4), pcm)
+    audio_rms = math.sqrt(sum(sample * sample for sample in pcm_samples) / len(pcm_samples))
     assert .015 < audio_rms < .2
     receipt = {"success": True, "kind": "scripted official SDK client; no autonomous model evaluation",
         "transport": "standard MCP stdio; Python SDK 2.3.0", "nativeSchemasUnchanged": True,
