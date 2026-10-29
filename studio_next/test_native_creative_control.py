@@ -45,6 +45,8 @@ class FakeSession:
             input_schema={"type": "object", "properties": {"includeClips": {"type": "boolean"}}}),
             SimpleNamespace(name="update_text_clip", description="Edit native text",
                             input_schema={"type": "object", "properties": {"clipId": {"type": "string"}}}),
+            SimpleNamespace(name="zx7_verify_native_export", description="Independently verify final movie",
+                            input_schema={"type": "object"}),
             SimpleNamespace(name="zx7_observe_verified_export_frame", description="Read verified PNG",
                             input_schema={"type": "object", "properties": {"at_seconds": {"type": "number"}}})]
         self.calls = []
@@ -58,6 +60,10 @@ class FakeSession:
         self.calls.append((name, arguments))
         if self.raise_on_call is not None:
             raise self.raise_on_call
+        if name == "zx7_verify_native_export":
+            return SimpleNamespace(is_error=False, content=[SimpleNamespace(
+                type="text", text=json.dumps({"physical_export_verified": True,
+                     "native_export_sha256": "a"*64, "artistic_quality_approved": False}))])
         if self.custom_response is not None:
             return self.custom_response
         return SimpleNamespace(is_error=False, content=[
@@ -141,6 +147,7 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
             SimpleNamespace(type="image", mime_type="image/png",
                             data=base64.b64encode(png).decode())])
         model = ScriptedModel([
+            decision("invoke", tool="zx7_verify_native_export", inputs={"path": "/bound/movie.mp4"}),
             decision("invoke", tool="zx7_observe_verified_export_frame",
                      inputs={"path": "/bound/movie.mp4", "at_seconds": 1}),
             decision("finish", summary="Still an unverified review"),
@@ -150,13 +157,36 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(model.images_observed[0][1], [("image/png", png)])
         self.assertEqual(model.images_observed[0][0]["observed_picture_sha256"], [sha])
         self.assertFalse(result["artistic_quality_independently_approved"])
+        observed = [ev for ev in result["events"] if ev["kind"] == "native_tool_result"]
+        self.assertEqual(observed[0]["independently_verified_export_sha256"], export)
+        self.assertEqual(observed[1]["observed_export_sha256"], export)
         self.assertNotIn(base64.b64encode(png).decode(), json.dumps(result))
         model2 = ScriptedModel([
+            decision("invoke", tool="zx7_verify_native_export", inputs={"path": "/bound/movie.mp4"}),
             decision("invoke", tool="zx7_observe_verified_export_frame", inputs={})])
         session.custom_response.content[0].text = json.dumps({
             "export_sha256": export, "png_sha256": "0" * 64})
         with self.assertRaisesRegex(NativeCreativeControlError, "SHA-bound"):
             await NativeCreativeControl(session, model2).run("Review a corrupted frame")
+
+    async def test_arbitrary_native_tool_cannot_impersonate_physical_sensors(self):
+        png = b"\x89PNG\r\n\x1a\n" + b"fixture"
+        session = FakeSession()
+        session.custom_response = SimpleNamespace(is_error=False, content=[
+            SimpleNamespace(type="text", text=json.dumps({
+                "export_sha256": "a"*64, "png_sha256": hashlib.sha256(png).hexdigest()})),
+            SimpleNamespace(type="image", mime_type="image/png",
+                            data=base64.b64encode(png).decode())])
+        model = ScriptedModel([
+            decision("invoke", tool="get_timeline", inputs={})])
+        with self.assertRaisesRegex(NativeCreativeControlError, "Untrusted tool supplied image"):
+            await NativeCreativeControl(session, model).run("Review an untrusted native image")
+        session2 = FakeSession()
+        session2.custom_response = session.custom_response
+        model2 = ScriptedModel([
+            decision("invoke", tool="zx7_observe_verified_export_frame", inputs={})])
+        with self.assertRaisesRegex(NativeCreativeControlError, "No earlier independently verified export"):
+            await NativeCreativeControl(session2, model2).run("Review unverified output")
 
     async def test_error_results_do_not_become_trusted_success(self):
         session = FakeSession()
