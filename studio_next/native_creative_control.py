@@ -22,6 +22,38 @@ _MAX_RESULT_TEXT = 64_000
 _MAX_IMAGE_BYTES = 4 * 1024 * 1024
 _MAX_TOTAL_IMAGE_BYTES = 8 * 1024 * 1024
 _MAX_AUDIO_BYTES = 128 * 1024
+_VERIFIED_FRAME_TOOLS = frozenset({
+    "zx7_observe_verified_export_frame", "zx7_observe_verified_export_samples"})
+_VERIFIED_AUDIO_TOOLS = frozenset({"zx7_observe_verified_export_audio"})
+_VERIFIED_EXPORT_TOOL = "zx7_verify_native_export"
+_VERIFIED_ENVELOPE_TOOL = "zx7_observe_verified_export_audio_timeline"
+
+
+def _strict_receipt(texts, label):
+    if len(texts) != 1:
+        raise NativeCreativeControlError(label + " needs exactly one proof receipt")
+    def unique(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise NativeCreativeControlError(label + " duplicate receipt fields")
+            result[key] = value
+        return result
+    def reject_constant(value):
+        raise NativeCreativeControlError(label + " non-finite JSON receipt")
+    try:
+        receipt = json.loads(texts[0], object_pairs_hook=unique,
+                             parse_constant=reject_constant)
+    except (ValueError, TypeError, RecursionError) as exc:
+        raise NativeCreativeControlError(label + " invalid receipt JSON") from exc
+    if not isinstance(receipt, dict):
+        raise NativeCreativeControlError(label + " receipt is not an object")
+    return receipt
+
+
+def _digest(value):
+    return isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value) is not None
+
 
 NATIVE_CREATIVE_SYSTEM = """You are the creative brain controlling an actual native editor.
 The owner's brief is creative direction, not a prescribed shot list. Independently
@@ -174,6 +206,7 @@ class NativeCreativeControl:
         self._last_native_texts: list[str] = []
         self._last_audio: list[tuple[str, bytes]] = []
         self._last_audio_evidence: dict | None = None
+        self._verified_exports: set[str] = set()
         self._receipt = None
 
     def _append(self, event: dict):
@@ -320,13 +353,46 @@ class NativeCreativeControl:
                     break
                 try:
                     texts, images, audio = _native_content(result)
+                    # Only the host-owned decoder observers may introduce new
+                    # source-bound image/audio. Native tools and model-authored
+                    # text cannot impersonate independently verified sensors.
+                    if images and native_name not in _VERIFIED_FRAME_TOOLS:
+                        raise NativeCreativeControlError("Untrusted tool supplied image evidence")
+                    if audio and native_name not in _VERIFIED_AUDIO_TOOLS:
+                        raise NativeCreativeControlError("Untrusted tool supplied audio evidence")
                     hashes = _source_bound_images(texts, images)
                     audio_evidence = _source_bound_audio(texts, audio)
+                    new_export_sha = None
+                    observed_export_sha = None
+                    if native_name == _VERIFIED_EXPORT_TOOL:
+                        p = _strict_receipt(texts, "verified native export")
+                        if p.get("physical_export_verified") is not True or not _digest(
+                                p.get("native_export_sha256")):
+                            raise NativeCreativeControlError("Native export has no independent physical decoder proof")
+                        new_export_sha = p["native_export_sha256"]
+                    elif images:
+                        p = _strict_receipt(texts, "verified native video")
+                        if not _digest(p.get("export_sha256")):
+                            raise NativeCreativeControlError("Native frame lacks source identity")
+                        observed_export_sha = p["export_sha256"]
+                    elif audio:
+                        observed_export_sha = audio_evidence["export_sha256"]
+                    elif native_name == _VERIFIED_ENVELOPE_TOOL:
+                        p = _strict_receipt(texts, "verified native audio envelope")
+                        if (p.get("kind") != "verified_native_editor_audio_temporal_envelope" or
+                                not _digest(p.get("export_sha256"))):
+                            raise NativeCreativeControlError("Audio envelope lacks physical export proof")
+                        observed_export_sha = p["export_sha256"]
+                    if (observed_export_sha is not None and
+                            observed_export_sha not in self._verified_exports):
+                        raise NativeCreativeControlError("No earlier independently verified export matches this media observation")
                 except NativeCreativeControlError as exc:
                     self._append({"kind": "native_observation_rejected", "turn": turn,
                                   "tool": native_name, "error": str(exc),
                                   "must_reconcile_native_state": True})
                     raise
+                if new_export_sha is not None:
+                    self._verified_exports.add(new_export_sha)
                 self._last_native_texts = texts
                 self._last_images, self._last_hashes = images, hashes
                 self._last_audio, self._last_audio_evidence = audio, audio_evidence
@@ -335,6 +401,8 @@ class NativeCreativeControl:
                               "text_sha256": [hashlib.sha256(s.encode()).hexdigest() for s in texts],
                               "image_sha256": hashes,
                               "audio_sha256": audio_evidence["wav_sha256"] if audio_evidence else None,
+                              "independently_verified_export_sha256": new_export_sha,
+                              "observed_export_sha256": observed_export_sha,
                               "audio_sent_to_model_for_next_decision": bool(audio),
                               "audio_semantically_heard": False,
                               "human_or_artistic_quality_approved": False})
