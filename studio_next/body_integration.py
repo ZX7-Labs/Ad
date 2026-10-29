@@ -1029,7 +1029,12 @@ def body_catalog(workspace,*,vault_root=None,editor_client=None):
                              "Stateful writes are not automatically retried or cached."))
             catalog.register(spec,
                 lambda inputs,n=name,a=access:editor_client.call(
-                    n,inputs["arguments"],allowed_access=frozenset({a})),
+                    n,inputs["arguments"],
+                    # Source introspection is an internal safety prerequisite,
+                    # not an additional tool that a model may grant itself.
+                    # Other write tools keep their existing exact access.
+                    allowed_access=(frozenset({a,"read"}) if n=="split_clip"
+                                    else frozenset({a}))),
                 idempotent=False)
     for spec,runner,idempotent,version,operational,materials in discover_enabled_body_plugins():
         if not operational:
