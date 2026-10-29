@@ -11,8 +11,10 @@ remains the product contract. [Reuse research](reuse-research.md) distinguishes
 source findings, measurements and unresolved experiments.
 
 This design is a migration target, not a description of a completed runtime.
-Product coding remains gated by the research-first mandate. The executable
-precision matrix and a small native renderer comparison have now run; broader
+Targeted repair of reproduced defects is now authorized under the owner's
+29 October implementation delegation. Major engine replacement and unverified
+new architecture remain gated by comparative research. The executable
+precision matrix and a small native renderer comparison have run; broader
 renderer comparisons, isolation and model trials remain unresolved. The compact
 [measurement record](../research/foundation-evidence.json) survives CI artifact
 expiry. Do not change this status merely
