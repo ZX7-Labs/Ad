@@ -1,5 +1,7 @@
 """Interop tests use the official SDK and a real local HTTP editor fixture."""
 import asyncio
+import base64
+import hashlib
 import importlib.util
 import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -262,8 +264,11 @@ class EditorMCPTests(unittest.IsolatedAsyncioTestCase):
             return {"physical_export_verified": True, "native_export_sha256": "a" * 64}
         def observer(path, verified_sha256, at_seconds):
             observers.append((path, verified_sha256, at_seconds))
-            return b"verified-image", {"export_sha256": verified_sha256,
-                                       "human_or_artistic_quality_approved": False}
+            png = b"verified-image"
+            return png, {"export_sha256": verified_sha256,
+                         "png_sha256": hashlib.sha256(png).hexdigest(),
+                         "sampled_video_seconds_requested": at_seconds,
+                         "human_or_artistic_quality_approved": False}
 
         async def check(session):
             names = [tool.name for tool in (await session.list_tools()).tools]
@@ -283,6 +288,102 @@ class EditorMCPTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue((await session.call_tool("zx7_observe_verified_export_frame", {
                 "path": "/trusted/movie.mp4", "at_seconds": -1})).is_error)
             self.assertFalse(any(x["method"] == "tools/call" for x in self.requests))
+        await self.with_session(check, export_verifier=verifier, frame_observer=observer)
+
+    async def test_multiple_frame_observations_have_ordered_source_evidence(self):
+        observed_times = []
+        digest = "b" * 64
+        def verifier(path, expected=None):
+            self.assertEqual(path, "/trusted/source.mp4")
+            return {"physical_export_verified": True, "native_export_sha256": digest}
+
+        def observer(path, verified_sha256, at_seconds):
+            self.assertEqual((path, verified_sha256), ("/trusted/source.mp4", digest))
+            observed_times.append(at_seconds)
+            png = b"physical-image-" + repr(at_seconds).encode()
+            return png, {"export_sha256": digest,
+                         "png_sha256": hashlib.sha256(png).hexdigest(),
+                         "sampled_video_seconds_requested": at_seconds,
+                         "human_or_artistic_quality_approved": False}
+
+        async def check(session):
+            name = "zx7_observe_verified_export_samples"
+            listed = {tool.name: tool for tool in (await session.list_tools()).tools}
+            self.assertIn(name, listed)
+            query = {"path": "/trusted/source.mp4", "at_seconds": [0.25, 1.25, 2.25]}
+            self.assertTrue((await session.call_tool(name, query)).is_error)
+            self.assertFalse((await session.call_tool(
+                "zx7_verify_native_export", {"path": query["path"]})).is_error)
+            result = await session.call_tool(name, query)
+            self.assertFalse(result.is_error, result)
+            self.assertEqual(len(result.content), 4)
+            receipt = json.loads(result.content[0].text)
+            self.assertEqual(receipt["kind"], "verified_native_editor_selected_frames")
+            self.assertEqual(receipt["export_sha256"], digest)
+            self.assertFalse(receipt["continuous_motion_or_audio_proven"])
+            self.assertFalse(receipt["human_or_artistic_quality_approved"])
+            self.assertEqual([s["sampled_video_seconds_requested"] for s in receipt["samples"]],
+                             query["at_seconds"])
+            for block, sample in zip(result.content[1:], receipt["samples"]):
+                self.assertEqual(block.type, "image")
+                self.assertEqual(block.mime_type, "image/png")
+                self.assertEqual(hashlib.sha256(base64.b64decode(block.data)).hexdigest(),
+                                 sample["png_sha256"])
+            self.assertEqual(observed_times, query["at_seconds"])
+            for times in ([1, 1], [3, 2], [1], [0, 1, 2, 3, 4], [0, float("nan")]):
+                denied = await session.call_tool(name, {
+                    "path": query["path"], "at_seconds": times})
+                self.assertTrue(denied.is_error, times)
+            self.assertEqual(observed_times, query["at_seconds"])
+            self.assertFalse(any(row["method"] == "tools/call" for row in self.requests))
+        await self.with_session(check, export_verifier=verifier, frame_observer=observer)
+
+        async def no_read(session):
+            self.assertNotIn("zx7_observe_verified_export_samples",
+                             [t.name for t in (await session.list_tools()).tools])
+        await self.with_session(no_read, access=frozenset({"write"}),
+                                export_verifier=verifier, frame_observer=observer)
+
+    async def test_multi_frame_failure_never_returns_partial_images_and_drops_proof(self):
+        def verifier(path, expected=None):
+            return {"physical_export_verified": True, "native_export_sha256": "c" * 64}
+        def observer(path, verified_sha256, at_seconds):
+            if at_seconds == 2:
+                raise ValueError("Actual decoder rejected second frame")
+            png = b"first-frame"
+            return png, {"export_sha256": verified_sha256,
+                         "png_sha256": hashlib.sha256(png).hexdigest(),
+                         "sampled_video_seconds_requested": at_seconds}
+
+        async def check(session):
+            self.assertFalse((await session.call_tool(
+                "zx7_verify_native_export", {"path": "/trusted/movie.mp4"})).is_error)
+            args = {"path": "/trusted/movie.mp4", "at_seconds": [1, 2]}
+            failed = await session.call_tool("zx7_observe_verified_export_samples", args)
+            self.assertTrue(failed.is_error)
+            self.assertEqual(len(failed.content), 1)
+            again = await session.call_tool("zx7_observe_verified_export_samples", args)
+            self.assertTrue(again.is_error)
+            self.assertIn("verify", again.content[0].text.lower())
+        await self.with_session(check, export_verifier=verifier, frame_observer=observer)
+
+    async def test_multi_frame_total_payload_limit_fails_closed(self):
+        def verifier(path, expected=None):
+            return {"physical_export_verified": True, "native_export_sha256": "d" * 64}
+        def observer(path, verified_sha256, at_seconds):
+            png = b"x" * (3 * 1024 * 1024)
+            return png, {"export_sha256": verified_sha256,
+                         "png_sha256": hashlib.sha256(png).hexdigest(),
+                         "sampled_video_seconds_requested": at_seconds}
+
+        async def check(session):
+            self.assertFalse((await session.call_tool("zx7_verify_native_export",
+                              {"path": "/trusted/movie.mp4"})).is_error)
+            invalid = await session.call_tool("zx7_observe_verified_export_samples", {
+                "path": "/trusted/movie.mp4", "at_seconds": [1, 2, 3]})
+            self.assertTrue(invalid.is_error)
+            self.assertEqual(len(invalid.content), 1)
+            self.assertIn("oversized", invalid.content[0].text.lower())
         await self.with_session(check, export_verifier=verifier, frame_observer=observer)
 
     async def test_readonly_decode_does_not_block_native_editing(self):
