@@ -11,9 +11,12 @@ remains the product contract. [Reuse research](reuse-research.md) distinguishes
 source findings, measurements and unresolved experiments.
 
 This design is a migration target, not a description of a completed runtime.
-Product coding remains gated by the research-first mandate. The executable
-precision matrix and a small native renderer comparison have now run; broader
-renderer comparisons, isolation and model trials remain unresolved. The compact
+The owner has superseded the research-only coding freeze with evidence-led
+engineering. Verified defects may be fixed in isolated changes with real
+regression evidence; major backend replacement still needs matched comparison,
+rollback and data-preservation proof. The executable precision matrix and a
+small native renderer comparison have run; broader renderer comparisons,
+isolation and model trials remain unresolved. The compact
 [measurement record](../research/foundation-evidence.json) survives CI artifact
 expiry. Do not change this status merely
 because the document or an experiment passes a source-format check.

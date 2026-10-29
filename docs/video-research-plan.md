@@ -20,9 +20,10 @@ and [CAPABILITIES.md](../CAPABILITIES.md).
 
 ## Global constraints
 
-* Research, comparisons, architecture, acceptance strategy and implementation
-  planning precede further product coding. Experiments must remain identifiable
-  as research and must not silently alter registered runtime behavior.
+* Research and design inform engineering decisions, not an indefinite coding
+  freeze. Verified runtime defects may be fixed in isolated, tested changes.
+  Experiments remain identifiable as research and must not silently alter
+  registered runtime behavior. Major replacement requires comparative evidence.
 * Preserve originals, rights, native editable state, existing tests and history.
 * No public owner assets, generated showcase films, credentials or model weights
   in source control. Synthetic test fixtures may be generated on demand.
@@ -52,8 +53,9 @@ and [CAPABILITIES.md](../CAPABILITIES.md).
 The architecture and initial source survey are written. A clean 108-case audio
 matrix, actual three-track MLT/FFmpeg revision comparison and eight real OTIO
 tests have run. Their [compact results](../research/foundation-evidence.json)
-are preserved with reproducible probes. The next tasks expand the native trial
-and resolve worker isolation/protocol constraints before product coding. Do not mark
+are preserved with reproducible probes. The next tasks expand the native trial and resolve worker isolation/protocol
+constraints in parallel with verified runtime defect repairs. Broad replacement
+and professional field certification remain gated on their evidence. Do not mark
 the entire research phase done while critical comparisons are unexecuted.
 
 The owner explicitly asked for independent decisions and no repetitive approval
