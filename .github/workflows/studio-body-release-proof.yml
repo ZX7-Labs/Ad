@@ -17,6 +17,7 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y blender ffmpeg inkscape xvfb python3-tk fonts-dejavu-core fonts-noto-core
           python -m pip install --no-cache-dir "numpy>=1.26,<3" "Pillow>=10,<13" "opentimelineio>=0.17,<1" "fonttools>=4,<5"
+          python -m pip install --no-cache-dir '.[editor]'
       - name: Verify complete contracts, real process death, pause/restart/resume and actual graphical client
         env:
           ZX7_DESKTOP_QA_PNG: ${{ github.workspace }}/output/body-release-proof/desktop-qa.png
@@ -63,6 +64,8 @@ jobs:
           root=Path('output/body-release-proof')
           log=(root/'all-tests.log').read_text()
           total, skipped = parse_unittest_summary(log)
+          assert not any('test_body_editor_mcp.' in line and ' ... skipped ' in line
+                         for line in log.splitlines()), 'Official native MCP SDK tests were not executed'
           physical=json.loads((root/'native/verified-native-body-result.json').read_text())
           assert physical['real_3d_rendered'] and physical['real_2d_rendered']
           assert physical['exact_all_nodes_resumed']
