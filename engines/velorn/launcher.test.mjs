@@ -29,7 +29,8 @@ async function waitFor(predicate, description, timeout = 5000) {
   throw Error(`Timed out: ${description}`)
 }
 
-test('SIGTERM during startup stops owned fixture processes and frees their ports', { timeout: 15000 }, async () => {
+for (const mode of ['jsonl', 'mcp']) {
+test(`${mode}: SIGTERM during startup stops owned processes and frees ports`, { timeout: 15000 }, async () => {
   const fixture = await fs.mkdtemp(path.join(os.tmpdir(), 'velorn-lifecycle-'))
   const source = path.join(fixture, 'source'), bins = path.join(fixture, 'bin')
   await fs.mkdir(path.join(source, 'dist'), { recursive: true })
@@ -47,7 +48,15 @@ test('SIGTERM during startup stops owned fixture processes and frees their ports
   await fs.writeFile(path.join(source, 'node_modules', 'vite', 'bin', 'vite.js'), `${record}\nrequire('node:http').createServer((req,res)=>{res.statusCode=503;res.end('booting')}).listen(5173,'127.0.0.1')\n`)
   const displayPort = await availablePort(), display = displayPort - 6000
   await fs.writeFile(path.join(bins, 'fixture-xvfb'), `#!${process.execPath}\n${record}\nrequire('node:net').createServer(socket=>socket.end()).listen(${displayPort},'127.0.0.1')\n`, { mode: 0o755 })
-  const child = spawn(process.execPath, [cli, '--source', source, '--profile', fixture + '/profile', '--projects', fixture + '/projects', '--staging', fixture + '/staging', '--outputs', fixture + '/outputs', '--xvfb-binary', bins + '/fixture-xvfb', '--display', `127.0.0.1:${display}`], {
+  const configPath = path.join(fixture, 'editor.json')
+  await fs.writeFile(configPath, JSON.stringify({ endpoint: 'http://127.0.0.1:19790/mcp',
+    projects_root: fixture + '/projects', staging_root: fixture + '/staging', outputs_root: fixture + '/outputs',
+    allowed_tools: { get_project: 'read' } }))
+  const entry = mode === 'mcp' ? path.join(path.dirname(cli), 'mcp.mjs') : cli
+  const ownArgs = mode === 'mcp'
+    ? ['--config', configPath, '--state', fixture + '/state']
+    : ['--profile', fixture + '/profile', '--projects', fixture + '/projects', '--staging', fixture + '/staging', '--outputs', fixture + '/outputs']
+  const child = spawn(process.execPath, [entry, '--source', source, ...ownArgs, '--xvfb-binary', bins + '/fixture-xvfb', '--display', `127.0.0.1:${display}`], {
     env: { ...process.env, PATH: bins + path.delimiter + process.env.PATH }, stdio: ['pipe', 'pipe', 'pipe'],
   })
   let stderr = ''
@@ -69,3 +78,4 @@ test('SIGTERM during startup stops owned fixture processes and frees their ports
     await fs.rm(fixture, { recursive: true, force: true })
   }
 })
+}

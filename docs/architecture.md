@@ -65,6 +65,15 @@ Native writes are stateful and not advertised as idempotent or accepted media
 receipts. Attaching the catalog alone does not make the legacy creative-session
 runner understand native editor state.
 
+The standard MCP route is `engines/velorn/mcp.mjs`, which owns the editor and
+`studio_next.body_editor_mcp` stdio bridge. The official pinned SDK supplies the
+protocol; native tool schemas/results remain intact. A host-owned configuration
+supplies explicit read/write grants and canonical workspace roots. Calls are
+schema-validated and serialized for one active native editor. Cancellation
+removes queued operations; in-flight native calls remain fenced until their
+HTTP result or timeout, with no automatic write replay. This route serves a
+replaceable MCP-capable brain and does not alter the legacy Film IR job runner.
+
 `engines/velorn` launches the production renderer and existing Electron worker
 with a fresh private profile. Its trusted local transport is not an OS security
 boundary. Upstream MCP is a fixed unauthenticated loopback endpoint; keep it on

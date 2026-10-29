@@ -18,6 +18,59 @@ python -m unittest studio_next.test_body_editor_client studio_next.test_body_edi
 
 When dependencies were installed with `--ignore-scripts`, run the normal Electron, ffmpeg-static and @derhuerst/ffprobe-static install scripts before launching. No model weights, ComfyUI, RIFE or hosted AI API are needed for native editing/export. Upstream `electron:pack`/`electron:build` separately require staged RIFE release inputs; distribution packaging is unresolved.
 
+## Connect a local AI client through standard MCP
+
+Install the optional bridge with `python -m pip install '.[editor]'`. Protocol
+negotiation and framing use the pinned [official Python SDK 2.3.0](https://github.com/modelcontextprotocol/python-sdk/tree/v2.3.0).
+Copy [editor.example.json](editor.example.json) to a host-owned configuration
+file outside the writable project roots, and replace its three absolute paths.
+The example explicitly grants 77 local editorial operations from the pinned
+source. This is a permission profile, not evidence that all 77 operations passed
+production acceptance. Reduce grants for restricted clients. Removing `write`
+from `allowed_access` hides and denies mutating operations.
+
+Configure an MCP-capable local AI client to launch this command:
+
+```sh
+node /absolute/path/to/zx7/engines/velorn/mcp.mjs \
+  --source /absolute/path/to/zx7/third_party/velorn \
+  --config /absolute/path/to/host/editor.json \
+  --state /absolute/path/to/private-editor-state \
+  --python /absolute/path/to/editor-python/bin/python
+```
+
+This single process owns the existing editor and the standard stdio MCP bridge.
+The `state` directory gets a fresh private profile per connection; projects and
+media remain in the configured roots. Add the same display/headless flags below
+when needed. Stdout carries only MCP messages. Disconnecting or signalling the
+launcher closes its owned processes. Save the native project before disconnect;
+this does not promise recovery of an unsaved or interrupted render.
+
+Clients discover unchanged native schemas and choose their own editing values.
+Calls validate those schemas and scoped filesystem arguments. Queued cancelled
+edits are not applied; an in-flight native call finishes under serialization,
+and an uncertain write is never automatically retried. Network/generation,
+host-management, nested action plans and batch exports are outside this profile.
+Exports require an explicit new `outputPath`; existing project, source and
+delivery files are refused as destinations. Opening a project also checks its
+primary/legacy native document against the configured project root.
+The existing Film IR/mobile creative-session runner remains a separate route;
+this connection is for a replaceable MCP-capable brain.
+
+To verify the actual standard-client editing route:
+
+```sh
+python engines/velorn/mcp-e2e.py \
+  --source /absolute/path/to/zx7/third_party/velorn \
+  --xvfb-binary /usr/bin/Xvfb --display 127.0.0.1:95
+```
+
+The fixture uses the official SDK client and the shipped permission profile. It
+checks every advertised schema, rejects outside imports/invalid arguments, edits
+and saves two native versions, exports real audiovisual media, disconnects, and
+reopens the same revision in a new editor process. It is a scripted integration
+fixture, not an autonomous model or artistic evaluation.
+
 ## Start a local session
 
 Paths must be absolute. Each launch requires a fresh profile; project/staging/output roots can persist. This upstream hardcodes ports 5173 and 19790, so only one instance per network namespace is supported. Occupied ports fail before startup.

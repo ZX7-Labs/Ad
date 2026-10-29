@@ -31,6 +31,13 @@ host grants. `body_catalog(workspace, editor_client=client)` attaches granted
 operations to the existing BODY catalog. Professional field completion,
 autonomous creative acceptance and distribution packaging remain open.
 
+For an MCP-capable local AI client, the [standard MCP launcher](engines/velorn/README.md#connect-a-local-ai-client-through-standard-mcp)
+starts the existing editor and the permissioned bridge in one process. Install
+the optional `.[editor]` extra; host configuration controls grants and media
+roots. Models remain separate and no hosted AI API is required.
+The [SDK-client execution record](research/editor-mcp-evidence.json) preserves
+the measured scope and exact tested source digests.
+
 ## Run locally
 
 Python 3.11+ is required. The service is tested on Linux. Install FFmpeg/FFprobe

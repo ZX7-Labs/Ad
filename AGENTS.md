@@ -45,9 +45,10 @@ not new product requirements or a claim that research gates have passed.
 During application reuse and integration:
 
 Complete one creative field to a reliable professional production standard before
-expanding into the next. The current focus is existing video-editing completion
-and integration across native MLT, OTIO, compositing, timing, sound, color and
-durable original-source recovery; preserve the working Blender motion system.
+expanding into the next. The current focus is the complete pinned Velorn editor
+and its standard MCP connection to a replaceable local brain. Finish native
+editing, timing, sound, color, custody and recovery together; preserve useful
+source-aware MLT/OTIO routes and the working Blender motion system.
 Evaluate practical capability, control, output quality and reliability against
 leading professional workflows. Treat exceptional quality as a target requiring
 evidence, rather than an already achieved ranking.
