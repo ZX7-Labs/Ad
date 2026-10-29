@@ -34,6 +34,13 @@ is in [CAPABILITIES.md](CAPABILITIES.md#astra-owners-complete-mandate-and-curren
 The present documentation update is explicitly authorized. Older handoffs that
 say to resume feature coding or merge PRs do not override this stage.
 
+Current engineering choices, source-backed comparisons and unchecked research
+gates are preserved in [docs/architecture.md](docs/architecture.md),
+[docs/reuse-research.md](docs/reuse-research.md) and
+[docs/video-research-plan.md](docs/video-research-plan.md). Read those before
+repeating experiments or proposing a rewrite. They are design/evidence records,
+not new product requirements or a claim that research gates have passed.
+
 After that research and design stage:
 
 Complete one creative field to a reliable professional production standard before

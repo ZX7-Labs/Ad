@@ -9,6 +9,11 @@ native Blender projects, media rendering, source custody and resumable jobs.
 Available operations depend on the engines installed on the host. Development
 is active; this is not a completed all-purpose creative suite.
 
+The current [architecture](docs/architecture.md),
+[reuse research](docs/reuse-research.md) and
+[video research plan](docs/video-research-plan.md) record foundation decisions,
+their evidence and the remaining gates before product implementation.
+
 ## Run locally
 
 Python 3.11+ is required. The service is tested on Linux. Install FFmpeg/FFprobe
