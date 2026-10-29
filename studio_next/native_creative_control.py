@@ -11,10 +11,9 @@ import asyncio
 import base64
 import hashlib
 import json
-import math
 import os
 from pathlib import Path
-import time
+import re
 from typing import Any
 
 
@@ -102,7 +101,7 @@ def _source_bound_images(texts: list[str], images: list[tuple[str, bytes]]):
         raise NativeCreativeControlError("Native image output has invalid proof receipt") from exc
     if (not isinstance(receipt, dict) or
             not isinstance(receipt.get("export_sha256"), str) or
-            len(receipt["export_sha256"]) != 64):
+            re.fullmatch(r"[0-9a-f]{64}", receipt["export_sha256"]) is None):
         raise NativeCreativeControlError("Native image not bound to a verified export")
     entries = receipt.get("samples") if "samples" in receipt else [receipt]
     if not isinstance(entries, list) or len(entries) != len(images):
@@ -140,6 +139,7 @@ class NativeCreativeControl:
         self.tools: dict[str, Any] = {}
         self._last_images: list[tuple[str, bytes]] = []
         self._last_hashes: list[str] = []
+        self._last_native_texts: list[str] = []
         self._receipt = None
 
     def _append(self, event: dict):
@@ -192,7 +192,8 @@ class NativeCreativeControl:
                 raise NativeCreativeControlError("Receipt directory must already exist")
             # An existing receipt could contain accepted writes. Never silently
             # append, erase or replay it after a crash or uncertain tool return.
-            self._receipt = self.receipt_path.open("xb")
+            fd = os.open(self.receipt_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            self._receipt = os.fdopen(fd, "wb")
         try:
             identity = getattr(self.model, "settings", None)
             self._append({
@@ -211,10 +212,12 @@ class NativeCreativeControl:
                     "available_actions": ["discover", "describe", "invoke", "finish"],
                     "actual_granted_native_tools": list(self.tools),
                     "latest_events": self.events[-8:],
+                    "last_native_result_texts": self._last_native_texts,
                     "completion_does_not_certify_artistic_quality": True,
                     "audio_semantically_reviewed": False,
                 }
                 decision = self._decision(await self._infer(context))
+                self._last_native_texts = []
                 action, args = decision["action"], decision["arguments"]
                 if action == "finish":
                     if set(args) != {"summary"} or not isinstance(args["summary"], str) or not args["summary"].strip():
@@ -263,11 +266,19 @@ class NativeCreativeControl:
                                   "tool": native_name, "message": str(texts)[:2000],
                                   "no_automatic_retry": True})
                     continue
-                texts, images = _native_content(result)
-                hashes = _source_bound_images(texts, images)
+                try:
+                    texts, images = _native_content(result)
+                    hashes = _source_bound_images(texts, images)
+                except NativeCreativeControlError as exc:
+                    self._append({"kind": "native_observation_rejected", "turn": turn,
+                                  "tool": native_name, "error": str(exc),
+                                  "must_reconcile_native_state": True})
+                    raise
+                self._last_native_texts = texts
                 self._last_images, self._last_hashes = images, hashes
                 self._append({"kind": "native_tool_result", "turn": turn,
-                              "tool": native_name, "text": "\n".join(texts)[:_MAX_RESULT_TEXT],
+                              "tool": native_name,
+                              "text_sha256": [hashlib.sha256(s.encode()).hexdigest() for s in texts],
                               "image_sha256": hashes,
                               "audio_semantically_heard": False,
                               "human_or_artistic_quality_approved": False})
