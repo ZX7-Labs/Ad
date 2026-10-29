@@ -323,6 +323,15 @@ def validate_mlt_edit(plan,workspace,vault_root):
         raise ValueError("MLT native project requires 1..8 timeline tracks")
     resolved=[]
     sources={}
+    # A source reused by multiple cuts shares identical immutable bytes and
+    # explicit rights. Verify once per exact (digest, attestation) per call.
+    # This cache is local, never persisted across validation transactions.
+    attested_records={}
+    def attested(asset,att):
+        key=(asset,att)
+        if key not in attested_records:
+            attested_records[key]=vault.inspect(asset,attestation_id=att)
+        return attested_records[key]
     total=0
     blend_modes=[]
     for ti,track in enumerate(tracks):
@@ -351,7 +360,7 @@ def validate_mlt_edit(plan,workspace,vault_root):
             if not isinstance(asset,str) or not isinstance(att,str) or (
                 clip["source"]!="zx7:sha256:"+asset):
                 raise ValueError("MLT cannot accept an untrusted, changed or unlicensed media URL")
-            record=vault.inspect(asset,attestation_id=att)
+            record=attested(asset,att)
             if record["mime"] not in ("video/mp4","video/quicktime","video/webm"):
                 raise ValueError("MLT input must be actual verified source video")
             source=Path(record["path"]).resolve()
@@ -372,6 +381,11 @@ def validate_mlt_edit(plan,workspace,vault_root):
                 if measured!=fps:
                     raise ValueError("MLT cannot silently retime a different source clock")
                 sources[asset]={"path":source,"frames":frames,"attestation":att}
+            if sources[asset]["attestation"]!=att:
+                # The editable MLT producer is identified by this digest:
+                # reusing its bytes under a different rights attestation
+                # would silently discard the second creator's provenance.
+                raise ValueError("Native picture source has conflicting exact rights attestations")
             if exclusive>sources[asset]["frames"]:
                 raise ValueError("MLT cut exceeds actual decoded media frames")
             end_at=pos+(exclusive-first)
@@ -419,7 +433,7 @@ def validate_mlt_edit(plan,workspace,vault_root):
             if (not isinstance(asset,str) or not isinstance(att,str) or
                     clip["source"]!="zx7:sha256:"+asset):
                 raise ValueError("MLT sound source has no matching authenticated original identity")
-            record=vault.inspect(asset,attestation_id=att)
+            record=attested(asset,att)
             audio_only=record["mime"]=="audio/wav"
             if not audio_only and record["mime"] not in ("video/mp4","video/quicktime","video/webm"):
                 raise ValueError("Native sound source requires owner-attested video audio or actual PCM WAV")
@@ -451,6 +465,8 @@ def validate_mlt_edit(plan,workspace,vault_root):
                     "audio_seconds":available,"attestation":att,
                     "audio_index":actual_audio_index}
             info=sound_sources[asset]
+            if info["attestation"]!=att:
+                raise ValueError("Native sound source has conflicting exact rights attestations")
             if ("pan" in track or "pan_keyframes" in track) and asset not in verified_stereo:
                 # A source can appear on another bus with no authored pan.
                 # Never trust a cached audio stream index as stereo proof.
@@ -462,6 +478,14 @@ def validate_mlt_edit(plan,workspace,vault_root):
             checked.append({"asset":asset,"source":file,"position":pos,
                             "first":first,"last":end-1,"end":end_at})
         resolved_sound.append(checked)
+    # A later stream probe must not be able to mutate an earlier approved
+    # CAS source and leave this standalone preflight apparently valid.
+    # Amortize the final recheck over each unique actual blob, not clips or
+    # alternate licenses; immutable publication repeats its own final check.
+    for digest,original in {record["asset_id"]:record["path"]
+                            for record in attested_records.values()}.items():
+        if sha256_file(original)!=digest:
+            raise ValueError("Original audiovisual source changed during native preflight")
     return {"fps":fps,"width":width,"height":height,"tracks":resolved,
             "sources":sources,"frames":total,"audio_tracks":resolved_sound,
             "audio_sources":sound_sources,"blend_modes":blend_modes,
@@ -950,6 +974,12 @@ def verify_owned_mlt_project(file_path):
     except ET.ParseError as exc:raise ValueError("Corrupt native MLT project XML") from exc
     structure=_verify_exact_mlt_xml_tree(xml)
     sources={}
+    # Independently verify each producer's exact attestation once, even if
+    # the model reused that identity hundreds of times in graded cuts.
+    # Rehash each physically unique original once more at the end, after
+    # all video and audio probes, to catch concurrent media replacement.
+    verified_rights={}
+    verified_vaults={}
     expected_rate=Fraction(
         int(xml.find("profile").get("frame_rate_num")),
         int(xml.find("profile").get("frame_rate_den")))
@@ -968,8 +998,14 @@ def verify_owned_mlt_project(file_path):
                 filename.parent.name==digest[:2] and
                 filename.parent.parent.name=="objects"):
             raise ValueError("MLT native producer is not an exact physical CAS source")
-        vault=MediaVault(filename.parents[2])
-        record=vault.inspect(digest,attestation_id=att)
+        vault_root=filename.parents[2]
+        if vault_root not in verified_vaults:
+            verified_vaults[vault_root]=MediaVault(vault_root)
+        identity_key=(digest,att)
+        if identity_key not in verified_rights:
+            verified_rights[identity_key]=verified_vaults[vault_root].inspect(
+                digest,attestation_id=att)
+        record=verified_rights[identity_key]
         is_sound=producer.get("id").startswith("audio-source-")
         is_audio_only=record["mime"]=="audio/wav"
         if (Path(record["path"])!=filename or
@@ -1046,6 +1082,13 @@ def verify_owned_mlt_project(file_path):
             if sound_track and (float(Fraction(last+1,1)/expected_rate)>
                     sources[digest]["sound_seconds"]+.015):
                 raise ValueError("MLT soundtrack extends beyond physical recorded audio")
+    # One final byte recheck per digest—not per original clip—to prove
+    # producer observations did not race a mutation of its CAS file.
+    for digest in {item["digest"] for item in verified_sources}:
+        file=next(item["physical_path"] for item in verified_sources
+                  if item["digest"]==digest)
+        if sha256_file(file)!=digest:
+            raise ValueError("Original source media changed during native verification")
     return {"verified_original_sources":len(verified_sources),
             "verified_mlt_tracks":structure["picture_tracks"],
             "verified_audio_tracks":structure["sound_tracks"],
