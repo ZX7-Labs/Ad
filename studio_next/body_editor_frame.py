@@ -12,6 +12,7 @@ import re
 import stat
 import struct
 import subprocess
+import tempfile
 
 from .body_editor_client import EditorAccessError
 from .body_editor_policy import EditorPathPolicy
@@ -49,18 +50,28 @@ def observe_verified_export_frame(path: str, *, policy: EditorPathPolicy,
         raise ValueError("Export bytes no longer match independently decoded evidence")
     if at_seconds >= metadata["duration_seconds"]:
         raise ValueError("Requested frame is outside the physical video duration")
+    # Spool the decoder's bounded output to a temporary file: capture_output
+    # would buffer arbitrary decoder output and error text in RAM before any
+    # size check. A malformed video must not exhaust the host's memory.
+    output_limit = 4 * 1024 * 1024
     command = [
         "ffmpeg", "-hide_banner", "-loglevel", "error", "-nostdin",
         "-protocol_whitelist", "file,pipe,crypto",
         "-ss", format(at_seconds, ".9f"), "-i", str(source),
         "-vf", "scale='min(768,iw)':'min(768,ih)':force_original_aspect_ratio=decrease",
-        "-frames:v", "1", "-f", "image2pipe", "-c:v", "png", "pipe:1"]
-    # The output is intentionally a bounded review plane, not native-resolution
-    # HDR/data-pixel evidence or a guarantee of exact timestamp presentation.
-    outcome = subprocess.run(command, capture_output=True, timeout=timeout, check=False)
-    image = outcome.stdout
-    if outcome.returncode or len(image) < 32 or len(image) > 4 * 1024 * 1024 or (
-            not image.startswith(_PNG)):
+        "-frames:v", "1", "-fs", str(output_limit),
+        "-f", "image2pipe", "-c:v", "png", "pipe:1"]
+    # This is not native-resolution HDR/data-pixel evidence or a promise
+    # that the exact requested timestamp presentation PTS was returned.
+    with tempfile.TemporaryFile() as encoded:
+        outcome = subprocess.run(command, stdout=encoded,
+                                 stderr=subprocess.DEVNULL,
+                                 timeout=timeout, check=False)
+        if outcome.returncode or encoded.tell() < 32 or encoded.tell() > output_limit:
+            raise ValueError("Actual physical export frame could not be safely decoded")
+        encoded.seek(0)
+        image = encoded.read(output_limit + 1)
+    if len(image) < 32 or len(image) > output_limit or not image.startswith(_PNG):
         raise ValueError("Actual physical export frame could not be safely decoded")
     width, height = struct.unpack(">II", image[16:24])
     if not 0 < width <= 768 or not 0 < height <= 768:
