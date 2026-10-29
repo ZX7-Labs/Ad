@@ -35,7 +35,8 @@ def _local_schema_references(schema):
 
 
 def create_editor_server(client, *, allowed_access=frozenset({"read"}),
-                         export_verifier=None, frame_observer=None):
+                         export_verifier=None, frame_observer=None,
+                         audio_observer=None):
     """Return the official SDK server; discovery never expands host grants.
 
     Dependencies are imported here so the stdlib BODY remains usable without
@@ -66,10 +67,13 @@ def create_editor_server(client, *, allowed_access=frozenset({"read"}),
     verified_export_name = "zx7_verify_native_export"
     observed_frame_name = "zx7_observe_verified_export_frame"
     observed_samples_name = "zx7_observe_verified_export_samples"
+    observed_audio_name = "zx7_observe_verified_export_audio"
     verified_exports = {}
     if frame_observer is not None and (export_verifier is None or not callable(frame_observer)):
         raise ValueError("Frame observation requires a real host export verifier")
-    if observed_frame_name in native or observed_samples_name in native:
+    if audio_observer is not None and (export_verifier is None or not callable(audio_observer)):
+        raise ValueError("Audio observation requires a real host export verifier")
+    if any(tool in native for tool in (observed_frame_name, observed_samples_name, observed_audio_name)):
         raise ValueError("Native editor tool name collides with BODY observation")
     if export_verifier is not None:
         if not callable(export_verifier) or verified_export_name in native:
@@ -121,6 +125,21 @@ def create_editor_server(client, *, allowed_access=frozenset({"read"}),
                          "of continuous motion, sound or artistic quality"),
             inputSchema=samples_schema)
         validators[observed_samples_name] = jsonschema.Draft202012Validator(samples_schema)
+    if audio_observer is not None and "read" in access:
+        audio_schema = {"type": "object", "properties": {
+            "path": {"type": "string"},
+            "start_seconds": {"type": "number", "minimum": 0},
+            "duration_seconds": {"type": "number", "exclusiveMinimum": 0,
+                                 "maximum": 3.0}},
+            "required": ["path", "start_seconds", "duration_seconds"],
+            "additionalProperties": False}
+        tools[observed_audio_name] = types.Tool(
+            name=observed_audio_name,
+            description=("Hear a bounded actual PCM WAV excerpt of a previously "
+                         "fully verified native export; downmixed 16 kHz mono, "
+                         "not spatial mastering, transcript or full-film listening"),
+            inputSchema=audio_schema)
+        validators[observed_audio_name] = jsonschema.Draft202012Validator(audio_schema)
     lock = anyio.Lock()
     inspection_capacity = anyio.CapacityLimiter(1)
 
@@ -210,6 +229,36 @@ def create_editor_server(client, *, allowed_access=frozenset({"read"}),
             except (ValueError, OSError, subprocess.SubprocessError) as exc:
                 verified_exports.pop(identity, None)
                 return failed("Verified native frame observation failed: " + str(exc))
+        if name == observed_audio_name:
+            identity = str(Path(arguments["path"]).resolve())
+            digest = verified_exports.get(identity)
+            if digest is None:
+                return failed("Independently verify these physical export bytes before listening")
+            try:
+                async with inspection_capacity:
+                    with anyio.CancelScope(shield=True):
+                        wav_bytes, receipt = await anyio.to_thread.run_sync(
+                            lambda: audio_observer(
+                                arguments["path"], verified_sha256=digest,
+                                start_seconds=arguments["start_seconds"],
+                                duration_seconds=arguments["duration_seconds"]),
+                            abandon_on_cancel=False)
+                if (not isinstance(wav_bytes, bytes) or
+                        not 44 <= len(wav_bytes) <= 128 * 1024 or
+                        not isinstance(receipt, dict) or
+                        receipt.get("export_sha256") != digest or
+                        receipt.get("wav_sha256") != hashlib.sha256(wav_bytes).hexdigest() or
+                        receipt.get("requested_start_seconds") != arguments["start_seconds"] or
+                        receipt.get("requested_duration_seconds") != arguments["duration_seconds"]):
+                    raise ValueError("Audio excerpt lacks valid source-bound evidence")
+                return types.CallToolResult(is_error=False, content=[
+                    types.TextContent(type="text", text=json.dumps(receipt, allow_nan=False)),
+                    types.AudioContent(type="audio",
+                                       data=base64.b64encode(wav_bytes).decode("ascii"),
+                                       mimeType="audio/wav")])
+            except (ValueError, OSError, subprocess.SubprocessError) as exc:
+                verified_exports.pop(identity, None)
+                return failed("Verified native audio observation failed: " + str(exc))
         try:
             # Do not abandon a possibly applied write on protocol cancellation.
             # The lock stays held until the bounded native HTTP call finishes.
@@ -250,16 +299,22 @@ def main(argv=None):
             return 0
         export_verifier = None
         frame_observer = None
+        audio_observer = None
         if config.verify_native_exports:
             from .body_editor_export import verify_native_editor_export
             from .body_editor_frame import observe_verified_export_frame
+            from .body_editor_audio import observe_verified_export_audio
             export_verifier = lambda path, expected=None: verify_native_editor_export(
                 path, policy=config._policy, expected=expected)
             frame_observer = lambda path, verified_sha256, at_seconds: observe_verified_export_frame(
                 path, policy=config._policy, verified_sha256=verified_sha256,
                 at_seconds=at_seconds)
+            audio_observer = lambda path, verified_sha256, start_seconds, duration_seconds: observe_verified_export_audio(
+                path, policy=config._policy, verified_sha256=verified_sha256,
+                start_seconds=start_seconds, duration_seconds=duration_seconds)
         server = create_editor_server(config.client(), allowed_access=config.allowed_access,
-                                      export_verifier=export_verifier, frame_observer=frame_observer)
+                                      export_verifier=export_verifier, frame_observer=frame_observer,
+                                      audio_observer=audio_observer)
 
         async def serve():
             from mcp.server.stdio import stdio_server
