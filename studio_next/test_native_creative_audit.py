@@ -34,10 +34,12 @@ def trace():
             model_reason=f"Independent model requested tool at turn {n}",
             uncertain_write_do_not_replay=True)
     def result(tool, n, **kw):
-        add("native_tool_result", tool=tool, turn=n, text_sha256=[C],
-            image_sha256=[], audio_sha256=None,
-            independently_verified_export_sha256=None, observed_export_sha256=None,
-            human_or_artistic_quality_approved=False, **kw)
+        fields = dict(tool=tool, turn=n, text_sha256=[C],
+                      image_sha256=[], audio_sha256=None,
+                      independently_verified_export_sha256=None, observed_export_sha256=None,
+                      human_or_artistic_quality_approved=False)
+        fields.update(kw)
+        add("native_tool_result", **fields)
     # Build a real-shaped transcript with *fixture bytes only*. It cannot
     # certify actual model intelligence or physical media quality.
     add("session_started", brief_sha256=A,
@@ -82,14 +84,14 @@ class NativeCreativeAuditTests(unittest.TestCase):
         variants = []
         variants.append(lambda x: x[0].update(brief_sha256="bad"))
         variants.append(lambda x: x[5].update(sequence=1))
-        variants.append(lambda x: x[8].update(observed_export_sha256=B))
-        variants.append(lambda x: x[8].update(tool="get_timeline"))
-        variants.append(lambda x: x[8].update(human_or_artistic_quality_approved=True))
-        variants.append(lambda x: x[8].update(image_sha256=[]))
-        variants.append(lambda x: x[8].update(image_sha256=["invalid"]))
+        variants.append(lambda x: x[10].update(observed_export_sha256=B))
+        variants.append(lambda x: x[10].update(tool="get_timeline"))
+        variants.append(lambda x: x[10].update(human_or_artistic_quality_approved=True))
+        variants.append(lambda x: x[10].update(image_sha256=[]))
+        variants.append(lambda x: x[10].update(image_sha256=["invalid"]))
         variants.append(lambda x: x[6].update(independently_verified_export_sha256="c"*64))
         variants.append(lambda x: x[7].update(tool="ungranted_media_reader"))
-        variants.append(lambda x: x[12].update(inputs_sha256="0"*63))
+        variants.append(lambda x: x[11].update(inputs_sha256="0"*63))
         variants.append(lambda x: x[-1].update(creative_quality_independently_approved=True))
         for change in variants:
             events=trace()
