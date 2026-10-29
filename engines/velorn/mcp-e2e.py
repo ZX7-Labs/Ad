@@ -83,7 +83,7 @@ async def exercise(options):
 
     async with connected() as session:
         discovered = (await session.list_tools()).tools
-        assert {tool.name for tool in discovered} == set(tools) | {"zx7_verify_native_export", "zx7_observe_verified_export_frame"}
+        assert {tool.name for tool in discovered} == set(tools) | {"zx7_verify_native_export", "zx7_observe_verified_export_frame", "zx7_observe_verified_export_samples"}
         from studio_next.body_editor_client import LocalEditorClient
         native = {tool["name"]: tool for tool in LocalEditorClient(
             "http://127.0.0.1:19790/mcp", allowed_tools={}).list_tools()}
@@ -161,6 +161,21 @@ async def exercise(options):
         assert frame_receipt["export_sha256"] == digest(output)
         assert frame_receipt["png_sha256"] == hashlib.sha256(frame).hexdigest()
         assert frame_receipt["human_or_artistic_quality_approved"] is False
+        # Real independent samples provide sparse visual temporal evidence.
+        # They do not assert animation/motion continuity or audio understanding.
+        sampled = await session.call_tool("zx7_observe_verified_export_samples", {
+            "path": str(output), "at_seconds": [0.25, 1.25]})
+        assert not sampled.is_error and len(sampled.content) == 3, sampled
+        multi_receipt = json.loads(sampled.content[0].text)
+        assert multi_receipt["kind"] == "verified_native_editor_selected_frames"
+        assert multi_receipt["export_sha256"] == digest(output)
+        assert multi_receipt["continuous_motion_or_audio_proven"] is False
+        assert [x["sampled_video_seconds_requested"] for x in multi_receipt["samples"]] == [0.25, 1.25]
+        for block, evidence in zip(sampled.content[1:], multi_receipt["samples"]):
+            assert block.type == "image" and block.mime_type == "image/png"
+            png = base64.b64decode(block.data, validate=True)
+            assert png.startswith(bytes.fromhex("89504e470d0a1a0a"))
+            assert hashlib.sha256(png).hexdigest() == evidence["png_sha256"]
 
     async with connected() as session:
         await call(session, "open_project", {"projectPath": str(project), "previewOnly": False})
@@ -183,7 +198,8 @@ async def exercise(options):
     assert .03 < audio_rms < .2
     receipt = {"success": True, "kind": "scripted official SDK client; no autonomous model evaluation",
         "transport": "standard MCP stdio; Python SDK 2.3.0", "nativeSchemasUnchanged": True,
-        "discoveredGrantedTools": len(tools), "additionalVerifiedBodyTools": 2, "physicalVisualFrameObserved": True,
+        "discoveredGrantedTools": len(tools), "additionalVerifiedBodyTools": 3, "physicalVisualFrameObserved": True,
+        "physicalSparseTemporalFramesObserved": True,
         "physicalEditorExportIndependentlyDecoded": True,
         "deniedNetworkTool": True, "deniedOutsideImport": True,
         "existingSourceExportDenied": True, "outsideNativeDocumentDenied": True,

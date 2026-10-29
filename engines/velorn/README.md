@@ -72,8 +72,15 @@ PNG image plus a factual source/timestamp receipt to a visual-capable AI client.
 The client chooses the requested moment. This is bounded to 768 pixels per
 dimension, refuses stale bytes and reports that one selected still does not
 establish continuous motion, exact frame presentation PTS, sound quality,
-scene-linear/HDR fidelity or artistic acceptance. Refresh the full-export
-proof after modifying the file or reconnecting the editor.
+scene-linear/HDR fidelity or artistic acceptance. The additional
+`zx7_observe_verified_export_samples` tool accepts **2–4 strictly increasing**
+requested timestamps and returns multiple separate genuine decoded PNGs with
+per-frame source-bound hash receipts. At most 8 MiB of raw PNG bytes may be
+returned in one call. It is a sparse temporal visual observation, **not**
+continuous motion playback or an audio/listening test. Both observation tools
+are read-only and require successful full physical verification earlier in
+the same session; a failed sample clears that permission for the source.
+Refresh the full-export proof after modifying the file or reconnecting.
 The verifier cannot establish editing originality, artistic acceptance,
 source rights or OS process isolation. The import and editing tools retain
 their exact upstream schemas; this BODY-owned tool is deliberately namespaced.
