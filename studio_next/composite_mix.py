@@ -11,6 +11,7 @@ brand/font presets, forced scene counts or genre-based edits.
 from __future__ import annotations
 
 import copy
+from fractions import Fraction
 import json
 import math
 import os
@@ -314,6 +315,27 @@ def validate_composition(plan,workspace,vault):
     return inputs
 
 
+def _audio_rate(path):
+    """Get the real first-audio-stream sample clock, not container timing."""
+    try:
+        result=subprocess.run([
+            "ffprobe","-v","error","-select_streams","a:0",
+            "-show_entries","stream=sample_rate",
+            "-of","default=noprint_wrappers=1:nokey=1",str(path)],
+            capture_output=True,text=True,check=True,timeout=25)
+        rate=int(result.stdout.strip())
+    except (ValueError,subprocess.SubprocessError) as exc:
+        raise ValueError("Original audio sample rate cannot be established") from exc
+    if rate<=0:
+        raise ValueError("Original audio sample rate must be positive")
+    return rate
+
+
+def _sample_at(seconds,rate):
+    """Quantize a validated legacy seconds field once to a physical sample."""
+    return round(Fraction(str(seconds))*rate)
+
+
 def actual_composite_command(plan,workspace,vault,out):
     inputs=validate_composition(plan,workspace,vault)
     c=plan["canvas"]
@@ -323,6 +345,7 @@ def actual_composite_command(plan,workspace,vault,out):
     args=["ffmpeg","-hide_banner","-loglevel","error","-nostdin","-y"]
     music=[]
     native_input_index=0
+    audio_rates={}
     for index,row in enumerate(inputs):
         layer=row["layer"]
         source_index=native_input_index
@@ -391,8 +414,17 @@ def actual_composite_command(plan,workspace,vault,out):
                 f"enable='between(t,{start},{start+duration})':format=auto[{output}]")
             base=output
         else:
-            lag=round(start*1000)
-            effects=(f"[{source_index}:a:0]atrim=start={source_in}:duration={duration},"
+            rate=audio_rates.get(row["file"])
+            if rate is None:
+                rate=audio_rates[row["file"]]=_audio_rate(row["file"])
+            first=_sample_at(source_in,rate)
+            count=_sample_at(duration,rate)
+            output_count=_sample_at(secs,48000)
+            if count<1 or output_count<1:
+                raise ValueError("Audio composition or source trim is shorter than one sample")
+            placement=_sample_at(start,48000)
+            effects=(f"[{source_index}:a:0]atrim=start_sample={first}:"
+                f"end_sample={first+count},"
                 "asetpts=PTS-STARTPTS,aresample=48000,"
                 f"aformat=channel_layouts=stereo,volume={layer['gain_db']}dB")
             balance=float(layer.get("stereo_balance",0))
@@ -407,7 +439,8 @@ def actual_composite_command(plan,workspace,vault,out):
             envelope=_gain_automation_expression(layer)
             if envelope is not None:
                 effects+=","+envelope
-            effects+=f",adelay={lag}|{lag},apad,atrim=duration={secs}[audio{index}]"
+            effects+=(f",adelay={placement}S:all=1,apad,"
+                      f"atrim=end_sample={output_count}[audio{index}]")
             filters.append(effects)
             music.append(f"[audio{index}]")
     if "color_semantics" in c:
