@@ -11,6 +11,7 @@ import asyncio
 import base64
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -41,9 +42,14 @@ def _strict_receipt(texts, label):
         return result
     def reject_constant(value):
         raise NativeCreativeControlError(label + " non-finite JSON receipt")
+    def finite_float(raw):
+        value = float(raw)
+        if not math.isfinite(value):
+            raise NativeCreativeControlError(label + " overflowed JSON receipt")
+        return value
     try:
         receipt = json.loads(texts[0], object_pairs_hook=unique,
-                             parse_constant=reject_constant)
+                             parse_constant=reject_constant, parse_float=finite_float)
     except (ValueError, TypeError, RecursionError) as exc:
         raise NativeCreativeControlError(label + " invalid receipt JSON") from exc
     if not isinstance(receipt, dict):
@@ -138,10 +144,7 @@ def _source_bound_images(texts: list[str], images: list[tuple[str, bytes]]):
         return []
     if len(images) > 4 or len(texts) != 1:
         raise NativeCreativeControlError("Native image output lacks a bounded single proof receipt")
-    try:
-        receipt = json.loads(texts[0])
-    except (ValueError, TypeError) as exc:
-        raise NativeCreativeControlError("Native image output has invalid proof receipt") from exc
+    receipt = _strict_receipt(texts, "Native image proof")
     if (not isinstance(receipt, dict) or
             not isinstance(receipt.get("export_sha256"), str) or
             re.fullmatch(r"[0-9a-f]{64}", receipt["export_sha256"]) is None):
@@ -165,10 +168,7 @@ def _source_bound_audio(texts: list[str], audio: list[tuple[str, bytes]]):
         return None
     if len(audio) != 1 or len(texts) != 1:
         raise NativeCreativeControlError("One original WAV requires one independent custody receipt")
-    try:
-        receipt = json.loads(texts[0])
-    except (ValueError, TypeError) as exc:
-        raise NativeCreativeControlError("Source-bound WAV has no valid receipt") from exc
+    receipt = _strict_receipt(texts, "Native audio proof")
     if (not isinstance(receipt, dict) or
             receipt.get("kind") != "verified_native_editor_bounded_audio_excerpt" or
             not isinstance(receipt.get("export_sha256"), str) or
