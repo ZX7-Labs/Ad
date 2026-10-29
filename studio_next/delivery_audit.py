@@ -35,10 +35,12 @@ def _probe_details(movie):
     if any(isinstance(v,bool) or not isinstance(v,int) or v<1
            for v in (width,height)):
         raise ValueError("Invalid decoded frame dimensions")
+    with movie.open("rb") as encoded:
+        physical_digest = hashlib.file_digest(encoded, "sha256").hexdigest()
     return {"duration_seconds":duration,"width":width,"height":height,
             "codec":first.get("codec_name"),"audio_stream_present":bool(audio),
             "audio_codecs":[s.get("codec_name") for s in audio],
-            "video_sha256":hashlib.sha256(movie.read_bytes()).hexdigest(),
+            "video_sha256":physical_digest,
             "evidence":"ffprobe actual MPEG/QuickTime streams, not proposed story"}
 
 
