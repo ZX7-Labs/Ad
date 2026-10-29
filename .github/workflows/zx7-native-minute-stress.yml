@@ -93,6 +93,13 @@ jobs:
           assert data["editableClips"]==11 and data["editableTracks"]==7
           assert data["frames"]==1440 and data["fullDecodePassed"]
           assert data["realBoundedAudioHeard"]
+          continuity=data["realFullMinuteAudioContinuity"]
+          assert continuity["original_source_must_span_all_60_seconds"]
+          assert continuity["verified_pcm_buckets"]==60
+          assert continuity["source_sha256"]==data["sha256"]
+          assert -50 < continuity["min_rms_dbfs"] <= continuity["max_rms_dbfs"] < -5
+          assert continuity["max_rms_dbfs"]-continuity["min_rms_dbfs"] < 3
+          assert not continuity["full_film_mix_or_sample_exact_pts_approved"]
           assert not data["professionalCreativeCapabilityComplete"]
           assert not data["autonomousArtisticQualityProven"]
           movie=root/"zx7-body-one-minute-native-demo.mp4"
