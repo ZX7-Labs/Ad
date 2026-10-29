@@ -45,6 +45,23 @@ class NativeEditorVisualFeedbackTests(unittest.TestCase):
         self.assertFalse(receipt["sampled_video_seconds_exact_pts_proven"])
         self.assertFalse(receipt["human_or_artistic_quality_approved"])
 
+    def test_decoder_spools_bounded_image_without_unbounded_ram_capture(self):
+        original = subprocess.run
+        calls = []
+        def inspect_command(command, **kwargs):
+            calls.append((command, kwargs))
+            self.assertEqual(kwargs.get("stderr"), subprocess.DEVNULL)
+            self.assertNotEqual(kwargs.get("stdout"), subprocess.PIPE)
+            self.assertIn("-fs", command)
+            self.assertEqual(command[command.index("-fs") + 1], str(4 * 1024 * 1024))
+            return original(command, **kwargs)
+        from unittest.mock import patch
+        with patch("studio_next.body_editor_frame.subprocess.run",
+                   side_effect=inspect_command):
+            png, receipt = self.sample(at_seconds=0.25)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(receipt["png_sha256"], hashlib.sha256(png).hexdigest())
+
     def test_bad_time_and_bad_hash_fail_closed(self):
         for time_value in (float("nan"), float("inf"), -1, True, 1.1):
             with self.subTest(time_value=time_value), self.assertRaises(ValueError):
