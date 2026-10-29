@@ -12,7 +12,20 @@ is active; this is not a completed all-purpose creative suite.
 The current [architecture](docs/architecture.md),
 [reuse research](docs/reuse-research.md) and
 [video research plan](docs/video-research-plan.md) record foundation decisions,
-their evidence and the remaining gates before product implementation.
+their evidence and remaining acceptance gates.
+
+## Native video editor
+
+The complete [Velorn editor](third_party/velorn) is pinned at
+`b3c02adbd5c0779feb8abf34978299e9502cc0e7`. Its native project, UI,
+compositor, mixer and exporter are reused. Run `git submodule update --init
+--recursive` to obtain source; [setup and native export test](engines/velorn/README.md)
+explain how to run it locally without a hosted AI API.
+
+Python `LocalEditorClient` preserves native MCP schemas and requires explicit
+host grants. `body_catalog(workspace, editor_client=client)` attaches granted
+operations to the existing BODY catalog. Professional field completion,
+autonomous creative acceptance and distribution packaging remain open.
 
 ## Run locally
 
@@ -59,7 +72,9 @@ require their corresponding host engines and Python dependencies.
 
 ## Licenses
 
-Repository code is covered by [LICENSE](LICENSE). External applications, model
+Repository code is covered by [LICENSE](LICENSE), except files with their own
+notices. Velorn and the integration launcher are GPL-3.0-only; root terms do
+not relicense them. External applications, model
 weights, fonts, voices and media have their own terms. Research scripts do not
 grant commercial rights to their models; the F5/XTTS comparison uses models with
 non-commercial restrictions. Review the selected engine and asset licenses for

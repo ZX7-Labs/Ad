@@ -1,8 +1,8 @@
 # Video foundation research and implementation plan
 
-> For agentic workers: execute the research tasks first. Product tasks require
-> the research gate described below. Use the executing-plans workflow for inline
-> implementation; the owner has delegated technical choices and continuation.
+> Active direction: integrate the selected complete editor. The owner superseded
+> the earlier research-only freeze. Keep historical measurements below; do not
+> restart universal research as a prerequisite for every implementation step.
 
 **Goal:** Make native video editing and its necessary project, source, audio,
 color, reliability and review dependencies a coherent professional capability.
@@ -20,9 +20,9 @@ and [CAPABILITIES.md](../CAPABILITIES.md).
 
 ## Global constraints
 
-* Research, comparisons, architecture, acceptance strategy and implementation
-  planning precede further product coding. Experiments must remain identifiable
-  as research and must not silently alter registered runtime behavior.
+* Use source comparison to select a complete application, then implement and
+  verify its actual native workflow. Experiments and technical exports remain
+  distinct from professional acceptance.
 * Preserve originals, rights, native editable state, existing tests and history.
 * No public owner assets, generated showcase films, credentials or model weights
   in source control. Synthetic test fixtures may be generated on demand.
@@ -47,18 +47,21 @@ and [CAPABILITIES.md](../CAPABILITIES.md).
 * An image-only critic claiming motion/audio quality: preserve modality and
   observed-interval limits through the real model request and acceptance record.
 
-## Research gate and current state
+## Active editor integration
 
-The architecture and initial source survey are written. A clean 108-case audio
-matrix, actual three-track MLT/FFmpeg revision comparison and eight real OTIO
-tests have run. Their [compact results](../research/foundation-evidence.json)
-are preserved with reproducible probes. The next tasks expand the native trial
-and resolve worker isolation/protocol constraints before product coding. Do not mark
-the entire research phase done while critical comparisons are unexecuted.
+Adopt the complete pinned Velorn application; see the
+[selection](reuse-research.md#whole-editor-source-selection) and
+[adapter](../engines/velorn/README.md). The first executable slice is native
+project creation, asset import, independent video/audio/title tracks, editable
+text/keyframes, saved versions, reopen and actual audiovisual export. BODY
+preserves native schemas and applies explicit host grants.
 
-The owner explicitly asked for independent decisions and no repetitive approval
-questions. Continue within that authorization. A missing measurement is not
-permission to manufacture success or skip the research-first requirement.
+Professional completion still requires representative client workloads, actual
+audiovisual model evaluation, project/restart recovery, isolation and packaging,
+codec/font/color/interchange coverage and artistic acceptance. Do not mark these
+complete from a short scripted fixture. The R-series below records earlier
+foundation work and remaining technical questions; it is not a mandate to
+rebuild the editor or postpone justified integration.
 
 ## R1: Reproducible sample-clock differential
 

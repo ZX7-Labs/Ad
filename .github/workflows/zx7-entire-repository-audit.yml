@@ -12,6 +12,8 @@ jobs:
     timeout-minutes: 18
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -19,7 +21,7 @@ jobs:
         run: python -m pip install 'PyYAML>=6,<7'
       - name: Independently test strict source-audit parser and risky call detection
         run: python -m unittest discover -s scripts -p 'test_repo_audit.py' -v
-      - name: Parse, index risk sites and SHA256 every actual tracked original source
+      - name: Verify source pins, parse tracked sources and record file SHA256 digests
         run: python scripts/repo_audit.py --out output/repo-audit/all-tracked-files.json
       - name: Preserve complete source and format verification inventory
         if: always()

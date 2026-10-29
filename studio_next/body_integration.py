@@ -343,7 +343,13 @@ def _commit_actual_body_output(final_path,render):
         stage.unlink(missing_ok=True)
 
 
-def body_catalog(workspace,*,vault_root=None):
+def body_catalog(workspace,*,vault_root=None,editor_client=None):
+    """Attach native editor operations only through a host-configured client.
+
+    The host owns its grants and argument/path policy. Project/model arguments
+    cannot attach an editor or expand grants. Native writes are stateful and
+    are never advertised as replayable cached work or media delivery receipts.
+    """
     root=Path(workspace).resolve()
     vault=MediaVault(vault_root or (root/"vault"))
     catalog=ToolCatalog()
@@ -1003,6 +1009,28 @@ def body_catalog(workspace,*,vault_root=None):
     add("body.voice_inventory","discover installed voice identities and synthesis controls",
         "Local style documents and package presence; actual TTS loading remains independently required",
         "read",True,["voice_assets"],inspect_voices)
+    if editor_client is not None:
+        native={tool["name"]:tool for tool in editor_client.list_tools()}
+        if set(editor_client.allowed_tools)-set(native):
+            raise ValueError("Host-granted native editor tool is absent from discovery")
+        for name,access in editor_client.allowed_tools.items():
+            tool=native[name]
+            # Keep the native schema intact: BODY's minimal validator must not
+            # flatten or reinterpret the editor's richer JSON Schema dialect.
+            schema={"type":"object","additionalProperties":False,
+                    "required":["arguments"],
+                    "properties":{"arguments":tool["inputSchema"]}}
+            spec=ToolSpec("body.editor."+name,"native video editor",
+                tool.get("description") or name,access,
+                license="native editor license; Velorn GPL-3.0-only",
+                resource="independently running local editor",
+                operation_schema=schema,
+                limitations=("Host-granted native operation; not a verified media delivery receipt.",
+                             "Stateful writes are not automatically retried or cached."))
+            catalog.register(spec,
+                lambda inputs,n=name,a=access:editor_client.call(
+                    n,inputs["arguments"],allowed_access=frozenset({a})),
+                idempotent=False)
     for spec,runner,idempotent,version,operational,materials in discover_enabled_body_plugins():
         if not operational:
             from dataclasses import replace

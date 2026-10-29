@@ -19,6 +19,38 @@ Documentation, code, weights, voices, fonts, plugin packages and shipped binary
 dependencies need separate provenance/license records. Repository license
 metadata alone is not a distribution audit.
 
+## Whole-editor source selection
+
+The owner authorized complete application reuse instead of rebuilding editor
+primitives. Full source checkouts of these applications were inspected, and
+native exports from Velorn and NodeTool ran before a workspace reset. The
+reproducible retained Velorn integration now lives under `engines/velorn`;
+its new E2E receipt must be produced by executing the test, not inferred from
+those earlier runs.
+
+| Application / exact inspected source | Evidence and choice |
+|---|---|
+| [Velorn](https://github.com/VelornLabs/velorn/tree/b3c02adbd5c0779feb8abf34978299e9502cc0e7), 0.3.37, GPL-3.0-only | Complete production app and native MCP exercised through import, independent video/audio/title tracks, save/reopen and real compositor/mixer export. Selected first; full source pinned under `third_party/velorn` |
+| [NodeTool](https://github.com/nodetool-ai/nodetool/tree/11411a94cf0d708bb8610d2e6549651abac1c7c9), source0.8.4, root AGPL-3.0 | Native timeline operations, core compositor and audio mixer ran baseline/revised48-frame exports. Whole-app agent path was not exercised. Viable alternative; no second mandatory editor stack |
+| [OpenKatana](https://github.com/rk0neki/OpenKatana/tree/142e44f98906414ce32a6bd1a354f91982614d9b), 0.1.1, Apache-2.0 | Source contract is sequential shots and rejects overlapping/independent video tracks. Rejected as primary multitrack NLE because adopting it would require rebuilding that missing surface |
+
+The comparison chooses a first integration, not the planet's best editor.
+Prior tests were two-second320×180/24fps synthetic fixtures, with no model
+inference or artistic evaluation. NodeTool reused one output path between runs;
+there were not two separately retained mixed movies. Earlier temporary exports
+were lost during the workspace reset; do not present them as retained artifacts.
+
+The pinned Velorn has130 native MCP tools. Discovery does not establish permission
+or conformance for every tool. Some audio automation and spline-mask controls
+are UI-only; speed-ramped audio and interchange have native limits. MCP
+checkpoints are memory-only. Raw MCP lacks authentication and per-instance ports;
+full packaging additionally expects staged RIFE inputs. These remain explicit
+integration/acceptance work, not silently completed capabilities.
+
+Clone with submodules for the complete pinned source. Root MIT terms do not
+relicense GPL/AGPL applications or dependencies. No paid service or hosted AI
+API is required for native editing/export.
+
 ## Existing system: keep the useful foundations
 
 | Existing paths | What source inspection establishes | Disposition |

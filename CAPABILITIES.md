@@ -153,11 +153,13 @@ already surpasses competitors, or that tradeoffs and future defects disappear.
 Earn conclusions through evidence; challenge your own assumptions, preserve
 what works, and invent only where an identifiable benefit justifies it.
 
-**Current instruction, superseding older engineering handoffs: finish the
-research, comparisons, architecture, design and implementation planning before
-starting further product coding.** The owner has explicitly authorized this
-documentation update and removal of clearly obsolete temporary documentation.
-That authorization is not a request to merge feature PRs or restart coding.
+**Current instruction: choose and integrate complete capable open-source
+applications instead of recreating their capabilities from primitives.** The
+owner superseded the earlier research-only freeze and authorized implementation,
+redesign and repository updates. Make independent source-backed decisions;
+the owner's examples describe breadth, not a required library or fixed pipeline.
+Finish one creative field before expanding. A working short export is technical
+evidence, not professional field completion or autonomous creative acceptance.
 
 ### 1. The actual product and its users
 

@@ -10,13 +10,17 @@ owner selected particular libraries. [CAPABILITIES.md](../CAPABILITIES.md)
 remains the product contract. [Reuse research](reuse-research.md) distinguishes
 source findings, measurements and unresolved experiments.
 
-This design is a migration target, not a description of a completed runtime.
-Product coding remains gated by the research-first mandate. The executable
-precision matrix and a small native renderer comparison have now run; broader
-renderer comparisons, isolation and model trials remain unresolved. The compact
-[measurement record](../research/foundation-evidence.json) survives CI artifact
-expiry. Do not change this status merely
-because the document or an experiment passes a source-format check.
+The active integration adopts the complete Velorn editor at commit
+`b3c02adbd5c0779feb8abf34978299e9502cc0e7`, under `third_party/velorn`.
+Its native UI, project format, compositor, audio mixer and export worker remain
+the editing application. BODY attaches through the local native MCP rather
+than rebuilding these subsystems. The owner's later instruction supersedes
+the earlier research freeze. Existing useful engines and project history remain.
+
+The [whole-editor comparison](reuse-research.md#whole-editor-source-selection)
+explains the choice. This is an engineering selection, not a worldwide quality
+ranking. Professional field coverage, autonomous artistic quality, restart
+recovery, full isolation and packaged distribution remain acceptance gates.
 
 ## Intent and boundaries
 
@@ -50,18 +54,21 @@ registered operation, installed executable or successful short export.
 | Approach | Useful property | Consequence | Decision |
 |---|---|---|---|
 | Replace the repository with a fresh implementation | Clean internal model | Repeats source custody, job recovery and native project work; no measured benefit justifies migration risk | Reject now |
-| Fork one agent workstation as the whole product | Existing owner/editor UX and integrations | Inherits its project model, licenses, limits and migration burden; still needs exact audio, evidence and native editability tests | Benchmark, not foundation selected |
-| Retain useful core and integrate native specialist engines | Preserves verified behavior and expressive scope; components can be replaced independently | Requires explicit boundary contracts and round-trip/loss tests | Selected architecture |
+| Adopt a complete source-pinned editor | Existing native UI/project, compositor, mixer, effects and export | Retains upstream limits and GPL terms; requires integration of host grants, custody and recovery | Selected: Velorn first, based on actual whole-app execution |
+| Preserve useful BODY specialist engines | Retains custody, recovery and working native routes | Avoid overlapping editor implementations or conflicting project state | Keep compatible routes; do not rebuild another NLE |
 
-The third choice is not permission to accumulate engines. Add a backend only
-when it passes a required workload or improves a measured tradeoff over the
-strongest simpler route. Do not merge a legacy feature PR automatically because
-it exists. Read its full diff and exact-head results against this design.
+Velorn owns its native timeline and project. BODY owns host grants and
+orchestration. `body_catalog(..., editor_client=...)` attaches explicitly granted
+native tools as `body.editor.<native_name>`. Native schemas remain unchanged
+under the `arguments` field. Unknown upstream tools receive no automatic grants.
+Native writes are stateful and not advertised as idempotent or accepted media
+receipts. Attaching the catalog alone does not make the legacy creative-session
+runner understand native editor state.
 
-The initial matched native trial supports retaining MLT: the revised diagnostic
-selected 12/12 intended source frames through MLT and 11/12 through the existing
-FFmpeg composition adapter. This establishes one adapter defect and one useful
-native route, not general MLT superiority or completion of the video field.
+`engines/velorn` launches the production renderer and existing Electron worker
+with a fresh private profile. Its trusted local transport is not an OS security
+boundary. Upstream MCP is a fixed unauthenticated loopback endpoint; keep it on
+a trusted local host. Optional generation/cloud integrations are not required.
 
 ## System shape
 

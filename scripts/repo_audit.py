@@ -1,6 +1,8 @@
 """Reproducible whole-Git-tree source and source-format audit for ZX7.
 
-This enumerates EVERY tracked file and validates parseable code/config. It is
+This enumerates EVERY tracked file, including initialized pinned submodule
+sources, and validates parseable code/config. Gitlinks are recorded separately
+from regular-file SHA256 digests. It is
 an inventory and basic integrity audit, not a cinematic or security release.
 """
 from __future__ import annotations
@@ -50,9 +52,73 @@ def _risky_python_sites(tree,path):
     return sorted(sites,key=lambda item:item["line"])
 
 
+def _git(root,*args):
+    return subprocess.run(["git","-C",str(root),*args],capture_output=True,
+                          check=True,timeout=30).stdout.decode("utf-8")
+
+
+def _index(root):
+    """Read modes from this repository's index, never an enclosing repository."""
+    try:
+        top=Path(_git(root,"rev-parse","--show-toplevel").strip()).resolve()
+    except subprocess.CalledProcessError:
+        return {}
+    if top!=root.resolve():
+        return {}
+    entries={}
+    for entry in _git(root,"ls-files","--stage","-z").split("\0"):
+        if entry:
+            metadata,name=entry.split("\t",1)
+            mode,oid,stage=metadata.split()
+            entries[name]=(mode,oid,stage)
+    return entries
+
+
+def _safe_path(root,relative):
+    path=root
+    for part in relative.parts:
+        path=path/part
+        if path.is_symlink():
+            return False
+    return path.resolve().is_relative_to(root.resolve())
+
+
+def _pinned_submodule(root,name,pin,index):
+    """Verify a registered checkout before following its own tracked sources."""
+    modules=root/".gitmodules"
+    if not modules.is_file() or modules.is_symlink() or \
+            index.get(".gitmodules",("",))[0] not in ("100644","100755"):
+        raise ValueError("gitlink has no tracked .gitmodules registration")
+    registrations=_git(root,"config","--file",str(modules),"--null",
+                       "--get-regexp",r"^submodule\..*\.path$")
+    registered=[entry.split("\n",1)[1] for entry in registrations.split("\0") if entry]
+    if registered.count(name)!=1:
+        raise ValueError("gitlink must have exactly one .gitmodules registration")
+    path=root/name
+    if not path.is_dir() or not (path/".git").exists() or (path/".git").is_symlink():
+        raise ValueError("pinned submodule is not initialized")
+    top=Path(_git(path,"rev-parse","--show-toplevel").strip()).resolve()
+    if top!=path.resolve():
+        raise ValueError("submodule must have its own exact repository top-level")
+    head=_git(path,"rev-parse","HEAD").strip()
+    if head!=pin:
+        raise ValueError("submodule HEAD does not match indexed gitlink pin")
+    # Index flags can hide edits from ordinary Git diff checks. Fail closed
+    # rather than treating assume-unchanged or sparse files as verified source.
+    flags=_git(path,"ls-files","-v","-z").split("\0")
+    if any(row and (row[0].islower() or row[0]=="S") for row in flags):
+        raise ValueError("submodule has hidden or sparse tracked-source index flags")
+    _git(path,"diff","--quiet","--ignore-submodules=none","HEAD","--")
+    return {"path":name,"kind":"gitlink","git_mode":"160000",
+            "commit":pin,"checked_out_commit":head,"tracked_source_clean":True}
+
+
 def audit(root, names):
     import yaml
+    root=Path(root).resolve()
+    index=_index(root)
     files=[]
+    pins=[]
     blocked=[]
     risky_sites=[]
     summary={"python":0,"json":0,"toml":0,"yaml":0,"other":0}
@@ -62,6 +128,31 @@ def audit(root, names):
             blocked.append({"path":name,"reason":"untrusted indexed path"})
             continue
         path=root/relative
+        if not _safe_path(root,relative):
+            blocked.append({"path":name,"reason":"untrusted indexed source path"})
+            continue
+        mode,pin,stage=index.get(name,(None,None,None))
+        if mode=="160000":
+            try:
+                if stage!="0":
+                    raise ValueError("gitlink has unresolved index stages")
+                record=_pinned_submodule(root,name,pin,index)
+                child_index=_index(path)
+                nested=audit(path,list(child_index))
+            except (ValueError,OSError,subprocess.SubprocessError) as exc:
+                blocked.append({"path":name,"reason":"pinned source verification failed",
+                                "detail":str(exc)[:180]})
+                continue
+            pins.append(record)
+            for key,target in (("files",files),("pinned_sources",pins),
+                               ("static_source_change_sites",risky_sites),
+                               ("blocking_source_format_errors",blocked)):
+                for row in nested[key]:
+                    target.append({**row,"path":name+"/"+row["path"]
+                                   if "path" in row else name})
+            for key,count in nested["counts"].items():
+                summary[key]+=count
+            continue
         if path.is_symlink() or not path.is_file():
             blocked.append({"path":name,"reason":"source is not a regular tracked file"})
             continue
@@ -90,6 +181,8 @@ def audit(root, names):
     if len(names)!=len(set(names)):
         blocked.append({"reason":"duplicate tracked source path"})
     return {"schema":1,"scope":"every tracked file","files":files,
+            "pinned_sources":pins,
+            "pinned_source_scope":"initialized registered gitlinks and their tracked sources",
             "counts":summary,"total_file_count":len(files),
             "static_source_change_sites":sorted(
                 risky_sites,key=lambda row:(row["path"],row["line"])),
