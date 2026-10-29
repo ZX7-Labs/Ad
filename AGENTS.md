@@ -1,6 +1,6 @@
 # Product intent
 
-Astra and other engineering agents: read this file, then read [CAPABILITIES.md](CAPABILITIES.md) for the complete A–L creative scope, the cross-domain quality standard, and the independently measurable acceptance gates. It is a product contract, not a model prompt or a claim of implementation.
+Engineering agents: read this file, [CAPABILITIES.md](CAPABILITIES.md) for the complete A–L product scope and acceptance gates, and [ENGINEERING_STANDARD.md](ENGINEERING_STANDARD.md) for the autonomous evidence-led research, design, execution and final-demo sequence. These are contracts for how to work, not a model-intelligence upgrade or a claim of completed capability.
 
 Build one coherent creative system that an AI model can operate as an artist
 operates professional creative software. The AI supplies ideas and creative
