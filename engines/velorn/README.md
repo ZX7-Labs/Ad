@@ -168,6 +168,40 @@ approved it. These are explicit acceptance gaps for [Issue #74](https://github.c
 `native-model-client.py` refuses disabling the Chromium sandbox. The upstream
 trusted loopback MCP service is still **not** an OS isolation boundary.
 
+## Tamper-resistant source-chain audit for a native model session
+
+A separate read-only audit can inspect the model-issued native operation
+journal against the **owner-granted** editor permissions, including the
+five additional host-owned verifier/observation names only if the owner
+enabled physical export verification. The model cannot grant itself sensors.
+
+```sh
+python -m studio_next.native_creative_audit \
+  --journal /private/new-model-session.jsonl \
+  --host-editor-config /private/owner-native-grants.json
+```
+
+For each tool call the driver writes an ordered intent before RPC and a
+separate result (or terminal uncertainty), preserving checked result hashes
+instead of leaking asset bytes. Host-owned frame/WAV observers cannot be
+spoofed by unrelated native tools. Their export digest must be the exact
+SHA-256 **already physically verified within the same editing session**.
+The standalone audit independently verifies receipt structure, legal call
+ordering, complete outcomes, grants, export-to-frame/audio identity and
+whether the model elected to revise after observing earlier output. A torn
+journal, duplicate records, unknown granted tool, invented media hash, and
+a write after an uncertain result all fail.
+
+**Important limitation:** This is an auditable trace and provenance
+consistency check, not a cryptographically signed append-only archive.
+Neither the auditor nor the driver independently re-decodes media bytes
+from the audit journal, proves that a real neural model (rather than a
+scripted fixture) issued the commands, proves licensed source rights,
+establishes a professional-quality result, or prevents tampering by the
+trusted host filesystem owner. Runtime media verification is provided by
+the separately tested native export verifier and its physical observers;
+a higher-level independent creative/video acceptance remains required.
+
 ## Start a local session
 
 Paths must be absolute. Each launch requires a fresh profile; project/staging/output roots can persist. This upstream hardcodes ports 5173 and 19790, so only one instance per network namespace is supported. Occupied ports fail before startup.
