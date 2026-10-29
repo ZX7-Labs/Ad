@@ -61,7 +61,7 @@ jobs:
         run: |
           find /tmp -maxdepth 6 -type f -name launcher.log \
             -path '/tmp/zx7-editor-mcp-*/state/session-*/launcher.log' \
-            -print -exec tail -n 120 {} \\;
+            -print -exec tail -n 120 {} +
       - name: Recheck pinned native source remains unchanged
         if: always()
         run: |
