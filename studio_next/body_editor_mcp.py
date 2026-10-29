@@ -82,6 +82,7 @@ def create_editor_server(client, *, allowed_access=frozenset({"read"}),
                 inputSchema=schema)
             validators[verified_export_name] = jsonschema.Draft202012Validator(schema)
     lock = anyio.Lock()
+    inspection_capacity = anyio.CapacityLimiter(1)
 
     def failed(message):
         return types.CallToolResult(is_error=True,
@@ -101,7 +102,7 @@ def create_editor_server(client, *, allowed_access=frozenset({"read"}),
             return failed("Invalid native tool arguments: " + exc.message)
         if name == verified_export_name:
             try:
-                async with lock:
+                async with inspection_capacity:
                     with anyio.CancelScope(shield=True):
                         proof = await anyio.to_thread.run_sync(
                             lambda: export_verifier(arguments["path"], expected=arguments.get("expected")),
