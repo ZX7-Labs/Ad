@@ -7,6 +7,8 @@ No pretrained model is bundled and no 'best screenwriter' claim is made.
 from dataclasses import dataclass, field
 import base64
 import hashlib
+import io
+import wave
 import json
 from urllib.parse import urlsplit
 from urllib.request import Request
@@ -67,9 +69,9 @@ class LocalCreativeModel:
         self.settings=settings
         self.system_prompt=system_prompt
 
-    def _invoke(self,role,context,*,images=()):
+    def _invoke(self,role,context,*,images=(),audio=()):
         user_content=json.dumps(context,ensure_ascii=False,allow_nan=False)
-        if images:
+        if images or audio:
             content=[{"type":"text","text":user_content}]
             evidence=context.get("picture_evidence") if isinstance(context,dict) else None
             if evidence is not None and (not isinstance(evidence,list) or len(evidence)!=len(images)):
@@ -97,6 +99,38 @@ class LocalCreativeModel:
                 content.append({"type":"text","text":json.dumps(label,ensure_ascii=False)})
                 content.append({"type":"image_url","image_url":{
                     "url":"data:"+mime+";base64,"+base64.b64encode(raw).decode("ascii")}})
+            if audio:
+                if images:
+                    raise ValueError("Simultaneous video frames and audio need a separately validated backend")
+                if len(audio) != 1 or not isinstance(audio[0],tuple) or len(audio[0]) != 2:
+                    raise ValueError("Only one bounded original WAV is permitted per native model turn")
+                mime,wav=audio[0]
+                if mime != "audio/wav" or not isinstance(wav,bytes) or not 44 <= len(wav) <= 128*1024:
+                    raise ValueError("One bounded PCM WAV is required for real model listening")
+                try:
+                    with wave.open(io.BytesIO(wav),"rb") as stream:
+                        frames=stream.getnframes()
+                        if (stream.getnchannels() != 1 or stream.getsampwidth() != 2 or
+                                stream.getframerate() != 16000 or
+                                stream.getcomptype() != "NONE" or
+                                not 0 < frames <= 16000*3 or
+                                len(stream.readframes(frames)) != frames*2):
+                            raise ValueError("Actual 16 kHz mono PCM WAV format or length is invalid")
+                except (wave.Error,EOFError,OSError) as exc:
+                    raise ValueError("Malformed decoded source PCM WAV") from exc
+                evidence=context.get("audio_evidence") if isinstance(context,dict) else None
+                if (not isinstance(evidence,dict) or
+                        not isinstance(evidence.get("export_sha256"),str) or
+                        not isinstance(evidence.get("wav_sha256"),str) or
+                        evidence["wav_sha256"] != hashlib.sha256(wav).hexdigest()):
+                    raise ValueError("Original WAV source or binary custody evidence is missing")
+                content.append({"type":"text","text":json.dumps(
+                    {"original_audio":True,"export_sha256":evidence["export_sha256"],
+                     "wav_sha256":evidence["wav_sha256"],
+                     "preview_only_pcm_mono_16khz":True,
+                     "original_multichannel_mastering_proven":False})})
+                content.append({"type":"input_audio","input_audio":{
+                    "data":base64.b64encode(wav).decode("ascii"),"format":"wav"}})
             user_content=content
         payload={"model":self.settings.model_id,"stream":False,
                  "messages":[{"role":"system","content":role},
@@ -129,6 +163,14 @@ class LocalCreativeModel:
 
     def decide_with_images(self,context,images):
         return self._invoke(self.system_prompt,context,images=images)
+
+    def decide_with_audio(self,context,audio):
+        """Send one physically decoded, hash-bound WAV to a capable local model.
+
+        This transport cannot independently prove that the model recognizes
+        speech/music or correctly evaluates the underlying professional mix.
+        """
+        return self._invoke(self.system_prompt,context,audio=audio)
 
     def review(self,context):
         # Caller can create a separate instance with a different local model id,
