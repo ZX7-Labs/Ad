@@ -204,6 +204,74 @@ async def exercise(options):
             assert (decoded.getnchannels(), decoded.getframerate(), decoded.getsampwidth()) == (1, 16000, 2)
             assert decoded.getnframes() > 8000
 
+        # Real pinned Electron -> independent SHA export verifier -> actual
+        # PNG/WAV MCP bytes -> BODY model-interface transport -> journal audit.
+        # Deliberately scripted fake model; does NOT validate neural judgment.
+        from studio_next.native_creative_control import NativeCreativeControl
+        from studio_next.native_creative_audit import audit_native_journal, read_native_journal
+
+        class AVTransportFixtureModel:
+            def __init__(self):
+                self.stage = 0
+                self.actual_frame_hash = None
+                self.actual_audio_hash = None
+
+            def decide(self, context):
+                self.stage += 1
+                if self.stage == 1:
+                    return {"action": "invoke", "arguments": {
+                        "tool": "zx7_verify_native_export", "inputs": {
+                            "path": str(output),
+                            "expected": {"width": 320, "height": 180,
+                                         "duration_seconds": 2, "require_audio": True}}},
+                            "reason": "Independently verify physical export before observation"}
+                if self.stage == 2:
+                    return {"action": "invoke", "arguments": {
+                        "tool": "zx7_observe_verified_export_frame", "inputs": {
+                            "path": str(output), "at_seconds": 0.5}},
+                            "reason": "Observe actual decoded frame evidence"}
+                raise AssertionError("Unexpected scripted test model decision")
+
+            def decide_with_images(self, context, images):
+                assert len(images) == 1 and images[0][0] == "image/png"
+                self.actual_frame_hash = hashlib.sha256(images[0][1]).hexdigest()
+                assert context["observed_picture_sha256"] == [self.actual_frame_hash]
+                return {"action": "invoke", "arguments": {
+                    "tool": "zx7_observe_verified_export_audio", "inputs": {
+                        "path": str(output), "start_seconds": 0.25,
+                        "duration_seconds": 1.0}},
+                        "reason": "Inspect actual audio source after independently decoded pixels"}
+
+            def decide_with_audio(self, context, audio):
+                assert len(audio) == 1 and audio[0][0] == "audio/wav"
+                self.actual_audio_hash = hashlib.sha256(audio[0][1]).hexdigest()
+                assert audio[0][1].startswith(b"RIFF")
+                assert context["audio_evidence"] == {
+                    "export_sha256": digest(output), "wav_sha256": self.actual_audio_hash}
+                return {"action": "finish", "arguments": {
+                    "summary": "Actual A/V transported, no neural creativity asserted"},
+                    "reason": "Technical-only real-media transport fixture"}
+
+        fixture_brain = AVTransportFixtureModel()
+        verified_trace = fixture / "native-av-model-transport-only.jsonl"
+        controlled = await NativeCreativeControl(
+            session, fixture_brain, max_turns=4,
+            receipt_path=verified_trace).run("Validate physical A/V transport, not artistry")
+        grants = {**tools, "zx7_verify_native_export": "read",
+                  "zx7_observe_verified_export_frame": "read",
+                  "zx7_observe_verified_export_audio": "read"}
+        audit = audit_native_journal(read_native_journal(verified_trace),
+                                    host_tool_access=grants)
+        assert controlled["status"] == "model_finished_unverified"
+        assert audit["journal_chain_structurally_valid"]
+        assert audit["export_digests_independently_reported_by_native_host"] == [digest(output)]
+        assert audit["observed_verified_export_digests"] == [digest(output)]
+        assert audit["recorded_native_write_result_count"] == 0
+        assert fixture_brain.actual_frame_hash == frame_receipt["png_sha256"]
+        assert fixture_brain.actual_audio_hash == audio_receipt["wav_sha256"]
+        assert not audit["real_neural_model_weights_or_inference_independently_attested"]
+        assert not audit["human_or_artistic_quality_approved"]
+
     async with connected() as session:
         await call(session, "open_project", {"projectPath": str(project), "previewOnly": False})
         await wait(session, lambda state: (state.get("currentTimeline") or {}).get("clipCount") == 3 and state.get("assetCount") == 2)
@@ -234,7 +302,9 @@ async def exercise(options):
         "existingSourceExportDenied": True, "outsideNativeDocumentDenied": True,
         "invalidNativeArgumentsRejected": True, "editableTracks": 3, "savedVersions": 2,
         "processRestartReopenPassed": True, "frames": 48, "fps": "24/1", "audioCodec": "aac",
-        "fullDecodePassed": True, "audioRms": audio_rms, "output": str(output), "sha256": digest(output), "fixture": str(fixture)}
+        "fullDecodePassed": True, "physicalModelInterfaceAVTransportFixturePassed": True,
+        "neuralModelEvaluated": False, "artisticQualityApproved": False,
+        "audioRms": audio_rms, "output": str(output), "sha256": digest(output), "fixture": str(fixture)}
     (fixture / "receipt.json").write_text(json.dumps(receipt, indent=2))
     print(json.dumps(receipt, indent=2))
 
