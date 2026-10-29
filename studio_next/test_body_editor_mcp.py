@@ -90,8 +90,9 @@ class EditorMCPTests(unittest.IsolatedAsyncioTestCase):
         self.http.server_close()
         self.thread.join()
 
-    async def with_session(self, check, *, access=frozenset({"read", "write"})):
-        server = create_editor_server(self.client, allowed_access=access)
+    async def with_session(self, check, *, access=frozenset({"read", "write"}), export_verifier=None):
+        server = create_editor_server(self.client, allowed_access=access,
+                                      export_verifier=export_verifier)
         async with create_client_server_memory_streams() as (client_streams, server_streams):
             async with anyio.create_task_group() as group:
                 group.start_soon(server.run, *server_streams, server.create_initialization_options())
@@ -217,6 +218,37 @@ class EditorMCPTests(unittest.IsolatedAsyncioTestCase):
             finally:
                 self.hold.set()
         await self.with_session(check)
+
+    async def test_export_verifier_is_read_only_opt_in_and_no_native_rpc(self):
+        observed = []
+        def verifier(path, expected=None):
+            observed.append((path, expected))
+            if path != "/trusted/export.mp4":
+                raise ValueError("outside selected export")
+            return {"physical_export_verified": True, "artistic_quality_approved": False}
+
+        async def check(session):
+            catalog = {tool.name: tool for tool in (await session.list_tools()).tools}
+            self.assertIn("zx7_verify_native_export", catalog)
+            good = await session.call_tool("zx7_verify_native_export", {
+                "path": "/trusted/export.mp4", "expected": {"require_audio": True}})
+            self.assertFalse(good.is_error)
+            self.assertEqual(json.loads(good.content[0].text)["physical_export_verified"], True)
+            self.assertEqual(observed, [("/trusted/export.mp4", {"require_audio": True})])
+            for arguments in ({}, {"path": 12}, {"path": "/trusted/export.mp4", "expected": {"unknown": 1}},
+                              {"path": "/etc/passwd"}):
+                denied = await session.call_tool("zx7_verify_native_export", arguments)
+                self.assertTrue(denied.is_error)
+            self.assertFalse(any(x["method"] == "tools/call" for x in self.requests))
+        await self.with_session(check, export_verifier=verifier)
+
+        async def no_read(session):
+            self.assertNotIn("zx7_verify_native_export", [
+                tool.name for tool in (await session.list_tools()).tools])
+            self.assertTrue((await session.call_tool("zx7_verify_native_export", {
+                "path": "/trusted/export.mp4"})).is_error)
+        await self.with_session(no_read, access=frozenset({"write"}), export_verifier=verifier)
+        self.assertEqual(len(observed), 1)
 
     def test_missing_host_grant_or_remote_schema_reference_fails_closed(self):
         self.tools = [TOOLS[0]]
