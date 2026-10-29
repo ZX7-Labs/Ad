@@ -63,7 +63,9 @@ class NativeEditorVisualFeedbackTests(unittest.TestCase):
         other.write_bytes(self.source.read_bytes())
         link = self.outputs / "alias.mp4"
         link.symlink_to(self.source)
-        for item in (other, link):
+        project_original = self.projects / "not-an-export.mp4"
+        project_original.write_bytes(self.source.read_bytes())
+        for item in (other, link, project_original):
             with self.subTest(item=item), self.assertRaises(EditorAccessError):
                 observe_verified_export_frame(str(item), policy=self.policy,
                     verified_sha256=self.digest, at_seconds=0.5)
