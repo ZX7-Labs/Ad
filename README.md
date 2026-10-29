@@ -72,7 +72,7 @@ The old edit and prior execution history remain preserved; renders run again.
 
 - [AGENTS.md](AGENTS.md): product intent and development direction.
 - [CAPABILITIES.md](CAPABILITIES.md): full original A–L capability scope, engineering invariants and release gates.
-- [ENGINEERING_STANDARD.md](ENGINEERING_STANDARD.md): autonomous research/engineering method, proof requirements and final 1–2 minute video **only after** field completion.
+- [ENGINEERING_STANDARD.md](ENGINEERING_STANDARD.md): independent engineering judgment, research and verification; show original work when transitioning from a capability considered complete.
 - `studio_next/`: execution, project controls, service, clients and tests.
 - `motion_studio/`: existing 2D compositor and sample projects.
 - `creative_director/`, `director_research/`, `voice_lab/`: optional research tools.
