@@ -120,6 +120,47 @@ and saves two native versions, exports real audiovisual media, disconnects, and
 reopens the same revision in a new editor process. It is a scripted integration
 fixture, not an autonomous model or artistic evaluation.
 
+## Experimental real-model native editing session
+
+The host-owned [`native-model-client.py`](native-model-client.py) connects an
+actual local OpenAI-compatible model to the **real pinned Electron editor**
+through the existing official MCP SDK. The *model* decides native operations,
+schemas are fetched from the host-granted tool catalog on demand, and each
+issued call is journaled **before** submission (no blind write replay).
+
+Example with locally authorized media, a separately running local model and
+already created private state/receipt directories:
+
+```sh
+python engines/velorn/native-model-client.py \
+  --source /absolute/path/to/third_party/velorn \
+  --config /absolute/path/to/owner-native-grants.json \
+  --state /private/native-editor-state \
+  --brief-file /private/owner-brief.txt \
+  --receipt /private/new-model-session.jsonl \
+  --base-url http://127.0.0.1:8080 --model-id YOUR_ACTUAL_LOCAL_MODEL
+```
+
+The app gets **only** the host's explicit grants. Model text is not authority.
+The local model must return one `{action,arguments,reason}` JSON decision
+per turn; the driver does not bake in a timeline or shot sequence. Actual
+MCP text output is supplied to the next decision but only its SHA evidence
+is journaled. A real SHA-bound PNG returned by the verified export observer
+is supplied as image bytes only if the model supports images. If the model
+cannot process returned real WAV audio, it **refuses semantic listening** rather
+than substituting RMS text. The receipt is local mode 0600, never overwritten;
+after uncertain execution the current project must be reconciled manually
+before any deliberate continuation.
+
+**This is a first model-control interface, not a passed live-model evaluation.**
+No model weights have yet been independently exercised through this CLI in a
+verified creative workload. The current loop is not a durable, cross-restart
+creative session and cannot certify edit quality or source rights. A model
+calling `finish` does not mean the film is complete or that an expert has
+approved it. These are explicit acceptance gaps for [Issue #74](https://github.com/ZX7-Labs/Zx7-creative-studio-/issues/74).
+`native-model-client.py` refuses disabling the Chromium sandbox. The upstream
+trusted loopback MCP service is still **not** an OS isolation boundary.
+
 ## Start a local session
 
 Paths must be absolute. Each launch requires a fresh profile; project/staging/output roots can persist. This upstream hardcodes ports 5173 and 19790, so only one instance per network namespace is supported. Occupied ports fail before startup.
