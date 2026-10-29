@@ -11,6 +11,7 @@ import argparse
 import copy
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import shutil
@@ -24,7 +25,7 @@ from studio_next.body_mlt_editor import export_owned_mlt
 from studio_next.body_mlt_render import render_owned_mlt
 from studio_next.body_mlt_revision import revise_owned_mlt_project
 from studio_next.body_mlt_roundtrip import recover_original_mlt_plan
-from studio_next.composite_mix import render_composition
+from studio_next.composite_mix import actual_composite_command, render_composition
 from studio_next.media_vault import MediaVault
 
 WIDTH, HEIGHT, FPS, FRAMES = 64, 48, 12, 12
@@ -122,11 +123,38 @@ def assess(path, plan, candidates):
             "frame_count": len(rows)}
 
 
+def activation_diagnostic(root, plan, candidates):
+    """Change ONLY one predicate bound, for causal diagnosis, never as a fix."""
+    document = composition(plan)
+    top = document["video_layers"][-1]
+    start = top["start"]
+    end = start + top["duration"]
+    original = f"enable='between(t,{start},{end})'"
+    perturbed_start = math.nextafter(start, -math.inf)
+    perturbed = f"enable='between(t,{perturbed_start},{end})'"
+    output = root / "activation-diagnostic.mp4"
+    command = actual_composite_command(document, root, MediaVault(root / "vault"), output)
+    index = command.index("-filter_complex") + 1
+    graph = command[index]
+    if graph.count(original) != 1:
+        raise ValueError("Diagnostic expected exactly one top-layer activation predicate")
+    command[index] = graph.replace(original, perturbed)
+    run(command)
+    return {"diagnostic_only_not_runtime_fix": True,
+            "changed": "one lower activation bound by one binary64 ULP",
+            "original_predicate": original, "perturbed_predicate": perturbed,
+            "original_graph_sha256": hashlib.sha256(graph.encode()).hexdigest(),
+            "perturbed_graph_sha256": hashlib.sha256(command[index].encode()).hexdigest(),
+            "assessment": assess(output, plan, candidates)}
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", required=True, type=Path)
     parser.add_argument("--ffmpeg-only", action="store_true",
                         help="Explicit partial trial; does not claim native MLT comparison")
+    parser.add_argument("--probe-activation", action="store_true",
+                        help="Isolate floating activation sensitivity; not a product fix")
     options = parser.parse_args(argv)
     for binary in ("ffmpeg", "ffprobe", "git", *(() if options.ffmpeg_only else ("melt",))):
         if not shutil.which(binary):
@@ -172,6 +200,8 @@ def main(argv=None):
                                 "native_reopen_matched": True,
                                 "assessment": assess(output, plan, candidates),
                                 "native_output_frames": receipt.get("frames")})
+                if options.probe_activation and label == "revision" and engine == "ffmpeg":
+                    results[-1]["activation_diagnostic"] = activation_diagnostic(root, plan, candidates)
     report = {"schema": 1,
               "source_commit": run(["git", "-C", str(repo), "rev-parse", "HEAD"]).decode().strip(),
               "working_tree_dirty": bool(run(["git", "-C", str(repo), "status", "--porcelain"])),
@@ -183,8 +213,9 @@ def main(argv=None):
                                   "crash recovery", "resource benchmark", "creative quality/model autonomy"],
               "results": results}
     if not options.ffmpeg_only:
-        report["melt_version_output"] = subprocess.run(
-            ["melt", "-version"], capture_output=True, text=True, timeout=30).stderr[:1000]
+        version_result = subprocess.run(["melt", "-version"], capture_output=True,
+                                        text=True, timeout=30, check=True)
+        report["melt_version_output"] = (version_result.stdout + version_result.stderr)[:1000]
     options.out.parent.mkdir(parents=True, exist_ok=True)
     options.out.write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps({"mlt_comparison_executed": report["mlt_comparison_executed"],

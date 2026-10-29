@@ -12,8 +12,10 @@ source findings, measurements and unresolved experiments.
 
 This design is a migration target, not a description of a completed runtime.
 Product coding remains gated by the research-first mandate. The executable
-precision experiment is the next research task; native renderer comparisons,
-isolation and model trials remain unresolved. Do not change this status merely
+precision matrix and a small native renderer comparison have now run; broader
+renderer comparisons, isolation and model trials remain unresolved. The compact
+[measurement record](../research/foundation-evidence.json) survives CI artifact
+expiry. Do not change this status merely
 because the document or an experiment passes a source-format check.
 
 ## Intent and boundaries
@@ -47,6 +49,11 @@ The third choice is not permission to accumulate engines. Add a backend only
 when it passes a required workload or improves a measured tradeoff over the
 strongest simpler route. Do not merge a legacy feature PR automatically because
 it exists. Read its full diff and exact-head results against this design.
+
+The initial matched native trial supports retaining MLT: the revised diagnostic
+selected 12/12 intended source frames through MLT and 11/12 through the existing
+FFmpeg composition adapter. This establishes one adapter defect and one useful
+native route, not general MLT superiority or completion of the video field.
 
 ## System shape
 
@@ -204,6 +211,11 @@ network denial unless separately granted, process/CPU/memory/disk/time limits
 and whole-process-tree termination. Choose and test the implementation on the
 actual host; `bwrap` presence alone is not conformance. A deployment unable to
 enforce the profile cannot enable arbitrary creative-code execution.
+
+The current host failed a minimal `bwrap` launch with a denied NETLINK_ROUTE
+socket. It has not passed the proposed isolation profile. Native trusted
+structured operations must not be relabeled an arbitrary-code sandbox, and
+dropping network isolation to obtain a green launch is not an acceptable fix.
 
 Keep current trusted administrator-installed Python plugins explicitly trusted.
 Do not relabel them sandboxed. Native library/plugin imports are executable code;

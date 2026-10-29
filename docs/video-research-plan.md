@@ -46,10 +46,11 @@ and [CAPABILITIES.md](../CAPABILITIES.md).
 
 ## Research gate and current state
 
-The architecture and initial source survey are written. The earlier one-sample
-audio experiment and eight real OTIO tests are available evidence. The next
-task is a reproducible, committed synthetic precision probe, then a matched
-native editorial trial and a review of their effect on the design. Do not mark
+The architecture and initial source survey are written. A clean 108-case audio
+matrix, actual three-track MLT/FFmpeg revision comparison and eight real OTIO
+tests have run. Their [compact results](../research/foundation-evidence.json)
+are preserved with reproducible probes. The next tasks expand the native trial
+and resolve worker isolation/protocol constraints before product coding. Do not mark
 the entire research phase done while critical comparisons are unexecuted.
 
 The owner explicitly asked for independent decisions and no repetitive approval
@@ -73,7 +74,7 @@ channel counts, subprocess status and explicit scope.
       a research result, not a reason to adjust the oracle.
 - [x] Fail the probe on missing tools, bad decode or reference disagreement;
       distinguish successful measurement of a BODY defect from conformance.
-- [ ] Commit the probe and compact synthetic results; rerun from a clean checkout.
+- [x] Commit the probe and compact synthetic results; rerun from a clean checkout.
 
 Local first matrix: 108 cases, 16 matching, 56 decoded timing mismatches, 36
 BODY command rejections; largest observed decoded offset 24 samples at 48 kHz.
@@ -89,7 +90,7 @@ inspect its conformance fields before making any product claim.
 `body_mlt_roundtrip.py`, `body_sequence_otio.py`, `composite_mix.py`, their tests.
 **Produces:** matched workload receipts, loss reports and selected route rationale.
 
-- [ ] Make actual MLT available on an authorized execution host without changing
+- [x] Make actual MLT available on an authorized execution host without changing
       product contracts. Record binary/plugin/build versions and resources.
 - [ ] Use identical synthetic/source-attested assets and editorial intent for
       native MLT and FFmpeg: three picture layers, independently placed sound,
@@ -102,6 +103,13 @@ inspect its conformance fields before making any product claim.
       render. Reject unexplained frame/audio/color differences.
 - [ ] Update the architecture only when these results change a decision; retain
       both native projects and old tool compatibility.
+
+Completed initial subset: actual MLT 7.22.0 and FFmpeg 6.1.1 on Ubuntu 24.04,
+three opaque tracks at 12fps, one native trim/move revision and exact native
+reopen. Both baselines selected 12/12 source frames; the revised MLT output
+selected 12/12 and FFmpeg 11/12. The broader R2 tasks above remain unchecked.
+The optional activation probe changes only one predicate bound by one ULP;
+it is diagnostic, not a product remedy or approved epsilon policy.
 
 ## R3: Isolation and protocol research
 
@@ -117,6 +125,11 @@ inspect its conformance fields before making any product claim.
       modality-aware observations using examples from the R1/R2 workloads.
 - [ ] Assess whether existing publication/leases can implement multi-artifact
       commits and stale-worker fencing without a second coordinator.
+
+Current-host preliminary result: a fixed `bwrap` profile launching only
+`/usr/bin/true` with isolated user/PID/network namespaces failed with a denied
+NETLINK_ROUTE socket. Full isolation is unverified. Keep arbitrary-code execution
+disabled on this host; do not weaken the profile just to pass the launch.
 
 ## P1: Exact composition clock and audio contract (after research gate)
 

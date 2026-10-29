@@ -40,7 +40,7 @@ jobs:
           python scripts/research_audio_clock.py --out output/foundation/audio-clock.json --summary-out output/foundation/audio-clock-summary.json
       - name: Compare native MLT and FFmpeg source frames before and after revision
         run: |
-          python scripts/research_native_editor.py --out output/foundation/native-editor.json
+          python scripts/research_native_editor.py --probe-activation --out output/foundation/native-editor.json
       - name: Verify existing strict native OTIO behavior with actual library
         run: |
           python -m unittest studio_next.test_body_sequence_otio -v

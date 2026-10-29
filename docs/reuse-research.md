@@ -50,9 +50,12 @@ adding a product dependency. Avoid installing every candidate.
 | Capability / candidate | Type and useful native surface | Decision and reason | Required falsification test |
 |---|---|---|---|
 | [MLT](https://mltframework.org/docs/melt/) | NLE framework: producers, playlists, multitracks, tractors, filters and transitions | Retain first video backend; existing source-aware integration has value | Source-frame edits, multitrack compositing, effect order, native save/reopen and actual decoded A/V |
+| [GStreamer Editing Services](https://gstreamer.freedesktop.org/documentation/gst-editing-services/gestimeline.html) | Multimedia timeline/layers with explicit commit and nanosecond timeline elements | NLE alternative if a required MLT workflow fails; do not rebuild GES inside BODY | Same source/trim/transition/audio/revision workloads, including frame-to-time conversion |
+| [libopenshot](https://www.openshot.org/static/files/libopenshot/classopenshot_1_1Timeline.html) | Library timeline with rational output frame rate, clip placement and keyframes | Alternative NLE trial, not a reason to discard working MLT | Exact source selection, bus samples, native state and actual memory/render behavior |
 | [FFmpeg](https://ffmpeg.org/ffmpeg-filters.html) | Codec/filter engine, including sample-unit delay and trimming | Retain technical executor; fix adapter precision rather than reimplement DSP | One-sample impulses, trim edges, channel isolation, resampling and codec delay |
 | [OTIO](https://opentimelineio.readthedocs.io/en/latest/tutorials/otio-timeline-structure.html) | Editorial exchange with clips, gaps, stacks and transitions; effects are application-specific | Retain interchange; do not treat it as a renderer or universal native state | Nested multitrack roundtrip with metadata and declared unsupported effects |
 | [Blender API](https://docs.blender.org/api/main/info_overview.html) | Native scene/data/animation/node API, background authoring and rendering | Retain 3D/motion foundation; add sealed dependencies and isolation when that field is active | Rig/curve/cache authoring, packed dependencies, reopen/revise and native physical renders |
+| [Godot movie output](https://docs.godotengine.org/en/stable/tutorials/animation/creating_movies.html) | Native realtime 2D/3D scene/animation plus offline A/V recording | Optional D/E preview/motion alternative, not a replacement for all Blender rendering/simulation | Same scene and revision, sequential/out-of-order temporal effects, offline output and state recovery |
 | [Inkscape CLI](https://wiki.inkscape.org/wiki/Using_the_Command_Line) | Editable SVG and installed action discovery/export | Retain vector/type route, test actual installed version and fonts | Editable Hindi/Latin typography, masks/filters, final raster and SVG reopen |
 | [Krita scripting](https://docs.krita.org/en/user_manual/python_scripting.html) | Application plugin API and native painting/layer documents | Trial during D field, not mandatory for the video milestone | Real layer/paint/animation controls, application-hosted scripting and native reopen |
 | [GIMP scripting](https://developer.gimp.org/resource/) | Layered photo operations and batch/plugin mechanisms | Alternate D-field photo route; do not integrate both photo apps without a needed distinction | Masked nondestructive edit, metadata/color, batch control and native recovery |
@@ -87,6 +90,8 @@ artifacts conservatively until finer-grained reuse is proven correct.
 | [Nunchaku source](https://github.com/nunchaku-ai/nunchaku/blob/main/nunchaku/models/linear.py) | W4A4 linear layers call specialized CUDA kernels | Quantized-runtime candidate for supported architectures; not a universal quantizer for all video models |
 | [Chatterbox](https://github.com/resemble-ai/chatterbox) / [Kokoro](https://github.com/hexgrad/kokoro) | TTS candidates with different scope/size | Real listening, Hindi pronunciation and voice-rights gates; do not pick solely by parameter count |
 | [ACE-Step 1.5](https://github.com/ace-step/ACE-Step-1.5) | Music generation with documented inference and hardware paths | G/H candidate; compare fit, structure, stems/editability, rights and actual listening |
+| [SAM2](https://github.com/facebookresearch/sam2) / OpenCV | Segmentation/tracking and classical vision, distinct from semantic critique | D/E/J mask/tracking candidates; verify exact weights and temporal confidence |
+| [faster-whisper](https://github.com/SYSTRAN/faster-whisper) / WhisperX | Transcription/alignment routes, distinct from semantic listening | G/J subtitle and timing candidates; actual Hindi/English word/timing tests required |
 
 No globally best open brain or generator is selected. The required procedure is
 eligibility gates first, then a Pareto comparison on the owner's workloads.
@@ -94,6 +99,35 @@ Keep the creative brain pluggable and ability to switch runtimes without
 changing native projects. A quantized model must re-pass tool use, adherence,
 Hindi and temporal/audio inspection tests; reduced weight size does not prove
 reduced full-system memory or accepted-revision cost.
+
+The earlier capability atlas was reread in full to preserve the broader trial
+queue. Additional leads include image-edit models, RNNoise, libplacebo,
+MaterialX/OpenVDB, licensed alternative video generators and stronger worker
+isolation such as gVisor or a VM. They remain unselected leads, not silently
+removed capabilities or newly approved dependencies. Version/weight eligibility
+and matched trials belong to their active field before adoption.
+
+### Source-level findings that affect the design
+
+* The current [OpenFilm format specification](https://github.com/openfilm/openfilm/blob/main/packages/openfilm/SPEC.md)
+  rounds imported clip times independently to milliseconds and defines a bounded
+  constant playback-speed property. That format cannot be assumed to preserve
+  arbitrary sample clocks or native speed curves. Keep its native project as a
+  specialist document rather than forcing all timelines into it.
+* The pinned [HyperFrames engine README](https://github.com/heygen-com/hyperframes/blob/a5496b1887950777b78ed5ac2bff3505961cb5fe/packages/engine/README.md)
+  describes explicit browser seeking, CDP frame capture, FFmpeg transport and
+  pooled workers. It merits a browser-motion trial; it does not establish all
+  audio/editorial precision or a safe untrusted-code deployment.
+* [GES implementation](https://github.com/GStreamer/gstreamer/blob/main/subprojects/gst-editing-services/ges/ges-timeline-element.c)
+  accepts `GstClockTime` for element start and uses integer duration properties.
+  [libopenshot Timeline.cpp](https://github.com/OpenShot/libopenshot/blob/develop/src/Timeline.cpp)
+  maps some second-based positions to frame indices with explicit rounding and
+  computes audio sample counts per frame. Both provide serious alternatives;
+  neither API description alone proves the required decoded precision.
+* [FFmpeg adelay implementation](https://github.com/FFmpeg/FFmpeg/blob/master/libavfilter/af_adelay.c)
+  has a dedicated integer-sample parsing path. The appropriate first response
+  to the measured placement gap is an exact adapter boundary, not a new DSP
+  engine. Our source-rate/trim/channel contract still needs complete design.
 
 Optimization experiments must distinguish: weight quantization, KV cache,
 activation/attention memory, CPU offload, layerwise offload, tiling, compilation,
@@ -137,6 +171,9 @@ old names or search result snippets as dependency locks.
 | Sample-clock differential, 48 kHz impulse placed at sample 1 | BODY-generated audio branch peaks at sample 0; FFmpeg sample-unit reference peaks at 1 | Lossless PCM diagnostic, video branch sunk; not AAC delivery or a separate autonomous model |
 | Expanded local sample-clock matrix | 108 cases: 16 matching, 56 decoded timing mismatches, 36 generated-command rejections; maximum decoded error 24 samples | 44.1/48 kHz mono/stereo, 3 source trims and 9 placements; both routes use the current stereo bus |
 | Local three-track source-frame trial | FFmpeg baseline 12/12 frames matched; revised edit 11/12, with the intended top layer absent at frame 7 | 12 fps opaque diagnostic plates only; local MLT absent, native comparison must run separately |
+| Actual native comparison on GitHub Ubuntu 24.04 | Both baselines 12/12; revised MLT 12/12 versus FFmpeg 11/12; native revision/reopen retained the plan | MLT 7.22.0 packages, FFmpeg 6.1.1; narrow opaque 12fps diagnostic, not full NLE acceptance |
+| Clean-checkout repetition locally and in CI | Same 108 audio case counts, reference oracle passed, BODY conformance failed; all eight real OTIO tests passed | Research success is not a fixed runtime |
+| Minimal current-host isolation launch | `bwrap` failed creating NETLINK_ROUTE socket, exit 1 | No arbitrary creative-code sandbox has been established here |
 
 The sample-clock result specifically implicates `round(start*1000)` in the
 composition adapter. FFmpeg supports `adelay` sample units. One measured failure
@@ -149,8 +186,13 @@ The expanded matrix also established a distinct serialization failure:
 `source_in=1/44100` becomes `2.2675736961451248e-05` in `atrim`, which the
 installed FFmpeg duration parser rejects. The sample-unit reference executes.
 Both timing quantization and accepted-value serialization belong in the remedy.
-The source-frame revision mismatch needs native comparison and timestamp tracing
-before assigning a root cause; do not guess that it is an inclusive-end error.
+Timestamp tracing placed the top source at PTS 7 in a 1/12 timebase. Changing
+only the activation lower-bound literal from `0.5833333333333334` to its preceding
+binary64 value restored 12/12 source selections in the local diagnostic. This
+isolates boundary sensitivity; the one-ULP perturbation is not a proposed
+general-purpose correction. Run the editor probe with `--probe-activation` to
+repeat this experiment. Do not substitute arbitrary epsilon shifts for an
+exact, specified clock contract.
 
 Reproduce with `python scripts/research_audio_clock.py --out /tmp/audio-clock.json`
 and `python scripts/research_native_editor.py --out /tmp/native-editor.json`.
@@ -158,6 +200,12 @@ The second requires real MLT; its explicit `--ffmpeg-only` mode reports partial
 coverage. `.github/workflows/zx7-foundation-research.yml` runs both native probes
 and the actual OTIO tests. Measurement completion is separate from conformance:
 inspect the reports, or use `--require-conformance` on the audio probe.
+
+[Compact evidence](../research/foundation-evidence.json) records source/probe
+hashes, actual counts, native mismatched frames, isolation result and the
+[verified research run](https://github.com/ZX7-Labs/Zx7-creative-studio-/actions/runs/40804785895).
+The raw CI artifact has a 14-day retention; the source probes and committed
+summary make the finding recoverable after that expiry.
 
 Host observations: Python 3.12.14; FFmpeg/FFprobe, Inkscape and `bwrap` present;
 Blender, MLT `melt` and Docker absent. OTIO was loaded from a research-only
@@ -185,9 +233,9 @@ reads were used instead. No paid compute was provisioned.
 
 ## Consequential unresolved decisions
 
-1. MLT/FFmpeg composition versus a richer native path must be compared on the
-   same editorial workloads with actual installed MLT. Current host absence
-   prevents that experiment; it does not justify deleting MLT integration.
+1. The first MLT/FFmpeg three-track comparison is complete. Expand it to rational
+   rates, long positions, independent sound, curves, transitions and failure
+   recovery. The narrow result supports preserving MLT, not certifying all uses.
 2. Browser motion, dedicated compositor, painting app and DAW are conditional
    additions. Prove an expressive or operating advantage before adopting one.
 3. Exact clock/channel contract needs executable differential probes before a
