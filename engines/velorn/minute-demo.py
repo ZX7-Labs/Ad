@@ -224,7 +224,10 @@ async def exercise(options):
     assert abs(float(probe["format"]["duration"]) - 60) < .05
     run([ffmpeg, "-v", "error", "-xerror", "-i", str(output), "-f", "null", "-"])
     pcm = run([ffmpeg, "-v", "error", "-i", str(output), "-map", "0:a:0", "-ac", "1", "-f", "f32le", "pipe:1"])
-    pcm_samples = struct.unpack("<" + "f" * (len(pcm) // 4), pcm)
+    from array import array
+    pcm_samples = array("f")
+    pcm_samples.frombytes(pcm)
+    assert pcm_samples, "Original audio decoder returned no PCM samples"
     audio_rms = math.sqrt(sum(sample * sample for sample in pcm_samples) / len(pcm_samples))
     assert .015 < audio_rms < .2
     receipt = {"success": True, "kind": "scripted official SDK client; no autonomous model evaluation",
@@ -246,8 +249,11 @@ async def exercise(options):
     shutil.copy2(output, artifact / "zx7-body-one-minute-native-demo.mp4")
     shutil.copy2(fixture / "revision-1.comfystudio", artifact / "revision-1.comfystudio")
     shutil.copy2(fixture / "revision-2.comfystudio", artifact / "revision-2.comfystudio")
-    (artifact / "evidence.json").write_text(json.dumps(receipt, indent=2) + "\n")
-    print(json.dumps(receipt, indent=2))
+    assert len(samples) == 5 and all("second" in item for item in samples)
+    receipt_text = json.dumps(receipt, indent=2, allow_nan=False)
+    assert len(receipt_text) < 32768, "Unexpectedly large demo evidence"
+    (artifact / "evidence.json").write_text(receipt_text + "\n")
+    print(receipt_text, flush=True)
 
 
 if __name__ == "__main__":
