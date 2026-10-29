@@ -11,8 +11,10 @@ import argparse
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
 import re
+import stat
 
 
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
@@ -70,9 +72,25 @@ def _strict_json(value):
 def read_native_journal(path: Path):
     """Read immutable private JSONL within a strict budget; never follow a symlink."""
     path = Path(path)
-    if path.is_symlink() or not path.is_file() or path.stat().st_size > 16 * 1024 * 1024:
-        raise NativeJournalError("Journal must be a bounded regular file, not a symlink")
-    lines = path.read_bytes().splitlines()
+    if path.is_symlink():
+        raise NativeJournalError("Journal cannot be a symlink")
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        fd = os.open(path, flags)
+    except OSError as exc:
+        raise NativeJournalError("Journal could not be opened as a regular file") from exc
+    try:
+        source_stat = os.fstat(fd)
+        if (not stat.S_ISREG(source_stat.st_mode) or
+                source_stat.st_size > 16 * 1024 * 1024):
+            raise NativeJournalError("Journal must be a bounded regular file")
+        with os.fdopen(fd, "rb", closefd=False) as source:
+            raw = source.read(16 * 1024 * 1024 + 1)
+        if len(raw) > 16 * 1024 * 1024:
+            raise NativeJournalError("Journal grew past the audit limit")
+    finally:
+        os.close(fd)
+    lines = raw.splitlines()
     if not lines or len(lines) > 1024 or any(not line or len(line) > 128 * 1024
                                               for line in lines):
         raise NativeJournalError("Journal exceeds audit limits or has empty records")
