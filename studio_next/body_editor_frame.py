@@ -13,6 +13,7 @@ import stat
 import struct
 import subprocess
 import tempfile
+import zlib
 
 from .body_editor_client import EditorAccessError
 from .body_editor_policy import EditorPathPolicy
@@ -22,6 +23,44 @@ from .media_vault import sha256_file
 
 _DIGEST = re.compile(r"[0-9a-f]{64}\Z")
 _PNG = b"\x89PNG\r\n\x1a\n"
+
+
+def _verified_png_dimensions(image: bytes) -> tuple[int, int]:
+    """Check complete PNG chunk framing and CRC, not just magic/IHDR bytes."""
+    if len(image) < 57 or not image.startswith(_PNG):
+        raise ValueError("Decoded frame lacks a complete PNG container")
+    offset, width, height, saw_idat, saw_end = 8, 0, 0, False, False
+    while offset < len(image):
+        if len(image) - offset < 12:
+            raise ValueError("Truncated PNG chunk")
+        length = struct.unpack_from(">I", image, offset)[0]
+        kind = image[offset + 4:offset + 8]
+        last = offset + 12 + length
+        if length > len(image) - offset - 12:
+            raise ValueError("PNG chunk exceeds image bytes")
+        data = image[offset + 8:last - 4]
+        actual_crc = struct.unpack_from(">I", image, last - 4)[0]
+        if zlib.crc32(image[offset + 4:last - 4]) != actual_crc:
+            raise ValueError("PNG chunk CRC mismatch")
+        if offset == 8:
+            if kind != b"IHDR" or length != 13:
+                raise ValueError("PNG missing initial 13-byte IHDR")
+            width, height = struct.unpack(">II", data[:8])
+            if not 0 < width <= 768 or not 0 < height <= 768:
+                raise ValueError("Decoded frame exceeds the trusted review plane")
+        elif kind == b"IHDR":
+            raise ValueError("Duplicate PNG image header")
+        if kind == b"IDAT":
+            saw_idat = True
+        elif kind == b"IEND":
+            if length or not saw_idat or last != len(image):
+                raise ValueError("PNG missing image data or final end marker")
+            saw_end = True
+            break
+        offset = last
+    if not saw_end:
+        raise ValueError("PNG image was truncated before IEND")
+    return width, height
 
 
 def observe_verified_export_frame(path: str, *, policy: EditorPathPolicy,
@@ -73,9 +112,7 @@ def observe_verified_export_frame(path: str, *, policy: EditorPathPolicy,
         image = encoded.read(output_limit + 1)
     if len(image) < 32 or len(image) > output_limit or not image.startswith(_PNG):
         raise ValueError("Actual physical export frame could not be safely decoded")
-    width, height = struct.unpack(">II", image[16:24])
-    if not 0 < width <= 768 or not 0 < height <= 768:
-        raise ValueError("Decoded frame exceeds the trusted visual review plane")
+    width, height = _verified_png_dimensions(image)
     after = source.stat()
     if ((before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns) !=
             (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns)
