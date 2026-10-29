@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import base64
 import json
 import subprocess
 from pathlib import Path
@@ -32,7 +33,7 @@ def _local_schema_references(schema):
 
 
 def create_editor_server(client, *, allowed_access=frozenset({"read"}),
-                         export_verifier=None):
+                         export_verifier=None, frame_observer=None):
     """Return the official SDK server; discovery never expands host grants.
 
     Dependencies are imported here so the stdlib BODY remains usable without
@@ -61,6 +62,12 @@ def create_editor_server(client, *, allowed_access=frozenset({"read"}),
         validators[name] = validator(schema)
         tools[name] = types.Tool.model_validate(native[name])
     verified_export_name = "zx7_verify_native_export"
+    observed_frame_name = "zx7_observe_verified_export_frame"
+    verified_exports = {}
+    if frame_observer is not None and (export_verifier is None or not callable(frame_observer)):
+        raise ValueError("Frame observation requires a real host export verifier")
+    if observed_frame_name in native:
+        raise ValueError("Native editor tool name collides with BODY observation")
     if export_verifier is not None:
         if not callable(export_verifier) or verified_export_name in native:
             raise ValueError("Invalid host export verifier or native tool name collision")
@@ -81,6 +88,18 @@ def create_editor_server(client, *, allowed_access=frozenset({"read"}),
                 description="Decode and independently verify an authorized finished native video export; not an artistic-quality score",
                 inputSchema=schema)
             validators[verified_export_name] = jsonschema.Draft202012Validator(schema)
+    if frame_observer is not None and "read" in access:
+        frame_schema = {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"},
+                "at_seconds": {"type": "number", "minimum": 0}},
+            "required": ["path", "at_seconds"], "additionalProperties": False}
+        tools[observed_frame_name] = types.Tool(
+            name=observed_frame_name,
+            description="View one actual decoded bounded PNG from a previously verified native export; not full-motion review",
+            inputSchema=frame_schema)
+        validators[observed_frame_name] = jsonschema.Draft202012Validator(frame_schema)
     lock = anyio.Lock()
     inspection_capacity = anyio.CapacityLimiter(1)
 
@@ -107,10 +126,36 @@ def create_editor_server(client, *, allowed_access=frozenset({"read"}),
                         proof = await anyio.to_thread.run_sync(
                             lambda: export_verifier(arguments["path"], expected=arguments.get("expected")),
                             abandon_on_cancel=False)
+                if proof.get("physical_export_verified") is not True or not isinstance(
+                        proof.get("native_export_sha256"), str):
+                    return failed("Independent export verifier produced no trusted source-bound receipt")
+                verified_exports[str(Path(arguments["path"]).resolve())] = proof["native_export_sha256"]
+                while len(verified_exports) > 16:
+                    verified_exports.pop(next(iter(verified_exports)))
                 return types.CallToolResult(is_error=False, content=[
                     types.TextContent(type="text", text=json.dumps(proof, allow_nan=False))])
             except (ValueError, OSError, subprocess.SubprocessError) as exc:
                 return failed("Independent native export verification failed: " + str(exc))
+        if name == observed_frame_name:
+            identity = str(Path(arguments["path"]).resolve())
+            digest = verified_exports.get(identity)
+            if digest is None:
+                return failed("Independently verify these physical export bytes before observing a frame")
+            try:
+                async with inspection_capacity:
+                    with anyio.CancelScope(shield=True):
+                        png, receipt = await anyio.to_thread.run_sync(
+                            lambda: frame_observer(arguments["path"],
+                                                   verified_sha256=digest,
+                                                   at_seconds=arguments["at_seconds"]),
+                            abandon_on_cancel=False)
+                return types.CallToolResult(is_error=False, content=[
+                    types.TextContent(type="text", text=json.dumps(receipt, allow_nan=False)),
+                    types.ImageContent(type="image", data=base64.b64encode(png).decode("ascii"),
+                                       mimeType="image/png")])
+            except (ValueError, OSError, subprocess.SubprocessError) as exc:
+                verified_exports.pop(identity, None)
+                return failed("Verified native frame observation failed: " + str(exc))
         try:
             # Do not abandon a possibly applied write on protocol cancellation.
             # The lock stays held until the bounded native HTTP call finishes.
@@ -150,12 +195,17 @@ def main(argv=None):
                               "outputs_root": str(config.outputs_root)}, allow_nan=False))
             return 0
         export_verifier = None
+        frame_observer = None
         if config.verify_native_exports:
             from .body_editor_export import verify_native_editor_export
+            from .body_editor_frame import observe_verified_export_frame
             export_verifier = lambda path, expected=None: verify_native_editor_export(
                 path, policy=config._policy, expected=expected)
+            frame_observer = lambda path, verified_sha256, at_seconds: observe_verified_export_frame(
+                path, policy=config._policy, verified_sha256=verified_sha256,
+                at_seconds=at_seconds)
         server = create_editor_server(config.client(), allowed_access=config.allowed_access,
-                                      export_verifier=export_verifier)
+                                      export_verifier=export_verifier, frame_observer=frame_observer)
 
         async def serve():
             from mcp.server.stdio import stdio_server
