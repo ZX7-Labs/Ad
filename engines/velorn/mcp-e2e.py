@@ -2,6 +2,7 @@
 """Actual SDK client -> stdio launcher -> native editor; no model evaluation."""
 import argparse
 import asyncio
+import base64
 from contextlib import asynccontextmanager
 import hashlib
 import json
@@ -82,7 +83,7 @@ async def exercise(options):
 
     async with connected() as session:
         discovered = (await session.list_tools()).tools
-        assert {tool.name for tool in discovered} == set(tools) | {"zx7_verify_native_export"}
+        assert {tool.name for tool in discovered} == set(tools) | {"zx7_verify_native_export", "zx7_observe_verified_export_frame"}
         from studio_next.body_editor_client import LocalEditorClient
         native = {tool["name"]: tool for tool in LocalEditorClient(
             "http://127.0.0.1:19790/mcp", allowed_tools={}).list_tools()}
@@ -142,12 +143,24 @@ async def exercise(options):
             await asyncio.sleep(.2)
         inspection = await call(session, "inspect_export_file", {"path": str(output), "width": 320, "height": 180, "durationSeconds": 2})
         assert inspection["ready"], inspection
+        assert (await session.call_tool("zx7_observe_verified_export_frame", {
+            "path": str(output), "at_seconds": 0.5})).is_error
         proof = await call(session, "zx7_verify_native_export", {
             "path": str(output),
             "expected": {"width": 320, "height": 180,
                          "duration_seconds": 2, "require_audio": True}})
         assert proof["physical_export_verified"] and not proof["artistic_quality_approved"], proof
         assert proof["native_export_sha256"] == digest(output), proof
+        observed = await session.call_tool("zx7_observe_verified_export_frame", {
+            "path": str(output), "at_seconds": 0.5})
+        assert not observed.is_error and len(observed.content) == 2, observed
+        assert observed.content[1].type == "image" and observed.content[1].mime_type == "image/png"
+        frame = base64.b64decode(observed.content[1].data, validate=True)
+        assert frame.startswith(bytes.fromhex("89504e470d0a1a0a"))
+        frame_receipt = json.loads(observed.content[0].text)
+        assert frame_receipt["export_sha256"] == digest(output)
+        assert frame_receipt["png_sha256"] == hashlib.sha256(frame).hexdigest()
+        assert frame_receipt["human_or_artistic_quality_approved"] is False
 
     async with connected() as session:
         await call(session, "open_project", {"projectPath": str(project), "previewOnly": False})
@@ -170,7 +183,7 @@ async def exercise(options):
     assert .03 < audio_rms < .2
     receipt = {"success": True, "kind": "scripted official SDK client; no autonomous model evaluation",
         "transport": "standard MCP stdio; Python SDK 2.3.0", "nativeSchemasUnchanged": True,
-        "discoveredGrantedTools": len(tools), "additionalVerifiedBodyTools": 1,
+        "discoveredGrantedTools": len(tools), "additionalVerifiedBodyTools": 2, "physicalVisualFrameObserved": True,
         "physicalEditorExportIndependentlyDecoded": True,
         "deniedNetworkTool": True, "deniedOutsideImport": True,
         "existingSourceExportDenied": True, "outsideNativeDocumentDenied": True,
