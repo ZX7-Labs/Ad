@@ -41,7 +41,7 @@ class NativeEditorExportTests(unittest.TestCase):
 
     def test_outside_output_and_staging_sources_cannot_be_observed(self):
         for path in (self.root / "private.mp4", self.staging / "import.mp4",
-                     Path("/etc/passwd")):
+                     self.projects / "source-original.mp4", Path("/etc/passwd")):
             with self.subTest(path=path), self.assertRaises(EditorAccessError):
                 self.verify(path)
 
