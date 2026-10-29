@@ -315,9 +315,19 @@ def create_editor_server(client, *, allowed_access=frozenset({"read"}),
             # The lock stays held until the bounded native HTTP call finishes.
             async with lock:
                 with anyio.CancelScope(shield=True):
+                    def execute_native():
+                        # The pinned upstream razor creates a new right-hand
+                        # source clip without general effect/keyframe state.
+                        # Inspect the complete current native clip under the
+                        # same editor lock; otherwise refuse irreversible loss.
+                        if name == "split_clip":
+                            from .body_editor_split_guard import preflight_non_destructive_native_split
+                            preflight_non_destructive_native_split(
+                                client, arguments, allowed_access=access)
+                        return client.call(name, arguments, allowed_access=access)
+
                     result = await anyio.to_thread.run_sync(
-                        lambda: client.call(name, arguments, allowed_access=access),
-                        abandon_on_cancel=False)
+                        execute_native, abandon_on_cancel=False)
             return types.CallToolResult.model_validate(result)
         except EditorToolError as exc:
             return types.CallToolResult.model_validate(exc.result)
