@@ -40,6 +40,9 @@ jobs:
       - name: Record unchanged adapter audio timing, including mismatches
         run: |
           python scripts/research_audio_clock.py --out output/foundation/audio-clock.json --summary-out output/foundation/audio-clock-summary.json
+      - name: Conformance gate for exact PCM audio positions and trims
+        run: |
+          python scripts/research_audio_clock.py --out output/foundation/audio-clock-required.json --require-conformance
       - name: Compare native MLT and FFmpeg source frames before and after revision
         run: |
           python scripts/research_native_editor.py --probe-activation --out output/foundation/native-editor.json
