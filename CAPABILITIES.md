@@ -75,9 +75,12 @@ independent creative acceptance and support of realistic workloads.
    safety and source budgets are measured, explicit and extensible. Do not
    hardcode examples, demo templates, fixed effects, scene counts or processing
    sequences as universal product behavior.
-5. **Model intent has no executable authority.** No raw Python or shell,
-   arbitrary native plugin/XML, fabricated rights, downloaded unlicensed media,
-   secret disclosure, paid/cloud spending or network exposure from model text.
+5. **Model intent has no unrestricted host authority.** Model-authored procedural
+   code, shaders and native parameters may enable original techniques, but require
+   validated contracts and isolated execution with explicit filesystem, network,
+   CPU/GPU and time limits. Do not execute arbitrary Python/shell/native plugin/XML
+   in a trusted host merely because model text requests it. Do not fabricate rights,
+   disclose secrets, or infer authorization for paid compute or network exposure.
 6. **Use full-stack evidence.** Test real source hashes, decoded frames/audio,
    exact clocks, sample/opacity/color behavior, failure injection, malicious
    inputs, long projects, installed wheel, true process death, host variation,
@@ -90,7 +93,7 @@ independent creative acceptance and support of realistic workloads.
    creative work; public repository contains source/essential docs, not media
    samples or personal assets.
 
-## Current implementation order
+## Implementation focus after research and design
 
 **Video editing (C), together with its necessary B/A/F/G/I/J dependencies,
 is the first active completion field**, rather than shallow expansion into all
@@ -100,8 +103,294 @@ artist-operated system. After one field passes its **full** professional
 technical and human acceptance criteria, advance to the next dependency-based
 field. Prior "green" tests on a subset never certify the entire field.
 
-At the end of each engineering cycle, prefer a concrete verified commit and
-an honest unresolved gate over progress prose. Future chat continuity should
-use the durable specification here plus an optional **single temporary,
-factual, exact-SHA handoff**. The next chat verifies it and removes only
-that temporary handoff; never deletes the original code or this contract.
+At the end of each engineering cycle, prefer concrete verified work and an
+honest unresolved gate over progress prose. Keep durable intent in this contract,
+usage in README and agent entry guidance in AGENTS.md. Use Git history, issues,
+PRs and reproducible evidence for implementation status. Avoid repeated dated
+handoffs, transcripts and competing instruction documents.
+
+## Astra: owner's complete mandate and current stage
+
+This section is addressed to Astra as the independent research lead, chief
+architect and chief engineer assisting the owner of ZX7 Studio. Astra is the
+engineering collaborator reading this repository; the deployed creative brain
+must remain independently replaceable. Do not make Astra or any one vendor a
+runtime dependency merely because this brief addresses that model.
+
+The owner's ambition is: **the world's present best is the starting point for
+our thinking, not its ceiling.** This expresses a demanding engineering
+standard. It does not prove that a prompt changes intelligence, that the project
+already surpasses competitors, or that tradeoffs and future defects disappear.
+Earn conclusions through evidence; challenge your own assumptions, preserve
+what works, and invent only where an identifiable benefit justifies it.
+
+**Current instruction, superseding older engineering handoffs: finish the
+research, comparisons, architecture, design and implementation planning before
+starting further product coding.** The owner has explicitly authorized this
+documentation update and removal of clearly obsolete temporary documentation.
+That authorization is not a request to merge feature PRs or restart coding.
+
+### 1. The actual product and its users
+
+Build a unified creative production system whose owner can state a brief in
+ordinary language, including Hindi or Hinglish where supported, provide
+references or original material, request revisions and receive real work.
+The system should serve professional creative production, including advertising
+and agency work, without being locked to that genre. A film, graphic, thumbnail,
+animation, product render or sound project is an output of shared capabilities.
+
+The central relationship is brain and body. The brain interprets the brief,
+researches where appropriate, understands references, invents the direction,
+plans and adapts its work, chooses tools and parameters, and judges results.
+BODY supplies controllable instruments, editable state, execution, sensing,
+history, recovery and delivery. The owner should not have to author a complete
+scene JSON, prewrite every tool command or manually rescue normal operations.
+
+The project must support both existing-media editing and creating new material.
+Procedural graphics, native 3D and generative models are complementary means.
+A generated clip alone does not fulfill editable video production; a timeline
+alone does not fulfill original generation. Preserve both capabilities.
+
+### 2. What independent creative control means
+
+The brain must be able to discover an installed engine's relevant operations,
+inspect current project state and choose fine details instead of receiving only
+a small menu of canned effects. Examples of required expressive scope:
+
+- Editorial: source and take selection; source in/out; rational timebases; clip
+  positioning; multiple picture/audio lanes; split, trim, ripple, roll, slip and
+  slide; gaps, nested sequences and synchronization; transitions; constant and
+  varying speed, reversals and freezes where supported; revisable effect order.
+- Animation: keyframes, interpolation and tangent/curve control; spatial paths,
+  timing, acceleration, holds, easing, hierarchy, constraints, opacity,
+  transforms, masks and parameter animation. Do not restrict art to a fixed
+  number of scenes or a universal duration.
+- Graphics: editable text, shaping, fonts, line breaks, layout, vector geometry,
+  layers, paint/photo operations, masks, blending, shadows, gradients, textures
+  and transparent output; typography must render correctly at final resolution.
+- 3D: objects and geometry; rigs, bones, poses, actions and animation curves;
+  materials, textures and nodes; lighting, shadows, camera and lenses, focus,
+  depth of field, simulation parameters/caches and render passes.
+- VFX: tracking, roto, segmentation, mattes, keying, compositing graphs,
+  premultiplied/straight alpha, scene-linear operations, multi-pass composition,
+  integration of rendered elements into footage and editable correction.
+- Audio: voice delivery and timing, music/SFX selection or creation, tracks,
+  channels, stems, placement, gain curves, fades, ducking, effects, retiming,
+  synchronization and finishing; dialogue, Hindi/Hinglish and music require
+  actual listening and language-specific evaluation.
+- Delivery: preview and final settings; codec/container/resolution/frame rate;
+  color transforms, HDR/SDR where supported; captions; project archives and
+  native/portable editable exports with explicit losses.
+
+These examples define breadth, not a frozen method whitelist. The architecture
+must allow new vetted operations and new artistic techniques. Necessary
+precision, resource and security contracts are engineering constraints, not
+a house style. Distinguish unavailable tools from artistic impossibility.
+
+### 3. The required closed creative loop
+
+A successful workflow lets the brain inspect the project and available
+resources, choose a next action, execute it, inspect real consequences, revise
+selected parts and retain the alternatives. Planning may change after feedback.
+Do not force every project through one linear script-to-scenes pipeline.
+
+Observation must refer to actual encoded output or native project state.
+A contact sheet supports some picture judgments; it does not establish motion,
+pacing, sound quality or audiovisual coherence. A transcript does not prove
+prosody or music balance. Use appropriate timed frames, continuous segments,
+audio, waveforms and native state, with their limitations exposed to the model.
+
+A repair must identify the issue, change the relevant controllable state and
+produce evidence that the intended improvement happened without losing other
+accepted work. Preserve original sources, editability, undo/redo, versions,
+ownership and reproducible execution receipts. Re-render only invalidated
+dependencies where correct, while verifying that cached outputs remain valid.
+
+### 4. Research every field, with the right comparisons
+
+Treat the A–L map above as the full scope. Investigate complete creative
+systems, domain engines, libraries, execution frameworks, AI brains, perception
+models, generative models and inference optimizations. Label which kind each
+candidate is. They solve different parts of the problem; comparing their names
+as though all were interchangeable tools produces misleading conclusions.
+
+For each important capability:
+
+1. Define real professional tasks and required granular controls before ranking.
+2. Find leading current approaches through primary documentation, source,
+   papers, model cards, releases and reproducible evaluations. Record the date,
+   exact identity/version and evidence limits. Search beyond famous projects.
+3. Read how the relevant implementation works, not only its README or demo.
+   Check control surfaces, data models, precision, persistence, failure modes
+   and implementation restrictions. Resolve contradictory documentation/code.
+4. Trace smaller derivatives and alternate designs: selective dependencies,
+   quantization, distillation, pruning, sparse attention, caching, offloading,
+   CPU/ONNX/native paths, real-time renderers and task-specific engines.
+5. Compare on the same task and usable output quality. Separate upstream claims,
+   independent published results and our own measurements. Do not convert stars,
+   release recency, tool counts or test counts into quality rankings.
+6. Investigate commercial leaders as reference workflows where useful through
+   public information and lawful use. The deployable preference is free/open
+   source; paid products are not automatically eligible building blocks.
+7. Decide adopt, integrate, adapt/fork, defer or build. Explain which measured gap
+   each decision addresses and what dependency/maintenance burden it creates.
+
+The earlier landscape included MLT, FFmpeg, OTIO, Blender, OCIO, Inkscape,
+Krita/GIMP, Gaffer/Natron, HyperFrames, OpenFilm, Motion Canvas, ComfyUI and
+multiple generative/perception/audio families. Subsequent exploration included
+WanGP, FastVideo, SparkDiffusion and Nunchaku. These are **research leads,
+not a frozen approved stack or verified winners**. Verify current upstream
+identity and terms again when selecting versions.
+
+Do not claim an exhaustive internet search or an absolute planet-wide winner
+from a finite survey. Aim to identify the strongest defensible candidates for
+each workload and keep a record of consequential exclusions and unresolved
+alternatives. A narrow matched test can settle a narrow claim; it cannot
+certify all genres, languages, hardware or future versions.
+
+### 5. Multi-dimensional quality and lightweight design
+
+Evaluate intelligence, capability, creative originality, accuracy, image/sound
+quality, security, safety, privacy, reliability, recovery, efficiency,
+performance, latency, RAM/VRAM, compute, storage, cost, scalability,
+adaptability, verifiability, portability, interoperability, maintainability and
+owner usability. Add domain-specific dimensions when they materially matter.
+
+Do not hide an essential failure inside an aggregate score. Required controls,
+rights, correctness and acceptable output quality are gates. Among eligible
+candidates, compare the tradeoffs and retain non-dominated choices. If quality
+and latency conflict, first investigate a better architecture or technique;
+if a conflict remains, state it honestly with measurements.
+
+Low parameter count, download size, disk size, peak VRAM, total RAM, startup
+time, inference time and end-to-end project cost are different quantities.
+CPU offload can lower VRAM while increasing latency and RAM. Fewer diffusion
+steps can change adherence or diversity. Proxy previews can diverge from final
+output. Distinguish these interventions and evaluate their effect.
+
+Design for lazy loading, resource discovery, safe concurrency, cancellation,
+resume, bounded work, cache invalidation and appropriate backend selection.
+Do not require every large model to stay loaded. Do not silently degrade a
+requested result: report the applicable capability or resource limit and let
+the authorized workflow choose an alternative.
+
+### 6. Reuse, source study and hybrid architecture
+
+Study open-source source code and architecture under its actual license.
+Prefer mature components where they solve the problem. Reimplement only when
+evidence establishes a missing capability, a deployment constraint or a real
+benefit. Preserve attribution and distribution obligations. Open weights,
+open-source code, an API client and a free hosted quota are different things.
+
+Hybridization is a reasoned option, not a requirement to accumulate engines.
+Combine complementary strengths only after accounting for conversion loss,
+extra copies, clocks, coordinate systems, color transforms, dependency weight,
+failure recovery, observability and maintenance. Compare the hybrid against
+the strongest simpler solution.
+
+The existing project's useful code must survive this research. Audit it before
+judging it obsolete. Do not empty main, erase history, delete tests, replace
+native controls with a narrower demo, or create a second competing system
+without a reviewed migration rationale. Some current adapters intentionally
+accept narrow subsets; that is not the final scope of the product.
+
+### 7. Architecture and planning deliverables before coding
+
+Prepare one coherent reviewable design that covers:
+
+- Requirements and non-goals, professional workloads, acceptance gates and
+  traceability from each A–L domain to its controls and evidence.
+- Candidate comparisons and the rationale for reuse versus invention,
+  alternatives rejected, remaining uncertainty and benchmark configurations.
+- Brain/BODY boundary, typed capability discovery, native escape/extension
+  mechanisms with isolation, and model/provider replacement.
+- Project/asset identity and ownership, source custody, state/versions,
+  timeline/scene/node models, exact time, coordinates, units, color and audio.
+- Native subprojects and interchange, editable round trips, preservation of
+  unsupported features and an explicit report of lossy conversions.
+- Execution graph, transactions, permissions, worker isolation, scheduling,
+  caching, cancellation, retries, checkpointing and crash recovery.
+- Perception, audiovisual review, targeted revision and criteria for escalating
+  uncertainty instead of inventing observations.
+- Local-first service and Android/web owner access, authentication, secure
+  uploads/previews/downloads, private assets and measured hardware requirements.
+- Test strategy, comparative evaluation, packaging and deployment assumptions,
+  upgrade/migration risks, dependency licenses and operating costs.
+- A dependency-ordered implementation plan with small verifiable increments,
+  meaningful field-completion gates and a map of existing work to retain.
+
+Separate owner's requirements from your proposed technical choices. Research
+artifacts are not executable capability. If resource access prevents a
+necessary experiment, identify the exact unresolved test and its effect on the
+decision; do not present the entire research/design as finished.
+
+### 8. Evidence for real autonomy and release acceptance
+
+Disclose which model made the creative decisions, its actual tool access,
+which engines ran, which assets were supplied, which outputs it observed and
+whether a human or engineering assistant authored a scene plan or intervened.
+A scripted fake model is useful for protocol tests and must be labeled as such.
+An assistant-authored scene JSON is not evidence of a separate deployed model
+independently planning and creating the work.
+
+Run representative original projects with a real connected brain through BODY.
+Retain command/state histories and output provenance. Evaluate revision
+requests, meaningful undo, reopening, recovery and transfer as well as initial
+render. Test physically decoded frames and sound, rational rates, audio sample
+clocks, real masks/alpha/color behavior and failure cases.
+
+Professional creative quality requires independently assessable output across
+materially different briefs. Technical correctness, model competence and
+artistic acceptance are distinct. A six-second demonstration, a successful
+MP4 export or passing CI cannot certify an entire creative field.
+
+After research and design, complete one field with its necessary dependencies
+before declaring it accepted and advancing. Video editing remains the first
+implementation focus unless the evidence supports an explicitly reasoned
+change. No honest engineering process can promise that no future defect or
+revision will ever be needed; the requirement is rigorous completion against
+the full agreed gate, not knowingly leaving a prototype disguised as finished.
+
+### 9. Security, privacy, rights and honest resource use
+
+Keep private media, credentials, account data and generated showcase videos
+out of the public source repository. Preserve owner originals and accepted
+artifacts. Use only licensed material and authorized voices; inspect code,
+weights, fonts, sounds and datasets separately where relevant.
+
+Treat imported text/assets and tool output as untrusted data. Generated code
+must not gain the host's unrestricted privileges. Protect against path
+traversal, unsafe archives, malicious SVG/HTML/scripts, secret access, unwanted
+network activity and resource exhaustion. Security must support expressive
+creative work through sound boundaries rather than reducing it to presets.
+
+Prefer free/open-source resources and low operating costs. Verify plugin
+connection, quotas and pricing instead of equating installation with unlimited
+free use. Suggest a missing useful integration when authorized and continue
+independent work that does not need it. Do not spend money, create public
+exposure or assume free GPU resources merely to keep a demo moving.
+
+### 10. How Astra should work with the owner
+
+The owner has delegated routine technical choices and expects sustained
+independent work. Recover available project context yourself; do not repeatedly
+ask what the product is, how good it should be or whether you should continue.
+Make justified decisions, test assumptions and challenge a weak direction
+respectfully even when it was suggested by the owner.
+
+Use brief progress updates when useful and a consolidated verified result.
+Do not stop after every search, status message or successful narrow test.
+Do not promise invisible work after a turn ends or substitute reminders and
+scheduled automations for execution. State a genuine blocker precisely and
+continue independent authorized work where possible.
+
+Be transparent about access: project memory is not guaranteed verbatim access
+to every earlier chat; a file's existence is not proof of its contents; a
+historical commit or CI result is not current state. Inspect the actual source
+and exact commit before consequential changes. Preserve correct work and do
+not claim tests, listening, rendering, deployment or production readiness that
+did not actually occur.
+
+This contract preserves the owner's intent so a future Astra session can start
+from the project itself. It is an engineering brief for the collaborator,
+not an MD-file substitute for the deployed system's creative intelligence.
