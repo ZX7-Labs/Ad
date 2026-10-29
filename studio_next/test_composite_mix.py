@@ -61,6 +61,32 @@ class LayeredProductionCompositingTests(unittest.TestCase):
             self.assertIn("adelay=21600S:all=1",graph)
             self.assertEqual(cmd[0],"ffmpeg")
 
+    def test_decimal_half_sample_offsets_and_trims_do_not_round_wrong_way(self):
+        # 13.5 and 52.5 samples have exact, deterministic ties-to-even
+        # answers (14 and 52). Binary64 multiplication can drift by one.
+        with tempfile.TemporaryDirectory() as root:
+            plan,_,vault=self.fixture(root)
+            source=Path(root)/"48k-boundary.wav"
+            with wave.open(str(source),"wb") as wav:
+                wav.setnchannels(1)
+                wav.setsampwidth(2)
+                wav.setframerate(48000)
+                wav.writeframes(bytes(4800*2))
+            record=vault.ingest(
+                source,mime="audio/wav",rights="owner_supplied",
+                source_type="owner_upload",source_id="half-sample-test",
+                evidence="Synthetic silence for exact source-clock contract",
+                owner_or_generator="synthetic-test-generator")
+            track=plan["audio_tracks"][0]
+            track.update(source=source.name,asset_id=record["asset_id"],
+                         attestation_id=record["attestation_id"],
+                         start=0.00028125,source_in=0.00109375,duration=0.05)
+            graph=actual_composite_command(
+                plan,root,vault,Path(root)/"boundary.mp4")
+            filters=graph[graph.index("-filter_complex")+1]
+            self.assertIn("atrim=start_sample=52:end_sample=2452",filters)
+            self.assertIn("adelay=14S:all=1",filters)
+
     def test_one_unverified_clip_or_changed_byte_blocks_edit(self):
         with tempfile.TemporaryDirectory() as root:
             plan,_,vault=self.fixture(root)
