@@ -18,7 +18,12 @@ version text alone is not a reproducible source-to-package build proof.
 
 The probe authors one trusted synthetic rectangle, uses the native engine API,
 captures integer/NTSC timestamps out of order and compares decoded geometry to
-SVG rendered by Inkscape. It records repeatability and pixel differences. It
+SVG rendered by Inkscape. It records repeatability and pixel differences. The research job rejects
+incomplete rate/frame receipts, geometry disagreements, any decoded RGB
+pixel difference from the Inkscape SVG reference, and failed duplicate-frame
+hash comparisons. The authored fixture uses its own `window.__hf.seek` callback:
+this is a screenshot-path and callback-seeking test, not proof of general CSS,
+GSAP, arbitrary script or animation semantics. It
 does not establish typography, sound, WebGPU, movie export, artistic quality,
 model autonomy or operating cost. No generated media is committed.
 
