@@ -247,6 +247,48 @@ async def exercise(options):
     assert video["codec_name"] == "h264"
     assert audio["codec_name"] == "aac"
     assert abs(float(probe["format"]["duration"]) - 60) < .05
+    # Independently prove the 60s encoded movie still shows the intended
+    # *five different* source shots in order, not just five distinct hashes.
+    # Measure four video corners, excluding center titles. Competing source
+    # clips are compared on the same original 6-second source-relative frame.
+    def picture_at(path, seconds):
+        frame = run([ffmpeg, "-v", "error", "-ss", str(seconds), "-i",
+                     str(path), "-map", "0:v:0", "-frames:v", "1",
+                     "-vf", "format=rgb24", "-f", "rawvideo", "pipe:1"])
+        assert len(frame) == 640 * 360 * 3, ("Invalid decoded full RGB frame", path, len(frame))
+        return frame
+
+    def corners(frame):
+        samples = []
+        for left, top in ((0, 0), (576, 0), (0, 296), (576, 296)):
+            region = b"".join(frame[((top + y)*640 + left)*3:
+                                    ((top + y)*640 + left + 64)*3]
+                              for y in range(64))
+            assert len(region) == 64*64*3
+            samples.append(region)
+        return samples
+
+    reference = [corners(picture_at(staging / f"scene-{i+1}.mp4", 6))
+                 for i in range(5)]
+    source_alignment = []
+    for index, second in enumerate((6, 18, 30, 42, 54)):
+        actual_corners = corners(picture_at(output, second))
+        winners = 0
+        errors = []
+        for corner_index, observed in enumerate(actual_corners):
+            differences = [
+                sum(abs(x-y) for x, y in zip(observed, reference[src][corner_index]))
+                / len(observed) for src in range(5)]
+            nearest = min(range(5), key=lambda src: differences[src])
+            winners += nearest == index
+            errors.append(round(differences[index], 3))
+        # If even the corners are no longer the intended shot, a playable
+        # movie and a readable title are insufficient editorial evidence.
+        assert winners >= 3 and min(errors) < 45, (
+            "Native export lost source/shot identity", index, second, winners, errors)
+        source_alignment.append({"source_index": index, "at_seconds": second,
+                                 "corners_matching_correct_shot": winners,
+                                 "source_corner_mean_absolute_error": errors})
     run([ffmpeg, "-v", "error", "-xerror", "-i", str(output), "-f", "null", "-"])
     pcm = run([ffmpeg, "-v", "error", "-i", str(output), "-map", "0:a:0", "-ac", "1", "-f", "f32le", "pipe:1"])
     from array import array
@@ -261,7 +303,7 @@ async def exercise(options):
         "physicalEditorExportIndependentlyDecoded": True, "realBoundedAudioHeard": True,
         "deniedNetworkTool": True, "deniedOutsideImport": True,
         "existingSourceExportDenied": True, "outsideNativeDocumentDenied": True,
-        "invalidNativeArgumentsRejected": True, "editableTracks": 7, "editableClips": 11, "sourceOwnedGeneratedShots": 5,
+        "invalidNativeArgumentsRejected": True, "editableTracks": 7, "editableClips": 11, "sourceOwnedGeneratedShots": 5, "physicalSourceShotOrder": source_alignment,
         "distinctVideoFrames": samples, "technicalDemoOnly": True,
         "professionalCreativeCapabilityComplete": False,
         "autonomousArtisticQualityProven": False, "savedVersions": 2,
