@@ -52,6 +52,14 @@ class EditorPolicyTests(unittest.TestCase):
         with self.assertRaises(FrozenInstanceError):
             config.endpoint = "http://127.0.0.1:1/mcp"
 
+    def test_native_export_proof_is_host_opt_in_and_strict_boolean(self):
+        self.assertFalse(self.config().verify_native_exports)
+        self.assertTrue(self.config(verify_native_exports=True).verify_native_exports)
+        for invalid in ("true", 1, [], None):
+            with self.subTest(invalid=invalid), self.assertRaisesRegex(
+                    ValueError, "explicitly enabled"):
+                self.config(verify_native_exports=invalid)
+
     def test_constructor_also_copies_grants_and_access(self):
         grants = {"get_project": "read"}
         access = ["read"]
