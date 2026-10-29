@@ -268,11 +268,15 @@ async def exercise(options):
             samples.append(region)
         return samples
 
-    reference = [corners(picture_at(staging / f"scene-{i+1}.mp4", 6))
-                 for i in range(5)]
+    original_frames = [picture_at(staging / f"scene-{i+1}.mp4", 6)
+                       for i in range(5)]
+    reference = [corners(frame) for frame in original_frames]
     source_alignment = []
+    rendered_frames = []
     for index, second in enumerate((6, 18, 30, 42, 54)):
-        actual_corners = corners(picture_at(output, second))
+        actual = picture_at(output, second)
+        rendered_frames.append(actual)
+        actual_corners = corners(actual)
         winners = 0
         errors = []
         for corner_index, observed in enumerate(actual_corners):
@@ -289,6 +293,41 @@ async def exercise(options):
         source_alignment.append({"source_index": index, "at_seconds": second,
                                  "corners_matching_correct_shot": winners,
                                  "source_corner_mean_absolute_error": errors})
+    # An editable title in a saved project is not evidence that its pixels
+    # survived the native export. Compare real source frames against physically
+    # decoded exported frames, away from the source generator's top-left clock.
+    # Neutral white is intentionally absent from these 5 synthetic source
+    # center-bands; the original title is rendered in this exact native region.
+    def title_white_pixels(frame):
+        if len(frame) != 640 * 360 * 3:
+            raise AssertionError("Cannot inspect a malformed decoded video frame")
+        count = 0
+        for y in range(145, 204):
+            for x in range(65, 585):
+                at = (y * 640 + x) * 3
+                red, green, blue = frame[at:at+3]
+                if min(red, green, blue) > 210 and max(red, green, blue) - min(red, green, blue) < 35:
+                    count += 1
+        return count
+
+    title_pixels = []
+    for index, (original_frame, exported_frame) in enumerate(zip(original_frames, rendered_frames)):
+        source_white = title_white_pixels(original_frame)
+        export_white = title_white_pixels(exported_frame)
+        # A missing title silently passes a clip-count or native-project test.
+        # Do not make merely playable source footage count as composed editing.
+        assert export_white > source_white + 300, (
+            "The native export lost its real overlaid title pixels",
+            index, source_white, export_white)
+        title_pixels.append({"source_index": index,
+                             "original_neutral_bright_pixels": source_white,
+                             "native_export_neutral_bright_pixels": export_white})
+    quiet = title_white_pixels(picture_at(output, 0.3))
+    full = title_white_pixels(picture_at(output, 1.5))
+    assert full > quiet + 300, (
+        "The native title keyframe did not visibly fade in", quiet, full)
+    title_fade_pixels = {"at_0_3_seconds": quiet, "at_1_5_seconds": full,
+                         "verified_real_visible_fade": True}
     run([ffmpeg, "-v", "error", "-xerror", "-i", str(output), "-f", "null", "-"])
     pcm = run([ffmpeg, "-v", "error", "-i", str(output), "-map", "0:a:0", "-ac", "1", "-f", "f32le", "pipe:1"])
     from array import array
@@ -304,6 +343,7 @@ async def exercise(options):
         "deniedNetworkTool": True, "deniedOutsideImport": True,
         "existingSourceExportDenied": True, "outsideNativeDocumentDenied": True,
         "invalidNativeArgumentsRejected": True, "editableTracks": 7, "editableClips": 11, "sourceOwnedGeneratedShots": 5, "physicalSourceShotOrder": source_alignment,
+        "realCompositedTitlePixels": title_pixels, "realTitleOpacityKeyframePixels": title_fade_pixels,
         "distinctVideoFrames": samples, "technicalDemoOnly": True,
         "professionalCreativeCapabilityComplete": False,
         "autonomousArtisticQualityProven": False, "savedVersions": 2,

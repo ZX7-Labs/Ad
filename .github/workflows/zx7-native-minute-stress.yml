@@ -79,6 +79,17 @@ jobs:
           assert len(data["physicalSourceShotOrder"])==5
           assert [r["source_index"] for r in data["physicalSourceShotOrder"]]==list(range(5))
           assert all(r["corners_matching_correct_shot"]>=3 for r in data["physicalSourceShotOrder"])
+          # An XML text layer is not a rendered title. Require independently
+          # decoded physical title pixels on every authored source shot, plus
+          # visible interpolation of the first title's opacity keyframes.
+          title=data["realCompositedTitlePixels"]
+          assert len(title)==5
+          assert [r["source_index"] for r in title]==list(range(5))
+          assert all(r["native_export_neutral_bright_pixels"] >
+                     r["original_neutral_bright_pixels"] + 300 for r in title)
+          fade=data["realTitleOpacityKeyframePixels"]
+          assert fade["verified_real_visible_fade"]
+          assert fade["at_1_5_seconds"] > fade["at_0_3_seconds"]+300
           assert data["editableClips"]==11 and data["editableTracks"]==7
           assert data["frames"]==1440 and data["fullDecodePassed"]
           assert data["realBoundedAudioHeard"]
