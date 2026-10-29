@@ -248,7 +248,8 @@ class EditorMCPTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue((await session.call_tool("zx7_verify_native_export", {
                 "path": "/trusted/export.mp4"})).is_error)
         await self.with_session(no_read, access=frozenset({"write"}), export_verifier=verifier)
-        self.assertEqual(len(observed), 1)
+        self.assertEqual(observed, [("/trusted/export.mp4", {"require_audio": True}),
+                                    ("/etc/passwd", None)])
 
     def test_missing_host_grant_or_remote_schema_reference_fails_closed(self):
         self.tools = [TOOLS[0]]
