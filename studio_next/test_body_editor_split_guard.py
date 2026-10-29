@@ -140,6 +140,11 @@ class NativeSplitGuardTests(unittest.TestCase):
             _native_json({"content": [{"type": "text", "text": "{bad"}]}, "get_timeline")
         with self.assertRaises(EditorAccessError):
             _native_json({"content": [{"type": "image", "data": "bad"}]}, "inspect_clip")
+        for invalid in ('{"clip":{"id":"a","id":"b"}}',
+                        '{"clip":{"id":"a","startTime":NaN}}',
+                        '{"clip":{"id":"a","duration":1e999}}'):
+            with self.subTest(raw=invalid), self.assertRaises(EditorAccessError):
+                _native_json({"content": [{"type": "text", "text": invalid}]}, "inspect_clip")
         self.assertTrue(_unsafe_features(plain(typ="adjustment")))
 
 
