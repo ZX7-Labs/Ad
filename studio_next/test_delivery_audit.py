@@ -1,4 +1,5 @@
 import json
+import hashlib
 import tempfile
 import unittest
 from pathlib import Path
@@ -15,6 +16,18 @@ def real_streams():
 
 
 class EncodedDeliveryQualityEvidenceTests(unittest.TestCase):
+    def test_long_film_probe_hashes_in_streaming_mode_not_read_bytes(self):
+        with tempfile.TemporaryDirectory() as root:
+            file = Path(root) / "original.mp4"
+            data = b"original physical media" * 256
+            file.write_bytes(data)
+            with patch("studio_next.delivery_audit.subprocess.check_output",
+                       return_value=json.dumps(real_streams()).encode()), (
+                 patch.object(Path, "read_bytes", side_effect=AssertionError(
+                    "Full film must not be loaded into RAM"))):
+                record = _probe_details(file)
+            self.assertEqual(record["video_sha256"], hashlib.sha256(data).hexdigest())
+
     def test_real_probe_is_not_artist_praise(self):
         with tempfile.TemporaryDirectory() as root:
             p=Path(root)/"actual-film.mp4"

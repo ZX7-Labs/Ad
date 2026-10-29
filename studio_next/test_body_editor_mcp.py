@@ -90,8 +90,11 @@ class EditorMCPTests(unittest.IsolatedAsyncioTestCase):
         self.http.server_close()
         self.thread.join()
 
-    async def with_session(self, check, *, access=frozenset({"read", "write"})):
-        server = create_editor_server(self.client, allowed_access=access)
+    async def with_session(self, check, *, access=frozenset({"read", "write"}),
+                           export_verifier=None, frame_observer=None):
+        server = create_editor_server(self.client, allowed_access=access,
+                                      export_verifier=export_verifier,
+                                      frame_observer=frame_observer)
         async with create_client_server_memory_streams() as (client_streams, server_streams):
             async with anyio.create_task_group() as group:
                 group.start_soon(server.run, *server_streams, server.create_initialization_options())
@@ -217,6 +220,103 @@ class EditorMCPTests(unittest.IsolatedAsyncioTestCase):
             finally:
                 self.hold.set()
         await self.with_session(check)
+
+    async def test_export_verifier_is_read_only_opt_in_and_no_native_rpc(self):
+        observed = []
+        def verifier(path, expected=None):
+            observed.append((path, expected))
+            if path != "/trusted/export.mp4":
+                raise ValueError("outside selected export")
+            return {"physical_export_verified": True, "artistic_quality_approved": False,
+                    "native_export_sha256": "1" * 64}
+
+        async def check(session):
+            catalog = {tool.name: tool for tool in (await session.list_tools()).tools}
+            self.assertIn("zx7_verify_native_export", catalog)
+            good = await session.call_tool("zx7_verify_native_export", {
+                "path": "/trusted/export.mp4", "expected": {"require_audio": True}})
+            self.assertFalse(good.is_error)
+            self.assertEqual(json.loads(good.content[0].text)["physical_export_verified"], True)
+            self.assertEqual(observed, [("/trusted/export.mp4", {"require_audio": True})])
+            for arguments in ({}, {"path": 12}, {"path": "/trusted/export.mp4", "expected": {"unknown": 1}},
+                              {"path": "/etc/passwd"}):
+                denied = await session.call_tool("zx7_verify_native_export", arguments)
+                self.assertTrue(denied.is_error)
+            self.assertFalse(any(x["method"] == "tools/call" for x in self.requests))
+        await self.with_session(check, export_verifier=verifier)
+
+        async def no_read(session):
+            self.assertNotIn("zx7_verify_native_export", [
+                tool.name for tool in (await session.list_tools()).tools])
+            self.assertTrue((await session.call_tool("zx7_verify_native_export", {
+                "path": "/trusted/export.mp4"})).is_error)
+        await self.with_session(no_read, access=frozenset({"write"}), export_verifier=verifier)
+        self.assertEqual(observed, [("/trusted/export.mp4", {"require_audio": True}),
+                                    ("/etc/passwd", None)])
+
+    async def test_a_frame_is_only_visible_after_its_exact_export_was_verified(self):
+        observers = []
+        def verifier(path, expected=None):
+            if path != "/trusted/movie.mp4":
+                raise ValueError("No authorized native export")
+            return {"physical_export_verified": True, "native_export_sha256": "a" * 64}
+        def observer(path, verified_sha256, at_seconds):
+            observers.append((path, verified_sha256, at_seconds))
+            return b"verified-image", {"export_sha256": verified_sha256,
+                                       "human_or_artistic_quality_approved": False}
+
+        async def check(session):
+            names = [tool.name for tool in (await session.list_tools()).tools]
+            self.assertIn("zx7_observe_verified_export_frame", names)
+            self.assertTrue((await session.call_tool("zx7_observe_verified_export_frame", {
+                "path": "/trusted/movie.mp4", "at_seconds": 0.5})).is_error)
+            self.assertFalse((await session.call_tool("zx7_verify_native_export", {
+                "path": "/trusted/movie.mp4"})).is_error)
+            seen = await session.call_tool("zx7_observe_verified_export_frame", {
+                "path": "/trusted/movie.mp4", "at_seconds": 0.5})
+            self.assertFalse(seen.is_error)
+            self.assertEqual(seen.content[1].type, "image")
+            self.assertEqual(seen.content[1].mime_type, "image/png")
+            self.assertEqual(observers, [("/trusted/movie.mp4", "a" * 64, 0.5)])
+            self.assertTrue((await session.call_tool("zx7_observe_verified_export_frame", {
+                "path": "/trusted/other.mp4", "at_seconds": 0.5})).is_error)
+            self.assertTrue((await session.call_tool("zx7_observe_verified_export_frame", {
+                "path": "/trusted/movie.mp4", "at_seconds": -1})).is_error)
+            self.assertFalse(any(x["method"] == "tools/call" for x in self.requests))
+        await self.with_session(check, export_verifier=verifier, frame_observer=observer)
+
+    async def test_readonly_decode_does_not_block_native_editing(self):
+        """Long-running physical inspection cannot monopolize editor RPC locks."""
+        entered = threading.Event()
+        release = threading.Event()
+        def verifier(path, expected=None):
+            entered.set()
+            if not release.wait(timeout=5):
+                raise ValueError("Timed out waiting for synthetic decode release")
+            return {"physical_export_verified": True, "native_export_sha256": "e" * 64}
+
+        async def check(session):
+            finished = anyio.Event()
+            async def verify():
+                try:
+                    receipt = await session.call_tool("zx7_verify_native_export", {
+                        "path": "/trusted/isolated-output.mp4"})
+                    self.assertFalse(receipt.is_error)
+                finally:
+                    finished.set()
+            async with anyio.create_task_group() as group:
+                group.start_soon(verify)
+                try:
+                    self.assertTrue(await anyio.to_thread.run_sync(
+                        lambda: entered.wait(timeout=2)))
+                    with anyio.fail_after(2):
+                        current = await session.call_tool("get_project", {})
+                    self.assertFalse(current.is_error)
+                    self.assertFalse(finished.is_set())
+                finally:
+                    release.set()
+                await finished.wait()
+        await self.with_session(check, export_verifier=verifier)
 
     def test_missing_host_grant_or_remote_schema_reference_fails_closed(self):
         self.tools = [TOOLS[0]]

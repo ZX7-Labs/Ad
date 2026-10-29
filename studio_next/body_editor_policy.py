@@ -161,6 +161,7 @@ class EditorConfig:
     allowed_tools: Mapping[str, str]
     allowed_access: frozenset[str] = frozenset({"read"})
     timeout: float = 30.0
+    verify_native_exports: bool = False
     _policy: EditorPathPolicy = field(init=False, repr=False, compare=False)
 
     def __post_init__(self):
@@ -174,6 +175,8 @@ class EditorConfig:
         object.__setattr__(self, "allowed_access", _access(self.allowed_access))
         if type(self.timeout) not in (int, float) or not math.isfinite(self.timeout) or self.timeout <= 0:
             raise ValueError("Editor timeout must be positive and finite")
+        if type(self.verify_native_exports) is not bool:
+            raise ValueError("Native export verification must be explicitly enabled by the host")
         # Reuse the transport's endpoint/grant validation without connecting.
         LocalEditorClient(self.endpoint, allowed_tools=self.allowed_tools, timeout=self.timeout)
         object.__setattr__(self, "_policy", EditorPathPolicy(
@@ -195,7 +198,7 @@ def load_editor_config(path) -> EditorConfig:
     except (UnicodeError, RecursionError) as exc:
         raise ValueError("Editor config must be finite UTF-8 JSON") from exc
     required = {"endpoint", "projects_root", "staging_root", "outputs_root", "allowed_tools"}
-    if (not isinstance(value, dict) or set(value) - required - {"allowed_access", "timeout"}
+    if (not isinstance(value, dict) or set(value) - required - {"allowed_access", "timeout", "verify_native_exports"}
             or required - set(value)):
         raise ValueError("Editor config has missing or unknown fields")
     return EditorConfig(**value)

@@ -57,6 +57,27 @@ primary/legacy native document against the configured project root.
 The existing Film IR/mobile creative-session runner remains a separate route;
 this connection is for a replaceable MCP-capable brain.
 
+With the example host profile, the additional BODY-owned read-only
+`zx7_verify_native_export` tool independently fully decodes a completed
+native exported movie (picture and audio), checks its physical hash/identity
+against concurrent changes, validates optional target dimensions/duration/audio
+and returns an explicitly non-artistic result. It is separately identified
+from the 77 granted native controls. Host configuration
+`"verify_native_exports": true` opts in; the default is disabled.
+Only files in the dedicated authorized output root can be observed; original
+project/staging media are intentionally not exposed through this new tool.
+After a successful source-bound export proof in the same MCP session,
+`zx7_observe_verified_export_frame` can return an actual decoder-produced
+PNG image plus a factual source/timestamp receipt to a visual-capable AI client.
+The client chooses the requested moment. This is bounded to 768 pixels per
+dimension, refuses stale bytes and reports that one selected still does not
+establish continuous motion, exact frame presentation PTS, sound quality,
+scene-linear/HDR fidelity or artistic acceptance. Refresh the full-export
+proof after modifying the file or reconnecting the editor.
+The verifier cannot establish editing originality, artistic acceptance,
+source rights or OS process isolation. The import and editing tools retain
+their exact upstream schemas; this BODY-owned tool is deliberately namespaced.
+
 To verify the actual standard-client editing route:
 
 ```sh

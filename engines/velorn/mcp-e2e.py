@@ -2,6 +2,7 @@
 """Actual SDK client -> stdio launcher -> native editor; no model evaluation."""
 import argparse
 import asyncio
+import base64
 from contextlib import asynccontextmanager
 import hashlib
 import json
@@ -37,7 +38,7 @@ async def exercise(options):
     config = fixture / "editor.json"
     config.write_text(json.dumps({"endpoint": "http://127.0.0.1:19790/mcp", "projects_root": str(projects),
         "staging_root": str(staging), "outputs_root": str(outputs), "allowed_tools": tools,
-        "allowed_access": ["read", "write"]}))
+        "allowed_access": ["read", "write"], "verify_native_exports": True}))
     ffmpeg, ffprobe = shutil.which("ffmpeg"), shutil.which("ffprobe")
     assert ffmpeg and ffprobe, "Install FFmpeg and FFprobe for independent decoding"
     def run(argv):
@@ -82,12 +83,13 @@ async def exercise(options):
 
     async with connected() as session:
         discovered = (await session.list_tools()).tools
-        assert {tool.name for tool in discovered} == set(tools)
+        assert {tool.name for tool in discovered} == set(tools) | {"zx7_verify_native_export", "zx7_observe_verified_export_frame"}
         from studio_next.body_editor_client import LocalEditorClient
         native = {tool["name"]: tool for tool in LocalEditorClient(
             "http://127.0.0.1:19790/mcp", allowed_tools={}).list_tools()}
         for tool in discovered:
-            assert tool.input_schema == native[tool.name]["inputSchema"]
+            if tool.name in native:
+                assert tool.input_schema == native[tool.name]["inputSchema"]
         assert (await session.call_tool("queue_prompt_generation_batch", {})).is_error
         assert (await session.call_tool("create_project", {"name": "Bad", "width": "wrong"})).is_error
         await call(session, "create_project", {"name": "MCP native edit", "width": 320, "height": 180, "fps": 24, "previewOnly": False})
@@ -141,6 +143,24 @@ async def exercise(options):
             await asyncio.sleep(.2)
         inspection = await call(session, "inspect_export_file", {"path": str(output), "width": 320, "height": 180, "durationSeconds": 2})
         assert inspection["ready"], inspection
+        assert (await session.call_tool("zx7_observe_verified_export_frame", {
+            "path": str(output), "at_seconds": 0.5})).is_error
+        proof = await call(session, "zx7_verify_native_export", {
+            "path": str(output),
+            "expected": {"width": 320, "height": 180,
+                         "duration_seconds": 2, "require_audio": True}})
+        assert proof["physical_export_verified"] and not proof["artistic_quality_approved"], proof
+        assert proof["native_export_sha256"] == digest(output), proof
+        observed = await session.call_tool("zx7_observe_verified_export_frame", {
+            "path": str(output), "at_seconds": 0.5})
+        assert not observed.is_error and len(observed.content) == 2, observed
+        assert observed.content[1].type == "image" and observed.content[1].mime_type == "image/png"
+        frame = base64.b64decode(observed.content[1].data, validate=True)
+        assert frame.startswith(bytes.fromhex("89504e470d0a1a0a"))
+        frame_receipt = json.loads(observed.content[0].text)
+        assert frame_receipt["export_sha256"] == digest(output)
+        assert frame_receipt["png_sha256"] == hashlib.sha256(frame).hexdigest()
+        assert frame_receipt["human_or_artistic_quality_approved"] is False
 
     async with connected() as session:
         await call(session, "open_project", {"projectPath": str(project), "previewOnly": False})
@@ -163,7 +183,9 @@ async def exercise(options):
     assert .03 < audio_rms < .2
     receipt = {"success": True, "kind": "scripted official SDK client; no autonomous model evaluation",
         "transport": "standard MCP stdio; Python SDK 2.3.0", "nativeSchemasUnchanged": True,
-        "discoveredGrantedTools": len(discovered), "deniedNetworkTool": True, "deniedOutsideImport": True,
+        "discoveredGrantedTools": len(tools), "additionalVerifiedBodyTools": 2, "physicalVisualFrameObserved": True,
+        "physicalEditorExportIndependentlyDecoded": True,
+        "deniedNetworkTool": True, "deniedOutsideImport": True,
         "existingSourceExportDenied": True, "outsideNativeDocumentDenied": True,
         "invalidNativeArgumentsRejected": True, "editableTracks": 3, "savedVersions": 2,
         "processRestartReopenPassed": True, "frames": 48, "fps": "24/1", "audioCodec": "aac",
