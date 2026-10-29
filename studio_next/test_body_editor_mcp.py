@@ -285,6 +285,39 @@ class EditorMCPTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(any(x["method"] == "tools/call" for x in self.requests))
         await self.with_session(check, export_verifier=verifier, frame_observer=observer)
 
+    async def test_readonly_decode_does_not_block_native_editing(self):
+        """Long-running physical inspection cannot monopolize editor RPC locks."""
+        entered = threading.Event()
+        release = threading.Event()
+        def verifier(path, expected=None):
+            entered.set()
+            if not release.wait(timeout=5):
+                raise ValueError("Timed out waiting for synthetic decode release")
+            return {"physical_export_verified": True, "native_export_sha256": "e" * 64}
+
+        async def check(session):
+            finished = anyio.Event()
+            async def verify():
+                try:
+                    receipt = await session.call_tool("zx7_verify_native_export", {
+                        "path": "/trusted/isolated-output.mp4"})
+                    self.assertFalse(receipt.is_error)
+                finally:
+                    finished.set()
+            async with anyio.create_task_group() as group:
+                group.start_soon(verify)
+                try:
+                    self.assertTrue(await anyio.to_thread.run_sync(
+                        lambda: entered.wait(timeout=2)))
+                    with anyio.fail_after(2):
+                        current = await session.call_tool("get_project", {})
+                    self.assertFalse(current.is_error)
+                    self.assertFalse(finished.is_set())
+                finally:
+                    release.set()
+                await finished.wait()
+        await self.with_session(check, export_verifier=verifier)
+
     def test_missing_host_grant_or_remote_schema_reference_fails_closed(self):
         self.tools = [TOOLS[0]]
         with self.assertRaisesRegex(ValueError, "absent"):
