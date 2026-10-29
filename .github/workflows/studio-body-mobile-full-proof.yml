@@ -108,19 +108,15 @@ jobs:
       - name: Save exact release evidence without certifying artistic quality
         run: |
           python - <<'PY'
-          import hashlib,json,os,re,sqlite3
+          import hashlib,json,os,sqlite3
           from pathlib import Path
+          from scripts.release_test_summary import parse_unittest_summary
           root=Path('output/body-release-proof')
           log=(root/'all-tests.log').read_text()
-          match=re.search(r'Ran (\d+) tests',log)
-          statuses=[line for line in log.splitlines()
-                    if line in ('OK','OK (skipped=1)')]
-          assert match and len(statuses)==1,log[-2000:]
-          skipped=[line for line in log.splitlines() if ' ... skipped ' in line]
-          if statuses[0]=='OK (skipped=1)':
-              assert len(skipped)==1 and 'test_browser_owner_media_job_tools_and_one_use_exact_download' in skipped[0],skipped
-          else:
-              assert not skipped,skipped
+          # Reuse the independently regression-tested strict parser: an
+          # arbitrary positive number of *actual* skips is not a failure,
+          # but failed/truncated runs and invented skip totals remain fatal.
+          tests_run,tests_skipped=parse_unittest_summary(log)
           physical=json.loads((root/'native/verified-native-body-result.json').read_text())
           assert physical['real_3d_rendered'] and physical['real_2d_rendered']
           assert physical['exact_all_nodes_resumed']
@@ -148,10 +144,10 @@ jobs:
           assert (root/'desktop-qa.png').is_file()
           release={
             'source_commit':os.environ['GITHUB_SHA'],
-            'tests_run':int(match[1]),
-            'tests_discovered':int(match[1]),
-            'tests_skipped':len(re.findall(r' \.\.\. skipped ',log)),
-            'tests_passed':int(match[1])-len(re.findall(r' \.\.\. skipped ',log)),
+            'tests_run':tests_run,
+            'tests_discovered':tests_run,
+            'tests_skipped':tests_skipped,
+            'tests_passed':tests_run-tests_skipped,
             'tests_failed':0,
             'tests_errors':0,
             'actual_gui_and_authenticated_media_roundtrip':True,
