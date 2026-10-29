@@ -21,6 +21,7 @@ _MAX_ACTION_BYTES = 262_144
 _MAX_RESULT_TEXT = 64_000
 _MAX_IMAGE_BYTES = 4 * 1024 * 1024
 _MAX_TOTAL_IMAGE_BYTES = 8 * 1024 * 1024
+_MAX_AUDIO_BYTES = 128 * 1024
 
 NATIVE_CREATIVE_SYSTEM = """You are the creative brain controlling an actual native editor.
 The owner's brief is creative direction, not a prescribed shot list. Independently
@@ -50,14 +51,14 @@ def _field(value: Any, name: str, default=None):
     return value.get(name, default) if isinstance(value, dict) else getattr(value, name, default)
 
 
-def _native_content(result: Any) -> tuple[list[str], list[tuple[str, bytes]]]:
-    """Unpack bounded text and exact image bytes; never trust plain base64 labels."""
+def _native_content(result: Any) -> tuple[list[str], list[tuple[str, bytes]], list[tuple[str, bytes]]]:
+    """Unpack genuine bounded data without trusting a model-produced label."""
     if _field(result, "is_error", _field(result, "isError", False)):
-        return [], []
+        return [], [], []
     blocks = _field(result, "content", ())
     if not isinstance(blocks, (list, tuple)):
         raise NativeCreativeControlError("Native MCP returned no inspectable content")
-    texts, images, total = [], [], 0
+    texts, images, audio, total = [], [], [], 0
     for block in blocks:
         kind = _field(block, "type")
         if kind == "text":
@@ -83,11 +84,21 @@ def _native_content(result: Any) -> tuple[list[str], list[tuple[str, bytes]]]:
                 raise NativeCreativeControlError("Native image is malformed or over budget")
             images.append((mime, picture))
         elif kind == "audio":
-            raise NativeCreativeControlError(
-                "Native WAV requires a real audio-capable model adapter; no synthetic listening")
+            mime = _field(block, "mime_type", _field(block, "mimeType"))
+            raw = _field(block, "data")
+            if mime != "audio/wav" or not isinstance(raw, str) or len(raw) > 180000:
+                raise NativeCreativeControlError("Invalid original encoded native audio")
+            try:
+                wav = base64.b64decode(raw, validate=True)
+            except (ValueError, base64.binascii.Error) as exc:
+                raise NativeCreativeControlError("Corrupt original native audio encoding") from exc
+            if (len(audio) != 0 or not 44 <= len(wav) <= _MAX_AUDIO_BYTES or
+                    not wav.startswith(b"RIFF") or wav[8:12] != b"WAVE"):
+                raise NativeCreativeControlError("Native sound input is malformed or out of budget")
+            audio.append((mime, wav))
         else:
             raise NativeCreativeControlError("Unexpected native MCP content type")
-    return texts, images
+    return texts, images, audio
 
 
 def _source_bound_images(texts: list[str], images: list[tuple[str, bytes]]):
@@ -117,6 +128,27 @@ def _source_bound_images(texts: list[str], images: list[tuple[str, bytes]]):
     return hashes
 
 
+def _source_bound_audio(texts: list[str], audio: list[tuple[str, bytes]]):
+    if not audio:
+        return None
+    if len(audio) != 1 or len(texts) != 1:
+        raise NativeCreativeControlError("One original WAV requires one independent custody receipt")
+    try:
+        receipt = json.loads(texts[0])
+    except (ValueError, TypeError) as exc:
+        raise NativeCreativeControlError("Source-bound WAV has no valid receipt") from exc
+    if (not isinstance(receipt, dict) or
+            receipt.get("kind") != "verified_native_editor_bounded_audio_excerpt" or
+            not isinstance(receipt.get("export_sha256"), str) or
+            re.fullmatch(r"[0-9a-f]{64}", receipt["export_sha256"]) is None or
+            not isinstance(receipt.get("wav_sha256"), str) or
+            receipt["wav_sha256"] != hashlib.sha256(audio[0][1]).hexdigest() or
+            receipt.get("preview_downmixed_and_resampled") is not True):
+        raise NativeCreativeControlError("Original WAV does not match its verified source/decoder")
+    return {"export_sha256": receipt["export_sha256"],
+            "wav_sha256": receipt["wav_sha256"]}
+
+
 class NativeCreativeControl:
     """Single in-process driver of an already host-authorized official MCP session.
 
@@ -140,6 +172,8 @@ class NativeCreativeControl:
         self._last_images: list[tuple[str, bytes]] = []
         self._last_hashes: list[str] = []
         self._last_native_texts: list[str] = []
+        self._last_audio: list[tuple[str, bytes]] = []
+        self._last_audio_evidence: dict | None = None
         self._receipt = None
 
     def _append(self, event: dict):
@@ -166,7 +200,17 @@ class NativeCreativeControl:
     async def _infer(self, context: dict):
         pictures = self._last_images
         hashes = self._last_hashes
+        audio = self._last_audio
+        audio_evidence = self._last_audio_evidence
         self._last_images, self._last_hashes = [], []
+        self._last_audio, self._last_audio_evidence = [], None
+        if pictures and audio:
+            raise NativeCreativeControlError("Cross-modal evaluation requires a separately audited backend")
+        if audio:
+            if not callable(getattr(self.model, "decide_with_audio", None)):
+                raise NativeCreativeControlError("Real audio requires an audio-capable model interface")
+            context["audio_evidence"] = audio_evidence
+            return await asyncio.to_thread(self.model.decide_with_audio, context, audio)
         if pictures:
             if not callable(getattr(self.model, "decide_with_images", None)):
                 raise NativeCreativeControlError(
@@ -275,8 +319,9 @@ class NativeCreativeControl:
                     outcome = "native_error_requires_state_reconciliation"
                     break
                 try:
-                    texts, images = _native_content(result)
+                    texts, images, audio = _native_content(result)
                     hashes = _source_bound_images(texts, images)
+                    audio_evidence = _source_bound_audio(texts, audio)
                 except NativeCreativeControlError as exc:
                     self._append({"kind": "native_observation_rejected", "turn": turn,
                                   "tool": native_name, "error": str(exc),
@@ -284,10 +329,13 @@ class NativeCreativeControl:
                     raise
                 self._last_native_texts = texts
                 self._last_images, self._last_hashes = images, hashes
+                self._last_audio, self._last_audio_evidence = audio, audio_evidence
                 self._append({"kind": "native_tool_result", "turn": turn,
                               "tool": native_name,
                               "text_sha256": [hashlib.sha256(s.encode()).hexdigest() for s in texts],
                               "image_sha256": hashes,
+                              "audio_sha256": audio_evidence["wav_sha256"] if audio_evidence else None,
+                              "audio_sent_to_model_for_next_decision": bool(audio),
                               "audio_semantically_heard": False,
                               "human_or_artistic_quality_approved": False})
             return {
