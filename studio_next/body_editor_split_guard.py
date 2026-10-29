@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 import math
 
-from .body_editor_client import EditorAccessError, EditorProtocolError
+from .body_editor_client import EditorAccessError, EditorProtocolError, _load_json
 
 
 # This is an inventory of reviewed plain source-clip fields from the pinned
@@ -43,7 +43,7 @@ def _native_json(result: dict, label: str) -> dict:
     if len(texts) != 1:
         raise EditorAccessError(label + " requires one full native JSON observation")
     try:
-        value = json.loads(texts[0])
+        value = _load_json(texts[0])
     except (ValueError, TypeError, RecursionError) as exc:
         raise EditorAccessError(label + " had no valid native JSON state") from exc
     if not isinstance(value, dict) or value.get("truncated") or value.get("success") is False:
