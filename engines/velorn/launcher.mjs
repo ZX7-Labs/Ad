@@ -13,7 +13,8 @@ async function assertFree(port) {
   await new Promise(resolve => server.close(resolve))
 }
 export async function launchVelorn({ source, profileRoot, projectsRoot, stagingRoot, outputRoot,
-  xvfbBinary, xvfbLibraryDir, display, noSandbox = false, softwareGpu = false, startupTimeoutMs = 90000 }) {
+  xvfbBinary, xvfbLibraryDir, display, noSandbox = false, softwareGpu = false, startupTimeoutMs = 90000, signal }) {
+  signal?.throwIfAborted()
   for (const [key, value] of Object.entries({ source, profileRoot, projectsRoot, stagingRoot, outputRoot }))
     if (!value || !path.isAbsolute(value)) throw Error(`${key} must be an explicit absolute path.`)
   const revision = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: source, encoding: 'utf8' }).trim()
@@ -37,25 +38,33 @@ export async function launchVelorn({ source, profileRoot, projectsRoot, stagingR
   const environment = { ...process.env, XDG_CONFIG_HOME: profileRoot }
   delete environment.ELECTRON_RUN_AS_NODE
   const start = (command, args, overrides = {}) => {
+    signal?.throwIfAborted()
     const child = spawn(command, args, { cwd: source, env: { ...environment, ...overrides }, stdio: ['ignore', log.fd, log.fd] })
     child.on('error', error => { child.launchError = error }); children.push(child); return child
   }
   const checkChildren = () => {
+    signal?.throwIfAborted()
     for (const child of children) {
       if (child.launchError) throw child.launchError
       if (child.exitCode !== null || child.signalCode !== null) throw Error(`Velorn child exited (${child.exitCode ?? child.signalCode}); inspect ${logPath}`)
     }
   }
-  let closed = false
-  const close = async () => {
-    if (closed) return
-    closed = true
-    for (const child of [...children].reverse()) child.kill('SIGTERM')
-    for (let i = 0; i < 30 && children.some(child => child.exitCode === null && child.signalCode === null); i++) await pause(100)
-    for (const child of children) if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
-    await log.close()
+  let closePromise
+  const onAbort = () => { void close() }
+  const close = () => {
+    if (closePromise) return closePromise
+    closePromise = (async () => {
+      signal?.removeEventListener('abort', onAbort)
+      for (const child of [...children].reverse()) child.kill('SIGTERM')
+      for (let i = 0; i < 30 && children.some(child => child.exitCode === null && child.signalCode === null); i++) await pause(100)
+      for (const child of children) if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
+      await log.close()
+    })()
+    return closePromise
   }
+  signal?.addEventListener('abort', onAbort, { once: true })
   try {
+    signal?.throwIfAborted()
     if (xvfbBinary) {
       if (!display || !/^127\.0\.0\.1:\d+$/.test(display)) throw Error('Xvfb needs an explicit TCP display, for example 127.0.0.1:94.')
       const number = Number(display.split(':')[1]); await assertFree(6000 + number)

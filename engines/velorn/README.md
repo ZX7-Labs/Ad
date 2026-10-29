@@ -12,7 +12,8 @@ cd third_party/velorn
 npm ci
 npm run build
 cd ../..
-node --test engines/velorn/client.test.mjs
+node --test engines/velorn/client.test.mjs engines/velorn/launcher.test.mjs
+python -m unittest studio_next.test_body_editor_client studio_next.test_body_editor_catalog -v
 ```
 
 When dependencies were installed with `--ignore-scripts`, run the normal Electron, ffmpeg-static and @derhuerst/ffprobe-static install scripts before launching. No model weights, ComfyUI, RIFE or hosted AI API are needed for native editing/export. Upstream `electron:pack`/`electron:build` separately require staged RIFE release inputs; distribution packaging is unresolved.
@@ -43,7 +44,7 @@ The process prints a ready record, accepts JSON lines and writes upstream logs t
 {"id":4,"method":"shutdown"}
 ```
 
-EOF, shutdown, SIGINT and SIGTERM stop the owned processes. Node hosts can import `launchVelorn` from `launcher.mjs`; it returns `{client,close,revision,rendererUrl,logPath,appProfile,...roots}`. Discovery returns unchanged native schemas plus integration policy annotations. Calls return native MCP content and parsed `.data` for JSON text. Snapshots debounce mutations by 350 ms: `waitForState(predicate)` observes actual upstream state before using fresh IDs.
+EOF, shutdown, SIGINT and SIGTERM stop the owned processes; signals also clean up an interrupted startup. Node hosts can import `launchVelorn` from `launcher.mjs`; it accepts an optional AbortSignal and returns `{client,close,revision,rendererUrl,logPath,appProfile,...roots}`. Discovery returns unchanged native schemas plus integration policy annotations. Calls return native MCP content and parsed `.data` for JSON text. Snapshots debounce mutations by 350 ms: `waitForState(predicate)` observes actual upstream state before using fresh IDs.
 
 ## Native integration proof
 
@@ -53,7 +54,7 @@ node engines/velorn/e2e.mjs \
   --xvfb-binary /usr/bin/Xvfb --display 127.0.0.1:95
 ```
 
-The fixture creates temporary synthetic media, native video/audio/title tracks, text/keyframes, two preserved project versions, a reopen and audiovisual export through the existing production Electron export worker. It checks native BODY read/write grants, full original schema preservation, frame/audio decode and SHA256 receipts. This scripted test does not establish autonomous model use, full restart recovery, professional creative quality or complete field coverage. A new receipt is proof only when the command actually succeeds.
+The fixture creates temporary synthetic media, native video/audio/title tracks, text/keyframes, two preserved project versions, a reopen, a complete application stop/restart with saved-project reopen, and audiovisual export through the existing production Electron export worker. It checks native BODY read/write grants, full original schema preservation, frame/audio decode and SHA256 receipts. This scripted test does not establish autonomous model use, interrupted-render/crash recovery, professional creative quality or complete field coverage. A new receipt is proof only when the command actually succeeds.
 
 ## Authority and remaining limits
 

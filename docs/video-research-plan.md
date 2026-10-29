@@ -11,9 +11,9 @@ color, reliability and review dependencies a coherent professional capability.
 native integrations. Introduce loss-aware native project coordination and exact
 boundary contracts without flattening every engine into a universal scene JSON.
 
-**Stack:** Existing Python >=3.11 service/SQLite, MLT, FFmpeg, OTIO, native
-Blender where needed, explicit OCIO/EXR boundaries. Optional engines and model
-runtimes are selected by evidence, not added as mandatory dependencies now.
+**Stack:** Complete pinned Velorn application attached to the existing Python
+>=3.11 BODY catalog through local MCP. Preserve useful MLT, FFmpeg, OTIO and
+Blender routes. Model runtimes remain independent optional attachments.
 
 **Spec:** [architecture.md](architecture.md), [reuse-research.md](reuse-research.md)
 and [CAPABILITIES.md](../CAPABILITIES.md).

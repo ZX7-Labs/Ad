@@ -22,6 +22,10 @@ compositor, mixer and exporter are reused. Run `git submodule update --init
 --recursive` to obtain source; [setup and native export test](engines/velorn/README.md)
 explain how to run it locally without a hosted AI API.
 
+The [execution record](research/editor-integration-evidence.json) verifies a
+scripted native edit, saved revisions, application restart/reopen and actual
+audiovisual export; it is not an autonomous AI or artistic-quality evaluation.
+
 Python `LocalEditorClient` preserves native MCP schemas and requires explicit
 host grants. `body_catalog(workspace, editor_client=client)` attaches granted
 operations to the existing BODY catalog. Professional field completion,

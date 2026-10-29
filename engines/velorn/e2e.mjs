@@ -22,7 +22,7 @@ async function main() {
   const run = (binary, argv) => execFileSync(binary, argv, { encoding: 'utf8', timeout: 30000, maxBuffer: 8 * 1024 * 1024 })
   run(ffmpeg, ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'testsrc2=s=320x180:r=24:d=2', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', config.stagingRoot + '/source.mp4'])
   run(ffmpeg, ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'sine=f=440:d=2', '-c:a', 'pcm_s16le', config.stagingRoot + '/tone.wav'])
-  const session = await launchVelorn(config)
+  let session = await launchVelorn(config)
   const { client } = session
   const call = async (name, args = {}) => (await client.call(name, args)).data
   const wait = predicate => client.waitForState(predicate)
@@ -129,15 +129,37 @@ print(json.dumps({'nativeToolCount':len(native), 'bodyNativeTools':[name for nam
     const audioRms = Math.sqrt(sum / (pcm.length / 4))
     assert(audioRms > 0.03 && audioRms < 0.2)
     run(ffmpeg, ['-v', 'error', '-y', '-ss', '0.5', '-i', output, '-frames:v', '1', path.join(config.outputRoot, 'decoded-frame.png')])
+    // Stop the entire owned application, then reopen disk state in a new
+    // process/profile. This is clean restart evidence, not render-crash resume.
+    await session.close()
+    session = await launchVelorn({ ...config, profileRoot: path.join(fixture, 'restart-profile') })
+    const restarted = session.client
+    await restarted.call('open_project', { projectPath, previewOnly: false })
+    await restarted.waitForState(state => state?.currentTimeline?.clipCount === 3 && state?.assetCount === 2)
+    const restartedTimeline = (await restarted.call('get_timeline', { includeClips: true })).data
+    assert.equal(restartedTimeline.tracks.length, 3)
+    assert.equal(restartedTimeline.clips.length, 3)
+    const savedTitle = native.timelines[0].clips.find(clip => clip.id === titleId)
+    const restartedTitle = restartedTimeline.clips.find(clip => clip.id === titleId)
+    assert.equal(restartedTitle.textProperties.text, 'Reopened revision')
+    assert.deepEqual(restartedTitle.keyframes, savedTitle.keyframes)
+    const restartedAssets = (await restarted.call('get_assets')).data.assets
+    assert.equal(restartedAssets.length, native.assets.length)
+    for (const saved of native.assets) {
+      const asset = restartedAssets.find(asset => asset.id === saved.id)
+      assert(asset, 'Reopened asset identity changed')
+      assert.equal(path.resolve(projectPath, asset.path), path.resolve(projectPath, saved.path))
+      await fs.access(path.resolve(projectPath, asset.path))
+    }
     const receipt = { success: true, kind: 'scripted native integration fixture; no autonomous model evaluation',
       upstreamCommit: session.revision, renderer: 'existing production dist served by Vite preview; existing Electron main and ExportWorker',
       rendererIndexSha256: hash(await fs.readFile(path.join(config.source, 'dist/index.html'))), discoveredToolCount: discovered.length,
-      bodyRoute, bodyCliReadPassed: true, nativeProject: nativePath,
+      bodyRoute, bodyCliReadPassed: true, processRestartReopenPassed: true, nativeProject: nativePath,
       preservedRevisions: [{ file: 'revision-1.comfystudio', sha256: hash(revision1) }, { file: 'revision-2.comfystudio', sha256: hash(revision2) }], reopenedRevision: 2,
       editableTracks: 3, editableClips: 3, frames: 48, fps: '24/1', durationSeconds: Number(probe.format.duration),
       videoCodec: video.codec_name, audioCodec: audio.codec_name, audioRms, fullDecodePassed: true,
       output, outputSha256: hash(await fs.readFile(output)), bytes: (await fs.stat(output)).size, workerLogPath, fixture,
-      limitations: ['No process-restart recovery tested', 'Not a creative-field completion or professional quality certification', 'Upstream raw MCP has no auth; wrapper policy is not OS isolation'] }
+      limitations: ['Clean saved-project restart tested; render interruption/crash recovery not tested', 'Not a creative-field completion or professional quality certification', 'Upstream raw MCP has no auth; wrapper policy is not OS isolation'] }
     await fs.writeFile(path.join(fixture, 'receipt.json'), JSON.stringify(receipt, null, 2))
     await fs.writeFile(path.join(fixture, 'probe.json'), JSON.stringify(probe, null, 2))
     console.log(JSON.stringify(receipt, null, 2))

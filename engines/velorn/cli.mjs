@@ -23,14 +23,19 @@ export function options(argv) {
   }
 }
 async function main() {
-  const session = await launchVelorn(options(process.argv.slice(2)))
-  const respond = message => process.stdout.write(JSON.stringify(message) + '\n')
-  const stop = async () => { await session.close(); process.exit(0) }
+  const controller = new AbortController()
+  let session, input
+  // Install before launch: startup already owns display/server processes.
+  const stop = () => { controller.abort(); input?.close() }
   process.once('SIGINT', stop); process.once('SIGTERM', stop)
-  respond({ ready: true, revision: session.revision, upstreamMcp: session.client.url, logPath: session.logPath,
-    scope: 'Trusted local integration only; upstream unauthenticated MCP is not a model security boundary.' })
+  const respond = message => process.stdout.write(JSON.stringify(message) + '\n')
   try {
-    for await (const line of readline.createInterface({ input: process.stdin, crlfDelay: Infinity })) {
+    session = await launchVelorn({ ...options(process.argv.slice(2)), signal: controller.signal })
+    controller.signal.throwIfAborted()
+    respond({ ready: true, revision: session.revision, upstreamMcp: session.client.url, logPath: session.logPath,
+      scope: 'Trusted local integration only; upstream unauthenticated MCP is not a model security boundary.' })
+    input = readline.createInterface({ input: process.stdin, crlfDelay: Infinity })
+    for await (const line of input) {
       let request
       try {
         request = JSON.parse(line)
@@ -40,9 +45,18 @@ async function main() {
         else if (request.method === 'shutdown') break
         else throw Error('Use tools/list, tools/call, or shutdown.')
         respond({ id: request.id ?? null, result })
-      } catch (error) { respond({ id: request?.id ?? null, error: { message: error.message } }) }
+      } catch (error) {
+        if (controller.signal.aborted) break
+        respond({ id: request?.id ?? null, error: { message: error.message } })
+      }
     }
-  } finally { await session.close() }
+  } catch (error) {
+    if (!controller.signal.aborted) throw error
+  } finally {
+    input?.close()
+    await session?.close()
+    process.removeListener('SIGINT', stop); process.removeListener('SIGTERM', stop)
+  }
 }
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]))
   main().catch(error => { console.error(error.stack); process.exitCode = 1 })

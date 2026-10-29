@@ -25,8 +25,10 @@ The owner authorized complete application reuse instead of rebuilding editor
 primitives. Full source checkouts of these applications were inspected, and
 native exports from Velorn and NodeTool ran before a workspace reset. The
 reproducible retained Velorn integration now lives under `engines/velorn`;
-its new E2E receipt must be produced by executing the test, not inferred from
-those earlier runs.
+the [retained execution record](../research/editor-integration-evidence.json)
+comes from a fresh successful run against the pinned source after restoration.
+BODY read/write, two saved versions, export and full application restart/reopen
+were verified. The record identifies the actual code by file digests.
 
 | Application / exact inspected source | Evidence and choice |
 |---|---|
