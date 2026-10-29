@@ -60,6 +60,9 @@ def _strict_json(value):
     try:
         return json.loads(value, object_pairs_hook=unique, parse_float=finite_float,
                           parse_constant=reject_constant)
+    except NativeJournalError:
+        # Preserve specific evidence of duplicate or nonfinite source fields.
+        raise
     except (ValueError, RecursionError, UnicodeDecodeError) as exc:
         raise NativeJournalError("Invalid journal JSON") from exc
 
