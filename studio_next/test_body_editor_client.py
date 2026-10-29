@@ -209,15 +209,15 @@ class LocalEditorClientTests(unittest.TestCase):
                 "clipId": "clip-artist", "timeSeconds": 6,
                 "previewOnly": False}, allowed_access={"read", "write"})
         self.assertEqual([r["params"]["name"] for r in self.requests],
-                         ["get_timeline", "inspect_clip"])
+                         ["inspect_clip"])
         self.assertIn("keyframes", clip)
         clip.pop("keyframes")
         successful = client.call("split_clip", {
             "clipId": "clip-artist", "timeSeconds": 6,
             "previewOnly": False}, allowed_access={"read", "write"})
         self.assertEqual(json.loads(successful["content"][0]["text"])["success"], True)
-        self.assertEqual([r["params"]["name"] for r in self.requests[-3:]],
-                         ["get_timeline", "inspect_clip", "split_clip"])
+        self.assertEqual([r["params"]["name"] for r in self.requests[-2:]],
+                         ["inspect_clip", "split_clip"])
 
     def test_split_without_granted_read_inspection_has_no_native_write(self):
         client = LocalEditorClient(self.endpoint, allowed_tools={"split_clip": "write"})
