@@ -146,9 +146,16 @@ The local model must return one `{action,arguments,reason}` JSON decision
 per turn; the driver does not bake in a timeline or shot sequence. Actual
 MCP text output is supplied to the next decision but only its SHA evidence
 is journaled. A real SHA-bound PNG returned by the verified export observer
-is supplied as image bytes only if the model supports images. If the model
-cannot process returned real WAV audio, it **refuses semantic listening** rather
-than substituting RMS text. The receipt is local mode 0600, never overwritten;
+is supplied as image bytes only if the model supports images. For original native WAV, the new optional audio-capable adapter
+uses the local OpenAI-style `input_audio` typed content with 16 kHz mono PCM
+(3 seconds maximum). Before crossing into a model turn BODY checks the
+exact `wav_sha256` and the source export hash reported by the actual
+native observer; the local model provider validates the WAV header, length,
+sample rate and binary-to-receipt identity. The model server and weights
+**must** truly support audio for this to work. Accepted transport and a
+model response do **not** prove correct interpretation of music, dialogue,
+spatial mix or mastered sound; independent native model trials are still due.
+The receipt is local mode 0600, never overwritten;
 after uncertain execution the current project must be reconciled manually
 before any deliberate continuation.
 
