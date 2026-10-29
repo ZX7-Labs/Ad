@@ -15,12 +15,12 @@ class ReleaseTestSummaryTests(unittest.TestCase):
     def test_real_release_sized_run_accepts_fourteen_actual_skips(self):
         # A real installed-body release measured 873 tests and 14 optional
         # skips. It must not be marked failed merely for having >1 skip.
-        log = "".join(f"test_{i} (Suite.test_{i}) ... ok\\n"
+        log = "".join(f"test_{i} (Suite.test_{i}) ... ok\n"
                       for i in range(859))
-        log += "".join(f"test_optional_{i} (Suite.test_optional_{i}) ... skipped 'unavailable'\\n"
+        log += "".join(f"test_optional_{i} (Suite.test_optional_{i}) ... skipped 'unavailable'\n"
                        for i in range(14))
-        log += "\\n----------------------------------------------------------------------\\n"
-        log += "Ran 873 tests in 997.918s\\n\\nOK (skipped=14)\\n"
+        log += "\n----------------------------------------------------------------------\n"
+        log += "Ran 873 tests in 997.918s\n\nOK (skipped=14)\n"
         self.assertEqual(parse_unittest_summary(log), (873, 14))
         with self.assertRaises(ValueError):
             parse_unittest_summary(log.replace("OK (skipped=14)", "OK (skipped=13)"))
