@@ -232,6 +232,32 @@ async def exercise(options):
         assert heard_receipt["observed_pcm_frames"] > 30000
         assert not heard_receipt["full_film_listening_or_spatial_mix_verified"]
         (artifact / "native-audio-36s.wav").write_bytes(wav)
+        # Independently inspect the *entire* original 60-second sound bed as
+        # 60 physical one-second decoder buckets. Whole-film RMS alone could
+        # conceal a clipped/silent scene boundary or half a missing soundtrack.
+        audio_timeline = await call(session, "zx7_observe_verified_export_audio_timeline", {
+            "path": str(output), "start_seconds": 0, "duration_seconds": 60,
+            "bins": 60})
+        assert audio_timeline["kind"] == "verified_native_editor_audio_temporal_envelope"
+        assert audio_timeline["export_sha256"] == digest(output)
+        assert audio_timeline["preview_downmixed_and_resampled"] is True
+        assert audio_timeline["exact_original_audio_pts_proven"] is False
+        envelope = audio_timeline["intervals"]
+        assert len(envelope) == 60, "Missing one or more physical soundtrack seconds"
+        dbs = [item["rms_dbfs"] for item in envelope]
+        assert all(type(db) in (int, float) and math.isfinite(db) for db in dbs)
+        assert all(item["no_nonzero_mono_samples"] is False for item in envelope)
+        assert -50 < min(dbs) and max(dbs) < -5, (
+            "A portion of the original soundtrack vanished or clipped", min(dbs), max(dbs))
+        assert max(dbs) - min(dbs) < 3, (
+            "Original uniform soundtrack became unstable at a native edit boundary", dbs)
+        audio_continuity = {
+            "original_source_must_span_all_60_seconds": True,
+            "verified_pcm_buckets": len(envelope),
+            "min_rms_dbfs": min(dbs), "max_rms_dbfs": max(dbs),
+            "source_sha256": audio_timeline["export_sha256"],
+            "full_film_mix_or_sample_exact_pts_approved": False,
+        }
 
     async with connected() as session:
         await call(session, "open_project", {"projectPath": str(project), "previewOnly": False})
@@ -340,6 +366,7 @@ async def exercise(options):
         "transport": "standard MCP stdio; Python SDK 2.3.0", "nativeSchemasUnchanged": True,
         "discoveredGrantedTools": len(tools), "additionalVerifiedBodyTools": len(body_tools), "physicalVisualFrameObserved": True,
         "physicalEditorExportIndependentlyDecoded": True, "realBoundedAudioHeard": True,
+        "realFullMinuteAudioContinuity": audio_continuity,
         "deniedNetworkTool": True, "deniedOutsideImport": True,
         "existingSourceExportDenied": True, "outsideNativeDocumentDenied": True,
         "invalidNativeArgumentsRejected": True, "editableTracks": 7, "editableClips": 11, "sourceOwnedGeneratedShots": 5, "physicalSourceShotOrder": source_alignment,
