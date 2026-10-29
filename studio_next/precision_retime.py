@@ -267,6 +267,23 @@ def retime_command(validated,output):
     ]
 
 
+def _encoded_audio_sample_rate(path):
+    """Measure the ACTUAL one-stream AAC output sample clock, not an assumed 48k rate."""
+    try:
+        raw=subprocess.check_output(["ffprobe","-v","error","-select_streams",
+            "a","-show_entries","stream=sample_rate,channels",
+            "-of","json",str(path)],timeout=45)
+        streams=json.loads(raw)["streams"]
+        if len(streams)!=1:
+            raise ValueError("Native time stretch must produce exactly one actual audio bus")
+        source_rate=int(streams[0]["sample_rate"])
+        if not 8000<=source_rate<=192000:
+            raise ValueError("Encoded original soundtrack has an invalid sample clock")
+    except (OSError,KeyError,TypeError,ValueError,subprocess.SubprocessError) as exc:
+        raise ValueError("Encoded original soundtrack sample rate cannot be verified") from exc
+    return source_rate
+
+
 def render_retime(plan_path,workspace,vault_root,output,*,runner=None,probe=None):
     """Real sealed-source variable-speed editor with atomic private output.
 
@@ -313,6 +330,8 @@ def render_retime(plan_path,workspace,vault_root,output,*,runner=None,probe=None
             raise RuntimeError("Time-remapped production dropped its explicit soundtrack")
         verified=runner is None and probe is None
         decoded_frame_count=None
+        measured_output_audio_seconds=None
+        measured_output_audio_sample_rate=None
         if verified:
             # Physical delivery has its OWN frame clock. A correct original
             # source fps and a successful encode do not establish that the
@@ -336,6 +355,21 @@ def render_retime(plan_path,workspace,vault_root,output,*,runner=None,probe=None
             if not qa["technical_delivery_verified"] or not qa[
                     "full_picture_and_sound_decoder_completed"]:
                 raise RuntimeError("Actual retimed picture or soundtrack failed entire media decode")
+            # The container's total duration is the *longest* stream. A
+            # successful audio decode with an AAC stream present says nothing
+            # about whether sound actually covers the retimed film. Measure
+            # its own authenticated encoded audio stream, separately from the
+            # complete already-verified picture clock and every-frame decode.
+            measured_output_audio_seconds=_decoded_source_duration(encoded,"audio")
+            picture_seconds=float(Fraction(decoded_frame_count,1)/decoded_rate)
+            # AAC encoder priming/padding is quantized to 1024 decoded
+            # samples. Do not assume a 48-kHz output: original 44.1-kHz
+            # footage may legally retain 44.1 kHz after rational retiming.
+            # Measure the OUTPUT audio stream's independent physical clock.
+            measured_output_audio_sample_rate=_encoded_audio_sample_rate(encoded)
+            sound_slack=3*1024/measured_output_audio_sample_rate
+            if abs(measured_output_audio_seconds-picture_seconds)>sound_slack:
+                raise RuntimeError("Encoded original soundtrack duration does not cover the verified retimed picture clock")
         if (sha256_file(original_path)!=original_identity or
                 sha256_file(frozen)!=original_identity or
                 sha256_file(plan_path)!=plan_sha):
@@ -360,6 +394,8 @@ def render_retime(plan_path,workspace,vault_root,output,*,runner=None,probe=None
             "sealed_original_cas_during_decode":True,
             "full_picture_and_sound_decoder_completed":verified,
             "physically_decoded_output_frame_count":decoded_frame_count,
+            "physically_measured_output_audio_stream_seconds":measured_output_audio_seconds,
+            "physically_measured_output_audio_sample_rate_hz":measured_output_audio_sample_rate,
             "physically_verified_rational_output_clock":(
                 {"numerator":checked["fps"].numerator,
                  "denominator":checked["fps"].denominator} if verified else None),
