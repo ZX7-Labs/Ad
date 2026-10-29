@@ -10,6 +10,8 @@ import argparse
 import asyncio
 import base64
 import json
+import hashlib
+import math
 import subprocess
 from pathlib import Path
 import sys
@@ -63,10 +65,11 @@ def create_editor_server(client, *, allowed_access=frozenset({"read"}),
         tools[name] = types.Tool.model_validate(native[name])
     verified_export_name = "zx7_verify_native_export"
     observed_frame_name = "zx7_observe_verified_export_frame"
+    observed_samples_name = "zx7_observe_verified_export_samples"
     verified_exports = {}
     if frame_observer is not None and (export_verifier is None or not callable(frame_observer)):
         raise ValueError("Frame observation requires a real host export verifier")
-    if observed_frame_name in native:
+    if observed_frame_name in native or observed_samples_name in native:
         raise ValueError("Native editor tool name collides with BODY observation")
     if export_verifier is not None:
         if not callable(export_verifier) or verified_export_name in native:
@@ -100,6 +103,24 @@ def create_editor_server(client, *, allowed_access=frozenset({"read"}),
             description="View one actual decoded bounded PNG from a previously verified native export; not full-motion review",
             inputSchema=frame_schema)
         validators[observed_frame_name] = jsonschema.Draft202012Validator(frame_schema)
+        # A small, explicit sample set provides temporal context without
+        # pretending to be a continuous video/audio playback interface.
+        samples_schema = {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"},
+                "at_seconds": {
+                    "type": "array", "minItems": 2, "maxItems": 4,
+                    "uniqueItems": True,
+                    "items": {"type": "number", "minimum": 0}}},
+            "required": ["path", "at_seconds"], "additionalProperties": False}
+        tools[observed_samples_name] = types.Tool(
+            name=observed_samples_name,
+            description=("Observe 2-4 independently decoded frames from a fully verified "
+                         "native editor export, in requested timestamp order; not proof "
+                         "of continuous motion, sound or artistic quality"),
+            inputSchema=samples_schema)
+        validators[observed_samples_name] = jsonschema.Draft202012Validator(samples_schema)
     lock = anyio.Lock()
     inspection_capacity = anyio.CapacityLimiter(1)
 
@@ -136,7 +157,13 @@ def create_editor_server(client, *, allowed_access=frozenset({"read"}),
                     types.TextContent(type="text", text=json.dumps(proof, allow_nan=False))])
             except (ValueError, OSError, subprocess.SubprocessError) as exc:
                 return failed("Independent native export verification failed: " + str(exc))
-        if name == observed_frame_name:
+        if name in (observed_frame_name, observed_samples_name):
+            samples_mode = name == observed_samples_name
+            times = arguments["at_seconds"] if samples_mode else [arguments["at_seconds"]]
+            if (any(type(at) not in (int, float) or not math.isfinite(at)
+                    for at in times) or
+                    (samples_mode and any(a >= b for a, b in zip(times, times[1:])))):
+                return failed("Frame sample times must be finite and strictly increasing")
             identity = str(Path(arguments["path"]).resolve())
             digest = verified_exports.get(identity)
             if digest is None:
@@ -144,15 +171,41 @@ def create_editor_server(client, *, allowed_access=frozenset({"read"}),
             try:
                 async with inspection_capacity:
                     with anyio.CancelScope(shield=True):
-                        png, receipt = await anyio.to_thread.run_sync(
-                            lambda: frame_observer(arguments["path"],
-                                                   verified_sha256=digest,
-                                                   at_seconds=arguments["at_seconds"]),
+                        # All frames are sampled under one bounded inspection
+                        # lease. Never return partial images after any failure.
+                        observations = await anyio.to_thread.run_sync(
+                            lambda: [frame_observer(
+                                arguments["path"], verified_sha256=digest,
+                                at_seconds=at) for at in times],
                             abandon_on_cancel=False)
+                total_bytes = 0
+                for (png, receipt), at in zip(observations, times):
+                    total_bytes += len(png)
+                    if (not isinstance(png, bytes) or
+                            not isinstance(receipt, dict) or
+                            receipt.get("export_sha256") != digest or
+                            receipt.get("png_sha256") != hashlib.sha256(png).hexdigest() or
+                            receipt.get("sampled_video_seconds_requested") != at or
+                            len(png) > 4 * 1024 * 1024 or
+                            total_bytes > 8 * 1024 * 1024):
+                        raise ValueError("Incomplete, stale or oversized visual evidence")
+                if samples_mode:
+                    receipt = {
+                        "schema": 1,
+                        "kind": "verified_native_editor_selected_frames",
+                        "export_sha256": digest,
+                        "samples": [sample_receipt for _, sample_receipt in observations],
+                        "exact_presentation_timestamps_proven": False,
+                        "continuous_motion_or_audio_proven": False,
+                        "human_or_artistic_quality_approved": False,
+                    }
+                else:
+                    receipt = observations[0][1]
                 return types.CallToolResult(is_error=False, content=[
                     types.TextContent(type="text", text=json.dumps(receipt, allow_nan=False)),
-                    types.ImageContent(type="image", data=base64.b64encode(png).decode("ascii"),
-                                       mimeType="image/png")])
+                    *[types.ImageContent(
+                        type="image", data=base64.b64encode(png).decode("ascii"),
+                        mimeType="image/png") for png, _ in observations]])
             except (ValueError, OSError, subprocess.SubprocessError) as exc:
                 verified_exports.pop(identity, None)
                 return failed("Verified native frame observation failed: " + str(exc))
