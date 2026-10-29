@@ -59,14 +59,14 @@ class NativeSplitGuardTests(unittest.TestCase):
         result = self.check(client)
         self.assertEqual(result["preflighted_plain_source_clips"], ["clip-1"])
         self.assertFalse(result["professional_lossless_split_proven"])
-        self.assertEqual([x[0] for x in client.calls], ["get_timeline", "inspect_clip"])
+        self.assertEqual([x[0] for x in client.calls], ["inspect_clip"])
         self.assertEqual(client.clips[0]["duration"], 12)
 
     def test_actual_native_direct_clip_list_and_timeline_name_are_read_correctly(self):
         # Native standalone read tools may include a summary/name alongside
         # top-level clips; that must not be mistaken for a nested timeline.
         client = NativeReadClient(direct=True)
-        result = self.check(client)
+        result = self.check(client, {"timeSeconds": 6})
         self.assertEqual(result["preflighted_plain_source_clips"], ["clip-1"])
         self.assertEqual([x[0] for x in client.calls], ["get_timeline", "inspect_clip"])
 
@@ -78,7 +78,7 @@ class NativeSplitGuardTests(unittest.TestCase):
         client = NativeReadClient([title])
         with self.assertRaisesRegex(EditorAccessError, "discard editable clip state"):
             self.check(client)
-        self.assertEqual([x[0] for x in client.calls], ["get_timeline", "inspect_clip"])
+        self.assertEqual([x[0] for x in client.calls], ["inspect_clip"])
         self.assertEqual(client.clips[0]["keyframes"], title["keyframes"])
 
     def test_enhanced_source_edits_are_not_silently_discarded(self):
@@ -124,7 +124,7 @@ class NativeSplitGuardTests(unittest.TestCase):
 
     def test_unknown_read_capability_missing_targets_and_bad_time_fail_closed(self):
         scenarios = [
-            ({"clipId": "missing", "timeSeconds": 1}, "uniquely"),
+            ({"clipId": "missing", "timeSeconds": 1}, "does not exist"),
             ({"timeSeconds": -3}, "time"),
             ({"timeSeconds": float("nan")}, "time"),
             ({}, "time"),
