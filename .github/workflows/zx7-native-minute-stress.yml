@@ -76,6 +76,9 @@ jobs:
           data=json.loads((root/"evidence.json").read_text())
           assert data["success"] and data["technicalDemoOnly"]
           assert data["sourceOwnedGeneratedShots"]==5
+          assert len(data["physicalSourceShotOrder"])==5
+          assert [r["source_index"] for r in data["physicalSourceShotOrder"]]==list(range(5))
+          assert all(r["corners_matching_correct_shot"]>=3 for r in data["physicalSourceShotOrder"])
           assert data["editableClips"]==11 and data["editableTracks"]==7
           assert data["frames"]==1440 and data["fullDecodePassed"]
           assert data["realBoundedAudioHeard"]
