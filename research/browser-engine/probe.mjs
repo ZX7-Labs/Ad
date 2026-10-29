@@ -10,6 +10,7 @@ import {tmpdir} from 'node:os';
 import {dirname, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {parseArgs} from 'node:util';
+import {evaluateCapture} from './evaluate.mjs';
 import {
   createCaptureSession, initializeSession, captureFrame,
   closeCaptureSession, closeBrowserPool, resolveConfig,
@@ -112,8 +113,7 @@ try {
   await new Promise(ok=>server.close(ok));
   await rm(stage,{recursive:true,force:true});
 }
-const geometry=results.every(r=>r.frames.every(f=>f.geometry_matches));
-const repeats=results.every(r=>r.frames.every(f=>f.repeated_decoded_frame_matches!==false));
+const verdict=evaluateCapture(results);
 const report={schema:1,source_commit:run('git',['-C',repo,'rev-parse','HEAD']).toString().trim(),
   working_tree_dirty:!!run('git',['-C',repo,'status','--porcelain']).length,
   package_version:JSON.parse(await readFile(join(here,'node_modules/@hyperframes/engine/package.json'),'utf8')).version,
@@ -122,12 +122,16 @@ const report={schema:1,source_commit:run('git',['-C',repo,'rev-parse','HEAD']).t
   source_snapshot_reviewed:'a5496b1887950777b78ed5ac2bff3505961cb5fe',node_version:process.version,
   ffmpeg_version:run('ffmpeg',['-version']).toString().split('\n')[0],
   inkscape_version:run('inkscape',['--version']).toString().trim(),
-  fixed_fixture_geometry_passed:geometry,repeated_out_of_order_frames_passed:repeats,
+  capture_coverage_passed:verdict.coverage_passed,
+  fixed_fixture_geometry_passed:verdict.geometry_passed,
+  pixel_exact_svg_reference_passed:verdict.pixel_exact_passed,
+  repeated_out_of_order_frames_passed:verdict.repeated_passed,
+  trial_acceptance_passed:verdict.accepted,
   scope:'Known trusted opaque rectangle; native HyperFrames screenshot seeking and SVG raster reference',
   not_established:['untrusted-code sandbox','typography','audio','video injection','WebGPU','craft quality','performance ranking','autonomous model'],
   browser_worker_isolation_verified:false,
   security_note:'Upstream launch includes --no-sandbox; request interception and fixed CSP are diagnostic restrictions, not host isolation',results};
 await mkdir(dirname(resolve(values.out)),{recursive:true});
 await writeFile(values.out,JSON.stringify(report,null,2)+'\n');
-console.log(JSON.stringify({geometry_passed:geometry,repeated_frames_passed:repeats,rates:results.map(x=>x.rate)}));
-if(!geometry||!repeats)process.exitCode=1;
+console.log(JSON.stringify({...verdict,rates:results.map(x=>x.rate)}));
+if(!verdict.accepted)process.exitCode=1;

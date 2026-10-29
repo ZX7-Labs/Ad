@@ -144,16 +144,34 @@ geometry reference. This trial does not select an overall animation winner.
 
 - [x] Resolve the published package and inspect its real API/source instead of
       implementing from the README's outdated call signatures.
-- [ ] Run the locked 0.8.214 package with actual Chrome, Inkscape and FFmpeg;
-      compare requested geometry and repeated out-of-order captures at both rates.
+- [x] Run the locked 0.8.214 package with actual Chrome, Inkscape and FFmpeg;
+      compare requested geometry, decoded RGB pixels and repeated out-of-order
+      captures at both rates.
 - [ ] Record capture path, browser/dependency identities, warnings, limitations
       and actual source/build availability before deciding whether to proceed.
 
-The local package install completed. Browser installation timed out through the
-configured proxy; no local render result is claimed. The research CI has a
-bounded browser job to execute the same fixture on its actual host. The
-upstream browser launch includes `--no-sandbox`; a trusted fixed-fixture render
-cannot certify an untrusted creative-code worker. Model inference is not involved.
+The initial local package install completed but browser download timed out
+through that host's proxy; no local browser-render result is claimed. The actual
+GitHub Actions [research run](https://github.com/ZX7-Labs/Zx7-creative-studio-/actions/runs/40812941034)
+on commit `ce59bb8f2c4e9e4fadb748c7f613cab1989bc097` passed its five
+acceptance-predicate tests and native Chrome/FFmpeg/Inkscape probe. For this
+fixed opaque 64x48 rectangle fixture, all 12 captures across 12 fps and
+30000/1001 fps passed rate/frame coverage, expected rectangle geometry,
+byte-exact decoded RGB comparison with Inkscape SVG, and out-of-order repeat
+checks. Browser logs identify HeadlessChrome 153.0.8010.36, software GL and
+screenshot capture. The [run artifact](https://github.com/ZX7-Labs/Zx7-creative-studio-/actions/runs/40812941034/artifacts/12870952993)
+contains the detailed receipt; the compact verified facts are retained in
+[foundation evidence](../research/foundation-evidence.json).
+
+This test's authored HTML implements `window.__hf.seek` itself. The measured
+result validates one native capture/callback path, not GSAP/CSS animation
+semantics, audio, general artistic quality, arbitrary seeking, or model control.
+The pinned upstream source snapshot contains an Apache-2.0 license and
+`packages/engine/package.json` version 0.8.214; published-package byte
+equivalence to a reproducible source build and all transitive notices/rights
+remain unverified. Upstream Chromium runs with `--no-sandbox`; the trusted
+fixture cannot certify an untrusted creative-code worker. No inference model
+ran. Do not adopt the backend before remaining R4/source and security gates.
 
 ## P1: Exact composition clock and audio contract (after research gate)
 
