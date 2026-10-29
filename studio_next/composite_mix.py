@@ -11,6 +11,7 @@ brand/font presets, forced scene counts or genre-based edits.
 from __future__ import annotations
 
 import copy
+from fractions import Fraction
 import json
 import math
 import os
@@ -148,6 +149,15 @@ def _decoded_source_duration(path,kind):
     if not math.isfinite(duration) or duration<=0:
         raise ValueError("Original "+kind+" stream has no finite decodable duration")
     return duration
+
+def _audio_sample_index(seconds, rate):
+    """Half-even quantization of legacy decimal seconds to integer samples.
+
+    Float multiplication can nudge an exact half-sample to the wrong side
+    of its tie. The existing validated seconds input remains unchanged.
+    """
+    return round(Fraction(str(seconds)) * rate)
+
 
 def _decoded_audio_sample_rate(path):
     """Read the first decoded audio stream's native sample clock.
@@ -345,7 +355,7 @@ def actual_composite_command(plan,workspace,vault,out):
     music=[]
     source_audio_rates={}
     bus_rate=48000
-    bus_end_samples=round(secs*bus_rate)
+    bus_end_samples=_audio_sample_index(secs,bus_rate)
     if bus_end_samples<=0:
         raise ValueError("Composition duration is shorter than one audio sample")
     native_input_index=0
@@ -422,12 +432,12 @@ def actual_composite_command(plan,workspace,vault,out):
             if row["file"] not in source_audio_rates:
                 source_audio_rates[row["file"]]=_decoded_audio_sample_rate(row["file"])
             source_rate=source_audio_rates[row["file"]]
-            source_first=round(source_in*source_rate)
-            source_length=round(duration*source_rate)
+            source_first=_audio_sample_index(source_in,source_rate)
+            source_length=_audio_sample_index(duration,source_rate)
             if source_length<=0:
                 raise ValueError("Audio trim is shorter than one source sample")
             source_end=source_first+source_length
-            lag_samples=round(start*bus_rate)
+            lag_samples=_audio_sample_index(start,bus_rate)
             effects=(f"[{source_index}:a:0]atrim=start_sample={source_first}:"
                 f"end_sample={source_end},"
                 "asetpts=PTS-STARTPTS,aresample=48000,"
