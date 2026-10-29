@@ -211,6 +211,16 @@ async def exercise(options):
         title = next(clip for clip in timeline["clips"] if clip["id"] == title_id)
         assert title["textProperties"]["text"] == "MCP revised"
         assert title["keyframes"] == next(clip for clip in saved["timelines"][0]["clips"] if clip["id"] == title_id)["keyframes"]
+        # The pinned upstream razor drops arbitrary effects/keyframes on its
+        # new right-hand clip. Never silently let BODY split an animated title.
+        forbidden = await session.call_tool("split_clip", {
+            "clipId": title_id, "timeSeconds": 1, "previewOnly": False})
+        assert forbidden.is_error and "discard editable clip state" in forbidden.content[0].text, forbidden
+        unchanged = await call(session, "get_timeline", {"includeClips": True})
+        assert len(unchanged["clips"]) == 3
+        preserved = next(clip for clip in unchanged["clips"] if clip["id"] == title_id)
+        assert preserved["keyframes"] == title["keyframes"]
+        assert digest(native_path) == digest(fixture / "revision-2.comfystudio")
     probe = json.loads(run([ffprobe, "-v", "error", "-count_frames", "-show_streams", "-show_format", "-of", "json", str(output)]))
     video = next(stream for stream in probe["streams"] if stream["codec_type"] == "video")
     audio = next(stream for stream in probe["streams"] if stream["codec_type"] == "audio")

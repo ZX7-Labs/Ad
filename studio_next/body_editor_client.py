@@ -201,6 +201,13 @@ class LocalEditorClient:
         arguments = _json_arguments(arguments)
         if self._policy is not None and self._policy(tool_name, arguments, access) is not True:
             raise EditorAccessError("Native tool rejected by host policy")
+        if tool_name == "split_clip":
+            # Protect every host-granted BODY client route (catalog, CLI and
+            # official MCP), not just the stdio bridge. The pinned upstream
+            # right-hand razor does not preserve general effects/keyframes.
+            from .body_editor_split_guard import preflight_non_destructive_native_split
+            preflight_non_destructive_native_split(
+                self, arguments, allowed_access=allowed_access)
         result = self._rpc("tools/call", {"name": tool_name, "arguments": arguments})
         if (not isinstance(result, dict) or not isinstance(result.get("content"), list)
                 or ("isError" in result and type(result["isError"]) is not bool)):

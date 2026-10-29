@@ -175,6 +175,57 @@ class LocalEditorClientTests(unittest.TestCase):
                 self.client().call("read", arguments)
         self.assertEqual(self.requests, [])
 
+    def test_all_body_native_client_routes_reject_lossy_razor_before_any_write(self):
+        # Actual loopback JSON-RPC client exercising the same grant checks used
+        # by both the catalog and official stdio bridge, not just a pure mock.
+        clip = {
+            "id": "clip-artist", "trackId": "video-1",
+            "type": "video", "startTime": 0, "duration": 12,
+            "speed": 1, "reverse": False, "frameSampling": "frame",
+            "sourceTimeScale": 1, "compositeLowerLayers": "auto",
+            "transform": {"opacity": 100, "scaleX": 100},
+            "keyframes": {"opacity": [{"time": 0, "value": 0},
+                                      {"time": 2, "value": 100}]},
+        }
+        def reply(request):
+            name = request["params"]["name"]
+            if name == "get_timeline":
+                data = {"timeline": {"clips": [{
+                    "id": clip["id"], "startTime": 0, "duration": 12}],
+                    "clipLimitApplied": None}}
+            elif name == "inspect_clip":
+                data = {"clip": clip}
+            elif name == "split_clip":
+                data = {"success": True}
+            else:
+                raise AssertionError("Unexpected native operation")
+            return {"jsonrpc": "2.0", "id": request["id"],
+                    "result": {"content": [{"type": "text", "text": json.dumps(data)}]}}
+        self.reply = reply
+        client = LocalEditorClient(self.endpoint, allowed_tools={
+            "get_timeline": "read", "inspect_clip": "read", "split_clip": "write"})
+        with self.assertRaisesRegex(EditorAccessError, "discard editable clip state"):
+            client.call("split_clip", {
+                "clipId": "clip-artist", "timeSeconds": 6,
+                "previewOnly": False}, allowed_access={"read", "write"})
+        self.assertEqual([r["params"]["name"] for r in self.requests],
+                         ["inspect_clip"])
+        self.assertIn("keyframes", clip)
+        clip.pop("keyframes")
+        successful = client.call("split_clip", {
+            "clipId": "clip-artist", "timeSeconds": 6,
+            "previewOnly": False}, allowed_access={"read", "write"})
+        self.assertEqual(json.loads(successful["content"][0]["text"])["success"], True)
+        self.assertEqual([r["params"]["name"] for r in self.requests[-2:]],
+                         ["inspect_clip", "split_clip"])
+
+    def test_split_without_granted_read_inspection_has_no_native_write(self):
+        client = LocalEditorClient(self.endpoint, allowed_tools={"split_clip": "write"})
+        with self.assertRaisesRegex(EditorAccessError, "host-granted read"):
+            client.call("split_clip", {"clipId": "clip-1", "timeSeconds": 2,
+                                       "previewOnly": False}, allowed_access={"read", "write"})
+        self.assertEqual(self.requests, [])
+
     def cli(self, request, permissions=None):
         with tempfile.TemporaryDirectory() as root:
             file = Path(root, "host.json")

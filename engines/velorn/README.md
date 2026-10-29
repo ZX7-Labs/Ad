@@ -164,4 +164,18 @@ This is a trusted local transport, not an autonomous-model security boundary. Py
 
 The upstream MCP endpoint is unauthenticated loopback at a fixed port; all 130 native tools lack security annotations. Instance identity/token, OS filesystem/network/resource isolation and production completion/progress integration remain release requirements. The application can request Google Fonts and optional services; network-off operation needs egress control or an audited fork patch.
 
+Native split safety: at pinned upstream commit `b3c02adb`, the native
+`split_clip` can leave arbitrary effects/keyframes on the left clip rather
+than preserving them on the new right clip. BODY's granted Python native
+client now **preflights the full target clips** using actual `get_timeline`
+and `inspect_clip` read operations. It refuses unknown/enhanced clips and
+does not send the destructive split call; clean source clips remain splittable.
+Without granted read inspection, a split fails closed. This is explicitly a
+**temporary protective measure, not a lossless split implementation**. The
+raw upstream loopback MCP port and native GUI can bypass this BODY boundary;
+do not treat this as a sandbox or concurrency-safe OS transaction. Lossless
+professional effect/keyframe-aware razor behavior, source-clock retiming,
+native saves and physical rendered pixels remain pending investigation in
+[Issue #72](https://github.com/ZX7-Labs/Zx7-creative-studio-/issues/72).
+
 Native source limitations: audio envelope/EQ and spline-point animation remain partly UI-only; variable video speed does not cover all audio retiming; interchange can lose native styling and rejects editable compounds. MCP checkpoints are memory-only; durable named versions require preserving native files. `export_timeline` has no status tool, so the fixture observes the existing worker log and decodes the output. Use separate title tracks to avoid native overwrite semantics, explicit custom ranges to avoid the default 60-second extent, and `h264_project` for project/custom dimensions. Graphics-only MCP exports are rejected by an older readiness check.

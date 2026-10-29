@@ -49,6 +49,27 @@ class EditorCatalogTests(unittest.TestCase):
             catalog.invoke("body.editor.get_project", {"arguments": {}})
             self.assertEqual(editor.calls[0][0], "get_project")
 
+    def test_source_inspection_for_split_does_not_grant_model_other_writes(self):
+        editor = Editor()
+        editor.allowed_tools = {**editor.allowed_tools,
+            "get_timeline": "read", "inspect_clip": "read", "split_clip": "write"}
+        original = editor.list_tools
+        editor.list_tools = lambda: original() + [
+            {"name": name, "inputSchema": {"type": "object"}}
+            for name in ("get_timeline", "inspect_clip", "split_clip")]
+        with tempfile.TemporaryDirectory() as root:
+            catalog = body_catalog(root, editor_client=editor)
+            args = {"clipId": "clip-original", "timeSeconds": 1, "previewOnly": False}
+            with self.assertRaises(PermissionError):
+                catalog.invoke("body.editor.split_clip", {"arguments": args}, {"read"})
+            self.assertFalse(editor.calls)
+            catalog.invoke("body.editor.split_clip", {"arguments": args}, {"write"})
+            self.assertEqual(editor.calls[-1], (
+                "split_clip", args, frozenset({"read", "write"})))
+            catalog.invoke("body.editor.update_text_clip", {
+                "arguments": {"clipId": "original"}}, {"write"})
+            self.assertEqual(editor.calls[-1][2], frozenset({"write"}))
+
     def test_missing_granted_tool_fails_discovery(self):
         editor = Editor()
         editor.allowed_tools = {"removed_tool": "write"}
