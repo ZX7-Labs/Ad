@@ -62,7 +62,6 @@ async def main(args):
         "receipt": str(args.receipt),
         "native_editing_capability_complete": False,
         "artistic_quality_independently_approved": False,
-        "this_was_a_scripted_timeline_fixture": False,
         "neural_autonomy_independently_verified": False,
     }, ensure_ascii=False))
 
