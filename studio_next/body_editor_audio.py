@@ -127,7 +127,8 @@ def observe_verified_export_audio(
         "preview_channels": 1,
         "preview_sample_bits": 16,
         "preview_downmixed_and_resampled": True,
-        "preview_rms_dbfs": -math.inf if power == 0 else 20 * math.log10(
+        "preview_is_silent": power == 0,
+        "preview_rms_dbfs": None if power == 0 else 20 * math.log10(
             math.sqrt(power / (len(pcm) // 2)) / 32768),
         "preview_peak_normalized": peak / 32768,
         "pcm_sha256": hashlib.sha256(pcm).hexdigest(),
