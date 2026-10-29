@@ -7,7 +7,7 @@ import subprocess
 import tempfile
 import unittest
 
-from studio_next.body_editor_frame import observe_verified_export_frame
+from studio_next.body_editor_frame import observe_verified_export_frame, _verified_png_dimensions
 from studio_next.body_editor_policy import EditorPathPolicy
 from studio_next.body_editor_client import EditorAccessError
 from studio_next.media_vault import sha256_file
@@ -61,6 +61,14 @@ class NativeEditorVisualFeedbackTests(unittest.TestCase):
             png, receipt = self.sample(at_seconds=0.25)
         self.assertEqual(len(calls), 1)
         self.assertEqual(receipt["png_sha256"], hashlib.sha256(png).hexdigest())
+
+    def test_complete_image_requires_real_chunk_integrity_and_iend(self):
+        png, _ = self.sample(at_seconds=0.5)
+        self.assertEqual(_verified_png_dimensions(png), (320, 180))
+        for corrupted in (png[:24], png[:-12], png + b"trailing-bytes",
+                          png[:30] + bytes([png[30] ^ 1]) + png[31:]):
+            with self.subTest(size=len(corrupted)), self.assertRaises(ValueError):
+                _verified_png_dimensions(corrupted)
 
     def test_bad_time_and_bad_hash_fail_closed(self):
         for time_value in (float("nan"), float("inf"), -1, True, 1.1):
