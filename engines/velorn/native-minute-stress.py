@@ -101,7 +101,17 @@ async def exercise(options):
 
     async with connected() as session:
         discovered = (await session.list_tools()).tools
-        assert {tool.name for tool in discovered} == set(tools) | {"zx7_verify_native_export", "zx7_observe_verified_export_frame", "zx7_observe_verified_export_samples", "zx7_observe_verified_export_audio"}
+        discovered_names = {tool.name for tool in discovered}
+        body_tools = discovered_names - set(tools)
+        mandatory = {"zx7_verify_native_export", "zx7_observe_verified_export_frame",
+                     "zx7_observe_verified_export_samples", "zx7_observe_verified_export_audio"}
+        # Current main and its next in-field observation extension may expose
+        # different read-only BODY tools; the full 77 native schemas remain
+        # exact, and unknown/ungranted host tools cannot silently appear.
+        allowed_body = mandatory | {"zx7_observe_verified_export_audio_timeline"}
+        assert mandatory.issubset(body_tools), sorted(body_tools)
+        assert body_tools.issubset(allowed_body), sorted(body_tools)
+        assert discovered_names == set(tools) | body_tools
         from studio_next.body_editor_client import LocalEditorClient
         native = {tool["name"]: tool for tool in LocalEditorClient(
             "http://127.0.0.1:19790/mcp", allowed_tools={}).list_tools()}
@@ -247,7 +257,7 @@ async def exercise(options):
     assert .015 < audio_rms < .2
     receipt = {"success": True, "kind": "scripted official SDK client; no autonomous model evaluation",
         "transport": "standard MCP stdio; Python SDK 2.3.0", "nativeSchemasUnchanged": True,
-        "discoveredGrantedTools": len(tools), "additionalVerifiedBodyTools": 4, "physicalVisualFrameObserved": True,
+        "discoveredGrantedTools": len(tools), "additionalVerifiedBodyTools": len(body_tools), "physicalVisualFrameObserved": True,
         "physicalEditorExportIndependentlyDecoded": True, "realBoundedAudioHeard": True,
         "deniedNetworkTool": True, "deniedOutsideImport": True,
         "existingSourceExportDenied": True, "outsideNativeDocumentDenied": True,
