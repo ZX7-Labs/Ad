@@ -32,8 +32,9 @@ def observe_verified_export_frame(path: str, *, policy: EditorPathPolicy,
     if not isinstance(policy, EditorPathPolicy) or not policy(
             "inspect_export_file", {"path": path}, "read"):
         raise EditorAccessError("Frame observation denied by native editor host policy")
-    if Path(path).suffix.lower() not in VIDEO_EXTENSIONS or not _no_path_symlinks(
-            Path(path), (policy.outputs_root, policy.projects_root)):
+    if (not Path(path).resolve().is_relative_to(policy.outputs_root)
+            or Path(path).suffix.lower() not in VIDEO_EXTENSIONS or not _no_path_symlinks(
+                Path(path), (policy.outputs_root,))):
         raise EditorAccessError("Frame observation refuses unsupported or linked exports")
     if not isinstance(verified_sha256, str) or not _DIGEST.fullmatch(verified_sha256):
         raise ValueError("An issued physical export SHA256 is required")
