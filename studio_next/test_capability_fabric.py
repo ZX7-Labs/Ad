@@ -63,6 +63,22 @@ class CapabilityFabricTests(unittest.TestCase):
         with self.assertRaisesRegex(CapabilityContractError, "Stale"):
             updated.resolve("video/export_media", revision=old.revision)
 
+    def test_actual_2b_single_word_create_query_does_not_choose_wrong_project_api(self):
+        source = [
+            tool("create_asset_folder", "Preview or create native asset-panel folders"),
+            tool("create_project", "Create a real editable native project"),
+            tool("create_timeline", "Create a video timeline inside an open project"),
+        ]
+        f = CapabilityFabric({"editor": (source, {x.name: "write" for x in source})})
+        broad = f.search("create", limit=1)
+        self.assertTrue(broad["requires_refinement"])
+        self.assertFalse(broad["matches"])
+        self.assertIn("editor/create_project",
+                      [x["id"] for x in broad["candidate_examples"]])
+        specific = f.search("create project", limit=3)
+        self.assertFalse(specific.get("requires_refinement", False))
+        self.assertEqual(specific["matches"][0]["id"], "editor/create_project")
+
     def test_1000_tool_catalog_is_only_short_result_not_1000_md_pages(self):
         tools = [tool(f"operation_{i:04d}", f"Color grade and geometry control {i}",
                       {f"native_value_{i}": {"type": "number"}})
