@@ -502,6 +502,7 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
                 "native_tool_submitted", "native_tool_result", "model_finished"])
             rejected = result["events"][1]
             self.assertEqual(rejected["validation_keyword"], "type")
+            self.assertEqual(rejected["schema_location"], "properties/clipId/type")
             self.assertTrue(rejected["no_native_dispatch"])
             self.assertNotIn("clipId", json.dumps(rejected))
             self.assertEqual(model.observed[1]["latest_events"][-1]["kind"],
