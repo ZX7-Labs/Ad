@@ -3,7 +3,8 @@ import json
 from types import SimpleNamespace
 import unittest
 
-from studio_next.capability_fabric import CapabilityFabric, CapabilityContractError
+from studio_next.capability_fabric import (
+    CapabilityFabric, CapabilityContractError, LiveCapabilityRegistry)
 
 
 def tool(name, desc="", properties=None, **extra):
@@ -249,6 +250,53 @@ class LiveMachineDiscoveryTests(unittest.IsolatedAsyncioTestCase):
                 return SimpleNamespace(tools=[tool("first")], nextCursor="another-page")
         with self.assertRaisesRegex(CapabilityContractError, "paginated"):
             await CapabilityFabric.from_connections({"video": (Paged(), {"first": "read"})})
+
+
+class AtomicCapabilityRegistryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_unannounced_future_tool_appears_on_host_refresh_not_in_model_prose(self):
+        class Runtime:
+            def __init__(self, name):
+                self.operations = [tool("render", "Render actual native output")]
+            async def list_tools(self):
+                return SimpleNamespace(tools=self.operations)
+        video, vfx = Runtime("video"), Runtime("vfx")
+        registry = LiveCapabilityRegistry({"video": (video, {"render": "write"})})
+        with self.assertRaises(CapabilityContractError):
+            registry.snapshot()
+        before = await registry.refresh()
+        old_revision = before["revision"]
+        self.assertEqual(before["sources"], {"video": 1})
+        vfx.operations.append(tool("particle_simulation", "Simulate dynamic VFX particles"))
+        new = await registry.refresh(host_connections={
+            "video": (video, {"render": "write"}),
+            "vfx": (vfx, {"render": "write", "particle_simulation": "write"})})
+        self.assertEqual(new["sources"], {"vfx": 2, "video": 1})
+        self.assertNotEqual(new["revision"], old_revision)
+        self.assertEqual(registry.snapshot().search("particles")["matches"][0]["id"],
+                         "vfx/particle_simulation")
+        with self.assertRaisesRegex(CapabilityContractError, "Stale"):
+            registry.select("video/render", revision=old_revision)
+
+    async def test_failed_refresh_does_not_erase_existing_working_capabilities(self):
+        class Engine:
+            def __init__(self):
+                self.fail = False
+            async def list_tools(self):
+                if self.fail:
+                    raise ConnectionError("Native process unavailable")
+                return SimpleNamespace(tools=[tool("create", "Create project")])
+        engine = Engine()
+        registry = LiveCapabilityRegistry({"video": (engine, {"create": "write"})})
+        before = await registry.refresh()
+        engine.fail = True
+        with self.assertRaises(ConnectionError):
+            await registry.refresh()
+        self.assertEqual(registry.snapshot().revision, before["revision"])
+        self.assertEqual(registry.snapshot().count, 1)
+        with self.assertRaises(CapabilityContractError):
+            await registry.refresh(host_connections={})
+        self.assertEqual(registry.snapshot().revision, before["revision"])
+
 
 
 if __name__ == "__main__":
