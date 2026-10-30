@@ -641,9 +641,11 @@ class NativeCreativeControl:
             for turn in range(self.max_turns):
                 context = {
                     "creative_brief": brief,
-                    "available_actions": (["search", "describe", "invoke", "finish"]
-                                          if self.catalog_mode == "indexed" else
-                                          ["discover", "describe", "invoke", "finish"]),
+                    "available_actions": ((
+                        ["search", "describe", "invoke", "finish"]
+                        if self._selectable_tools else ["search", "finish"])
+                        if self.catalog_mode == "indexed" else
+                        ["discover", "describe", "invoke", "finish"]),
                     "actual_granted_native_tools": (
                         [] if self.catalog_mode == "indexed" else list(self.tools)),
                     "compact_tool_catalog": self.catalog_mode == "indexed",
