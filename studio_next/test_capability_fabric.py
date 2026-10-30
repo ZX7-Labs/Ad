@@ -204,12 +204,44 @@ class LiveMachineDiscoveryTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(CapabilityContractError, "Stale"):
             after.describe("video/create_project", revision=before.revision)
 
-    async def test_paginated_or_ungranted_sources_never_claim_complete_discovery(self):
+    async def test_complete_cursor_paged_catalog_supports_late_future_capability(self):
         class Paged:
+            async def list_tools(self, *, cursor=None):
+                if cursor is None:
+                    return SimpleNamespace(tools=[tool("first", "Native render")],
+                                           nextCursor="opaque-stage-1")
+                if cursor == "opaque-stage-1":
+                    return SimpleNamespace(tools=[tool("future_fx", "Native future VFX")],
+                                           nextCursor=None)
+                raise AssertionError("Caller invented a cursor")
+        state = await CapabilityFabric.from_connections({
+            "video": (Paged(), {"first": "read", "future_fx": "write"})})
+        self.assertEqual(state.count, 2)
+        self.assertEqual(state.search("future VFX")["matches"][0]["id"], "video/future_fx")
+
+    async def test_cursorless_adapter_and_repeated_cursor_fail_closed(self):
+        class NonPaging:
             async def list_tools(self):
-                return SimpleNamespace(tools=[tool("first")], nextCursor="another-page")
-        with self.assertRaisesRegex(CapabilityContractError, "paginated"):
-            await CapabilityFabric.from_connections({"video": (Paged(), {"first": "read"})})
+                return SimpleNamespace(tools=[tool("first")], nextCursor="next")
+        class Cycling:
+            async def list_tools(self, *, cursor=None):
+                return SimpleNamespace(tools=[tool("first")], nextCursor="same-token")
+        for session in (NonPaging(), Cycling()):
+            with self.subTest(session=type(session).__name__), self.assertRaises(
+                CapabilityContractError):
+                await CapabilityFabric.from_connections({
+                    "video": (session, {"first": "read"})})
+
+    async def test_large_paged_catalog_rejects_unbounded_page_stream(self):
+        class Giant:
+            async def list_tools(self, *, cursor=None):
+                return SimpleNamespace(tools=[
+                    tool(f"tool_{cursor or 0}_{i}") for i in range(3000)],
+                    nextCursor="next" if cursor is None else None)
+        with self.assertRaisesRegex(CapabilityContractError, "budget"):
+            await CapabilityFabric.from_connections({
+                "video": (Giant(), {})})
+
 
 
     def test_trusted_machine_effect_frontier_is_cross_domain_and_not_autoplay(self):
