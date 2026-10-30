@@ -220,6 +220,18 @@ def audit_native_journal(events, *, host_tool_access):
                         for tool in tools) or len(set(tools)) != len(tools)):
                 raise NativeJournalError("Search fabricated an ungranted native capability")
             continue
+        if kind == "model_finish_rejected":
+            unmet = event.get("unmet_evidence")
+            if (pending is not None or
+                    not isinstance(unmet, list) or not 1 <= len(unmet) <= 3 or
+                    len(set(unmet)) != len(unmet) or
+                    any(x not in {"native_mutation", "verified_export",
+                                  "observed_export"} for x in unmet) or
+                    not _sha(event.get("summary_sha256")) or
+                    event.get("no_native_dispatch") is not True or
+                    event.get("creative_quality_independently_approved") is not False):
+                raise NativeJournalError("Premature finish lacks trustworthy negative evidence")
+            continue
         if kind == "model_action_rejected":
             # Input-schema preflight rejected a model proposal BEFORE any RPC.
             # This is safe to correct, unlike an unknown native write result.
