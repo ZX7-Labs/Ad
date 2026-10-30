@@ -200,6 +200,38 @@
       "native_video_field_complete": false,
       "failure": "The host produced a true absent-project snapshot before neural inference. The pinned 2B model nevertheless attempted import_asset_from_path without an existing open project. The real native editor failed closed; no project, edit or export was produced.",
       "decision_implication": "Project sensing is working. Tool argument safety is working. Neural multi-step precondition comprehension remains insufficient; evaluate the replaceable brain rather than merely adding ad hoc controller patches."
+    },
+    {
+      "body_commit": "8083e8f7cd48f2d1eca2b845de3b06209ad28a18",
+      "workflow_run": 41027875121,
+      "artifact_id": 12964990638,
+      "artifact_zip_sha256": "916722121e1144c5e9de1a9293cd03722d859502a48dae862ac60a40e1ef8289",
+      "model": "unsloth/Qwen3.5-2B-GGUF",
+      "quantization": "Q4_K_M",
+      "cpu_only": true,
+      "actual_inference_turns": 6,
+      "measured_inference_wall_seconds_sum": 142.649,
+      "model_selected_actions": {
+        "search": 3,
+        "discover": 1,
+        "invoke": 2
+      },
+      "model_selected_native_tool_names": [
+        "get_project",
+        "search"
+      ],
+      "successful_native_editor_results": 1,
+      "successful_native_editor_reads": 1,
+      "successful_native_editor_writes": 0,
+      "verified_exports": 0,
+      "host_project_bootstrap_observed": "absent",
+      "technical_trial_completed": false,
+      "status": "native_controller_rejected_invented_tool",
+      "terminal_event": "model_decision_failed",
+      "root_cause": "In compact indexed discovery mode, unconstrained invoke.tool JSON string let 2B model mistake the protocol action search for a native editor tool; BODY rejected it before any native dispatch.",
+      "next_fix": "Only the small set of tools returned by live host-granted search may appear in the next model's structured invoke/describe grammar; no giant static tool enumeration.",
+      "artistic_quality_approved": false,
+      "native_video_field_complete": false
     }
   ]
 }
