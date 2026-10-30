@@ -155,6 +155,14 @@ sample rate and binary-to-receipt identity. The model server and weights
 **must** truly support audio for this to work. Accepted transport and a
 model response do **not** prove correct interpretation of music, dialogue,
 spatial mix or mastered sound; independent native model trials are still due.
+The local model gateway reports **measured monotonic wall time** for each
+completed model decision and native MCP call, and includes aggregate timing
+in its final response. If the actual local inference server supplies numeric
+token counts, they are preserved as `local_server_reported_token_usage`;
+otherwise the field is null, **not zero**. These counts are not independently
+tokenized, do not include an independently measured VRAM/RAM/power budget, and
+must never be presented as verified inference performance or artistic quality.
+
 The receipt is local mode 0600, never overwritten;
 after uncertain execution the current project must be reconciled manually
 before any deliberate continuation.
