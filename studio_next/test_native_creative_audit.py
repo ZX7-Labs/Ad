@@ -71,6 +71,7 @@ class NativeCreativeAuditTests(unittest.TestCase):
     def test_new_edit_invalidates_previous_export_and_frame_completion_proofs(self):
         events = trace()
         required = ["native_write_acknowledged", "physical_export_verified",
+                    "post_observation_native_write_acknowledged",
                     "verified_export_frame_observed"]
         # Existing technical proof has two verified exports and observed frames.
         # A later native revision makes all historical frames stale for
@@ -102,9 +103,32 @@ class NativeCreativeAuditTests(unittest.TestCase):
         self.assertEqual(checked["observed_verified_export_digests"], [A, B])
         self.assertFalse(checked["video_editing_capability_complete"])
 
+    def test_post_observation_revision_requires_a_real_native_write(self):
+        events = trace()
+        # A first edit/export/frame is insufficient to prove the requested
+        # review-and-revision loop. Remove the later edit, keeping both valid
+        # frame reads. The auditor must not infer a revision from the model.
+        events = [event for event in events if not (
+            event.get("tool") == "update_text_clip" and event.get("turn") == 5)]
+        for index, event in enumerate(events):
+            event["sequence"] = index
+        required = ["post_observation_native_write_acknowledged"]
+        events[0]["required_completion_evidence"] = required
+        with self.assertRaisesRegex(NativeJournalError, "unresolved native write"):
+            audit_native_journal(events, host_tool_access=HOST,
+                                 expected_required_evidence=required)
+        events[-1] = {
+            "sequence": len(events) - 1, "kind": "model_finish_rejected",
+            "turn": 9, "no_native_dispatch": True,
+            "missing_completion_evidence": required}
+        verified = audit_native_journal(
+            events, host_tool_access=HOST, expected_required_evidence=required)
+        self.assertTrue(verified["host_completion_policy_independently_matched"])
+
     def test_host_required_completion_evidence_is_independently_recomputed(self):
         original = trace()
         required = ["native_write_acknowledged", "physical_export_verified",
+                    "post_observation_native_write_acknowledged",
                     "verified_export_frame_observed"]
         original[0]["required_completion_evidence"] = required
         refusal = {"kind": "model_finish_rejected", "turn": 0,
