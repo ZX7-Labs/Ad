@@ -138,6 +138,31 @@ def audit_native_journal(events, *, host_tool_access):
             continue
         if i == 0:
             continue
+        if kind in ("host_project_bootstrap_observation", "host_project_bootstrap_error"):
+            if (i != 1 or pending is not None or
+                    event.get("tool") != "get_project" or
+                    host_tool_access.get("get_project") != "read" or
+                    event.get("host_attested_read_only") is not True):
+                raise NativeJournalError("Host bootstrap project read lacks read-only evidence")
+            if kind == "host_project_bootstrap_observation":
+                text_hashes = event.get("text_sha256")
+                if (not isinstance(text_hashes, list) or len(text_hashes) != 1 or
+                        not all(_sha(x) for x in text_hashes) or
+                        event.get("project_presence") not in ("unknown", "absent", "present") or
+                        event.get("no_model_selected_mutation") is not True):
+                    raise NativeJournalError("Project bootstrap did not preserve bounded host read proof")
+            else:
+                digest = event.get("error_sha256")
+                oversized = event.get("error_text_exceeded_evidence_budget")
+                etype = event.get("error_type")
+                reported = (type(oversized) is bool and
+                            ((digest is None) == oversized) and
+                            (digest is None or _sha(digest)) and etype is None)
+                exception = (isinstance(etype, str) and bool(etype) and
+                             digest is None and oversized is None)
+                if not (reported or exception):
+                    raise NativeJournalError("Malformed failed project bootstrap evidence")
+            continue
         if kind == "model_decision_failed":
             duration = event.get("measured_model_wall_ms")
             if (pending is not None or i != len(events) - 1 or
