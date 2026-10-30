@@ -198,6 +198,10 @@ async def trial(args, lock, artifacts, command):
                     receipt_path=artifacts / 'native-journal.jsonl',
                     host_tool_access=host,
                     host_tool_requirements=requirements,
+                    # Trial acceptance requires recorded physical native
+                    # evidence, not a model-authored claim of completion.
+                    required_evidence=("native_mutation", "verified_export",
+                                       "observed_export"),
                     catalog_mode="indexed").run(brief), timeout=2400)
     audit = audit_native_journal(read_native_journal(artifacts / 'native-journal.jsonl'), host_tool_access=host)
     (artifacts / 'journal-audit.json').write_text(json.dumps(audit, indent=2))
