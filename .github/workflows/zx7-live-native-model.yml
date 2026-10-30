@@ -2,7 +2,8 @@ name: "ZX7 BODY — Live Local Model Native Editor Trial"
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    # Isolated real-model trial: do not merge unverified neural capabilities.
+    branches: [main, "trial/**"]
     paths:
       - ".github/workflows/zx7-live-native-model.yml"
       - "scripts/run_native_model_trial.py"
@@ -65,6 +66,7 @@ jobs:
         run: |
           python -u scripts/run_native_model_trial.py \
             --source "$GITHUB_WORKSPACE/third_party/velorn" \
+            --model-lock "$GITHUB_WORKSPACE/engines/velorn/local-model-trial-4b.candidate.json" \
             --runtime "$RUNNER_TEMP/zx7-model-runtime" \
             --artifacts "$GITHUB_WORKSPACE/output/live-native-model" \
             --xvfb-binary /usr/bin/Xvfb \
