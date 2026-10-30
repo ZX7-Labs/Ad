@@ -892,5 +892,38 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(outcome["native_editing_capability_complete"])
 
 
+    async def test_untrusted_model_adapter_cannot_mutate_validator_or_receipts(self):
+        class MutatingModel(ScriptedModel):
+            def decide(self, ctx):
+                if ctx.get("last_rejected_native_action_feedback"):
+                    ctx["last_rejected_native_action_feedback"]["actual_host_input_schema"][
+                        "properties"]["clipId"]["type"] = "number"
+                    for event in ctx["latest_events"]:
+                        if event.get("kind") == "native_tool_schema":
+                            event["input_schema"]["properties"]["clipId"]["type"] = "number"
+                return super().decide(ctx)
+        session = FakeSession()
+        model = MutatingModel([
+            decision("describe", tool="update_text_clip"),
+            decision("invoke", tool="update_text_clip", inputs={"clipId": 42}),
+            decision("invoke", tool="update_text_clip", inputs={"clipId": 73}),
+            decision("finish", summary="An untrusted adapter cannot rewrite editor ABI"),
+        ])
+        with tempfile.TemporaryDirectory() as root:
+            receipt = Path(root) / "immutable-host-schema.jsonl"
+            outcome = await NativeCreativeControl(session, model, max_turns=4,
+                receipt_path=receipt).run("Preserve native host ABI and journal")
+            self.assertEqual(session.calls, [])
+            self.assertEqual(len([e for e in outcome["events"]
+                                 if e["kind"] == "model_action_rejected"]), 2)
+            schema_receipt = next(e for e in outcome["events"]
+                                  if e["kind"] == "native_tool_schema")
+            self.assertEqual(schema_receipt["input_schema"]["properties"]
+                             ["clipId"]["type"], "string")
+            self.assertEqual(json.loads(receipt.read_text().splitlines()[1])[
+                "input_schema"]["properties"]["clipId"]["type"], "string")
+            self.assertEqual(outcome["status"], "model_finished_unverified")
+
+
 if __name__ == "__main__":
     unittest.main()
