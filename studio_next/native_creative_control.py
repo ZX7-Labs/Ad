@@ -465,6 +465,11 @@ class NativeCreativeControl:
                                   "inputs_sha256": hashlib.sha256(
                                       _wire(args["inputs"]).encode()).hexdigest(),
                                   "validation_keyword": str(invalid.validator or "unknown")[:64],
+                                  # Only paths from the *host's schema*, not
+                                  # model input values or user-owned keys.
+                                  "schema_location": "/".join(
+                                      str(piece)[:64] for piece in
+                                      list(invalid.schema_path)[:16])[:512],
                                   "no_native_dispatch": True})
                     continue
                 self._append({"kind": "native_tool_submitted", "turn": turn,
