@@ -64,7 +64,16 @@ jobs:
         run: |
           python -m pip wheel --no-deps --wheel-dir output/body-release-proof/wheels .
           python -m venv --system-site-packages "$RUNNER_TEMP/zx7-body-installed"
-          "$RUNNER_TEMP/zx7-body-installed/bin/python" -m pip install --no-deps output/body-release-proof/wheels/*.whl
+          # This venv deliberately inherits global site packages. The test
+          # install above already registers the same package version, so plain
+          # pip exits "already satisfied" and never creates venv CLI scripts.
+          # Install the exact built wheel into THIS venv even when a globally
+          # visible copy has the same version.
+          "$RUNNER_TEMP/zx7-body-installed/bin/python" -m pip install --ignore-installed --no-deps output/body-release-proof/wheels/*.whl
+          test -x "$RUNNER_TEMP/zx7-body-installed/bin/zx7-client"
+          test -x "$RUNNER_TEMP/zx7-body-installed/bin/zx7-desktop"
+          test -x "$RUNNER_TEMP/zx7-body-installed/bin/zx7-archive"
+          test -x "$RUNNER_TEMP/zx7-body-installed/bin/zx7-relink-otio"
           python -m venv "$RUNNER_TEMP/zx7-body-minimal"
           "$RUNNER_TEMP/zx7-body-minimal/bin/python" -m pip install --no-deps output/body-release-proof/wheels/*.whl
           "$RUNNER_TEMP/zx7-body-minimal/bin/python" -I - <<'PY'
