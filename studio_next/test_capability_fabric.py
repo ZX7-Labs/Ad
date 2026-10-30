@@ -136,5 +136,81 @@ class CapabilityFabricTests(unittest.TestCase):
                          "video/add_title")
 
 
+    def test_explicit_trusted_state_preconditions_not_model_guessing(self):
+        sources = {"motion": ([tool("create_motion", "Create keyframe animation"),
+                               tool("render_animation", "Render animation output")],
+                              {"create_motion": "write", "render_animation": "write"},
+                              {"render_animation": ["project_open", "assets_cleared"]})}
+        f = CapabilityFabric(sources)
+        entry = f.search("render animation")["matches"][0]
+        self.assertEqual(entry["requires"], ["project_open", "assets_cleared"])
+        status = f.check_prerequisites(entry["id"], revision=f.revision,
+                                      trusted_facts={"project_open": False})
+        self.assertFalse(status["admissible"])
+        self.assertEqual(status["unsatisfied"], ["project_open"])
+        self.assertEqual(status["unknown_state"], ["assets_cleared"])
+        approved = f.check_prerequisites(entry["id"], revision=f.revision,
+            trusted_facts={"project_open": True, "assets_cleared": True})
+        self.assertTrue(approved["admissible"])
+        changed = CapabilityFabric({"motion": (sources["motion"][0],
+            sources["motion"][1], {"render_animation": ["project_open"]})})
+        self.assertNotEqual(changed.revision, f.revision)
+
+    def test_untrusted_or_invalid_precondition_metadata_fails_closed(self):
+        operations = [tool("export", "Export movie")]
+        grants = {"export": "write"}
+        for bad in ({"export": [["fake"]]}, {"export": ["project_open", "project_open"]},
+                    {"export": ["not a fact"]}, {"unknown": ["project_open"]}):
+            with self.subTest(value=bad), self.assertRaises(CapabilityContractError):
+                CapabilityFabric({"video": (operations, grants, bad)})
+        f = CapabilityFabric({"video": (operations, grants, {"export": ["project_open"]})})
+        for facts in ({"project_open": "yes"}, {"project_open": 1}, [True]):
+            with self.subTest(facts=facts), self.assertRaises(CapabilityContractError):
+                f.check_prerequisites("video/export", revision=f.revision, trusted_facts=facts)
+
+    def test_tool_schema_snapshot_does_not_mutate_if_source_or_brain_changes_it(self):
+        properties = {"name": {"type": "string"}}
+        native = tool("create", "Make project", properties)
+        fabric = CapabilityFabric({"video": ([native], {"create": "write"})})
+        revision = fabric.revision
+        properties["name"]["type"] = "number"
+        one = fabric.describe("video/create", revision=revision)
+        self.assertEqual(one["input_schema"]["properties"]["name"]["type"], "string")
+        one["input_schema"]["properties"]["name"]["type"] = "integer"
+        again = fabric.describe("video/create", revision=revision)
+        self.assertEqual(again["input_schema"]["properties"]["name"]["type"], "string")
+        self.assertEqual(fabric.revision, revision)
+
+
+class LiveMachineDiscoveryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_new_software_operation_is_seen_from_real_live_discovery_next_refresh(self):
+        class Machine:
+            def __init__(self):
+                self.tools = [tool("create_project", "Create actual native project")]
+            async def list_tools(self):
+                return SimpleNamespace(tools=self.tools, nextCursor=None)
+        session = Machine()
+        binding = {"video": (session, {"create_project": "write"})}
+        before = await CapabilityFabric.from_connections(binding)
+        self.assertEqual(before.count, 1)
+        session.tools.append(tool("new_vector_effect", "Vector graphic motion effect"))
+        binding["video"] = (session, {"create_project": "write",
+                                     "new_vector_effect": "write"})
+        after = await CapabilityFabric.from_connections(binding)
+        self.assertEqual(after.count, 2)
+        self.assertNotEqual(after.revision, before.revision)
+        self.assertEqual(after.search("graphic motion")["matches"][0]["id"],
+                         "video/new_vector_effect")
+        with self.assertRaisesRegex(CapabilityContractError, "Stale"):
+            after.describe("video/create_project", revision=before.revision)
+
+    async def test_paginated_or_ungranted_sources_never_claim_complete_discovery(self):
+        class Paged:
+            async def list_tools(self):
+                return SimpleNamespace(tools=[tool("first")], nextCursor="another-page")
+        with self.assertRaisesRegex(CapabilityContractError, "paginated"):
+            await CapabilityFabric.from_connections({"video": (Paged(), {"first": "read"})})
+
+
 if __name__ == "__main__":
     unittest.main()
