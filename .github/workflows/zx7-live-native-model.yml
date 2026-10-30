@@ -1,6 +1,15 @@
 name: "ZX7 BODY — Live Local Model Native Editor Trial"
 on:
   workflow_dispatch:
+    inputs:
+      model_variant:
+        description: "Pinned local CPU creative brain for independent evaluation"
+        required: true
+        type: choice
+        default: qwen3.5-2b
+        options:
+          - qwen3.5-2b
+          - qwen3.5-4b
   push:
     branches: [main]
     paths:
@@ -62,8 +71,18 @@ jobs:
           sudo chmod 4755 "$helper"
           test "$(stat -c '%u:%a' "$helper")" = "0:4755"
       - name: Run identified CPU model with real native editor and source-bound observations
+        env:
+          MODEL_VARIANT: ${{ inputs.model_variant || 'qwen3.5-2b' }}
         run: |
+          # Exact source-pinned model choices only; no arbitrary user-supplied
+          # paths, shell code, hosted inference, or unverifiable weights.
+          case "$MODEL_VARIANT" in
+            qwen3.5-2b) model_lock="engines/velorn/local-model-trial.lock.json" ;;
+            qwen3.5-4b) model_lock="engines/velorn/local-model-trial-4b.candidate.json" ;;
+            *) echo "Unknown pinned local model variant" >&2; exit 2 ;;
+          esac
           python -u scripts/run_native_model_trial.py \
+            --model-lock "$GITHUB_WORKSPACE/$model_lock" \
             --source "$GITHUB_WORKSPACE/third_party/velorn" \
             --runtime "$RUNNER_TEMP/zx7-model-runtime" \
             --artifacts "$GITHUB_WORKSPACE/output/live-native-model" \
@@ -78,7 +97,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: zx7-live-native-model-${{ github.sha }}
+          name: zx7-live-native-model-${{ inputs.model_variant || 'qwen3.5-2b' }}-${{ github.sha }}
           path: output/live-native-model/
           if-no-files-found: warn
           retention-days: 14
