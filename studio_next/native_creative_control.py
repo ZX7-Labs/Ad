@@ -342,6 +342,18 @@ class NativeCreativeControl:
             raise NativeCreativeControlError("Native editor has duplicate operation identities")
         tool_hints = _native_tool_hints(available)
         show_tool_hints = True
+        # Same local-only schema family as the MCP host: preflight avoids
+        # sending a known-invalid creative decision to a stateful native
+        # editor. The real host validates again; preflight grants nothing.
+        import jsonschema
+        from .body_editor_mcp import _local_schema_references
+        validators = {}
+        for native_name, native_tool in self.tools.items():
+            schema = _field(native_tool, "input_schema", _field(native_tool, "inputSchema"))
+            _local_schema_references(schema)
+            cls = jsonschema.validators.validator_for(schema)
+            cls.check_schema(schema)
+            validators[native_name] = cls(schema)
         if self.receipt_path is not None:
             if not self.receipt_path.parent.is_dir():
                 raise NativeCreativeControlError("Receipt directory must already exist")
@@ -439,9 +451,22 @@ class NativeCreativeControl:
                                   "input_schema": _field(tool, "input_schema",
                                                          _field(tool, "inputSchema"))})
                     continue
-                # Tool parameter schema is authoritatively enforced by the
-                # configured MCP host. The model cannot override that host.
+                # The host remains authoritative. If the model violates the
+                # actual host schema, no native operation was dispatched:
+                # record only the validator keyword and a private input hash.
+                # It may describe the tool and independently revise its
+                # arguments on its next turn. Never retry an actual write.
                 native_name = args["tool"]
+                invalid = next(validators[native_name].iter_errors(args["inputs"]), None)
+                if invalid is not None:
+                    self._append({"kind": "model_action_rejected", "turn": turn,
+                                  **timing,
+                                  "tool": native_name,
+                                  "inputs_sha256": hashlib.sha256(
+                                      _wire(args["inputs"]).encode()).hexdigest(),
+                                  "validation_keyword": str(invalid.validator or "unknown")[:64],
+                                  "no_native_dispatch": True})
+                    continue
                 self._append({"kind": "native_tool_submitted", "turn": turn,
                               **timing,
                               "tool": native_name,
