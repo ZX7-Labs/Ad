@@ -102,7 +102,8 @@ class RecordedModel:
         self.model.settings.sampling['response_format'] = {'type': 'json_schema', 'json_schema': {
             'name': 'native_editor_action', 'strict': True,
             'schema': native_action_schema(context['actual_granted_native_tools'],
-                 compact_catalog=context.get('compact_tool_catalog', False))}}
+                 compact_catalog=context.get('compact_tool_catalog', False),
+                 selected_tools=context.get('selectable_native_tools', []))}}
         record = {'turn': self.turn, 'context': context, 'image_sha256': []}
         for index, (_, raw) in enumerate(images):
             path = self.artifacts / 'observations' / f'{self.turn}-{index}.png'
