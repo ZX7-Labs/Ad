@@ -93,6 +93,17 @@ class NativeCreativeAuditTests(unittest.TestCase):
         forged[0]["required_completion_evidence"] = ["invented_quality_claim"]
         with self.assertRaisesRegex(NativeJournalError, "completion requirements"):
             audit_native_journal(forged, host_tool_access=HOST)
+        # All surviving receipts may be structurally valid, yet a final model
+        # declaration still cannot satisfy a required frame that never arrived.
+        missing_frames = [event for event in trace()
+                          if event.get("tool") != "zx7_observe_verified_export_frame"]
+        for index, event in enumerate(missing_frames):
+            event["sequence"] = index
+        missing_frames[0]["required_completion_evidence"] = [
+            "verified_export_frame_observed"]
+        with self.assertRaisesRegex(NativeJournalError, "unresolved native write"):
+            audit_native_journal(missing_frames, host_tool_access=HOST)
+
 
     def test_honest_technical_custody_without_fake_artistic_claim(self):
         evidence = audit_native_journal(trace(), host_tool_access=HOST)
