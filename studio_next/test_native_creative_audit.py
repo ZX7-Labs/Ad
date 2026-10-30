@@ -79,8 +79,22 @@ class NativeCreativeAuditTests(unittest.TestCase):
         original.insert(1, refusal)
         for index, event in enumerate(original):
             event["sequence"] = index
-        self.assertTrue(audit_native_journal(
-            original, host_tool_access=HOST)["journal_chain_structurally_valid"])
+        verified = audit_native_journal(
+            original, host_tool_access=HOST,
+            expected_required_evidence=required)
+        self.assertTrue(verified["journal_chain_structurally_valid"])
+        self.assertTrue(verified["host_completion_policy_independently_matched"])
+        self.assertFalse(audit_native_journal(
+            original, host_tool_access=HOST)["host_completion_policy_independently_matched"])
+        altered_policy = copy.deepcopy(original)
+        altered_policy[0]["required_completion_evidence"] = []
+        with self.assertRaisesRegex(NativeJournalError, "differs from trusted host"):
+            audit_native_journal(altered_policy, host_tool_access=HOST,
+                                 expected_required_evidence=required)
+        with self.assertRaisesRegex(NativeJournalError, "Invalid independent host completion policy"):
+            audit_native_journal(original, host_tool_access=HOST,
+                                 expected_required_evidence=["invented_quality"])
+
         forged = copy.deepcopy(original)
         forged[1]["missing_completion_evidence"] = ["physical_export_verified"]
         with self.assertRaisesRegex(NativeJournalError, "completion refusal"):
