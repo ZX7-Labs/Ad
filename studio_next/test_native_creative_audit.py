@@ -248,5 +248,34 @@ class NativeCreativeAuditTests(unittest.TestCase):
             audit_native_journal(broken, host_tool_access=HOST)
 
 
+    def test_read_only_error_can_be_followed_by_another_model_action(self):
+        baseline = trace()
+        marker = baseline.index(next(x for x in baseline if x["kind"] == "native_tool_result"))
+        submission = baseline[marker-1]
+        submission["tool"] = "get_timeline"
+        read_error = {"sequence": marker, "kind": "native_read_tool_reported_error",
+                      "turn": submission["turn"], "tool": "get_timeline",
+                      "error_sha256": A, "error_text_exceeded_evidence_budget": False,
+                      "host_attested_read_only": True,
+                      "no_successful_native_observation": True}
+        baseline[marker] = read_error
+        for i, event in enumerate(baseline):
+            event["sequence"] = i
+        good = audit_native_journal(baseline, host_tool_access=HOST)
+        self.assertTrue(good["journal_chain_structurally_valid"])
+        self.assertEqual(good["model_reported_end_state"], "model_finished")
+        for change in (
+            {"host_attested_read_only": False},
+            {"no_successful_native_observation": False},
+            {"error_sha256": None},
+            {"error_text_exceeded_evidence_budget": True},
+            {"tool": "update_text_clip"},
+        ):
+            bad = copy.deepcopy(baseline)
+            bad[marker].update(change)
+            with self.subTest(change=change), self.assertRaises(NativeJournalError):
+                audit_native_journal(bad, host_tool_access=HOST)
+
+
 if __name__ == "__main__":
     unittest.main()
