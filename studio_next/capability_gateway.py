@@ -142,6 +142,12 @@ class CapabilityGateway:
             import jsonschema
             if not isinstance(inputs, dict):
                 raise CapabilityExecutionError("BODY inputs must be a structured object")
+            try:
+                encoded_inputs = _wire(inputs).encode("utf-8")
+            except (ValueError, TypeError, OverflowError, RecursionError) as exc:
+                raise CapabilityExecutionError("Native model inputs must be finite JSON") from exc
+            if len(encoded_inputs) > 262_144:
+                raise CapabilityExecutionError("Native model inputs exceed bounded ABI budget")
             # Host-named top-level fields are an ABI. Unspecified top-level
             # fields invite model hallucinations; intentionally open nested
             # artistic parameters remain unrestricted by this preflight.
@@ -168,7 +174,7 @@ class CapabilityGateway:
                 if not readiness["admissible"]:
                     raise CapabilityExecutionError(
                         "Machine prerequisite absent or unknown; inspect host state")
-            digest = hashlib.sha256(_wire(inputs).encode("utf-8")).hexdigest()
+            digest = hashlib.sha256(encoded_inputs).hexdigest()
             trace = {"operation_id": operation_id, "catalog_revision": revision,
                      "input_sha256": digest, "access": record["access"],
                      "state": "submitted_unconfirmed"}
@@ -180,9 +186,15 @@ class CapabilityGateway:
                 trace["state"] = ("read_failed" if record["access"] == "read"
                                   else "write_uncertain_reconciliation_required")
                 raise
-            failure = result.get("is_error", result.get("isError", False)) if isinstance(
-                result, dict) else getattr(result, "is_error",
-                                           getattr(result, "isError", False))
+            failure = (result.get("is_error", result.get("isError"))
+                       if isinstance(result, dict) else getattr(
+                           result, "is_error", getattr(result, "isError", None)))
+            if type(failure) is not bool:
+                # The remote operation MAY already have mutated the document.
+                # An invalid/untrustworthy receipt is not proof of success.
+                trace["state"] = ("read_failed" if record["access"] == "read"
+                                  else "write_uncertain_reconciliation_required")
+                raise CapabilityExecutionError("Native host returned no verified status envelope")
             if failure:
                 trace["state"] = ("read_failed" if record["access"] == "read"
                                   else "write_uncertain_reconciliation_required")
