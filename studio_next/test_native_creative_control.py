@@ -313,5 +313,45 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
             NativeCreativeControl(FakeSession(), ScriptedModel([]), max_turns=0)
 
 
+    async def test_multiple_native_text_parts_cannot_bypass_total_evidence_budget(self):
+        for blocks in (
+            [SimpleNamespace(type="text", text="a" * 35000),
+             SimpleNamespace(type="text", text="b" * 35000)],
+            [SimpleNamespace(type="text", text="a") for _ in range(65)],
+            [SimpleNamespace(type="text", text="界" * 21000),
+             SimpleNamespace(type="text", text="a" * 1001)],
+        ):
+            with self.subTest(part_count=len(blocks)), tempfile.TemporaryDirectory() as root:
+                session = FakeSession()
+                session.custom_response = SimpleNamespace(is_error=False, content=blocks)
+                journal = Path(root) / "native-budget.jsonl"
+                controller = NativeCreativeControl(session, ScriptedModel([
+                    decision("invoke", tool="get_timeline", inputs={}),
+                ]), receipt_path=journal)
+                with self.assertRaisesRegex(NativeCreativeControlError, "too many content blocks|text evidence"):
+                    await controller.run("Inspect native media without unbounded context")
+                events = [json.loads(line) for line in journal.read_text().splitlines()]
+                self.assertEqual(events[-1]["kind"], "native_observation_rejected")
+                self.assertEqual(len(session.calls), 1)
+                self.assertNotIn("a" * 1000, journal.read_text())
+
+    async def test_bounded_native_text_parts_still_reach_the_model(self):
+        session = FakeSession()
+        session.custom_response = SimpleNamespace(is_error=False, content=[
+            SimpleNamespace(type="text", text="a" * 32000),
+            SimpleNamespace(type="text", text="b" * 32000),
+        ])
+        model = ScriptedModel([
+            decision("invoke", tool="get_timeline", inputs={}),
+            decision("finish", summary="Observed bounded native text"),
+        ])
+        outcome = await NativeCreativeControl(session, model, max_turns=2).run(
+            "Read a bounded native timeline")
+        self.assertEqual(outcome["status"], "model_finished_unverified")
+        self.assertEqual(sum(len(s.encode("utf-8"))
+                             for s in model.observed[-1]["last_native_result_texts"]), 64000)
+        self.assertEqual(len(session.calls), 1)
+
+
 if __name__ == "__main__":
     unittest.main()
