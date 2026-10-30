@@ -68,6 +68,40 @@ def trace():
 
 
 class NativeCreativeAuditTests(unittest.TestCase):
+    def test_new_edit_invalidates_previous_export_and_frame_completion_proofs(self):
+        events = trace()
+        required = ["native_write_acknowledged", "physical_export_verified",
+                    "verified_export_frame_observed"]
+        # Existing technical proof has two verified exports and observed frames.
+        # A later native revision makes all historical frames stale for
+        # completion, without erasing their immutable source custody.
+        events[0]["required_completion_evidence"] = required
+        prior_finish = events.pop()
+        events.extend([
+            {"kind": "native_tool_submitted", "turn": 9,
+             "tool": "update_text_clip", "inputs_sha256": A,
+             "model_reason": "Independent model chose an additional edit"},
+            {"kind": "native_tool_result", "turn": 9, "tool": "update_text_clip",
+             "text_sha256": [C], "image_sha256": [], "audio_sha256": None,
+             "independently_verified_export_sha256": None,
+             "observed_export_sha256": None, "human_or_artistic_quality_approved": False},
+        ])
+        events.append(prior_finish)
+        for idx, event in enumerate(events):
+            event["sequence"] = idx
+        with self.assertRaisesRegex(NativeJournalError, "unresolved native write"):
+            audit_native_journal(events, host_tool_access=HOST,
+                                 expected_required_evidence=required)
+        events[-1] = {"sequence": len(events)-1, "kind": "model_finish_rejected",
+                      "turn": 10, "no_native_dispatch": True,
+                      "missing_completion_evidence": [
+                          "physical_export_verified", "verified_export_frame_observed"]}
+        checked = audit_native_journal(events, host_tool_access=HOST,
+                                       expected_required_evidence=required)
+        self.assertTrue(checked["host_completion_policy_independently_matched"])
+        self.assertEqual(checked["observed_verified_export_digests"], [A, B])
+        self.assertFalse(checked["video_editing_capability_complete"])
+
     def test_host_required_completion_evidence_is_independently_recomputed(self):
         original = trace()
         required = ["native_write_acknowledged", "physical_export_verified",
