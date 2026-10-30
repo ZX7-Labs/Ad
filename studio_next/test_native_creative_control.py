@@ -1076,6 +1076,52 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("search", model.observed[1]["selectable_native_tools"])
         self.assertLessEqual(len(model.observed[1]["selectable_native_tools"]), 8)
 
+    async def test_real_2b_false_turn_zero_finish_does_not_end_unfinished_project(self):
+        from studio_next.native_creative_audit import audit_native_journal
+        session = FakeSession()
+        model = ScriptedModel([
+            decision("finish", summary="Fabricated: movie and edit are done"),
+            decision("search", query="native text", limit=4),
+            decision("finish", summary="Still not actually exported"),
+        ])
+        with tempfile.TemporaryDirectory() as root:
+            receipt = Path(root) / "premature-finish.jsonl"
+            result = await NativeCreativeControl(session, model, max_turns=3,
+                host_tool_access={t.name: ("write" if t.name == "update_text_clip"
+                                           else "read") for t in session.tools},
+                catalog_mode="indexed",
+                required_evidence=("native_mutation", "verified_export",
+                                   "observed_export"),
+                receipt_path=receipt).run("Make a real original video")
+            self.assertEqual(result["status"], "turn_budget_exhausted")
+            self.assertEqual([e["kind"] for e in result["events"]],
+                ["session_started", "model_finish_rejected", "capability_searched",
+                 "model_finish_rejected"])
+            self.assertEqual(model.observed[1]["unmet_required_deliverable_evidence"],
+                             ["native_mutation", "verified_export", "observed_export"])
+            self.assertEqual(session.calls, [])
+            self.assertNotIn("Fabricated", receipt.read_text())
+            self.assertTrue(audit_native_journal(result["events"], host_tool_access={
+                t.name: ("write" if t.name == "update_text_clip" else "read")
+                for t in session.tools})["journal_chain_structurally_valid"])
+            self.assertFalse(result["native_editing_capability_complete"])
+
+    async def test_host_can_accept_evidence_restricted_finish_but_not_fake_quality(self):
+        session = FakeSession()
+        model = ScriptedModel([
+            decision("invoke", tool="update_text_clip",
+                     inputs={"clipId": "chosen", "text": "Original creative line"}),
+            decision("finish", summary="Native write reported success"),
+        ])
+        result = await NativeCreativeControl(
+            session, model, max_turns=2,
+            host_tool_access={t.name: ("write" if t.name == "update_text_clip"
+                                       else "read") for t in session.tools},
+            required_evidence=("native_mutation",)).run("Edit original text")
+        self.assertEqual(result["status"], "model_finished_unverified")
+        self.assertFalse(model.observed[1]["unmet_required_deliverable_evidence"])
+        self.assertFalse(result["artistic_quality_independently_approved"])
+
     async def test_genuine_write_triggers_machine_state_refresh_without_model_inference(self):
         from studio_next.native_creative_audit import audit_native_journal
         session = FakeSession()
