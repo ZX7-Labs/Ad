@@ -217,10 +217,25 @@ def audit_native_journal(events, *, host_tool_access, expected_required_evidence
         if kind in ("host_project_post_write_observation",
                     "host_project_post_write_error"):
             previous = events[i - 1] if i > 0 else {}
+            attempt = event.get("read_attempt", 1)
+            if type(attempt) is not int or attempt not in (1, 2):
+                raise NativeJournalError("Unbounded post-write read attempt")
+            original_write = previous
+            if attempt == 2:
+                # Only an immediately preceding first host read attesting
+                # ABSENCE may authorize one more READ. No repeated write,
+                # unsigned state claim or fabricated third observation.
+                original_write = events[i - 2] if i >= 2 else {}
+                if (previous.get("kind") != "host_project_post_write_observation" or
+                        previous.get("read_attempt") != 1 or
+                        previous.get("project_presence") != "absent"):
+                    raise NativeJournalError("Second host read lacks a contradictory first read")
+            elif previous.get("kind") != "native_tool_result":
+                raise NativeJournalError("First project read lacks acknowledged native write")
             if (pending is not None or
-                    previous.get("kind") != "native_tool_result" or
-                    event.get("triggered_by_native_tool") != previous.get("tool") or
-                    host_tool_access.get(previous.get("tool")) != "write" or
+                    original_write.get("kind") != "native_tool_result" or
+                    event.get("triggered_by_native_tool") != original_write.get("tool") or
+                    host_tool_access.get(original_write.get("tool")) != "write" or
                     host_tool_access.get("get_project") != "read" or
                     event.get("tool") != "get_project" or
                     event.get("host_attested_read_only") is not True or
@@ -244,6 +259,31 @@ def audit_native_journal(events, *, host_tool_access, expected_required_evidence
                              digest is None and oversized is None)
                 if not (reported or exception):
                     raise NativeJournalError("Untrusted failed post-write project read")
+            continue
+        if kind == "host_project_post_write_inconsistent":
+            # Two READ observations saying absent after an acknowledged
+            # project-opening write are contradictory, not proof of absence
+            # and certainly not a license to replay the write.
+            latest = events[i - 1] if i > 0 else {}
+            first = events[i - 2] if i > 1 else {}
+            applied = events[i - 3] if i > 2 else {}
+            if (pending is not None or
+                    latest.get("kind") != "host_project_post_write_observation" or
+                    latest.get("read_attempt") != 2 or
+                    latest.get("project_presence") != "absent" or
+                    first.get("kind") != "host_project_post_write_observation" or
+                    first.get("read_attempt") != 1 or
+                    first.get("project_presence") != "absent" or
+                    applied.get("kind") != "native_tool_result" or
+                    host_tool_access.get(applied.get("tool")) != "write" or
+                    latest.get("triggered_by_native_tool") != applied.get("tool") or
+                    first.get("triggered_by_native_tool") != applied.get("tool") or
+                    event.get("triggered_by_native_tool") != applied.get("tool") or
+                    event.get("bounded_read_attempts") != 2 or
+                    event.get("claimed_project_success_unconfirmed") is not True or
+                    event.get("no_model_selected_mutation") is not True or
+                    event.get("no_automatic_write_retry") is not True):
+                raise NativeJournalError("Untrusted inconsistent post-write state claim")
             continue
         if kind == "model_decision_failed":
             duration = event.get("measured_model_wall_ms")
