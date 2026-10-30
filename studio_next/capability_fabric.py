@@ -35,6 +35,54 @@ def _tokens(value):
     return set(re.findall(r"[^\W_]+", value.casefold(), re.UNICODE))
 
 
+
+async def discover_all_live_tools(session):
+    """Complete bounded MCP tools/list discovery, preserving opaque cursors.
+
+    Supports modern Client(cursor=...) and official ClientSession(params=...).
+    Repeated cursors or incomplete catalogs are failures, not hidden tools.
+    """
+    import inspect
+
+    method = getattr(session, "list_tools", None)
+    if not callable(method):
+        raise CapabilityContractError("Connected source has no tools/list operation")
+    try:
+        parameters = inspect.signature(method).parameters
+    except (TypeError, ValueError):
+        parameters = {}
+    cursor = None
+    observed = set()
+    tools = []
+    for page_number in range(64):
+        if cursor is None:
+            page = await method()
+        elif "cursor" in parameters:
+            page = await method(cursor=cursor)
+        elif "params" in parameters:
+            from mcp.types import PaginatedRequestParams
+            page = await method(params=PaginatedRequestParams(cursor=cursor))
+        else:
+            raise CapabilityContractError(
+                "Paginated source requires an explicitly cursor-aware adapter")
+        received = _field(page, "tools")
+        if not isinstance(received, (list, tuple)):
+            raise CapabilityContractError("Native tool page has no valid tool array")
+        if len(tools) + len(received) > 5000:
+            raise CapabilityContractError("Complete tool catalog exceeds source budget")
+        tools.extend(received)
+        next_cursor = _field(page, "nextCursor", _field(page, "next_cursor"))
+        if next_cursor in (None, ""):
+            return tools
+        if (not isinstance(next_cursor, str) or
+                len(next_cursor.encode("utf-8")) > 512 or
+                next_cursor in observed):
+            raise CapabilityContractError("Host repeated or malformed pagination cursor")
+        observed.add(next_cursor)
+        cursor = next_cursor
+    raise CapabilityContractError("Native tool pagination exceeded maximum page count")
+
+
 class CapabilityFabric:
     """Immutable, exact host-granted capability snapshot.
 
@@ -50,6 +98,7 @@ class CapabilityFabric:
         if not isinstance(sources, Mapping) or not sources or len(sources) > 256:
             raise CapabilityContractError("At least one bounded real source is required")
         records = {}
+        schema_bytes_total = 0
         for namespace, pair in sources.items():
             if (not isinstance(namespace, str) or
                     re.fullmatch(r"[a-z][a-z0-9_-]{0,47}", namespace) is None or
@@ -110,6 +159,10 @@ class CapabilityFabric:
                     raise CapabilityContractError("Unserializable native schema") from exc
                 if schema_bytes > 512_000:
                     raise CapabilityContractError("Native schema exceeds host admission budget")
+                schema_bytes_total += schema_bytes
+                if schema_bytes_total > 32 * 1024 * 1024 or len(records) >= 10_000:
+                    raise CapabilityContractError(
+                        "All-source tool catalog exceeds memory safety budget")
                 records[identity] = {
                     "operation_id": identity, "source": namespace,
                     "native_name": name, "description": summary,
@@ -153,12 +206,7 @@ class CapabilityFabric:
             session, grants = binding[:2]
             if not callable(getattr(session, "list_tools", None)):
                 raise CapabilityContractError("Native source lacks live tool discovery")
-            response = await session.list_tools()
-            cursor = _field(response, "nextCursor", _field(response, "next_cursor"))
-            if cursor not in (None, ""):
-                raise CapabilityContractError(
-                    "Partial paginated MCP discovery cannot define complete capabilities")
-            advertised = _field(response, "tools")
+            advertised = await discover_all_live_tools(session)
             requirements = binding[2] if len(binding) >= 3 else {}
             enablers = binding[3] if len(binding) == 4 else {}
             sources[namespace] = (advertised, grants, requirements, enablers)
