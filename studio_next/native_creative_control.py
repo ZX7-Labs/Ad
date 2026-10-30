@@ -350,6 +350,7 @@ class NativeCreativeControl:
         # Ground project presence only in actual native get_project results,
         # never in model text, metadata discovery, or an earlier session.
         self._project_presence = "unknown"
+        self._last_preflight_feedback: dict | None = None
         self._last_audio: list[tuple[str, bytes]] = []
         self._last_audio_evidence: dict | None = None
         self._verified_exports: set[str] = set()
@@ -494,6 +495,11 @@ class NativeCreativeControl:
                     "latest_events": _model_event_window(self.events),
                     "last_native_result_texts": self._last_native_texts,
                     "native_project_presence_from_last_inspection": self._project_presence,
+                    # A schema error is known BEFORE any native RPC. Instead
+                    # of burning another costly inference on metadata discovery,
+                    # expose the exact bounded host schema for independent
+                    # model correction. No model action is selected here.
+                    "last_rejected_native_action_feedback": self._last_preflight_feedback,
                     # Evidence-based progress facts persist beyond the 8-event
                     # sliding window. No operation or creative step is chosen
                     # by the controller on the model's behalf.
@@ -583,6 +589,16 @@ class NativeCreativeControl:
                 native_name = args["tool"]
                 invalid = next(validators[native_name].iter_errors(args["inputs"]), None)
                 if invalid is not None:
+                    schema = validators[native_name].schema
+                    self._last_preflight_feedback = {
+                        "tool": native_name,
+                        "validation_keyword": str(invalid.validator or "unknown")[:64],
+                        "no_native_dispatch": True,
+                    }
+                    if len(_wire(schema).encode("utf-8")) <= 8192:
+                        self._last_preflight_feedback["actual_host_input_schema"] = schema
+                    else:
+                        self._last_preflight_feedback["request_schema_with_describe"] = True
                     self._append({"kind": "model_action_rejected", "turn": turn,
                                   **timing,
                                   "tool": native_name,
@@ -596,6 +612,7 @@ class NativeCreativeControl:
                                       list(invalid.schema_path)[:16])[:512],
                                   "no_native_dispatch": True})
                     continue
+                self._last_preflight_feedback = None
                 self._append({"kind": "native_tool_submitted", "turn": turn,
                               **timing,
                               "tool": native_name,
