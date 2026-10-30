@@ -131,6 +131,7 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
             decision("invoke", tool="update_text_clip", inputs={"clipId": "one"}),
             decision("invoke", tool="zx7_verify_native_export", inputs={}),
             decision("invoke", tool="zx7_observe_verified_export_frame", inputs={}),
+            decision("finish", summary="Premature: I only observed the first export"),
             decision("invoke", tool="update_text_clip", inputs={"clipId": "one", "text": "new"}),
             decision("finish", summary="The frame was from before my latest edit"),
             decision("invoke", tool="zx7_verify_native_export", inputs={}),
@@ -138,14 +139,21 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
             decision("finish", summary="New verified source; still not artistic acceptance"),
         ])
         required = ("native_write_acknowledged", "physical_export_verified",
+                    "post_observation_native_write_acknowledged",
                     "verified_export_frame_observed")
         result = await NativeCreativeControl(
-            session, model, max_turns=8, host_tool_access=grants,
+            session, model, max_turns=9, host_tool_access=grants,
             required_evidence=required).run("Independent editable video")
         self.assertEqual(result["status"], "model_finished_unverified")
         refused = [e for e in result["events"] if e["kind"] == "model_finish_rejected"]
-        self.assertEqual(len(refused), 1)
+        self.assertEqual(len(refused), 2)
         self.assertEqual(refused[0]["missing_completion_evidence"], [
+            "post_observation_native_write_acknowledged"])
+        self.assertEqual(refused[1]["missing_completion_evidence"], [
+            "physical_export_verified", "verified_export_frame_observed"])
+        self.assertEqual(model.observed[3]["missing_completion_evidence"], [
+            "post_observation_native_write_acknowledged"])
+        self.assertEqual(model.observed[5]["missing_completion_evidence"], [
             "physical_export_verified", "verified_export_frame_observed"])
         audited = audit_native_journal(
             result["events"], host_tool_access=grants,
