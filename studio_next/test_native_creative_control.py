@@ -1061,6 +1061,21 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
             NativeCreativeControl(session, ScriptedModel([decision("search", query="movie")]),
                                   catalog_mode="indexed")
 
+    async def test_real_2b_hallucinated_invoke_search_is_rejected_before_native_dispatch(self):
+        session = FakeSession()
+        grants = {x.name: ("write" if x.name == "update_text_clip" else "read")
+                  for x in session.tools}
+        model = ScriptedModel([
+            decision("search", query="native text"),
+            decision("invoke", tool="search", inputs={"query": "native edit", "limit": 10}),
+        ])
+        with self.assertRaisesRegex(NativeCreativeControlError, "ungranted|unsearched"):
+            await NativeCreativeControl(session, model, catalog_mode="indexed",
+                host_tool_access=grants, max_turns=2).run("Only exact returned editors exist")
+        self.assertEqual(session.calls, [])
+        self.assertNotIn("search", model.observed[1]["selectable_native_tools"])
+        self.assertLessEqual(len(model.observed[1]["selectable_native_tools"]), 8)
+
     async def test_indexed_search_is_private_metadata_not_editor_execution(self):
         session = FakeSession()
         grants = {x.name: "read" for x in session.tools}
