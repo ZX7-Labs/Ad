@@ -1,7 +1,8 @@
 import tempfile
 import unittest
 from studio_next.body_capabilities import (
-    operational_tool_summary,explain_operational_tool,concise_body_status)
+    operational_tool_summary,explain_operational_tool,concise_body_status,
+    installed_body_capability_fabric)
 
 
 class InteractiveBrainConnectedBodyTests(unittest.TestCase):
@@ -26,5 +27,31 @@ class InteractiveBrainConnectedBodyTests(unittest.TestCase):
             self.assertIn("physically_enabled_generators",data)
             self.assertFalse(data["claimed_complete_premium_studio"])
             self.assertTrue(data["one_model_can_discover_and_choose_without_reading_documentation"])
+
+    def test_entire_actual_zx7_body_is_searchable_without_video_specific_prompt(self):
+        with tempfile.TemporaryDirectory() as root:
+            fabric = installed_body_capability_fabric(root)
+            self.assertGreater(fabric.count, 0)
+            overview = fabric.overview()
+            self.assertEqual(overview["sources"], {"zx7": fabric.count})
+            matches = fabric.search("asset vault")
+            self.assertTrue(any("asset_vault" in x["id"] for x in matches["matches"]))
+            self.assertLess(len(str(matches)), 3000)
+            for result in matches["matches"]:
+                descriptor = fabric.describe(result["id"], revision=fabric.revision)
+                self.assertIn(descriptor["access"], ("read", "write"))
+                self.assertIsInstance(descriptor["input_schema"], dict)
+            self.assertFalse(fabric.search("imaginary galaxy teleportation")["matches"])
+
+    def test_installed_body_capability_contract_only_includes_executable_ops(self):
+        with tempfile.TemporaryDirectory() as root:
+            from studio_next.body_integration import body_catalog
+            actual = body_catalog(root)
+            available = actual.executable_ids({"read", "write"})
+            fabric = installed_body_capability_fabric(root)
+            self.assertEqual(fabric.count, len(available))
+            with self.assertRaises(ValueError):
+                fabric.describe("zx7/body.nonexistent", revision=fabric.revision)
+
 
 if __name__=="__main__":unittest.main()

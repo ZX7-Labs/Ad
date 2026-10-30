@@ -16,6 +16,7 @@ import subprocess
 import sys
 import tarfile
 import time
+from urllib.parse import urlsplit
 from urllib.request import urlopen
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -35,22 +36,55 @@ def sha(path):
 
 
 def download(entry, root):
-    target = root / entry['filename']
-    if target.is_file() and sha(target) == entry['sha256']:
+    # A research manifest is committed code, not permission to write arbitrary
+    # filesystem paths or fetch local URLs during a privileged CI trial.
+    name = entry.get('filename')
+    url = entry.get('url')
+    digest = entry.get('sha256')
+    if (not isinstance(name, str) or not name or
+            Path(name).name != name or name in (".", "..") or
+            chr(92) in name or chr(0) in name):
+        raise ValueError('Model input filename must be a safe basename')
+    parsed = urlsplit(url) if isinstance(url, str) else None
+    if (parsed is None or parsed.scheme != 'https' or not parsed.hostname or
+            parsed.username is not None or parsed.password is not None or
+            parsed.fragment or parsed.hostname in ('localhost', '127.0.0.1', '::1')):
+        raise ValueError('Pinned inputs require a credential-free remote HTTPS URL')
+    if (not isinstance(digest, str) or len(digest) != 64 or
+            any(c not in '0123456789abcdef' for c in digest)):
+        raise ValueError('Pinned download requires an exact lower-case SHA256')
+    target = root / name
+    if target.is_symlink():
+        raise ValueError('Pinned weight target cannot be a symbolic link')
+    expected = entry.get('bytes')
+    limit = expected if type(expected) is int else entry.get('max_bytes')
+    if (type(limit) is not int or not 0 < limit <= 10_000_000_000 or
+            (expected is not None and (type(expected) is not int or expected != limit))):
+        raise ValueError('Pinned input requires verified byte size or strict download upper bound')
+    if target.is_file() and target.stat().st_size <= limit and (
+            expected is None or target.stat().st_size == expected) and sha(target) == entry['sha256']:
         return target
     partial = target.with_suffix(target.suffix + '.partial')
     print('Downloading pinned input:', entry['filename'], flush=True)
-    with urlopen(entry['url'], timeout=120) as response, partial.open('wb') as dest:
-        count = 0
-        while block := response.read(1024 * 1024):
-            count += len(block)
-            if count > entry['bytes']:
-                raise ValueError('Download exceeds pinned size')
-            dest.write(block)
-    if partial.stat().st_size != entry['bytes'] or sha(partial) != entry['sha256']:
-        raise ValueError('Pinned download identity mismatch: ' + entry['filename'])
-    partial.replace(target)
-    return target
+    try:
+        # Exclusive create avoids following an attacker-controlled partial
+        # symlink; no unsafe overwrite of a prior incomplete download.
+        fd = os.open(partial, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        with os.fdopen(fd, 'wb') as dest, urlopen(entry['url'], timeout=120) as response:
+            count = 0
+            while block := response.read(1024 * 1024):
+                count += len(block)
+                if count > limit:
+                    raise ValueError('Download exceeds pinned safety bound')
+                dest.write(block)
+        if ((expected is not None and partial.stat().st_size != expected) or
+                partial.stat().st_size <= 0 or sha(partial) != entry['sha256']):
+            raise ValueError('Pinned download identity mismatch: ' + entry['filename'])
+        partial.replace(target)
+        return target
+    finally:
+        if partial.exists():
+            partial.unlink()
 
 
 class RecordedModel:
@@ -67,7 +101,9 @@ class RecordedModel:
         started = time.monotonic()
         self.model.settings.sampling['response_format'] = {'type': 'json_schema', 'json_schema': {
             'name': 'native_editor_action', 'strict': True,
-            'schema': native_action_schema(context['actual_granted_native_tools'])}}
+            'schema': native_action_schema(context['actual_granted_native_tools'],
+                 compact_catalog=context.get('compact_tool_catalog', False),
+                 selected_tools=context.get('selectable_native_tools', []))}}
         record = {'turn': self.turn, 'context': context, 'image_sha256': []}
         for index, (_, raw) in enumerate(images):
             path = self.artifacts / 'observations' / f'{self.turn}-{index}.png'
@@ -141,16 +177,32 @@ async def trial(args, lock, artifacts, command):
     model = RecordedModel(LocalCreativeModel(LocalModelSettings(
         model_id=lock['server']['alias'], base_url='http://127.0.0.1:8080', timeout_seconds=300),
         system_prompt=NATIVE_CREATIVE_SYSTEM), artifacts)
+    # This mapping originates in the trusted host config, not the
+    # replaceable neural model. Only READ errors may be safely corrected.
+    # Machine-readable adapter semantics live outside the strictly parsed
+    # native editor permission config. This file is maintainer-trusted source,
+    # never an LLM artifact or a long MD instruction to the brain.
+    contract = json.loads((ROOT / 'engines/velorn/host-capability-contract.json').read_text())
+    if contract.get('schema') != 1 or contract.get('source') != 'velorn':
+        raise ValueError('Invalid host-attested capability contract revision')
+    requirements = contract['host_attested_requirements']
+    host = dict(config['allowed_tools'])
+    host.update({name: 'read' for name in ('zx7_verify_native_export',
+        'zx7_observe_verified_export_frame', 'zx7_observe_verified_export_samples',
+        'zx7_observe_verified_export_audio', 'zx7_observe_verified_export_audio_timeline')})
     with (artifacts / 'editor-stderr.log').open('w') as log:
         async with stdio_client(StdioServerParameters(command='node', args=params, cwd=ROOT), errlog=log) as (read, write):
             async with ClientSession(read, write, read_timeout_seconds=180) as session:
                 await session.initialize()
                 outcome = await asyncio.wait_for(NativeCreativeControl(session, model, max_turns=48,
-                    receipt_path=artifacts / 'native-journal.jsonl').run(brief), timeout=2400)
-    host = dict(config['allowed_tools'])
-    host.update({name: 'read' for name in ('zx7_verify_native_export',
-        'zx7_observe_verified_export_frame', 'zx7_observe_verified_export_samples',
-        'zx7_observe_verified_export_audio', 'zx7_observe_verified_export_audio_timeline')})
+                    receipt_path=artifacts / 'native-journal.jsonl',
+                    host_tool_access=host,
+                    host_tool_requirements=requirements,
+                    # Trial acceptance requires recorded physical native
+                    # evidence, not a model-authored claim of completion.
+                    required_evidence=("native_mutation", "verified_export",
+                                       "observed_export"),
+                    catalog_mode="indexed").run(brief), timeout=2400)
     audit = audit_native_journal(read_native_journal(artifacts / 'native-journal.jsonl'), host_tool_access=host)
     (artifacts / 'journal-audit.json').write_text(json.dumps(audit, indent=2))
     actual_images = len(list((artifacts / 'observations').glob('*.png')))
@@ -213,6 +265,9 @@ def main():
         parser.add_argument('--' + name, required=True, type=Path)
     parser.add_argument('--xvfb-binary', default='/usr/bin/Xvfb')
     parser.add_argument('--display', default='127.0.0.1:95')
+    parser.add_argument('--model-lock', type=Path,
+        default=ROOT / 'engines/velorn/local-model-trial.lock.json',
+        help='Local pinned model manifest; default remains the verified 2B baseline')
     args = parser.parse_args()
     args.source, args.runtime, args.artifacts = (getattr(args, name).resolve() for name in ('source', 'runtime', 'artifacts'))
     args.artifacts.mkdir(parents=True, exist_ok=False)
@@ -221,13 +276,20 @@ def main():
                 'native_field_complete': False, 'script_supplied_editor_mutations': 0,
                 'cpu_count': os.cpu_count(), 'model_ram_independently_measured': False}
     process = None
-    lock = json.loads((ROOT / 'engines/velorn/local-model-trial.lock.json').read_text())
+    lock = json.loads(args.model_lock.resolve().read_text())
+    if lock.get('model', {}).get('license') != 'Apache-2.0':
+        raise ValueError('Candidate model needs an explicit compatible model-weight license')
     try:
         if os.geteuid() == 0:
             raise RuntimeError('Live editor trial requires ordinary non-root Chromium sandbox execution')
         evidence['pinned_inputs'] = lock
         archive = download(lock['runtime']['archive'], args.runtime)
         files = {entry['kind']: download(entry, args.runtime) for entry in lock['model']['files']}
+        # A candidate pointer published by a third party is a *proposed*
+        # hash until this process actually rehashes the downloaded bytes.
+        evidence['actual_model_file_sha256_verified'] = {
+            kind: {'sha256': sha(path), 'bytes': path.stat().st_size}
+            for kind, path in files.items()}
         with tarfile.open(archive) as source:
             source.extractall(args.runtime, filter='data')
         binary = args.runtime / lock['runtime']['binary_relative_path']
