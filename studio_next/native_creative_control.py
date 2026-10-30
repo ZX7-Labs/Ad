@@ -292,7 +292,7 @@ def _model_event_window(events):
         if kind == "discovered":
             item["native_tool_count"] = event.get(
                 "native_tool_count", len(event.get("tools", ())))
-        elif kind == "capability_searched":
+        elif kind in ("capability_searched", "host_capability_frontier"):
             item["result_tool_names"] = event.get("result_tool_names", [])[:8]
             item["no_native_dispatch"] = True
         elif kind == "native_tool_schema":
@@ -360,7 +360,9 @@ class NativeCreativeControl:
 
     def __init__(self, session, model, *, max_turns=32, receipt_path: Path | None = None,
                  host_tool_access: dict[str, str] | None = None,
-                 catalog_mode: str = "full"):
+                 catalog_mode: str = "full",
+                 host_preconditions: dict | None = None,
+                 host_possible_effects: dict | None = None):
         if type(max_turns) is not int or not 1 <= max_turns <= 128:
             raise NativeCreativeControlError("Native model session requires finite turn budget")
         if not callable(getattr(model, "decide", None)):
@@ -378,6 +380,11 @@ class NativeCreativeControl:
         if catalog_mode == "indexed" and host_tool_access is None:
             raise NativeCreativeControlError("Indexed capability discovery requires trusted host grants")
         self.catalog_mode = catalog_mode
+        self._host_preconditions = copy.deepcopy(host_preconditions or {})
+        self._host_possible_effects = copy.deepcopy(host_possible_effects or {})
+        if (not isinstance(self._host_preconditions, dict) or
+                not isinstance(self._host_possible_effects, dict)):
+            raise NativeCreativeControlError("Trusted machine contracts must be objects")
         self._capabilities = None
         self._last_search_result = None
         self._selectable_tools: list[str] = []
@@ -500,7 +507,8 @@ class NativeCreativeControl:
         if self.catalog_mode == "indexed":
             from .capability_fabric import CapabilityFabric
             self._capabilities = CapabilityFabric(
-                {"native": (available, self.host_tool_access)})
+                {"native": (available, self.host_tool_access,
+                            self._host_preconditions, self._host_possible_effects)})
         tool_hints = _native_tool_hints(available) if self.catalog_mode == "full" else []
         show_tool_hints = self.catalog_mode == "full"
         # Same local-only schema family as the MCP host: preflight avoids
@@ -593,6 +601,28 @@ class NativeCreativeControl:
                                                           for x in texts],
                                           "project_presence": self._project_presence,
                                           "no_model_selected_mutation": True})
+            # Host-observed absence + trusted potential machine effects.
+            # No creative operation is executed or selected on the model's
+            # behalf. Only bounded real capabilities appear in the first turn.
+            if self._capabilities is not None and self._project_presence == "absent":
+                opportunities = self._capabilities.affordance_frontier(
+                    trusted_facts={"project_open": False},
+                    namespace="native", limit=4)
+                if opportunities["matches"]:
+                    self._last_search_result = {
+                        **opportunities, "origin": "host_attested_project_state",
+                        "matches": [
+                            {**item, "tool": self._capabilities.resolve(
+                                item["id"], revision=self._capabilities.revision)["native_name"]}
+                            for item in opportunities["matches"]]}
+                    self._selectable_tools = [
+                        item["tool"] for item in self._last_search_result["matches"]]
+                    self._append({"kind": "host_capability_frontier",
+                                  "catalog_revision": self._capabilities.revision,
+                                  "result_tool_names": self._selectable_tools,
+                                  "trusted_machine_fact": "project_open",
+                                  "host_observed_value": False,
+                                  "no_native_dispatch": True})
             for turn in range(self.max_turns):
                 context = {
                     "creative_brief": brief,
