@@ -16,6 +16,7 @@ import subprocess
 import sys
 import tarfile
 import time
+from urllib.parse import urlsplit
 from urllib.request import urlopen
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -35,7 +36,26 @@ def sha(path):
 
 
 def download(entry, root):
-    target = root / entry['filename']
+    # A research manifest is committed code, not permission to write arbitrary
+    # filesystem paths or fetch local URLs during a privileged CI trial.
+    name = entry.get('filename')
+    url = entry.get('url')
+    digest = entry.get('sha256')
+    if (not isinstance(name, str) or not name or
+            Path(name).name != name or name in (".", "..") or
+            "\\\\" in name or "\\x00" in name):
+        raise ValueError('Model input filename must be a safe basename')
+    parsed = urlsplit(url) if isinstance(url, str) else None
+    if (parsed is None or parsed.scheme != 'https' or not parsed.hostname or
+            parsed.username is not None or parsed.password is not None or
+            parsed.fragment or parsed.hostname in ('localhost', '127.0.0.1', '::1')):
+        raise ValueError('Pinned inputs require a credential-free remote HTTPS URL')
+    if (not isinstance(digest, str) or len(digest) != 64 or
+            any(c not in '0123456789abcdef' for c in digest)):
+        raise ValueError('Pinned download requires an exact lower-case SHA256')
+    target = root / name
+    if target.is_symlink():
+        raise ValueError('Pinned weight target cannot be a symbolic link')
     expected = entry.get('bytes')
     limit = expected if type(expected) is int else entry.get('max_bytes')
     if (type(limit) is not int or not 0 < limit <= 10_000_000_000 or
@@ -47,7 +67,10 @@ def download(entry, root):
     partial = target.with_suffix(target.suffix + '.partial')
     print('Downloading pinned input:', entry['filename'], flush=True)
     try:
-        with urlopen(entry['url'], timeout=120) as response, partial.open('wb') as dest:
+        # Exclusive create avoids following an attacker-controlled partial
+        # symlink; no unsafe overwrite of a prior incomplete download.
+        fd = os.open(partial, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        with os.fdopen(fd, 'wb') as dest, urlopen(entry['url'], timeout=120) as response:
             count = 0
             while block := response.read(1024 * 1024):
                 count += len(block)
