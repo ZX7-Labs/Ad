@@ -2,6 +2,10 @@
 import io
 import json
 import unittest
+import asyncio
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from types import SimpleNamespace
 from unittest.mock import patch
 from studio_next.providers import LocalCreativeModel,LocalModelSettings
 
@@ -16,6 +20,51 @@ def answer(text,finish="stop"):
     return {"choices":[{"finish_reason":finish,"message":{"content":text}}]}
 
 class ProviderTests(unittest.TestCase):
+    def test_ambiguous_model_json_never_reaches_native_editor_over_real_http(self):
+        from studio_next.native_creative_control import NativeCreativeControl
+        response = [b'']
+        class Handler(BaseHTTPRequestHandler):
+            def do_POST(self):
+                self.rfile.read(int(self.headers['Content-Length']))
+                self.send_response(200)
+                self.send_header('Content-Length', str(len(response[0])))
+                self.end_headers()
+                self.wfile.write(response[0])
+            def log_message(self, *args): pass
+        class Session:
+            calls = []
+            async def list_tools(self):
+                return SimpleNamespace(tools=[SimpleNamespace(name='update_text_clip',
+                    input_schema={'type':'object'}, description='Native edit')])
+            async def call_tool(self, name, args):
+                self.calls.append((name,args))
+                return SimpleNamespace(is_error=False,content=[])
+        server = ThreadingHTTPServer(('127.0.0.1',0), Handler)
+        thread = threading.Thread(target=server.serve_forever,daemon=True)
+        thread.start()
+        try:
+            model = LocalCreativeModel(LocalModelSettings(base_url=f'http://127.0.0.1:{server.server_port}'))
+            bad = [
+                '{"action":"finish","action":"invoke","arguments":{"tool":"update_text_clip","inputs":{}},"reason":"ambiguous"}',
+                '{"action":"invoke","arguments":{"tool":"update_text_clip","inputs":{"text":"first","text":"second"}},"reason":"ambiguous"}',
+            ]
+            for body in bad:
+                response[0] = json.dumps(answer(body)).encode()
+                with self.subTest(body=body), self.assertRaisesRegex(ValueError,'[Dd]uplicate'):
+                    asyncio.run(NativeCreativeControl(Session(),model,max_turns=1).run('Edit a native project'))
+                self.assertEqual(Session.calls,[])
+            response[0] = b'{"choices":[],"choices":[{"message":{"content":"{}"}}]}'
+            with self.assertRaisesRegex(ValueError,'[Dd]uplicate'):
+                model.decide({})
+            for body in ('{"value":1e999}', '{"value":NaN}', '{"value":-Infinity}'):
+                response[0] = json.dumps(answer(body)).encode()
+                with self.subTest(body=body), self.assertRaises(ValueError):
+                    model.decide({})
+            response[0] = json.dumps(answer('{"text":"ठीक है","value":0.125}')).encode()
+            self.assertEqual(model.decide({}),{'text':'ठीक है','value':0.125})
+        finally:
+            server.shutdown(); server.server_close(); thread.join()
+
     def test_remote_api_not_possible_by_default(self):
         for endpoint in ("https://api.openai.com","http://x.evil.com:8080",
                          "http://127.0.0.1:8080/path","http://me:pass@localhost:8080",

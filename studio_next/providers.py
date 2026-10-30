@@ -10,10 +10,31 @@ import hashlib
 import io
 import wave
 import json
+import math
 from urllib.parse import urlsplit
 from urllib.request import Request
 from .local_model_http import urlopen
 from typing import Any
+
+
+def _model_json(raw):
+    """Reject ambiguous or non-finite model data before any tool admission."""
+    def unique(pairs):
+        value = {}
+        for key, item in pairs:
+            if key in value:
+                raise ValueError("Duplicate local model JSON field: " + key)
+            value[key] = item
+        return value
+    def finite_float(raw_number):
+        value = float(raw_number)
+        if not math.isfinite(value):
+            raise ValueError("Local model returned an overflowed JSON number")
+        return value
+    def reject_constant(value):
+        raise ValueError("Local model returned non-finite JSON: " + value)
+    return json.loads(raw, object_pairs_hook=unique, parse_float=finite_float,
+                      parse_constant=reject_constant)
 
 _CREATIVE_SYSTEM = """You are a studio CREATIVE DIRECTOR, story strategist and editor, not a coding assistant.
 Think independently about audience, story, emotional arc, script, artwork, camera, composition,
@@ -144,16 +165,14 @@ class LocalCreativeModel:
             raw=resp.read(self.settings.max_response_bytes+1)
         if len(raw)>self.settings.max_response_bytes:
             raise ValueError("Local model response exceeds safe size limit")
-        decoded=json.loads(raw.decode("utf-8"))
+        decoded=_model_json(raw.decode("utf-8"))
         choice=decoded["choices"][0]
         if choice.get("finish_reason")=="length":
             raise ValueError("Local model's structured answer was truncated")
         body=choice["message"].get("content")
         if not isinstance(body,str) or not body.strip():
             raise ValueError("Local model returned no JSON")
-        def reject_constant(value):
-            raise ValueError("Local model returned non-finite JSON: "+value)
-        parsed=json.loads(body.strip(),parse_constant=reject_constant)
+        parsed=_model_json(body.strip())
         if not isinstance(parsed,dict):
             raise ValueError("Local model returned a non-object JSON value")
         return parsed
