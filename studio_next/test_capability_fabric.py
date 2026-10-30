@@ -212,5 +212,43 @@ class LiveMachineDiscoveryTests(unittest.IsolatedAsyncioTestCase):
             await CapabilityFabric.from_connections({"video": (Paged(), {"first": "read"})})
 
 
+    def test_trusted_machine_effect_frontier_is_cross_domain_and_not_autoplay(self):
+        photo = [tool("new_canvas", "Create a layered original photo canvas"),
+                 tool("paint", "Paint pixels on an editable canvas")]
+        motion = [tool("new_scene", "Create a 3D animation scene"),
+                  tool("keyframe", "Animate native object motion")]
+        f = CapabilityFabric({
+            "photo": (photo, {"new_canvas": "write", "paint": "write"},
+                      {"paint": ["document_open"]},
+                      {"new_canvas": ["document_open"]}),
+            "motion": (motion, {"new_scene": "write", "keyframe": "write"},
+                       {"keyframe": ["document_open"]},
+                       {"new_scene": ["document_open"]}),
+        })
+        possible = f.affordance_frontier(trusted_facts={"document_open": False},
+                                        namespace="motion")
+        self.assertEqual([x["id"] for x in possible["matches"]],
+                         ["motion/new_scene"])
+        self.assertTrue(possible["effects_are_possibilities_not_verified_results"])
+        self.assertTrue(possible["facts_are_host_attested"])
+        self.assertFalse(any("keyframe" in x["id"] for x in possible["matches"]))
+        self.assertEqual(f.affordance_frontier(
+            trusted_facts={"document_open": True})["matches"], [])
+
+    def test_future_effect_contracts_are_versioned_and_untrusted_claims_rejected(self):
+        ops = [tool("make", "Make editable project")]
+        grants = {"make": "write"}
+        before = CapabilityFabric({"graphics": (ops, grants)})
+        after = CapabilityFabric({"graphics": (
+            ops, grants, {}, {"make": ["project_open"]})})
+        self.assertNotEqual(before.revision, after.revision)
+        for effects in ({"missing": ["project_open"]},
+                        {"make": ["not a valid fact"]},
+                        {"make": ["project_open", "project_open"]},
+                        {"make": [["not_a_string"]]}):
+            with self.subTest(effects=effects), self.assertRaises(CapabilityContractError):
+                CapabilityFabric({"graphics": (ops, grants, {}, effects)})
+
+
 if __name__ == "__main__":
     unittest.main()
