@@ -190,11 +190,26 @@ def audit_native_journal(events, *, host_tool_access):
             pending = (event.get("turn"), tool, host_tool_access[tool])
             continue
         if kind in ("native_tool_result", "native_tool_reported_error",
-                    "native_tool_uncertain_outcome", "native_observation_rejected"):
+                    "native_tool_uncertain_outcome", "native_observation_rejected",
+                    "native_read_tool_reported_error"):
             if pending is None or (event.get("turn"), event.get("tool")) != pending[:2]:
                 raise NativeJournalError("Native outcome does not match a submitted call")
             turn, tool, access = pending
             pending = None
+            if kind == "native_read_tool_reported_error":
+                # This branch is only valid for a host-attested READ. Failed
+                # reads are not positive native evidence and grant no ability
+                # to advance artistic/export/source-completion counters.
+                digest = event.get("error_sha256")
+                flag = event.get("error_text_exceeded_evidence_budget")
+                if (access != "read" or
+                        event.get("host_attested_read_only") is not True or
+                        event.get("no_successful_native_observation") is not True or
+                        type(flag) is not bool or
+                        ((digest is None) != flag) or
+                        (digest is not None and not _sha(digest))):
+                    raise NativeJournalError("Untrusted or malformed recoverable read failure")
+                continue
             if kind == "native_tool_result":
                 if event.get("human_or_artistic_quality_approved") is not False:
                     raise NativeJournalError("Technical tool output cannot assert artistic approval")
