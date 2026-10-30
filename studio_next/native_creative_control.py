@@ -495,7 +495,12 @@ class NativeCreativeControl:
         self._started = True
         if not isinstance(brief, str) or not 1 <= len(brief.strip()) <= 32_000:
             raise NativeCreativeControlError("An ordinary owner's creative brief is required")
-        available = (await self.session.list_tools()).tools
+        # Use the same bounded complete MCP catalog admission as the
+        # universal Brain–BODY fabric. The direct native model route must
+        # never see only page one of a valid engine or silently accept an
+        # incomplete/error-tagged modern tools/list envelope.
+        from .capability_fabric import discover_all_live_tools
+        available = await discover_all_live_tools(self.session)
         if (not isinstance(available, list) or not available or
                 any(not isinstance(_field(x, "name"), str) or
                     not isinstance(_field(x, "input_schema", _field(x, "inputSchema")), dict)
