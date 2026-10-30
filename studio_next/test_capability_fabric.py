@@ -72,10 +72,45 @@ class CapabilityFabricTests(unittest.TestCase):
         overview = json.dumps(fabric.overview(), separators=(",", ":"))
         self.assertLess(len(overview), 220)
         result = fabric.search("color grade", limit=6)
-        self.assertEqual(len(result["matches"]), 6)
+        self.assertEqual(result["matches"], [])
+        self.assertTrue(result["requires_refinement"])
+        self.assertEqual(len(result["candidate_examples"]), 6)
         self.assertTrue(result["has_more"])
         self.assertLess(len(json.dumps(result)), 1600)
         self.assertEqual(result, fabric.search("color grade", limit=6))
+
+    def test_ambiguous_create_intent_never_licenses_arbitrary_native_write(self):
+        ops = [
+            tool("create_asset_folder", "Create editor asset-panel folder"),
+            tool("create_project", "Create actual editable native project"),
+            tool("create_timeline", "Create timeline within existing project"),
+        ]
+        fabric = CapabilityFabric({"video": (ops, {t.name: "write" for t in ops})})
+        broad = fabric.search("create", limit=1)
+        self.assertTrue(broad["requires_refinement"])
+        self.assertEqual(broad["matches"], [])
+        self.assertIn("video/create_project",
+                      [x["id"] for x in broad["candidate_examples"]])
+        precise = fabric.search("create project", limit=3)
+        self.assertFalse(precise["requires_refinement"])
+        self.assertEqual(precise["matches"][0]["id"], "video/create_project")
+
+    def test_sparse_specialist_search_examines_only_host_granted_postings(self):
+        ops = [tool(f"job_{i:04d}",
+               "Render original visual composition" if i != 911
+               else "Rare specialist prismaster glow treatment")
+               for i in range(1000)]
+        fabric = CapabilityFabric({"graphics": (
+            ops, {t.name: "write" for t in ops})})
+        focused = fabric.search("prismaster", limit=1)
+        self.assertEqual(focused["candidates_examined"], 1)
+        self.assertEqual(focused["matches"][0]["id"], "graphics/job_0911")
+        self.assertLess(len(json.dumps(focused)), 800)
+        common = fabric.search("render", limit=6)
+        self.assertEqual(common["candidates_examined"], 999)
+        self.assertTrue(common["requires_refinement"])
+        self.assertEqual(common["matches"], [])
+        self.assertEqual(common, fabric.search("render", limit=6))
 
     def test_collision_and_ambiguous_source_are_rejected(self):
         with self.assertRaisesRegex(CapabilityContractError, "Duplicate"):
