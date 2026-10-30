@@ -1076,6 +1076,68 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("search", model.observed[1]["selectable_native_tools"])
         self.assertLessEqual(len(model.observed[1]["selectable_native_tools"]), 8)
 
+    async def test_trusted_project_prerequisites_hide_nonready_tools_from_small_brain(self):
+        from studio_next.native_creative_audit import audit_native_journal
+        session = FakeSession()
+        session.tools.extend([
+            SimpleNamespace(name="get_project", description="Actual project state",
+                            input_schema={"type": "object", "additionalProperties": False}),
+            SimpleNamespace(name="create_project", description="Create real editable project",
+                            input_schema={"type": "object", "properties": {
+                                "name": {"type": "string"}}}),
+            SimpleNamespace(name="create_asset_folder", description="Create asset panel folder",
+                            input_schema={"type": "object", "properties": {
+                                "folderName": {"type": "string"}}}),
+        ])
+        access = {x.name: ("write" if x.name in
+                          ("update_text_clip", "create_project", "create_asset_folder") else "read")
+                  for x in session.tools}
+        requirements = {"create_asset_folder": ["project_open"]}
+        class HostSession(FakeSession):
+            pass
+        async def actual_call(name, args):
+            session.calls.append((name, args))
+            if name == "get_project":
+                return SimpleNamespace(is_error=False, content=[
+                    SimpleNamespace(type="text", text=json.dumps({
+                        "project": None, "mcp": {"hasProject": False}}))])
+            return SimpleNamespace(is_error=False, content=[
+                SimpleNamespace(type="text", text='{"success":true}')])
+        session.call_tool = actual_call
+        model = ScriptedModel([
+            decision("search", query="asset folder", limit=3),
+            decision("search", query="create project", limit=3),
+            decision("finish", summary="Only host-state-admissible operations shown"),
+        ])
+        with tempfile.TemporaryDirectory() as root:
+            controller = NativeCreativeControl(
+                session, model, max_turns=3, catalog_mode="indexed",
+                host_tool_access=access, host_tool_requirements=requirements,
+                receipt_path=Path(root) / "facts.jsonl")
+            result = await controller.run("Choose original project structure")
+        first = model.observed[1]["last_capability_search_result"]
+        self.assertEqual(first["matches"][0]["tool"], "create_asset_folder")
+        self.assertFalse(first["matches"][0]["ready_for_model_selection"])
+        self.assertEqual(first["matches"][0]["unsatisfied"], ["project_open"])
+        self.assertEqual(model.observed[1]["selectable_native_tools"], [])
+        second = model.observed[2]["last_capability_search_result"]
+        self.assertTrue(any(x["tool"] == "create_project" and
+                            x["ready_for_model_selection"] for x in second["matches"]))
+        self.assertIn("create_project", model.observed[2]["selectable_native_tools"])
+        self.assertEqual(session.calls, [("get_project", {})])
+        self.assertFalse(result["native_editing_capability_complete"])
+
+    async def test_native_prerequisite_contract_cannot_be_injected_by_neural_model(self):
+        session = FakeSession()
+        access = {x.name: "read" for x in session.tools}
+        with self.assertRaisesRegex(ValueError, "Prerequisite"):
+            await NativeCreativeControl(session, ScriptedModel([
+                decision("finish", summary="Unknown grant")]),
+                host_tool_access=access, host_tool_requirements={
+                    "not_a_real_editor_tool": ["project_open"]},
+                catalog_mode="indexed").run("No invented machine rule")
+        self.assertEqual(session.calls, [])
+
     async def test_indexed_search_is_private_metadata_not_editor_execution(self):
         session = FakeSession()
         grants = {x.name: "read" for x in session.tools}
