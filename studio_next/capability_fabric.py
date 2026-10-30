@@ -35,6 +35,26 @@ def _tokens(value):
     return set(re.findall(r"[^\W_]+", value.casefold(), re.UNICODE))
 
 
+def _completed_tools(response):
+    """Single fail-closed normalizer shared by discovery and execution.
+
+    Legacy MCP SDK returns tools directly. Versioned MCP can return a tagged
+    result envelope. Neither a pagination cursor nor an incomplete/retry state
+    may authorize a model-selected creative command.
+    """
+    payload = _field(response, "result", response)
+    result_type = _field(payload, "resultType")
+    if result_type not in (None, "complete"):
+        raise CapabilityContractError("Native tool list is not complete")
+    cursor = _field(payload, "nextCursor", _field(payload, "next_cursor"))
+    if cursor not in (None, ""):
+        raise CapabilityContractError("Native tool list is paginated/incomplete")
+    tools = _field(payload, "tools")
+    if not isinstance(tools, (tuple, list)):
+        raise CapabilityContractError("Native tool list is malformed")
+    return tools
+
+
 class CapabilityFabric:
     """Immutable, exact host-granted capability snapshot.
 
@@ -154,11 +174,7 @@ class CapabilityFabric:
             if not callable(getattr(session, "list_tools", None)):
                 raise CapabilityContractError("Native source lacks live tool discovery")
             response = await session.list_tools()
-            cursor = _field(response, "nextCursor", _field(response, "next_cursor"))
-            if cursor not in (None, ""):
-                raise CapabilityContractError(
-                    "Partial paginated MCP discovery cannot define complete capabilities")
-            advertised = _field(response, "tools")
+            advertised = _completed_tools(response)
             requirements = binding[2] if len(binding) >= 3 else {}
             enablers = binding[3] if len(binding) == 4 else {}
             sources[namespace] = (advertised, grants, requirements, enablers)
