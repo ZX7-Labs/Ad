@@ -268,9 +268,6 @@ class CapabilityFabric:
                 len(query.encode("utf-8")) > 160 or
                 type(limit) is not int or not 1 <= limit <= 8):
             raise CapabilityContractError("Use a bounded descriptive capability query")
-        terms = _tokens(query)
-        if not terms:
-            raise CapabilityContractError("Search query has no searchable terms")
         # Exact host-granted operation identity is stronger than any lexical
         # similarity. This never invents a tool, widens grants or authorizes
         # dispatch: it only returns the existing contract for model inspection.
@@ -279,6 +276,11 @@ class CapabilityFabric:
         exact = query.strip()
         exact_ids = ((exact,) if exact in self._records
                      else self._exact_native_names.get(exact, ()))
+        terms = _tokens(query)
+        # Even a source-declared punctuation-only tool ID can be explicitly
+        # retrieved; free-form punctuation with no exact match still fails.
+        if not terms and not exact_ids:
+            raise CapabilityContractError("Search query has no searchable terms")
         candidates = set(exact_ids)
         scored = []
         if exact_ids:
