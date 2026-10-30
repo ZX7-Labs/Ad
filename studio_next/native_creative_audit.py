@@ -163,6 +163,35 @@ def audit_native_journal(events, *, host_tool_access):
                 if not (reported or exception):
                     raise NativeJournalError("Malformed failed project bootstrap evidence")
             continue
+        if kind in ("host_project_postwrite_observation", "host_project_postwrite_error"):
+            previous = events[i - 1] if i else {}
+            if (pending is not None or
+                    previous.get("kind") != "native_tool_result" or
+                    host_tool_access.get(previous.get("tool")) != "write" or
+                    event.get("turn") != previous.get("turn") or
+                    event.get("tool") != "get_project" or
+                    host_tool_access.get("get_project") != "read" or
+                    event.get("host_attested_read_only") is not True):
+                raise NativeJournalError("Native postwrite sensing is not linked to a verified write")
+            if kind == "host_project_postwrite_observation":
+                hashes = event.get("text_sha256")
+                if (not isinstance(hashes, list) or len(hashes) != 1 or
+                        not all(_sha(x) for x in hashes) or
+                        event.get("project_presence") not in ("unknown", "absent", "present") or
+                        event.get("no_model_selected_mutation") is not True):
+                    raise NativeJournalError("Postwrite snapshot has invalid source proof")
+            else:
+                digest = event.get("error_sha256")
+                oversized = event.get("error_text_exceeded_evidence_budget")
+                error_type = event.get("error_type")
+                reported = (type(oversized) is bool and
+                            ((digest is None) == oversized) and
+                            (digest is None or _sha(digest)) and error_type is None)
+                raised = (isinstance(error_type, str) and bool(error_type) and
+                          digest is None and oversized is None)
+                if not (reported or raised):
+                    raise NativeJournalError("Postwrite read error lacks bounded evidence")
+            continue
         if kind == "model_decision_failed":
             duration = event.get("measured_model_wall_ms")
             if (pending is not None or i != len(events) - 1 or
