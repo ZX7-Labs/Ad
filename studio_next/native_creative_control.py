@@ -1005,23 +1005,31 @@ class NativeCreativeControl:
                         raise NativeCreativeControlError("Untrusted tool supplied image evidence")
                     if audio and native_name not in _VERIFIED_AUDIO_TOOLS:
                         raise NativeCreativeControlError("Untrusted tool supplied audio evidence")
-                    # A native tool may report a successful MCP transport
-                    # while its application explicitly supplied only a preview
-                    # plan. Velorn's default previewOnly=True returns
-                    # success=false and result.previewOnly=true. That is NOT
-                    # an acknowledged native mutation, even for a host-granted
-                    # write tool. Never satisfy completion via a preview plan.
+                    # MCP transport success does NOT establish that the native
+                    # application applied a model-chosen write. Actual Velorn
+                    # actions return an explicit JSON boolean success. Require
+                    # that acknowledgment before a write counts as evidence;
+                    # contradictory, missing or malformed receipts leave the
+                    # state uncertain and must not be automatically replayed.
                     if (self.host_tool_access is not None and
-                            self.host_tool_access.get(native_name) == "write" and
-                            len(texts) == 1 and not images and not audio):
+                            self.host_tool_access.get(native_name) == "write"):
                         try:
-                            host_response = _strict_receipt(texts, "native write response")
+                            host_response = (
+                                _strict_receipt(texts, "native write response")
+                                if len(texts) == 1 and not images and not audio
+                                else None)
                         except NativeCreativeControlError:
-                            host_response = {}
-                        if host_response.get("success") is False:
-                            host_result = host_response.get("result")
-                            if (isinstance(host_result, dict) and
-                                    host_result.get("previewOnly") is True):
+                            host_response = None
+                        success = (host_response.get("success")
+                                   if isinstance(host_response, dict) else None)
+                        host_result = (host_response.get("result")
+                                       if isinstance(host_response, dict) else None)
+                        preview = (host_result.get("previewOnly")
+                                   if isinstance(host_result, dict) else None)
+                        if success is False:
+                            if preview is True:
+                                # A proposed native plan is useful model feedback,
+                                # but never grants credit for any applied edit.
                                 self._last_native_texts = texts
                                 self._last_images, self._last_hashes = [], []
                                 self._last_audio, self._last_audio_evidence = [], None
@@ -1036,13 +1044,32 @@ class NativeCreativeControl:
                                     "no_accepted_write_evidence": True,
                                     "human_or_artistic_quality_approved": False})
                                 continue
-                            digest = hashlib.sha256(texts[0].encode()).hexdigest()
                             self._append({
                                 "kind": "native_tool_reported_error", "turn": turn,
                                 "tool": native_name,
                                 "measured_native_mcp_wall_ms": native_ms,
-                                "error_sha256": digest,
+                                "error_sha256": hashlib.sha256(texts[0].encode()).hexdigest(),
                                 "error_text_exceeded_evidence_budget": False,
+                                "must_reconcile_native_state": True,
+                                "no_automatic_retry": True})
+                            outcome = "native_error_requires_state_reconciliation"
+                            break
+                        if (success is not True or
+                                (isinstance(host_result, dict) and
+                                 "previewOnly" in host_result and preview is not False)):
+                            # No application-level acknowledgment, or the host
+                            # contradicted itself by claiming both a successful
+                            # write and a preview. Neither is acceptable proof.
+                            # The write may still have taken effect: stop rather
+                            # than guessing or sending a second mutation.
+                            self._append({
+                                "kind": "native_tool_uncertain_outcome", "turn": turn,
+                                "tool": native_name,
+                                "measured_native_mcp_wall_ms": native_ms,
+                                "response_sha256": hashlib.sha256(
+                                    _wire(texts).encode()).hexdigest(),
+                                "uncertainty_reason":
+                                    "native_write_unconfirmed_by_application",
                                 "must_reconcile_native_state": True,
                                 "no_automatic_retry": True})
                             outcome = "native_error_requires_state_reconciliation"
