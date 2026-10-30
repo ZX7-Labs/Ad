@@ -8,6 +8,7 @@ No README/Markdown parsing, hosted search, embeddings or vendor dependency.
 """
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import re
@@ -86,7 +87,8 @@ class CapabilityFabric:
                 records[identity] = {
                     "operation_id": identity, "source": namespace,
                     "native_name": name, "description": summary,
-                    "access": grants[name], "input_schema": schema,
+                    "access": grants[name],
+                    "input_schema": json.loads(_wire(schema)),
                     "schema_bytes": schema_bytes,
                     "name_tokens": _tokens(name + " " + namespace),
                     "description_tokens": _tokens(summary),
@@ -162,4 +164,4 @@ class CapabilityFabric:
             raise CapabilityContractError("Stale capability catalog revision")
         if not isinstance(operation_id, str) or operation_id not in self._records:
             raise CapabilityContractError("Unknown or ungranted BODY capability")
-        return self._records[operation_id]
+        return copy.deepcopy(self._records[operation_id])
