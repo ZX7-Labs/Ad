@@ -187,6 +187,7 @@ async def trial(args, lock, artifacts, command):
     completion_evidence = (
         "native_write_acknowledged",
         "physical_export_verified",
+        "post_observation_native_write_acknowledged",
         "verified_export_frame_observed",
     )
     with (artifacts / 'editor-stderr.log').open('w') as log:
