@@ -2,7 +2,8 @@ name: "ZX7 BODY — Live Local Model Native Editor Trial"
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    # Isolated evidence-only, same pinned model/engine as prior negative trial.
+    branches: [main, "trial/**"]
     paths:
       - ".github/workflows/zx7-live-native-model.yml"
       - "scripts/run_native_model_trial.py"
