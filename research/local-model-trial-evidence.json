@@ -64,7 +64,17 @@
       "repeated_metadata_action_turns": 19,
       "successful_native_read_results": 2,
       "successful_native_write_results": 0,
-      "timing_and_token_evidence_source": "CI artifact 12959508682/inference-transcript.jsonl and native-journal.jsonl"
+      "timing_and_token_evidence_source": "CI artifact 12959508682/inference-transcript.jsonl and native-journal.jsonl",
+      "offline_context_projection": {
+        "kind": "counterfactual_model_context_utf8_bytes_only",
+        "source_trial_artifact_id": 12959508682,
+        "candidate_implementation": "PR #87 model_event_window on branch feature/native-model-context-budget-20261030",
+        "observed_decision_contexts": 22,
+        "baseline_serialized_context_bytes": 232630,
+        "projected_serialized_context_bytes": 94921,
+        "estimated_serialized_context_bytes_reduction_percent": 59.2,
+        "note": "Same 22 historical context payloads, replacing ONLY latest_events with bounded projection; not actual new model inference, not verified model token savings, latency improvement, quality or autonomous video success."
+      }
     }
   ]
 }
