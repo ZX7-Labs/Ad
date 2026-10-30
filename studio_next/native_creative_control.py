@@ -1098,9 +1098,9 @@ class NativeCreativeControl:
                         else:
                             try:
                                 state_texts, state_images, state_audio = _native_content(refreshed)
-                                if state_images or state_audio:
+                                if len(state_texts) != 1 or state_images or state_audio:
                                     raise NativeCreativeControlError(
-                                        "Project state read contains binary media")
+                                        "Project state read needs one bounded text receipt only")
                             except NativeCreativeControlError:
                                 self._append({"kind": "host_project_post_write_error",
                                               "tool": "get_project",
