@@ -326,5 +326,36 @@ class NativeCreativeAuditTests(unittest.TestCase):
                 audit_native_journal(clone, host_tool_access=HOST)
 
 
+    def test_source_attested_machine_frontier_rejects_forged_project_state(self):
+        events = trace()
+        # The same ordered native bootstrap previously established in this
+        # test suite, then an advisory no-RPC candidate list.
+        bootstrap = {"kind": "host_project_bootstrap_observation",
+            "tool": "get_project", "host_attested_read_only": True,
+            "text_sha256": [A], "project_presence": "absent",
+            "no_model_selected_mutation": True}
+        frontier = {"kind": "host_capability_frontier",
+                    "catalog_revision": A,
+                    "result_tool_names": ["get_timeline"],
+                    "trusted_machine_fact": "project_open",
+                    "host_observed_value": False,
+                    "no_native_dispatch": True}
+        events.insert(1, bootstrap)
+        events.insert(2, frontier)
+        for idx, item in enumerate(events):
+            item["sequence"] = idx
+        grants = dict(HOST, get_project="read")
+        self.assertTrue(audit_native_journal(events, host_tool_access=grants)[
+            "journal_chain_structurally_valid"])
+        for change in ({"host_observed_value": True},
+                       {"result_tool_names": ["fantasy"]},
+                       {"trusted_machine_fact": "model_guess"},
+                       {"no_native_dispatch": False}):
+            invalid = copy.deepcopy(events)
+            invalid[2].update(change)
+            with self.subTest(change=change), self.assertRaises(NativeJournalError):
+                audit_native_journal(invalid, host_tool_access=grants)
+
+
 if __name__ == "__main__":
     unittest.main()
