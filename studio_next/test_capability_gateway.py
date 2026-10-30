@@ -190,5 +190,37 @@ class GatewayTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(motion.calls, [])
 
 
+    async def test_host_granted_future_operation_appears_automatically_on_refresh(self):
+        engine = Engine([tool("original_project")])
+        grants = {"original_project": "write"}
+        gateway = CapabilityGateway({"creative": (engine, lambda: dict(grants))})
+        initial = await gateway.refresh()
+        self.assertEqual(initial["operation_count"], 1)
+        engine.tools.append(tool("future_vfx"))
+        grants["future_vfx"] = "write"
+        current = await gateway.refresh()
+        self.assertEqual(current["operation_count"], 2)
+        self.assertNotEqual(current["revision"], initial["revision"])
+        self.assertEqual(gateway.search("future vfx")["matches"][0]["id"],
+                         "creative/future_vfx")
+        with self.assertRaises(CapabilityContractError):
+            gateway.describe("creative/future_vfx", revision=initial["revision"])
+        applied = await gateway.invoke("creative/future_vfx",
+                                       revision=current["revision"], inputs={})
+        self.assertEqual(applied["state"], "host_reported_success_unverified")
+        self.assertEqual(engine.calls, [("future_vfx", {})])
+
+    async def test_host_revokes_grant_after_discovery_and_gateway_blocks_execution(self):
+        e = Engine([tool("write_original")])
+        grants = {"write_original": "write"}
+        gateway = CapabilityGateway({"video": (e, lambda: dict(grants))})
+        rev = (await gateway.refresh())["revision"]
+        grants.clear()
+        with self.assertRaises(CapabilityContractError):
+            await gateway.invoke("video/write_original", revision=rev, inputs={})
+        self.assertEqual(e.calls, [])
+        self.assertEqual(gateway.evidence(), [])
+
+
 if __name__ == "__main__":
     unittest.main()
