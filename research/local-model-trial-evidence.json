@@ -74,6 +74,15 @@
         "projected_serialized_context_bytes": 94921,
         "estimated_serialized_context_bytes_reduction_percent": 59.2,
         "note": "Same 22 historical context payloads, replacing ONLY latest_events with bounded projection; not actual new model inference, not verified model token savings, latency improvement, quality or autonomous video success."
+      },
+      "actual_model_context_utf8_bytes": {
+        "turns": 22,
+        "total": 222860,
+        "mean": 10130,
+        "median": 10965,
+        "min": 3795,
+        "max": 12316,
+        "measurement": "serialized inference-transcript.jsonl context objects with ensure_ascii=False and compact separators"
       }
     },
     {
@@ -231,7 +240,21 @@
       "root_cause": "In compact indexed discovery mode, unconstrained invoke.tool JSON string let 2B model mistake the protocol action search for a native editor tool; BODY rejected it before any native dispatch.",
       "next_fix": "Only the small set of tools returned by live host-granted search may appear in the next model's structured invoke/describe grammar; no giant static tool enumeration.",
       "artistic_quality_approved": false,
-      "native_video_field_complete": false
+      "native_video_field_complete": false,
+      "actual_model_context_utf8_bytes": {
+        "turns": 6,
+        "total": 22454,
+        "mean": 3742.3,
+        "median": 3519.5,
+        "min": 2946,
+        "max": 5078,
+        "measurement": "serialized inference-transcript.jsonl context objects with ensure_ascii=False and compact separators"
+      },
+      "context_comparison": {
+        "baseline_workflow_run": 41013244673,
+        "observed_average_context_bytes_reduction_percent": 63.1,
+        "validity": "Different real CPU-model sessions and model decisions; per-turn serialized context bytes only, NOT a controlled token, latency, creativity or reliability benchmark."
+      }
     },
     {
       "body_commit": "4adb179d5666270b8e7c40cf187d576d46b56b5f",
