@@ -106,7 +106,7 @@ def read_native_journal(path: Path):
     return events
 
 
-def audit_native_journal(events, *, host_tool_access):
+def audit_native_journal(events, *, host_tool_access, expected_required_evidence=None):
     """Check every transition and trace real export-to-observation identity.
 
     host_tool_access comes from the trusted owner grants, not from model text.
@@ -126,6 +126,18 @@ def audit_native_journal(events, *, host_tool_access):
             any(not isinstance(item, str) or item not in _COMPLETION_EVIDENCE_TYPES
                 for item in required) or required != sorted(set(required))):
         raise NativeJournalError("Unknown or malformed host completion requirements")
+    # Independent policy witness is supplied by the trusted host caller, not
+    # copied from the journal being evaluated. Existing callers may omit it,
+    # but that omission cannot certify the configured completion policy.
+    if expected_required_evidence is not None:
+        if (not isinstance(expected_required_evidence, (list, tuple, frozenset)) or
+                any(not isinstance(item, str) or
+                    item not in _COMPLETION_EVIDENCE_TYPES
+                    for item in expected_required_evidence) or
+                len(set(expected_required_evidence)) != len(expected_required_evidence)):
+            raise NativeJournalError("Invalid independent host completion policy")
+        if required != sorted(expected_required_evidence):
+            raise NativeJournalError("Journal completion policy differs from trusted host")
     pending = None
     verified = set()
     observed = {}
@@ -362,6 +374,7 @@ def audit_native_journal(events, *, host_tool_access):
     return {
         "schema": 1,
         "journal_chain_structurally_valid": True,
+        "host_completion_policy_independently_matched": expected_required_evidence is not None,
         "event_count": len(events),
         "recorded_native_write_result_count": len(writes),
         "export_digests_independently_reported_by_native_host": sorted(verified),
