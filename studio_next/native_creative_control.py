@@ -299,6 +299,11 @@ def _model_event_window(events):
             for field in ("validation_keyword", "schema_location", "no_native_dispatch"):
                 if field in event:
                     item[field] = event[field]
+        elif kind in ("host_project_bootstrap_observation", "host_project_bootstrap_error"):
+            for field in ("project_presence", "no_model_selected_mutation",
+                          "error_text_exceeded_evidence_budget"):
+                if field in event:
+                    item[field] = event[field]
         elif kind in ("native_tool_result", "native_observation_rejected",
                       "native_tool_reported_error", "native_read_tool_reported_error",
                       "native_tool_uncertain_outcome"):
@@ -313,6 +318,29 @@ def _model_event_window(events):
         retained.append(item)
     return retained
 
+
+
+
+def _native_project_presence_from_text(texts):
+    """A native project exists only when independent host snapshot fields
+    agree. Missing or contradictory fields never mean an absent project.
+    """
+    if len(texts) != 1:
+        return "unknown"
+    try:
+        status = _strict_receipt(texts, "native project observation")
+    except NativeCreativeControlError:
+        return "unknown"
+    if not isinstance(status, dict) or not isinstance(status.get("mcp"), dict):
+        return "unknown"
+    has = status["mcp"].get("hasProject")
+    if "project" not in status:
+        return "unknown"
+    if has is False and status["project"] is None:
+        return "absent"
+    if has is True and isinstance(status["project"], dict):
+        return "present"
+    return "unknown"
 
 
 class NativeCreativeControl:
@@ -488,6 +516,52 @@ class NativeCreativeControl:
                 "neural_autonomy_or_artistic_quality_verified": False,
             })
             outcome = "turn_budget_exhausted"
+
+            # Host sensing is not an artistic operation. On an *explicitly*
+            # trusted READ grant, obtain one real project snapshot before
+            # asking the AI to spend CPU inference guessing whether a project
+            # is open. Never create or open a project here. Missing read grants
+            # preserve the old model-driven discovery behavior unchanged.
+            if (self.host_tool_access is not None and
+                    self.host_tool_access.get("get_project") == "read" and
+                    "get_project" in validators and
+                    validators["get_project"].is_valid({})):
+                try:
+                    native_bootstrap = await self.session.call_tool("get_project", {})
+                    if _field(native_bootstrap, "is_error",
+                              _field(native_bootstrap, "isError", False)):
+                        digest, oversized = _bounded_error_digest(native_bootstrap)
+                        self._append({"kind": "host_project_bootstrap_error",
+                                      "tool": "get_project", "host_attested_read_only": True,
+                                      "error_sha256": digest,
+                                      "error_text_exceeded_evidence_budget": oversized})
+                    else:
+                        try:
+                            texts, images, audio = _native_content(native_bootstrap)
+                            if images or audio:
+                                raise NativeCreativeControlError(
+                                    "Project-state sensing received untrusted binary media")
+                        except NativeCreativeControlError:
+                            self._append({"kind": "host_project_bootstrap_error",
+                                          "tool": "get_project",
+                                          "host_attested_read_only": True,
+                                          "error_type": "InvalidBoundedProjectObservation"})
+                        else:
+                            self._last_native_texts = texts
+                            self._project_presence = _native_project_presence_from_text(texts)
+                            self._append({"kind": "host_project_bootstrap_observation",
+                                          "tool": "get_project", "host_attested_read_only": True,
+                                          "text_sha256": [hashlib.sha256(x.encode()).hexdigest()
+                                                          for x in texts],
+                                          "project_presence": self._project_presence,
+                                          "no_model_selected_mutation": True})
+                except Exception as exc:
+                    # An unsuccessful read makes no positive claim about
+                    # project state. Keep the exception type, never its private
+                    # text, and let the model select its next action.
+                    self._append({"kind": "host_project_bootstrap_error",
+                                  "tool": "get_project", "host_attested_read_only": True,
+                                  "error_type": type(exc).__name__})
             for turn in range(self.max_turns):
                 context = {
                     "creative_brief": brief,
@@ -721,25 +795,9 @@ class NativeCreativeControl:
                 # corroborated by both fields in the native read response.
                 # Any other successful native operation may change project
                 # state, so do not carry an old presence assertion forward.
-                if native_name == "get_project":
-                    self._project_presence = "unknown"
-                    if len(texts) == 1:
-                        try:
-                            status = _strict_receipt(texts, "native project observation")
-                        except NativeCreativeControlError:
-                            status = None
-                        if isinstance(status, dict) and isinstance(status.get("mcp"), dict):
-                            has = status["mcp"].get("hasProject")
-                            project = status.get("project")
-                            # Missing "project" is not a verified null
-                            # project. The real host must explicitly supply
-                            # BOTH independent fields before asserting status.
-                            if "project" in status and has is False and project is None:
-                                self._project_presence = "absent"
-                            elif "project" in status and has is True and isinstance(project, dict):
-                                self._project_presence = "present"
-                else:
-                    self._project_presence = "unknown"
+                self._project_presence = (
+                    _native_project_presence_from_text(texts)
+                    if native_name == "get_project" else "unknown")
                 self._last_native_texts = texts
                 self._last_images, self._last_hashes = images, hashes
                 self._last_audio, self._last_audio_evidence = audio, audio_evidence
