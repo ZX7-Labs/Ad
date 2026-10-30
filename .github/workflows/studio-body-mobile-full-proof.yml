@@ -1,6 +1,10 @@
 name: "ZX7 BODY — Integrated Mobile + Native Release Proof"
 on:
   workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/studio-body-mobile-full-proof.yml"
   push:
     branches: [main]
     paths:
@@ -28,6 +32,20 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y blender ffmpeg melt frei0r-plugins inkscape xvfb python3-tk fonts-dejavu-core fonts-noto-core
           python -m pip install --no-cache-dir "numpy>=1.26,<3" "Pillow>=10,<13" "opentimelineio>=0.17,<1" "fonttools>=4,<5" "OpenEXR>=3.3,<4" "opencolorio>=2.5,<2.6" "opencv-python-headless>=4.10,<5"
+          # The full test discovery includes native model/editor controls,
+          # whose declared extra requires MCP and jsonschema. Without it,
+          # 92 controller tests fail during setup before any real assertion.
+          # Use the existing pinned project extra; never skip these tests.
+          python -m pip install --no-cache-dir '.[editor]'
+          python - <<'PY'
+          import importlib.metadata as metadata
+          import jsonschema
+          import mcp
+          print("DECLARED EDITOR TEST DEPENDENCIES", {
+              "jsonschema": metadata.version("jsonschema"),
+              "mcp": metadata.version("mcp"),
+          })
+          PY
       - name: Verify complete contracts, real process death, pause/restart/resume and actual graphical client
         env:
           ZX7_DESKTOP_QA_PNG: ${{ github.workspace }}/output/body-release-proof/desktop-qa.png
@@ -46,7 +64,16 @@ jobs:
         run: |
           python -m pip wheel --no-deps --wheel-dir output/body-release-proof/wheels .
           python -m venv --system-site-packages "$RUNNER_TEMP/zx7-body-installed"
-          "$RUNNER_TEMP/zx7-body-installed/bin/python" -m pip install --no-deps output/body-release-proof/wheels/*.whl
+          # This venv deliberately inherits global site packages. The test
+          # install above already registers the same package version, so plain
+          # pip exits "already satisfied" and never creates venv CLI scripts.
+          # Install the exact built wheel into THIS venv even when a globally
+          # visible copy has the same version.
+          "$RUNNER_TEMP/zx7-body-installed/bin/python" -m pip install --ignore-installed --no-deps output/body-release-proof/wheels/*.whl
+          test -x "$RUNNER_TEMP/zx7-body-installed/bin/zx7-client"
+          test -x "$RUNNER_TEMP/zx7-body-installed/bin/zx7-desktop"
+          test -x "$RUNNER_TEMP/zx7-body-installed/bin/zx7-archive"
+          test -x "$RUNNER_TEMP/zx7-body-installed/bin/zx7-relink-otio"
           python -m venv "$RUNNER_TEMP/zx7-body-minimal"
           "$RUNNER_TEMP/zx7-body-minimal/bin/python" -m pip install --no-deps output/body-release-proof/wheels/*.whl
           "$RUNNER_TEMP/zx7-body-minimal/bin/python" -I - <<'PY'
