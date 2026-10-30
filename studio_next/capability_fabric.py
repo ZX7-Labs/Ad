@@ -201,6 +201,15 @@ class CapabilityFabric:
             raise CapabilityContractError("No executable host-granted capabilities")
         self._records = records
         self._namespaces = sorted(sources)
+        # Immutable inverted postings index over only host-discovered, granted
+        # operations. Rare specialist terms examine only matching candidates;
+        # neither entire tool schemas nor MD manuals enter neural context.
+        postings = {}
+        for ident, record in records.items():
+            for term in record["name_tokens"] | record["description_tokens"]:
+                postings.setdefault(term, set()).add(ident)
+        self._postings = {term: frozenset(ids)
+                          for term, ids in postings.items()}
         # A deterministic contract revision invalidates a stale model-side
         # selection even when the *name* is reused for a different ABI/grant.
         self.revision = hashlib.sha256(_wire([{
@@ -252,8 +261,12 @@ class CapabilityFabric:
         terms = _tokens(query)
         if not terms:
             raise CapabilityContractError("Search query has no searchable terms")
+        candidates = set()
+        for term in terms:
+            candidates.update(self._postings.get(term, ()))
         scored = []
-        for ident, record in self._records.items():
+        for ident in candidates:
+            record = self._records[ident]
             name_hits = terms & record["name_tokens"]
             desc_hits = terms & record["description_tokens"]
             if not (name_hits or desc_hits):
@@ -264,6 +277,17 @@ class CapabilityFabric:
                      5 * len(name_hits) + len(desc_hits))
             scored.append((-score, ident, record))
         scored.sort(key=lambda x: (x[0], x[1]))
+        # A tiny specialist must not treat arbitrary alphabetical tie-breaks
+        # as an informed choice between different creative write operations.
+        # Return bounded *non-invokable* examples until the brain refines intent.
+        if len(scored) > limit and scored[limit][0] == scored[limit - 1][0]:
+            examples = [{"id": ident, "description": rec["description"][:96],
+                         "access": rec["access"]}
+                        for _, ident, rec in scored[:6]]
+            return {"revision": self.revision, "matches": [],
+                    "has_more": True, "requires_refinement": True,
+                    "candidate_examples": examples,
+                    "candidates_examined": len(candidates)}
         items = []
         for _, ident, record in scored[:limit]:
             schema = record["input_schema"]
@@ -275,7 +299,9 @@ class CapabilityFabric:
                           "requires": record["requires"],
                           "may_enable": record["may_enable"]})
         return {"revision": self.revision, "matches": items,
-                "has_more": len(scored) > limit}
+                "has_more": len(scored) > limit,
+                "requires_refinement": False,
+                "candidates_examined": len(candidates)}
 
     def describe(self, operation_id: str, *, revision: str, max_schema_bytes=16_384):
         record = self.resolve(operation_id, revision=revision)
