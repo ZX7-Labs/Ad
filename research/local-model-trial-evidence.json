@@ -117,6 +117,52 @@
       "native_video_field_complete": false,
       "failure": "Tool schemas permitted unspecified extra top-level fields, so the model's hallucinated open_project keys passed preflight and the real native host rejected the call; no project/edit/export was produced.",
       "next_proposed_fix": "Model-only top-level declared-parameter admission plus host-derived bounded parameter-name hints; no changes to the native host schema or creative input values."
+    },
+    {
+      "body_commit": "75de87c2ca18f89567a1fca18111b4716f18dffa",
+      "workflow_run": 41022847301,
+      "artifact_id": 12962642215,
+      "artifact_zip_sha256": "7976809f4d628db8d9ab6ad4927aabd4700a71ab519faf76bbbab2feef93c90e",
+      "model": "unsloth/Qwen3.5-2B-GGUF",
+      "revision": "f6d5376be1edb4d416d56da11e5397a961aca8ae",
+      "quantization": "Q4_K_M",
+      "cpu_only": true,
+      "ordinary_nonroot_chromium_sandbox": true,
+      "actual_inference_turns": 4,
+      "model_selected_actions": {
+        "invoke": 3,
+        "discover": 1
+      },
+      "measured_inference_wall_seconds_sum": 145.782,
+      "local_server_reported_prompt_tokens_sum": 11295,
+      "local_server_reported_completion_tokens_sum": 1110,
+      "token_usage_independently_verified": false,
+      "model_proposals_rejected_before_native_dispatch": 2,
+      "preflight_rejected_tools": [
+        "zx7_verify_native_export",
+        "create_project"
+      ],
+      "preflight_rejection_keywords": [
+        "required",
+        "additionalProperties"
+      ],
+      "actual_native_submissions": 1,
+      "actual_native_tool": "inspect_export_file",
+      "actual_native_call_error_class": "host-reported read-only missing/nonexistent export path",
+      "host_grants_tool_class": "read",
+      "controller_grants_not_available_during_trial": true,
+      "actual_successful_native_operations": 0,
+      "editor_writes": 0,
+      "verified_exports": 0,
+      "physically_observed_frames": 0,
+      "model_status": "native_error_requires_state_reconciliation",
+      "terminal_event": "native_tool_reported_error",
+      "technical_trial_completed": false,
+      "no_automatic_write_replay": true,
+      "artistic_quality_approved": false,
+      "native_video_field_complete": false,
+      "failure": "Two model input-shape errors were correctly stopped before editor RPC. A subsequent read-only inspect_export_file on a nonexistent export was dispatched, failed, and unnecessarily terminated the session because the controller had not received trusted host read/write grants.",
+      "proposed_change": "Pass trusted host grant map to controller and independent audit so *reported read-only errors* may be followed by model-chosen correction; write or unknown errors still stop."
     }
   ]
 }
