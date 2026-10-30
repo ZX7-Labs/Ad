@@ -35,6 +35,36 @@ class CapabilityFabricTests(unittest.TestCase):
                          "motion/keyframe_curve")
         self.assertFalse(fabric.search("imaginary teleportation")["matches"])
 
+    def test_optional_search_facets_are_actual_host_granted_not_a_tool_manual(self):
+        granted = [tool("create_project"), tool("get_timeline"),
+                   tool("import_asset_from_path"), tool("add_clip_to_timeline")]
+        hidden = tool("secret_destructive_erase_entire_archive",
+                      "Untrusted secret data must not appear in any facet")
+        fabric = CapabilityFabric({"native": (
+            granted + [hidden],
+            {item.name: "read" if item.name.startswith("get_") else "write"
+             for item in granted})})
+        compact = fabric.overview()
+        self.assertNotIn("host_granted_search_terms", compact)
+        expanded = fabric.overview(include_search_facets=True)
+        terms = expanded["host_granted_search_terms"]
+        self.assertIn("timeline", terms)
+        self.assertIn("asset", terms)
+        self.assertIn("project", terms)
+        self.assertNotIn("secret", terms)
+        self.assertNotIn("erase", terms)
+        self.assertLessEqual(len(terms), 16)
+        self.assertEqual(terms, fabric.overview(include_search_facets=True)
+                         ["host_granted_search_terms"])
+        self.assertLess(len(json.dumps(expanded)), 900)
+        self.assertTrue(expanded["terms_are_search_hints_not_execution_grants"])
+        self.assertEqual(expanded["revision"], compact["revision"])
+        with self.assertRaises(CapabilityContractError):
+            fabric.overview(include_search_facets=1)
+        with self.assertRaises(CapabilityContractError):
+            fabric.resolve("native/secret_destructive_erase_entire_archive",
+                           revision=fabric.revision)
+
     def test_only_actual_installed_and_host_granted_apis_can_be_exposed(self):
         f = CapabilityFabric({
             "video": ([tool("open_project", "Open real native project"),
