@@ -360,7 +360,8 @@ class NativeCreativeControl:
 
     def __init__(self, session, model, *, max_turns=32, receipt_path: Path | None = None,
                  host_tool_access: dict[str, str] | None = None,
-                 catalog_mode: str = "full"):
+                 catalog_mode: str = "full",
+                 host_tool_requirements: dict[str, list[str]] | None = None):
         if type(max_turns) is not int or not 1 <= max_turns <= 128:
             raise NativeCreativeControlError("Native model session requires finite turn budget")
         if not callable(getattr(model, "decide", None)):
@@ -378,6 +379,11 @@ class NativeCreativeControl:
         if catalog_mode == "indexed" and host_tool_access is None:
             raise NativeCreativeControlError("Indexed capability discovery requires trusted host grants")
         self.catalog_mode = catalog_mode
+        # This metadata must come from the trusted capability adapter, NOT
+        # from the creative model or source tool descriptions.
+        self.host_tool_requirements = copy.deepcopy(host_tool_requirements or {})
+        if host_tool_requirements is not None and not isinstance(host_tool_requirements, dict):
+            raise NativeCreativeControlError("Host preconditions must be a trusted mapping")
         self._capabilities = None
         self._last_search_result = None
         self._selectable_tools: list[str] = []
@@ -450,6 +456,16 @@ class NativeCreativeControl:
                 "Model requested ungranted, unsearched tool or invalid inputs")
         return raw
 
+    def _trusted_facts(self):
+        # The only currently sensed fact is the real native project snapshot.
+        # New engines may add their own facts through independently vetted
+        # adapters, without changing this control protocol.
+        if self._project_presence == "present":
+            return {"project_open": True}
+        if self._project_presence == "absent":
+            return {"project_open": False}
+        return {}
+
     async def _infer(self, context: dict):
         # A replaceable model adapter is an execution boundary, not an owner
         # of native validator schemas, immutable journal events, or observed
@@ -500,7 +516,8 @@ class NativeCreativeControl:
         if self.catalog_mode == "indexed":
             from .capability_fabric import CapabilityFabric
             self._capabilities = CapabilityFabric(
-                {"native": (available, self.host_tool_access)})
+                {"native": (available, self.host_tool_access,
+                            self.host_tool_requirements)})
         tool_hints = _native_tool_hints(available) if self.catalog_mode == "full" else []
         show_tool_hints = self.catalog_mode == "full"
         # Same local-only schema family as the MCP host: preflight avoids
@@ -612,6 +629,7 @@ class NativeCreativeControl:
                     "latest_events": _model_event_window(self.events),
                     "last_native_result_texts": self._last_native_texts,
                     "native_project_presence_from_last_inspection": self._project_presence,
+                    "host_attested_capability_facts": self._trusted_facts(),
                     # A schema error is known BEFORE any native RPC. Instead
                     # of burning another costly inference on metadata discovery,
                     # expose the exact bounded host schema for independent
@@ -691,12 +709,25 @@ class NativeCreativeControl:
                         args["query"], limit=args.get("limit", 6))
                     # Only tool identities from actual discovery enter the
                     # model-facing result. Host grant map is authoritative.
-                    self._last_search_result["matches"] = [
-                        {**match, "tool": self._capabilities.resolve(
-                            match["id"], revision=self._capabilities.revision)["native_name"]}
-                        for match in self._last_search_result["matches"]]
+                    qualified = []
+                    for match in self._last_search_result["matches"]:
+                        op = self._capabilities.resolve(
+                            match["id"], revision=self._capabilities.revision)
+                        admissibility = self._capabilities.check_prerequisites(
+                            match["id"], revision=self._capabilities.revision,
+                            trusted_facts=self._trusted_facts())
+                        qualified.append({**match, "tool": op["native_name"],
+                                          "ready_for_model_selection":
+                                              admissibility["admissible"],
+                                          "unsatisfied": admissibility["unsatisfied"],
+                                          "unknown_state": admissibility["unknown_state"]})
+                    self._last_search_result["matches"] = qualified
+                    # Invalid project state is not a model creative choice.
+                    # Return the true tool for discovery, but do not include
+                    # unavailable operations in the next invoke grammar.
                     self._selectable_tools = [
-                        match["tool"] for match in self._last_search_result["matches"]]
+                        match["tool"] for match in qualified
+                        if match["ready_for_model_selection"]]
                     self._append({"kind": "capability_searched", "turn": turn, **timing,
                                   "query_sha256": hashlib.sha256(
                                       args["query"].encode("utf-8")).hexdigest(),
@@ -723,6 +754,29 @@ class NativeCreativeControl:
                                   "input_schema": _field(tool, "input_schema",
                                                          _field(tool, "inputSchema"))})
                     continue
+                # Actual host-attested state is checked again immediately
+                # before native dispatch, even if the tool was offered in an
+                # earlier search result. A stale/incomplete project is never
+                # an opportunity to guess; the model may choose to inspect.
+                if self._capabilities is not None:
+                    record = self._capabilities.check_prerequisites(
+                        "native/" + args["tool"],
+                        revision=self._capabilities.revision,
+                        trusted_facts=self._trusted_facts())
+                    if not record["admissible"]:
+                        self._last_preflight_feedback = {
+                            "tool": args["tool"], "validation_keyword": "precondition",
+                            "no_native_dispatch": True,
+                            "required_host_facts": record["unknown_state"],
+                            "unsatisfied_host_facts": record["unsatisfied"]}
+                        self._append({"kind": "model_action_rejected", "turn": turn,
+                                      **timing, "tool": args["tool"],
+                                      "inputs_sha256": hashlib.sha256(
+                                          _wire(args["inputs"]).encode()).hexdigest(),
+                                      "validation_keyword": "precondition",
+                                      "schema_location": "host/required_facts",
+                                      "no_native_dispatch": True})
+                        continue
                 # The host remains authoritative. If the model violates the
                 # actual host schema, no native operation was dispatched:
                 # record only the validator keyword and a private input hash.
