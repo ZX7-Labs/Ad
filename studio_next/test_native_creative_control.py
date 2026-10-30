@@ -716,9 +716,12 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
             decision("finish", summary="Native schema correction tested, no aesthetic claim"),
         ])
         session = FakeSession()
+        grants = {tool.name: ("write" if tool.name == "update_text_clip" else "read")
+                  for tool in session.tools}
         with tempfile.TemporaryDirectory() as root:
             path = Path(root) / "preflight.jsonl"
             result = await NativeCreativeControl(session, model, max_turns=4,
+                                                  host_tool_access=grants,
                                                   receipt_path=path).run("Repair native text")
             self.assertEqual(result["status"], "model_finished_unverified")
             self.assertEqual(session.calls, [
@@ -735,10 +738,7 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
                              "model_action_rejected")
             from studio_next.native_creative_audit import audit_native_journal
             audit = audit_native_journal(result["events"],
-                                         host_tool_access={"update_text_clip": "write",
-                                                           "get_timeline": "read",
-                                                           "zx7_verify_native_export": "read",
-                                                           "zx7_observe_verified_export_frame": "read"})
+                                         host_tool_access=grants)
             self.assertEqual(audit["recorded_native_write_result_count"], 1)
             self.assertFalse(audit["video_editing_capability_complete"])
 
