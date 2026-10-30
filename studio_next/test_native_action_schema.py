@@ -30,5 +30,24 @@ class NativeActionSchemaTests(unittest.TestCase):
                 {'action': 'finish', 'arguments': {'summary': 'done'}, 'reason': 'x', 'allowed_tools': ['shell']}):
             self.assertFalse(self.validator.is_valid(value))
 
+    def test_compact_brain_grammar_supports_host_indexed_discovery_not_giant_tool_enum(self):
+        import jsonschema
+        compact = native_action_schema([], compact_catalog=True)
+        payload = json.dumps(compact)
+        self.assertNotIn("get_project", payload)
+        self.assertNotIn('"enum"', payload)
+        validator = jsonschema.Draft202012Validator(compact)
+        validator.validate({"action": "search",
+            "arguments": {"query": "editable motion project", "limit": 4},
+            "reason": "Discover currently available host capabilities"})
+        validator.validate({"action": "describe",
+            "arguments": {"tool": "model_selected_actual_name"}, "reason": "Inspect the ABI"})
+        for bad in ({"query": "x", "limit": 12},
+                    {"query": "", "limit": 1},
+                    {"query": "x", "other": "hidden"}):
+            with self.subTest(bad=bad):
+                self.assertFalse(validator.is_valid({
+                    "action": "search", "arguments": bad, "reason": "Model search"}))
+
 
 if __name__ == '__main__': unittest.main()
