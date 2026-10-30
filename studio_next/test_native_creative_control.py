@@ -1770,5 +1770,102 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
                     host_once_after_acknowledged_write=bad)
 
 
+    async def test_lagging_native_project_snapshot_converges_using_read_only_reconciliation(self):
+        from studio_next.native_creative_audit import audit_native_journal
+        session = FakeSession()
+        session.tools += [
+            SimpleNamespace(name="get_project", description="Real host project",
+                            input_schema={"type": "object", "properties": {}}),
+            SimpleNamespace(name="create_project", description="Create real project",
+                            input_schema={"type": "object", "properties": {
+                                "name": {"type": "string"}, "previewOnly": {"type": "boolean"}}}),
+        ]
+        reads = 0
+        async def native(name, args):
+            nonlocal reads
+            session.calls.append((name, args))
+            if name == "get_project":
+                reads += 1
+                present = reads >= 3  # bootstrap absent, first post-write stale
+                payload = {"mcp": {"hasProject": present},
+                           "project": {"id": "real-after-snapshot-lag"} if present else None}
+            else:
+                payload = {"success": True, "result": {"previewOnly": False}}
+            return SimpleNamespace(is_error=False, content=[
+                SimpleNamespace(type="text", text=json.dumps(payload))])
+        session.call_tool = native
+        grants = {t.name: ("write" if t.name == "create_project" else "read")
+                  for t in session.tools}
+        model = ScriptedModel([
+            decision("invoke", tool="create_project",
+                     inputs={"name": "Trusted original", "previewOnly": False}),
+            decision("finish", summary="One native project, not a completed film")])
+        result = await NativeCreativeControl(
+            session, model, max_turns=2, catalog_mode="indexed",
+            host_tool_access=grants,
+            host_once_after_acknowledged_write=("create_project",),
+            host_possible_effects={"create_project": ["project_open"]}).run(
+                "Create one editable original project")
+        self.assertEqual(result["status"], "model_finished_unverified")
+        self.assertEqual([c[0] for c in session.calls],
+                         ["get_project", "create_project", "get_project", "get_project"])
+        self.assertEqual([x["native_project_presence_from_last_inspection"]
+                          for x in model.observed], ["absent", "present"])
+        self.assertIsNone(model.observed[1]["last_host_project_write_reconciliation"])
+        inspections = [e for e in result["events"] if e["kind"] ==
+                       "host_project_post_write_observation"]
+        self.assertEqual([(e["read_attempt"], e["project_presence"])
+                          for e in inspections], [(1, "absent"), (2, "present")])
+        self.assertTrue(audit_native_journal(
+            result["events"], host_tool_access=grants)["journal_chain_structurally_valid"])
+
+    async def test_two_contradictory_project_reads_never_establish_false_absence(self):
+        from studio_next.native_creative_audit import audit_native_journal, NativeJournalError
+        session = FakeSession()
+        session.tools += [
+            SimpleNamespace(name="get_project", description="Native project identity",
+                            input_schema={"type": "object", "properties": {}}),
+            SimpleNamespace(name="create_project", description="Create native project",
+                            input_schema={"type": "object", "properties": {"name": {"type": "string"}}}),
+        ]
+        async def native(name, args):
+            session.calls.append((name, args))
+            payload = ({"project": None, "mcp": {"hasProject": False}}
+                       if name == "get_project" else
+                       {"success": True, "result": {"previewOnly": False}})
+            return SimpleNamespace(is_error=False, content=[
+                SimpleNamespace(type="text", text=json.dumps(payload))])
+        session.call_tool = native
+        grants = {t.name: ("write" if t.name == "create_project" else "read")
+                  for t in session.tools}
+        model = ScriptedModel([
+            decision("invoke", tool="create_project", inputs={"name": "Once"}),
+            decision("finish", summary="No unverified project state inferred"),
+        ])
+        outcome = await NativeCreativeControl(
+            session, model, max_turns=2, host_tool_access=grants,
+            catalog_mode="indexed",
+            host_once_after_acknowledged_write=("create_project",),
+            host_possible_effects={"create_project": ["project_open"]}).run(
+                "Produce an editable original project")
+        self.assertEqual([c[0] for c in session.calls],
+                         ["get_project", "create_project", "get_project", "get_project"])
+        self.assertEqual(model.observed[1]["native_project_presence_from_last_inspection"],
+                         "unknown")
+        warning = model.observed[1]["last_host_project_write_reconciliation"]
+        self.assertTrue(warning["project_state_unknown"])
+        self.assertTrue(warning["must_inspect_native_project"])
+        self.assertEqual(outcome["events"][-2]["kind"],
+                         "host_project_post_write_inconsistent")
+        self.assertTrue(audit_native_journal(
+            outcome["events"], host_tool_access=grants)["journal_chain_structurally_valid"])
+        tampered = [dict(e) for e in outcome["events"]]
+        second = next(i for i,e in enumerate(tampered)
+                      if e.get("read_attempt") == 2)
+        tampered[second]["read_attempt"] = 3
+        with self.assertRaises(NativeJournalError):
+            audit_native_journal(tampered, host_tool_access=grants)
+
+
 if __name__ == "__main__":
     unittest.main()
