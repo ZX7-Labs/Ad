@@ -1062,6 +1062,64 @@ class NativeCreativeControl:
                               "audio_sent_to_model_for_next_decision": bool(audio),
                               "audio_semantically_heard": False,
                               "human_or_artistic_quality_approved": False})
+                # A successful native create/open response is a WRITE receipt,
+                # not independent evidence that a project is now open. Observe
+                # the actual host state once with the owner's READ grant,
+                # without choosing any creative action for the model. This
+                # prevents stale/unknown project facts from wasting inference
+                # turns or provoking duplicate project creation.
+                effects = self._host_possible_effects.get(native_name, ())
+                if (isinstance(effects, (list, tuple)) and
+                        "project_open" in effects and
+                        self.host_tool_access is not None and
+                        self.host_tool_access.get("get_project") == "read" and
+                        "get_project" in validators and
+                        validators["get_project"].is_valid({})):
+                    try:
+                        refreshed = await self.session.call_tool("get_project", {})
+                    except Exception as exc:
+                        self._append({"kind": "host_project_post_write_error",
+                                      "tool": "get_project",
+                                      "triggered_by_native_tool": native_name,
+                                      "host_attested_read_only": True,
+                                      "no_model_selected_mutation": True,
+                                      "error_type": type(exc).__name__})
+                    else:
+                        if _field(refreshed, "is_error",
+                                  _field(refreshed, "isError", False)):
+                            digest, oversized = _bounded_error_digest(refreshed)
+                            self._append({"kind": "host_project_post_write_error",
+                                          "tool": "get_project",
+                                          "triggered_by_native_tool": native_name,
+                                          "host_attested_read_only": True,
+                                          "no_model_selected_mutation": True,
+                                          "error_sha256": digest,
+                                          "error_text_exceeded_evidence_budget": oversized})
+                        else:
+                            try:
+                                state_texts, state_images, state_audio = _native_content(refreshed)
+                                if state_images or state_audio:
+                                    raise NativeCreativeControlError(
+                                        "Project state read contains binary media")
+                            except NativeCreativeControlError:
+                                self._append({"kind": "host_project_post_write_error",
+                                              "tool": "get_project",
+                                              "triggered_by_native_tool": native_name,
+                                              "host_attested_read_only": True,
+                                              "no_model_selected_mutation": True,
+                                              "error_type": "InvalidBoundedProjectObservation"})
+                            else:
+                                self._project_presence = _native_project_presence_from_text(state_texts)
+                                self._last_native_texts = state_texts
+                                self._append({"kind": "host_project_post_write_observation",
+                                              "tool": "get_project",
+                                              "triggered_by_native_tool": native_name,
+                                              "host_attested_read_only": True,
+                                              "no_model_selected_mutation": True,
+                                              "project_presence": self._project_presence,
+                                              "text_sha256": [
+                                                  hashlib.sha256(x.encode()).hexdigest()
+                                                  for x in state_texts]})
             return {
                 "status": outcome, "events": self.events.copy(),
                 "measured_model_wall_ms_total": round(self._model_wall_ms_total, 3),
