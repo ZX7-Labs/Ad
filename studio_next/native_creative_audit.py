@@ -164,7 +164,10 @@ def audit_native_journal(events, *, host_tool_access):
                     not _sha(event.get("inputs_sha256")) or
                     event.get("no_native_dispatch") is not True or
                     not isinstance(event.get("validation_keyword"), str) or
-                    not 1 <= len(event["validation_keyword"]) <= 64):
+                    not 1 <= len(event["validation_keyword"]) <= 64 or
+                    (event.get("schema_location") is not None and
+                     (not isinstance(event["schema_location"], str) or
+                      len(event["schema_location"]) > 512))):
                 raise NativeJournalError("Model preflight rejection lacks proof of no native dispatch")
             continue
         if kind == "native_tool_submitted":
