@@ -236,7 +236,21 @@ def _native_tool_hints(available):
         size = len(short.encode("utf-8"))
         if not short or size > remaining:
             continue
-        hints.append({"tool": name, "description": short})
+        hint = {"tool": name, "description": short}
+        # Param *names* come only from actual native host discovery. This
+        # avoids hallucinating parameters without duplicating full tool schemas
+        # on every local CPU-model turn. Creative values remain unrestricted.
+        schema = _field(tool, "input_schema", _field(tool, "inputSchema"))
+        props = schema.get("properties") if isinstance(schema, dict) else None
+        if isinstance(props, dict):
+            names = [key for key in list(props)[:12]
+                     if isinstance(key, str) and 0 < len(key) <= 64]
+            param_cost = sum(len(key.encode("utf-8")) + 4 for key in names)
+            if names and size + param_cost <= remaining:
+                hint["declared_parameter_names_sample"] = names
+                hint["additional_parameters_require_describe"] = len(props) > len(names)
+                size += param_cost
+        hints.append(hint)
         remaining -= size
     return hints
 
@@ -402,9 +416,23 @@ class NativeCreativeControl:
         for native_name, native_tool in self.tools.items():
             schema = _field(native_tool, "input_schema", _field(native_tool, "inputSchema"))
             _local_schema_references(schema)
-            cls = jsonschema.validators.validator_for(schema)
-            cls.check_schema(schema)
-            validators[native_name] = cls(schema)
+            # Several native schemas advertise valid field names but omit
+            # additionalProperties. Their handlers silently ignore made-up
+            # fields or fail *after* dispatch. Model-only preflight should not
+            # send unknown top-level keys to a stateful app: interpret the
+            # declared top-level interface strictly when it lists properties.
+            # Nested artistic objects preserve their own unrestricted schema.
+            # Official host grants and the original native schema are untouched.
+            import copy
+            admission = copy.deepcopy(schema)
+            if (isinstance(admission, dict) and
+                    isinstance(admission.get("properties"), dict) and
+                    "additionalProperties" not in admission and
+                    "patternProperties" not in admission):
+                admission["additionalProperties"] = False
+            cls = jsonschema.validators.validator_for(admission)
+            cls.check_schema(admission)
+            validators[native_name] = cls(admission)
         if self.receipt_path is not None:
             if not self.receipt_path.parent.is_dir():
                 raise NativeCreativeControlError("Receipt directory must already exist")
