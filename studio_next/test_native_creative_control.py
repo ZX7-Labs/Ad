@@ -441,7 +441,7 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
         from studio_next.native_creative_control import _native_tool_hints
         session = FakeSession()
         # The host supplies every name/description; the adapter invents none.
-        session.tools[0].description = "  Read   the native\\n project   state "
+        session.tools[0].description = "  Read   the native" + chr(10) + " project   state "
         session.tools[1].description = "N" * 100_000
         model = ScriptedModel([
             decision("discover"),
