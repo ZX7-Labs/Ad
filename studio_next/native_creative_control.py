@@ -374,7 +374,8 @@ class NativeCreativeControl:
                  catalog_mode: str = "full",
                  host_preconditions: dict | None = None,
                  host_possible_effects: dict | None = None,
-                 required_evidence: tuple[str, ...] = ()):
+                 required_evidence: tuple[str, ...] = (),
+                 host_content_revision_tools: tuple[str, ...] = ()):
         if type(max_turns) is not int or not 1 <= max_turns <= 128:
             raise NativeCreativeControlError("Native model session requires finite turn budget")
         if not callable(getattr(model, "decide", None)):
@@ -399,6 +400,19 @@ class NativeCreativeControl:
             raise NativeCreativeControlError(
                 "Completion evidence must be a unique trusted host requirement")
         self.required_evidence = frozenset(required_evidence)
+        if (not isinstance(host_content_revision_tools, (list, tuple, frozenset)) or
+                any(not isinstance(name, str) or not name
+                    for name in host_content_revision_tools) or
+                len(set(host_content_revision_tools)) != len(host_content_revision_tools) or
+                any(host_tool_access is None or host_tool_access.get(name) != "write"
+                    for name in host_content_revision_tools) or
+                ("post_observation_native_write_acknowledged" in self.required_evidence
+                 and not host_content_revision_tools)):
+            raise NativeCreativeControlError(
+                "Reviewed native content revision requires trusted write-role tool grants")
+        # The *host*, not the replaceable model, attests which actual writes
+        # affect creative content. Save/export metadata writes are not revisions.
+        self.host_content_revision_tools = frozenset(host_content_revision_tools)
         self.catalog_mode = catalog_mode
         self._host_preconditions = copy.deepcopy(host_preconditions or {})
         self._host_possible_effects = copy.deepcopy(host_possible_effects or {})
@@ -451,7 +465,8 @@ class NativeCreativeControl:
             if (self.host_tool_access is not None and
                     self.host_tool_access.get(event.get("tool")) == "write"):
                 proven.add("native_write_acknowledged")
-                if saw_verified_frame:
+                if (saw_verified_frame and
+                        event.get("tool") in self.host_content_revision_tools):
                     post_observation_write = True
                 current_verified.clear()
                 current_frames.clear()
@@ -573,6 +588,9 @@ class NativeCreativeControl:
         if self.host_tool_access is not None and set(self.tools) != set(self.host_tool_access):
             raise NativeCreativeControlError(
                 "Trusted host grants must match the exact discovered native tool set")
+        if not self.host_content_revision_tools.issubset(self.tools):
+            raise NativeCreativeControlError(
+                "Host content revision roles reference absent native tools")
         # Reject impossible owner proof requirements before expensive inference.
         # This is capability feasibility, never a host-selected creative step.
         if self.required_evidence:
