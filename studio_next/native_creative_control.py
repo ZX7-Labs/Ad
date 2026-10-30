@@ -82,6 +82,10 @@ not run that tool. invoke ACTUALLY calls one granted native tool, whether a
 read-only inspection or a model-chosen creative edit. Use real invoke results
 to establish project state; do not invent progress from discover/describe.
 Avoid repeating identical metadata queries without obtaining new information.
+A host-scoped write with an acknowledged successful application may become
+unavailable for the rest of this session. When search says a tool was already
+applied, independently search for other installed operations. Do not assume
+that a completed project creation is a completed creative edit.
 Respond with a JSON object: {action, arguments, reason}.
 Allowed actions: search:{query, limit?} for live granted operations,
 describe:{tool} for its exact schema, invoke:{tool, inputs} to actually use it,
@@ -507,6 +511,12 @@ class NativeCreativeControl:
             os.fsync(self._receipt.fileno())
         self.events.append(event)
 
+    def _host_write_already_acknowledged(self, tool: str) -> bool:
+        """Trusted session policy only; previews and model claims are excluded."""
+        return (tool in self._host_once_after_ack and
+                any(e.get("kind") == "native_tool_result" and
+                    e.get("tool") == tool for e in self.events))
+
     def _decision(self, raw):
         if (not isinstance(raw, dict) or set(raw) != {"action", "arguments", "reason"} or
                 raw.get("action") not in {"discover", "search", "describe", "invoke", "finish"} or
@@ -543,7 +553,8 @@ class NativeCreativeControl:
         elif (set(args) != {"tool", "inputs"} or not isinstance(args["tool"], str)
                 or args["tool"] not in self.tools or not isinstance(args["inputs"], dict) or
                 (self.catalog_mode == "indexed" and
-                 args["tool"] not in self._selectable_tools)):
+                 args["tool"] not in self._selectable_tools and
+                 not self._host_write_already_acknowledged(args["tool"]))):
             raise NativeCreativeControlError(
                 "Model requested ungranted, unsearched tool or invalid inputs")
         return raw
@@ -862,10 +873,25 @@ class NativeCreativeControl:
                         args["query"], limit=args.get("limit", 6))
                     # Only tool identities from actual discovery enter the
                     # model-facing result. Host grant map is authoritative.
-                    self._last_search_result["matches"] = [
+                    discovered = [
                         {**match, "tool": self._capabilities.resolve(
                             match["id"], revision=self._capabilities.revision)["native_name"]}
                         for match in self._last_search_result["matches"]]
+                    exhausted = [match["tool"] for match in discovered
+                                 if self._host_write_already_acknowledged(match["tool"])]
+                    # A bounded installed tool is still host-discoverable, but
+                    # its one-use grant was exhausted after a real ACK. Never
+                    # expose that operation as an actionable model choice.
+                    # The model chooses its own new query; no alternate edit
+                    # or aesthetic recipe is manufactured by the host.
+                    self._last_search_result["matches"] = [
+                        match for match in discovered
+                        if match["tool"] not in exhausted]
+                    if exhausted:
+                        self._last_search_result[
+                            "already_acknowledged_host_once_tools"] = exhausted[:8]
+                        self._last_search_result[
+                            "host_requires_new_capability_query"] = True
                     self._selectable_tools = [
                         match["tool"] for match in self._last_search_result["matches"]]
                     self._append({"kind": "capability_searched", "turn": turn, **timing,
@@ -906,9 +932,7 @@ class NativeCreativeControl:
                 # for this trial. A preview, preflight refusal, or failed write
                 # is NOT an acknowledged mutation and does not exhaust it.
                 # This refuses the duplicate BEFORE the second side effect.
-                if (native_name in self._host_once_after_ack and
-                        any(e.get("kind") == "native_tool_result" and
-                            e.get("tool") == native_name for e in self.events)):
+                if self._host_write_already_acknowledged(native_name):
                     self._last_preflight_feedback = {
                         "tool": native_name,
                         "validation_keyword": "host_single_write",
