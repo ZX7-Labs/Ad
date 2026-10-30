@@ -1008,6 +1008,74 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(session.calls, [("get_project", {})])
         self.assertEqual(model.observed, [])
 
+    async def test_indexed_capabilities_are_discovered_instead_of_dumping_120_tools(self):
+        from studio_next.native_creative_audit import audit_native_journal
+        session = FakeSession()
+        for idx in range(120):
+            session.tools.append(SimpleNamespace(
+                name=f"future_extension_{idx:03d}",
+                description="Unrelated native future animation parameter",
+                input_schema={"type": "object"}))
+        grants = {tool.name: ("write" if tool.name == "update_text_clip" else "read")
+                  for tool in session.tools}
+        model = ScriptedModel([
+            decision("search", query="edit text", limit=3),
+            decision("describe", tool="update_text_clip"),
+            decision("invoke", tool="update_text_clip",
+                     inputs={"clipId": "title-chosen-by-model", "text": "Original"}),
+            decision("finish", summary="Control protocol exercised; no quality certification")
+        ])
+        with tempfile.TemporaryDirectory() as root:
+            receipt = Path(root) / "fabric-ledger.jsonl"
+            result = await NativeCreativeControl(session, model, max_turns=4,
+                catalog_mode="indexed", host_tool_access=grants, receipt_path=receipt
+            ).run("Make an original title")
+            self.assertEqual(model.observed[0]["actual_granted_native_tools"], [])
+            self.assertTrue(model.observed[0]["compact_tool_catalog"])
+            self.assertNotIn("host_declared_tool_hints", model.observed[0])
+            self.assertEqual(model.observed[0]["capability_overview"]["operation_count"],
+                             len(session.tools))
+            search = model.observed[1]["last_capability_search_result"]
+            self.assertEqual(search["matches"][0]["tool"], "update_text_clip")
+            self.assertEqual(search["matches"][0]["access"], "write")
+            self.assertEqual(search["matches"][0]["parameters_sample"],
+                             ["clipId", "text"])
+            self.assertEqual([name for name, _ in session.calls], ["update_text_clip"])
+            self.assertEqual(result["events"][1]["kind"], "capability_searched")
+            self.assertNotIn("edit text", receipt.read_text())
+            self.assertTrue(audit_native_journal(
+                result["events"], host_tool_access=grants)["journal_chain_structurally_valid"])
+            self.assertFalse(result["native_editing_capability_complete"])
+
+    async def test_indexed_brain_cannot_invoke_invented_or_ungranted_tools(self):
+        session = FakeSession()
+        grants = {tool.name: "read" for tool in session.tools}
+        for cmd in (decision("invoke", tool="does_not_exist", inputs={}),
+                    decision("describe", tool="fake_tool")):
+            with self.subTest(command=cmd), self.assertRaises(NativeCreativeControlError):
+                await NativeCreativeControl(session, ScriptedModel([cmd]),
+                    catalog_mode="indexed", host_tool_access=grants).run(
+                    "No hallucinated BODY operations")
+        self.assertEqual(session.calls, [])
+        with self.assertRaisesRegex(NativeCreativeControlError, "requires trusted"):
+            NativeCreativeControl(session, ScriptedModel([decision("search", query="movie")]),
+                                  catalog_mode="indexed")
+
+    async def test_indexed_search_is_private_metadata_not_editor_execution(self):
+        session = FakeSession()
+        grants = {x.name: "read" for x in session.tools}
+        model = ScriptedModel([
+            decision("search", query="magical nonexisting world manipulation"),
+            decision("finish", summary="No unsupported tool was invented")
+        ])
+        result = await NativeCreativeControl(session, model, max_turns=2,
+            catalog_mode="indexed", host_tool_access=grants).run("An original film")
+        self.assertFalse(model.observed[1]["last_capability_search_result"]["matches"])
+        self.assertEqual(session.calls, [])
+        self.assertEqual(result["events"][1]["result_tool_names"], [])
+        self.assertFalse(result["native_editing_capability_complete"])
+
+
 
 if __name__ == "__main__":
     unittest.main()
