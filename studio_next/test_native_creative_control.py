@@ -75,6 +75,54 @@ class FakeSession:
 
 
 class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
+    async def test_host_required_evidence_refuses_false_finish_and_allows_independent_correction(self):
+        from studio_next.native_creative_audit import audit_native_journal
+        session = FakeSession()
+        grants = {tool.name: ("write" if tool.name == "update_text_clip" else "read")
+                  for tool in session.tools}
+        model = ScriptedModel([
+            decision("finish", summary="Unjustified complete"),
+            decision("invoke", tool="update_text_clip", inputs={"clipId": "one", "text": "New"}),
+            decision("finish", summary="Still no export proof"),
+            decision("invoke", tool="zx7_verify_native_export", inputs={}),
+            decision("finish", summary="Only technical evidence is present"),
+        ])
+        required = ("native_write_acknowledged", "physical_export_verified")
+        result = await NativeCreativeControl(
+            session, model, host_tool_access=grants,
+            required_evidence=required, max_turns=5).run("Make an editable original video")
+        self.assertEqual(result["status"], "model_finished_unverified")
+        rejected = [e for e in result["events"] if e["kind"] == "model_finish_rejected"]
+        self.assertEqual(len(rejected), 2)
+        self.assertEqual(rejected[0]["missing_completion_evidence"], sorted(required))
+        self.assertEqual(rejected[1]["missing_completion_evidence"], ["physical_export_verified"])
+        self.assertEqual([name for name, _ in session.calls],
+                         ["update_text_clip", "zx7_verify_native_export"])
+        self.assertEqual(model.observed[1]["missing_completion_evidence"], sorted(required))
+        self.assertEqual(model.observed[3]["missing_completion_evidence"],
+                         ["physical_export_verified"])
+        self.assertEqual(model.observed[4]["missing_completion_evidence"], [])
+        self.assertTrue(audit_native_journal(result["events"],
+                                             host_tool_access=grants)["journal_chain_structurally_valid"])
+        self.assertFalse(result["native_editing_capability_complete"])
+
+    async def test_unmet_required_evidence_cannot_be_faked_by_finish_or_bad_host_contract(self):
+        session = FakeSession()
+        grants = {tool.name: "read" for tool in session.tools}
+        model = ScriptedModel([decision("finish", summary="False success")])
+        result = await NativeCreativeControl(
+            session, model, host_tool_access=grants, max_turns=1,
+            required_evidence=("verified_export_frame_observed",)).run("A video")
+        self.assertEqual(result["status"], "turn_budget_exhausted")
+        self.assertEqual(session.calls, [])
+        self.assertEqual(result["events"][-1]["kind"], "model_finish_rejected")
+        with self.assertRaisesRegex(NativeCreativeControlError, "trusted host requirement"):
+            NativeCreativeControl(session, model,
+                                  required_evidence=("physical_export_verified",))
+        with self.assertRaisesRegex(NativeCreativeControlError, "trusted host requirement"):
+            NativeCreativeControl(session, model, host_tool_access=grants,
+                                  required_evidence=("invented_model_claim",))
+
     async def test_actual_native_model_sees_and_calls_granted_tool_on_late_mcp_page(self):
         class VersionedEditor(FakeSession):
             async def list_tools(self, *, cursor=None):
