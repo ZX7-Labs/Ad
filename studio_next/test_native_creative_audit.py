@@ -325,6 +325,29 @@ class NativeCreativeAuditTests(unittest.TestCase):
             with self.subTest(wrong=wrong), self.assertRaises(NativeJournalError):
                 audit_native_journal(clone, host_tool_access=HOST)
 
+    def test_forged_postwrite_project_observation_is_rejected_by_native_auditor(self):
+        events = trace()
+        index = next(i for i, event in enumerate(events)
+                     if event["kind"] == "native_tool_result")
+        actual = events[index]
+        forged = {
+            "kind": "host_project_postwrite_observation",
+            "tool": "get_project", "turn": actual.get("turn"),
+            "host_attested_read_only": True,
+            "project_presence": "present",
+            "text_sha256": [A], "no_model_selected_mutation": True
+        }
+        events.insert(index + 1, forged)
+        for i, event in enumerate(events):
+            event["sequence"] = i
+        # No read grant for get_project: the claim cannot be certified.
+        with self.assertRaises(NativeJournalError):
+            audit_native_journal(events, host_tool_access=HOST)
+        allow = dict(HOST, get_project="read")
+        with self.assertRaises(NativeJournalError):
+            audit_native_journal(events, host_tool_access=allow)
+        # The previous event was a read, not a successful mutation.
+
 
 if __name__ == "__main__":
     unittest.main()
