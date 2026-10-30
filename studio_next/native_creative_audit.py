@@ -107,7 +107,8 @@ def read_native_journal(path: Path):
     return events
 
 
-def audit_native_journal(events, *, host_tool_access, expected_required_evidence=None):
+def audit_native_journal(events, *, host_tool_access, expected_required_evidence=None,
+                         host_content_revision_tools=()):
     """Check every transition and trace real export-to-observation identity.
 
     host_tool_access comes from the trusted owner grants, not from model text.
@@ -139,6 +140,16 @@ def audit_native_journal(events, *, host_tool_access, expected_required_evidence
             raise NativeJournalError("Invalid independent host completion policy")
         if required != sorted(expected_required_evidence):
             raise NativeJournalError("Journal completion policy differs from trusted host")
+    if (not isinstance(host_content_revision_tools, (list, tuple, frozenset)) or
+            any(not isinstance(name, str) or not name or
+                host_tool_access.get(name) != "write"
+                for name in host_content_revision_tools) or
+            len(set(host_content_revision_tools)) != len(host_content_revision_tools) or
+            ("post_observation_native_write_acknowledged" in required
+             and not host_content_revision_tools)):
+        raise NativeJournalError(
+            "Independent review revision roles require trusted native write grants")
+    host_content_revision_tools = frozenset(host_content_revision_tools)
     pending = None
     verified = set()
     observed = {}
@@ -321,7 +332,7 @@ def audit_native_journal(events, *, host_tool_access, expected_required_evidence
                 seen_sha = event.get("observed_export_sha256")
                 if access == "write":
                     writes.append((i, tool))
-                    if saw_verified_frame:
+                    if saw_verified_frame and tool in host_content_revision_tools:
                         post_observation_write = True
                     if observed:
                         observed_then_written.append((i, tool))
