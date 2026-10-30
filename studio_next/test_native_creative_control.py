@@ -143,7 +143,8 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
                     "verified_export_frame_observed")
         result = await NativeCreativeControl(
             session, model, max_turns=9, host_tool_access=grants,
-            required_evidence=required).run("Independent editable video")
+            required_evidence=required,
+            host_content_revision_tools=("update_text_clip",)).run("Independent editable video")
         self.assertEqual(result["status"], "model_finished_unverified")
         refused = [e for e in result["events"] if e["kind"] == "model_finish_rejected"]
         self.assertEqual(len(refused), 2)
@@ -158,7 +159,8 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(model.images_observed[1][0]["missing_completion_evidence"], [])
         audited = audit_native_journal(
             result["events"], host_tool_access=grants,
-            expected_required_evidence=required)
+            expected_required_evidence=required,
+            host_content_revision_tools=("update_text_clip",))
         self.assertTrue(audited["host_completion_policy_independently_matched"])
         self.assertEqual(sum(e["kind"] == "native_tool_result" and
                              e.get("independently_verified_export_sha256") is not None
