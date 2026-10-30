@@ -151,10 +151,11 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
             "post_observation_native_write_acknowledged"])
         self.assertEqual(refused[1]["missing_completion_evidence"], [
             "physical_export_verified", "verified_export_frame_observed"])
-        self.assertEqual(model.observed[3]["missing_completion_evidence"], [
+        self.assertEqual(model.images_observed[0][0]["missing_completion_evidence"], [
             "post_observation_native_write_acknowledged"])
-        self.assertEqual(model.observed[5]["missing_completion_evidence"], [
+        self.assertEqual(model.observed[4]["missing_completion_evidence"], [
             "physical_export_verified", "verified_export_frame_observed"])
+        self.assertEqual(model.images_observed[1][0]["missing_completion_evidence"], [])
         audited = audit_native_journal(
             result["events"], host_tool_access=grants,
             expected_required_evidence=required)
