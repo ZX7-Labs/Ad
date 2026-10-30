@@ -15,7 +15,8 @@ import inspect
 import json
 from collections.abc import Mapping
 
-from .capability_fabric import CapabilityContractError, CapabilityFabric
+from .capability_fabric import (
+    CapabilityContractError, CapabilityFabric, _completed_tools)
 from .body_editor_mcp import _local_schema_references
 
 
@@ -141,14 +142,9 @@ class CapabilityGateway:
             session, _, conditions, fact_reader, effects = self._bindings[namespace]
             grants = self._live_grants(namespace)
             response = await session.list_tools()
-            cursor = getattr(response, "nextCursor",
-                             getattr(response, "next_cursor", None))
-            if isinstance(response, dict):
-                cursor = response.get("nextCursor", response.get("next_cursor"))
-            if cursor not in (None, ""):
-                raise CapabilityExecutionError("Incomplete current host tool inventory")
-            advertised = (response.get("tools") if isinstance(response, dict)
-                          else getattr(response, "tools", None))
+            # Reuse the same complete-MCP parser as initial discovery;
+            # accepting a partial ABI here would weaken JIT write admission.
+            advertised = _completed_tools(response)
             fresh = CapabilityFabric({namespace: (
                 advertised, grants, conditions, effects)})
             live_record = fresh.resolve(operation_id, revision=fresh.revision)
