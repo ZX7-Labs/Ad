@@ -264,6 +264,9 @@ class NativeCreativeControl:
         self._last_images: list[tuple[str, bytes]] = []
         self._last_hashes: list[str] = []
         self._last_native_texts: list[str] = []
+        # Ground project presence only in actual native get_project results,
+        # never in model text, metadata discovery, or an earlier session.
+        self._project_presence = "unknown"
         self._last_audio: list[tuple[str, bytes]] = []
         self._last_audio_evidence: dict | None = None
         self._verified_exports: set[str] = set()
@@ -390,6 +393,7 @@ class NativeCreativeControl:
                     "turn": turn,
                     "latest_events": self.events[-8:],
                     "last_native_result_texts": self._last_native_texts,
+                    "native_project_presence_from_last_inspection": self._project_presence,
                     # Evidence-based progress facts persist beyond the 8-event
                     # sliding window. No operation or creative step is chosen
                     # by the controller on the model's behalf.
@@ -574,6 +578,28 @@ class NativeCreativeControl:
                     raise
                 if new_export_sha is not None:
                     self._verified_exports.add(new_export_sha)
+                # Source-backed state hint: the first live model wrongly
+                # claimed an open project despite the REAL editor returning
+                # project=null, hasProject=false twice. Preserve only facts
+                # corroborated by both fields in the native read response.
+                # Any other successful native operation may change project
+                # state, so do not carry an old presence assertion forward.
+                if native_name == "get_project":
+                    self._project_presence = "unknown"
+                    if len(texts) == 1:
+                        try:
+                            status = _strict_receipt(texts, "native project observation")
+                        except NativeCreativeControlError:
+                            status = None
+                        if isinstance(status, dict) and isinstance(status.get("mcp"), dict):
+                            has = status["mcp"].get("hasProject")
+                            project = status.get("project")
+                            if has is False and project is None:
+                                self._project_presence = "absent"
+                            elif has is True and isinstance(project, dict):
+                                self._project_presence = "present"
+                else:
+                    self._project_presence = "unknown"
                 self._last_native_texts = texts
                 self._last_images, self._last_hashes = images, hashes
                 self._last_audio, self._last_audio_evidence = audio, audio_evidence
