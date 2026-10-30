@@ -139,11 +139,19 @@ class CapabilityFabric:
             if not callable(getattr(session, "list_tools", None)):
                 raise CapabilityContractError("Native source lacks live tool discovery")
             response = await session.list_tools()
-            cursor = _field(response, "nextCursor", _field(response, "next_cursor"))
+            # Both the legacy SDK list and the newer versioned MCP envelope
+            # are supported. Never mistake a partial/retry/interactive result
+            # for a complete installed capability inventory.
+            payload = _field(response, "result", response)
+            tagged = _field(payload, "resultType")
+            if tagged not in (None, "complete"):
+                raise CapabilityContractError(
+                    "MCP discovery is not a completed tool list")
+            cursor = _field(payload, "nextCursor", _field(payload, "next_cursor"))
             if cursor not in (None, ""):
                 raise CapabilityContractError(
                     "Partial paginated MCP discovery cannot define complete capabilities")
-            advertised = _field(response, "tools")
+            advertised = _field(payload, "tools")
             requirements = binding[2] if len(binding) == 3 else {}
             sources[namespace] = (advertised, grants, requirements)
         return cls(sources)
