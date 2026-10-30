@@ -36,6 +36,25 @@ def _tokens(value):
 
 
 
+def _completed_tool_page(response):
+    """Normalize one *complete* legacy or versioned MCP tools/list page.
+
+    Pagination is permitted, but partial/interactive results and JSON-RPC
+    errors never grant tool authority. Both discovery and gateway invocation
+    use this function through discover_all_live_tools.
+    """
+    if _field(response, "error") is not None:
+        raise CapabilityContractError("Native tool listing reported an RPC error")
+    payload = _field(response, "result", response)
+    if _field(payload, "resultType") not in (None, "complete"):
+        raise CapabilityContractError("Native tool listing is not complete")
+    received = _field(payload, "tools")
+    if not isinstance(received, (list, tuple)):
+        raise CapabilityContractError("Native tool page has no valid tool array")
+    next_cursor = _field(payload, "nextCursor", _field(payload, "next_cursor"))
+    return received, next_cursor
+
+
 async def discover_all_live_tools(session):
     """Complete bounded MCP tools/list discovery, preserving opaque cursors.
 
@@ -65,13 +84,10 @@ async def discover_all_live_tools(session):
         else:
             raise CapabilityContractError(
                 "Paginated source requires an explicitly cursor-aware adapter")
-        received = _field(page, "tools")
-        if not isinstance(received, (list, tuple)):
-            raise CapabilityContractError("Native tool page has no valid tool array")
+        received, next_cursor = _completed_tool_page(page)
         if len(tools) + len(received) > 5000:
             raise CapabilityContractError("Complete tool catalog exceeds source budget")
         tools.extend(received)
-        next_cursor = _field(page, "nextCursor", _field(page, "next_cursor"))
         if next_cursor in (None, ""):
             return tools
         if (not isinstance(next_cursor, str) or
