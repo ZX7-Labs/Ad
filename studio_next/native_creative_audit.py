@@ -141,6 +141,9 @@ def audit_native_journal(events, *, host_tool_access, expected_required_evidence
     pending = None
     verified = set()
     observed = {}
+    # Current-edit proof, distinct from the immutable historical custody ledger.
+    fresh_verified = set()
+    fresh_frames = set()
     writes = []
     observed_then_written = []
     finished = False
@@ -150,10 +153,9 @@ def audit_native_journal(events, *, host_tool_access, expected_required_evidence
         proven = set()
         if writes:
             proven.add("native_write_acknowledged")
-        if verified:
+        if fresh_verified:
             proven.add("physical_export_verified")
-        if any(tool in _FRAME_OBSERVERS for kinds in observed.values()
-               for tool in kinds):
+        if fresh_frames:
             proven.add("verified_export_frame_observed")
         return sorted(set(required) - proven)
 
@@ -312,14 +314,23 @@ def audit_native_journal(events, *, host_tool_access, expected_required_evidence
                     raise NativeJournalError("Native data has malformed source checksums")
                 new_sha = event.get("independently_verified_export_sha256")
                 seen_sha = event.get("observed_export_sha256")
+                if access == "write":
+                    writes.append((i, tool))
+                    if observed:
+                        observed_then_written.append((i, tool))
+                    fresh_verified.clear()
+                    fresh_frames.clear()
                 if new_sha is not None:
                     if tool != _EXPORT or not _sha(new_sha):
                         raise NativeJournalError("Fake physical export verification attribution")
                     verified.add(new_sha)
+                    fresh_verified.add(new_sha)
                 if seen_sha is not None:
                     if tool not in _OBSERVERS or not _sha(seen_sha) or seen_sha not in verified:
                         raise NativeJournalError("Unverified exported media was observed")
                     observed.setdefault(seen_sha, set()).add(tool)
+                    if seen_sha in fresh_verified and tool in _FRAME_OBSERVERS:
+                        fresh_frames.add(seen_sha)
                 if tool == _EXPORT and new_sha is None:
                     raise NativeJournalError("No physical export proof on successful verification")
                 if tool in _OBSERVERS and seen_sha is None:
@@ -332,10 +343,6 @@ def audit_native_journal(events, *, host_tool_access, expected_required_evidence
                         raise NativeJournalError("Unknown tool forged an audio recording")
                 if tool == _AUDIO and audio_sha is None:
                     raise NativeJournalError("Native WAV is absent")
-                if access == "write":
-                    writes.append((i, tool))
-                    if observed:
-                        observed_then_written.append((i, tool))
             else:
                 if access == "write" and kind == "native_observation_rejected":
                     # A rejected result might follow a completed write; cannot
