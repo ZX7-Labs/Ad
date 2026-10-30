@@ -10,6 +10,11 @@ on:
         options:
           - qwen3.5-2b
           - qwen3.5-4b
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/zx7-live-native-model.yml"
+      - "engines/velorn/local-model-trial-4b.candidate.json"
   push:
     branches: [main]
     paths:
@@ -26,7 +31,38 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  pinned-candidate-manifest-contract:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify bounded self-hostable model choices without downloading weights
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          cases = (
+              ("engines/velorn/local-model-trial.lock.json",
+               "unsloth/Qwen3.5-2B-GGUF"),
+              ("engines/velorn/local-model-trial-4b.candidate.json",
+               "unsloth/Qwen3.5-4B-GGUF"),
+          )
+          for filename, model_id in cases:
+              data = json.loads(Path(filename).read_text())
+              assert data["schema"] == 1 and data["model"]["id"] == model_id
+              assert data["model"]["license"] == "Apache-2.0"
+              assert data["server"]["host"] == "127.0.0.1"
+              assert data["runtime"]["source_commit"] == "68d20b884c3878217de79eade0a249efde96ab38"
+              assert all(len(x["sha256"]) == 64 and
+                         (x.get("bytes", x.get("max_bytes", 0)) > 0)
+                         for x in data["model"]["files"])
+              assert "--n-gpu-layers" in data["server"]["args"]
+              assert data["server"]["args"][data["server"]["args"].index(
+                  "--n-gpu-layers") + 1] == "0"
+          print("Both source-pinned, bounded local CPU candidate contracts are present")
+          PY
   actual-local-model-and-native-editor:
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
     timeout-minutes: 55
     steps:
