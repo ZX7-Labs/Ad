@@ -70,6 +70,12 @@ actual decoded results, then revise if necessary. Never invent tools, sources,
 rights, images, audio listening, finished files, or artistic-quality approval.
 A failed write may already have occurred: inspect current native state before
 deciding any further action; never automatically repeat the write.
+Protocol distinction: discover ONLY lists available native tool names; it does
+not inspect a project. describe ONLY reveals one tool's input schema; it does
+not run that tool. invoke ACTUALLY calls one granted native tool, whether a
+read-only inspection or a model-chosen creative edit. Use real invoke results
+to establish project state; do not invent progress from discover/describe.
+Avoid repeating identical metadata queries without obtaining new information.
 Respond with a JSON object: {action, arguments, reason}.
 Allowed actions are discover:{}, describe:{tool}, invoke:{tool, inputs},
 finish:{summary}. 'invoke' inputs must match the exact tool schema.
@@ -384,6 +390,15 @@ class NativeCreativeControl:
                     "turn": turn,
                     "latest_events": self.events[-8:],
                     "last_native_result_texts": self._last_native_texts,
+                    # Evidence-based progress facts persist beyond the 8-event
+                    # sliding window. No operation or creative step is chosen
+                    # by the controller on the model's behalf.
+                    "described_native_tools": sorted({
+                        event["tool"] for event in self.events
+                        if event.get("kind") == "native_tool_schema"}),
+                    "successful_native_tool_results": sum(
+                        event.get("kind") == "native_tool_result"
+                        for event in self.events),
                 }
                 # A small local brain should not have to infer what 60+
                 # native operation names mean. Offer genuine, bounded host
@@ -423,7 +438,12 @@ class NativeCreativeControl:
                     } or None
                 timing = {"measured_model_wall_ms": model_ms,
                           "local_server_reported_token_usage": provider_usage}
-                self._last_native_texts = []
+                # Do not erase the last REAL native observation merely because
+                # the model asked to discover/describe a schema or supplied
+                # parameters rejected BEFORE dispatch. In the first live CPU
+                # trial, those metadata turns repeatedly destroyed the only
+                # project-state observation available to the small model.
+                # A new successful native call replaces this text below.
                 action, args = decision["action"], decision["arguments"]
                 if action == "finish":
                     self._append({"kind": "model_finished", "turn": turn,
