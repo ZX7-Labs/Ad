@@ -305,7 +305,8 @@ def _model_event_window(events):
             for field in ("validation_keyword", "schema_location", "no_native_dispatch"):
                 if field in event:
                     item[field] = event[field]
-        elif kind in ("host_project_bootstrap_observation", "host_project_bootstrap_error"):
+        elif kind in ("host_project_bootstrap_observation", "host_project_bootstrap_error",
+                      "host_project_postwrite_observation", "host_project_postwrite_error"):
             for field in ("project_presence", "no_model_selected_mutation",
                           "error_text_exceeded_evidence_budget"):
                 if field in event:
@@ -465,6 +466,54 @@ class NativeCreativeControl:
         if self._project_presence == "absent":
             return {"project_open": False}
         return {}
+
+    async def _observe_project_after_trusted_write(self, *, turn: int):
+        """Low-cost BODY perception after an acknowledged native mutation.
+
+        The brain remains responsible for art, tool choice and revisions. A
+        source-backed READ automatically updates only the machine project fact.
+        It never replays a write and never promotes a write error to success.
+        All observation/error outcomes are audited; raw private state stays
+        outside the durable hash-only journal.
+        """
+        if (self.host_tool_access is None or
+                self.host_tool_access.get("get_project") != "read" or
+                "get_project" not in self.tools):
+            return
+        try:
+            result = await self.session.call_tool("get_project", {})
+        except Exception as exc:
+            self._append({"kind": "host_project_postwrite_error",
+                          "turn": turn, "tool": "get_project",
+                          "host_attested_read_only": True,
+                          "error_type": type(exc).__name__})
+            return
+        if _field(result, "is_error", _field(result, "isError", False)):
+            digest, oversized = _bounded_error_digest(result)
+            self._append({"kind": "host_project_postwrite_error",
+                          "turn": turn, "tool": "get_project",
+                          "host_attested_read_only": True,
+                          "error_sha256": digest,
+                          "error_text_exceeded_evidence_budget": oversized})
+            return
+        try:
+            texts, images, audio = _native_content(result)
+            if images or audio:
+                raise NativeCreativeControlError(
+                    "Machine-state sensing may not yield unaudited binary media")
+        except NativeCreativeControlError:
+            self._append({"kind": "host_project_postwrite_error",
+                          "turn": turn, "tool": "get_project",
+                          "host_attested_read_only": True,
+                          "error_type": "InvalidBoundedProjectObservation"})
+            return
+        self._project_presence = _native_project_presence_from_text(texts)
+        self._append({"kind": "host_project_postwrite_observation",
+                      "turn": turn, "tool": "get_project",
+                      "host_attested_read_only": True,
+                      "text_sha256": [hashlib.sha256(x.encode()).hexdigest() for x in texts],
+                      "project_presence": self._project_presence,
+                      "no_model_selected_mutation": True})
 
     async def _infer(self, context: dict):
         # A replaceable model adapter is an execution boundary, not an owner
@@ -911,9 +960,13 @@ class NativeCreativeControl:
                 # corroborated by both fields in the native read response.
                 # Any other successful native operation may change project
                 # state, so do not carry an old presence assertion forward.
-                self._project_presence = (
-                    _native_project_presence_from_text(texts)
-                    if native_name == "get_project" else "unknown")
+                if native_name == "get_project":
+                    self._project_presence = _native_project_presence_from_text(texts)
+                elif (self.host_tool_access is None or
+                      self.host_tool_access.get(native_name) != "read"):
+                    self._project_presence = "unknown"
+                # A genuine host-read cannot mutate an open project; do not
+                # destroy verified state after every metadata inspection.
                 self._last_native_texts = texts
                 self._last_images, self._last_hashes = images, hashes
                 self._last_audio, self._last_audio_evidence = audio, audio_evidence
@@ -928,6 +981,9 @@ class NativeCreativeControl:
                               "audio_sent_to_model_for_next_decision": bool(audio),
                               "audio_semantically_heard": False,
                               "human_or_artistic_quality_approved": False})
+                if (self.host_tool_access is not None and
+                        self.host_tool_access.get(native_name) == "write"):
+                    await self._observe_project_after_trusted_write(turn=turn)
             return {
                 "status": outcome, "events": self.events.copy(),
                 "measured_model_wall_ms_total": round(self._model_wall_ms_total, 3),
