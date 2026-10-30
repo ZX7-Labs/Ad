@@ -559,5 +559,68 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(outcome["artistic_quality_independently_approved"])
 
 
+    async def test_native_project_presence_is_observed_not_inferred_from_model_words(self):
+        session = FakeSession()
+        session.tools.append(SimpleNamespace(name="get_project", description="Real native project",
+                                             input_schema={"type": "object", "additionalProperties": False}))
+        observed_null = json.dumps({"project": None, "mcp": {"hasProject": False}})
+        observed_present = json.dumps({"project": {"id": "native-1"}, "mcp": {"hasProject": True}})
+        observed_state = [observed_null, observed_present]
+        async def native_call(name, arguments):
+            session.calls.append((name, arguments))
+            if name == "get_project":
+                return SimpleNamespace(is_error=False, content=[
+                    SimpleNamespace(type="text", text=observed_state.pop(0))])
+            return SimpleNamespace(is_error=False, content=[
+                SimpleNamespace(type="text", text=json.dumps({"success": True}))])
+        session.call_tool = native_call
+        model = ScriptedModel([
+            decision("invoke", tool="get_project", inputs={}),
+            decision("discover"),
+            decision("invoke", tool="get_project", inputs={}),
+            decision("finish", summary="Only source evidence determines project presence"),
+        ])
+        result = await NativeCreativeControl(session, model, max_turns=4).run(
+            "Inspect the actual editable project without inventing state")
+        self.assertEqual([c["native_project_presence_from_last_inspection"]
+                          for c in model.observed],
+                         ["unknown", "absent", "absent", "present"])
+        self.assertEqual(result["status"], "model_finished_unverified")
+        self.assertEqual(len(session.calls), 2)
+        self.assertFalse(result["native_editing_capability_complete"])
+
+    async def test_native_project_presence_invalidated_after_other_real_operation(self):
+        session = FakeSession()
+        session.tools.append(SimpleNamespace(name="get_project", description="Native project state",
+                                             input_schema={"type": "object", "additionalProperties": False}))
+        session.custom_response = SimpleNamespace(is_error=False, content=[SimpleNamespace(
+            type="text", text=json.dumps({"project": None, "mcp": {"hasProject": False}}))])
+        model = ScriptedModel([
+            decision("invoke", tool="get_project", inputs={}),
+            decision("invoke", tool="update_text_clip", inputs={"clipId": "model-edit"}),
+            decision("finish", summary="A write invalidated the old project snapshot"),
+        ])
+        result = await NativeCreativeControl(session, model, max_turns=3).run(
+            "Inspect then change native state")
+        self.assertEqual(model.observed[1]["native_project_presence_from_last_inspection"], "absent")
+        self.assertEqual(model.observed[2]["native_project_presence_from_last_inspection"], "unknown")
+        self.assertEqual([x[0] for x in session.calls], ["get_project", "update_text_clip"])
+        self.assertFalse(result["artistic_quality_independently_approved"])
+
+    async def test_contradictory_native_project_snapshot_is_not_treated_as_fact(self):
+        session = FakeSession()
+        session.tools.append(SimpleNamespace(name="get_project", description="Native project",
+                                             input_schema={"type": "object", "additionalProperties": False}))
+        session.custom_response = SimpleNamespace(is_error=False, content=[SimpleNamespace(
+            type="text", text=json.dumps({"project": None, "mcp": {"hasProject": True}}))])
+        model = ScriptedModel([
+            decision("invoke", tool="get_project", inputs={}),
+            decision("finish", summary="Contradiction is unknown"),
+        ])
+        await NativeCreativeControl(session, model, max_turns=2).run("Inspect project truth")
+        self.assertEqual(model.observed[1]["native_project_presence_from_last_inspection"],
+                         "unknown")
+
+
 if __name__ == "__main__":
     unittest.main()
