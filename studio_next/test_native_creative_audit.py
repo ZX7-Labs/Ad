@@ -277,5 +277,33 @@ class NativeCreativeAuditTests(unittest.TestCase):
                 audit_native_journal(bad, host_tool_access=HOST)
 
 
+    def test_initial_project_read_requires_real_host_read_grant_and_sequence(self):
+        events = trace()
+        read = {"kind": "host_project_bootstrap_observation", "sequence": 1,
+                "tool": "get_project", "host_attested_read_only": True,
+                "text_sha256": [A], "project_presence": "absent",
+                "no_model_selected_mutation": True}
+        events.insert(1, read)
+        for i, event in enumerate(events):
+            event["sequence"] = i
+        access = dict(HOST, get_project="read")
+        self.assertTrue(audit_native_journal(events, host_tool_access=access)
+                        ["journal_chain_structurally_valid"])
+        for change in ({"host_attested_read_only": False}, {"project_presence": "magic"},
+                       {"text_sha256": []}, {"no_model_selected_mutation": False}):
+            altered = copy.deepcopy(events)
+            altered[1].update(change)
+            with self.subTest(change=change), self.assertRaises(NativeJournalError):
+                audit_native_journal(altered, host_tool_access=access)
+        with self.assertRaises(NativeJournalError):
+            audit_native_journal(events, host_tool_access=dict(HOST, get_project="write"))
+        misplaced = copy.deepcopy(events)
+        misplaced.insert(2, misplaced.pop(1))
+        for i, event in enumerate(misplaced):
+            event["sequence"] = i
+        with self.assertRaises(NativeJournalError):
+            audit_native_journal(misplaced, host_tool_access=access)
+
+
 if __name__ == "__main__":
     unittest.main()
