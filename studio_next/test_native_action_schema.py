@@ -31,6 +31,23 @@ class NativeActionSchemaTests(unittest.TestCase):
                 {'action': 'finish', 'arguments': {'summary': 'done'}, 'reason': 'x', 'allowed_tools': ['shell']}):
             self.assertFalse(self.validator.is_valid(value))
 
+    def test_finish_grammar_requires_trusted_completion_evidence(self):
+        import jsonschema
+        for compact in (True, False):
+            with self.subTest(compact=compact):
+                pending = jsonschema.Draft202012Validator(native_action_schema(
+                    ([] if compact else ["get_project"]),
+                    compact_catalog=compact, allow_finish=False))
+                completed = jsonschema.Draft202012Validator(native_action_schema(
+                    ([] if compact else ["get_project"]),
+                    compact_catalog=compact, allow_finish=True))
+                finish = {"action": "finish", "arguments": {"summary": "Claim"},
+                          "reason": "model judgment"}
+                self.assertFalse(pending.is_valid(finish))
+                self.assertTrue(completed.is_valid(finish))
+        with self.assertRaisesRegex(ValueError, "host-attested boolean"):
+            native_action_schema([], compact_catalog=True, allow_finish="false")
+
     def test_compact_brain_grammar_supports_host_indexed_discovery_not_giant_tool_enum(self):
         import jsonschema
         compact = native_action_schema([], compact_catalog=True)
