@@ -330,13 +330,27 @@ def audit_native_journal(events, *, host_tool_access, expected_required_evidence
                 raise NativeJournalError("Native operation lacks model intent or host grant")
             pending = (event.get("turn"), tool, host_tool_access[tool])
             continue
-        if kind in ("native_tool_result", "native_tool_reported_error",
-                    "native_tool_uncertain_outcome", "native_observation_rejected",
-                    "native_read_tool_reported_error"):
+        if kind in ("native_tool_result", "native_tool_preview",
+                    "native_tool_reported_error", "native_tool_uncertain_outcome",
+                    "native_observation_rejected", "native_read_tool_reported_error"):
             if pending is None or (event.get("turn"), event.get("tool")) != pending[:2]:
                 raise NativeJournalError("Native outcome does not match a submitted call")
             turn, tool, access = pending
             pending = None
+            if kind == "native_tool_preview":
+                # The native application acknowledged *a proposed plan*, not
+                # an applied edit. It has no authority to advance write proof.
+                # Its exact bounded text remains hash-attested; physical
+                # mutation proof requires a distinct later native result.
+                hashes = event.get("text_sha256")
+                if (access != "write" or
+                        event.get("host_reported_preview_only") is not True or
+                        event.get("no_accepted_write_evidence") is not True or
+                        event.get("human_or_artistic_quality_approved") is not False or
+                        not isinstance(hashes, list) or len(hashes) != 1 or
+                        not all(_sha(x) for x in hashes)):
+                    raise NativeJournalError("Native preview was forged as an applied write")
+                continue
             if kind == "native_read_tool_reported_error":
                 # This branch is only valid for a host-attested READ. Failed
                 # reads are not positive native evidence and grant no ability
