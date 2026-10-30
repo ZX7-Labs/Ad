@@ -374,6 +374,7 @@ class NativeCreativeControl:
                  catalog_mode: str = "full",
                  host_preconditions: dict | None = None,
                  host_possible_effects: dict | None = None,
+                 host_once_after_acknowledged_write: tuple[str, ...] = (),
                  required_evidence: tuple[str, ...] = (),
                  host_content_revision_tools: tuple[str, ...] = ()):
         if type(max_turns) is not int or not 1 <= max_turns <= 128:
@@ -416,6 +417,17 @@ class NativeCreativeControl:
         self.catalog_mode = catalog_mode
         self._host_preconditions = copy.deepcopy(host_preconditions or {})
         self._host_possible_effects = copy.deepcopy(host_possible_effects or {})
+        if (not isinstance(host_once_after_acknowledged_write, (tuple, list)) or
+                len(set(host_once_after_acknowledged_write)) !=
+                len(host_once_after_acknowledged_write) or
+                any(not isinstance(name, str) or not name or
+                    host_tool_access is None or host_tool_access.get(name) != "write"
+                    for name in host_once_after_acknowledged_write)):
+            raise NativeCreativeControlError(
+                "One-write host policy requires distinct explicitly granted write tools")
+        # Trial-only single-project policy. A general creative session may
+        # intentionally create multiple projects; never silently impose this.
+        self._host_once_after_ack = frozenset(host_once_after_acknowledged_write)
         if (not isinstance(self._host_preconditions, dict) or
                 not isinstance(self._host_possible_effects, dict)):
             raise NativeCreativeControlError("Trusted machine contracts must be objects")
@@ -888,6 +900,30 @@ class NativeCreativeControl:
                 # It may describe the tool and independently revise its
                 # arguments on its next turn. Never retry an actual write.
                 native_name = args["tool"]
+                # A model may repeat create_project after a successful native
+                # write and even a contradictory project-state observation.
+                # The host may expressly mark selected writes as single-use
+                # for this trial. A preview, preflight refusal, or failed write
+                # is NOT an acknowledged mutation and does not exhaust it.
+                # This refuses the duplicate BEFORE the second side effect.
+                if (native_name in self._host_once_after_ack and
+                        any(e.get("kind") == "native_tool_result" and
+                            e.get("tool") == native_name for e in self.events)):
+                    self._last_preflight_feedback = {
+                        "tool": native_name,
+                        "validation_keyword": "host_single_write",
+                        "native_write_already_acknowledged": True,
+                        "no_native_dispatch": True}
+                    self._selectable_tools = [] if self.catalog_mode == "indexed" else self._selectable_tools
+                    self._last_search_result = None if self.catalog_mode == "indexed" else self._last_search_result
+                    self._append({"kind": "model_action_rejected", "turn": turn,
+                                  **timing, "tool": native_name,
+                                  "inputs_sha256": hashlib.sha256(
+                                      _wire(args["inputs"]).encode()).hexdigest(),
+                                  "validation_keyword": "host_single_write",
+                                  "schema_location": "",
+                                  "no_native_dispatch": True})
+                    continue
                 invalid = next(validators[native_name].iter_errors(args["inputs"]), None)
                 if invalid is not None:
                     schema = validators[native_name].schema
@@ -1131,6 +1167,13 @@ class NativeCreativeControl:
                               "audio_sent_to_model_for_next_decision": bool(audio),
                               "audio_semantically_heard": False,
                               "human_or_artistic_quality_approved": False})
+                if native_name in self._host_once_after_ack and self.catalog_mode == "indexed":
+                    # A one-time host operation has already been acknowledged.
+                    # Its old search result is no longer an actionable frontier;
+                    # the model must independently search for any next tool.
+                    # No creative operation is selected or dispatched here.
+                    self._selectable_tools = []
+                    self._last_search_result = None
                 # A successful native create/open response is a WRITE receipt,
                 # not independent evidence that a project is now open. Observe
                 # the actual host state once with the owner's READ grant,
