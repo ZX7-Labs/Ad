@@ -204,6 +204,25 @@ a higher-level independent creative/video acceptance remains required.
 
 ## Start a local session
 
+For a bounded real-model trial, `scripts/run_native_model_trial.py` downloads
+the exact runtime/weight revisions and verifies their sizes and SHA256 values
+from [local-model-trial.lock.json](local-model-trial.lock.json). It starts a
+CPU Qwen3.5-2B vision model and this existing editor on a normal non-root host.
+The script supplies neutral original input footage and a creative brief;
+every native editor mutation must come from model inference. Private trial
+artifacts retain decisions, supplied image hashes, the source-chain journal,
+native projects, exports and runtime logs. This trial deliberately contains
+only generated public test inputs; do not publish private client transcripts.
+
+The trial refuses a root/disabled-sandbox editor and has no scripted editing
+fallback. Completion requires a model-selected content revision after observing
+real pixels, a subsequent save and new verified export, and changed decoded
+frame sequences. Token/RAM measurements are not inferred from model size or
+invented when absent. A failed or incomplete run remains a failed run; even a
+successful technical trial does not certify professional creative quality.
+The `ZX7 BODY — Live Local Model Native Editor Trial` workflow preserves its
+results, including failures, separately from deterministic renderer tests.
+
 Paths must be absolute. Each launch requires a fresh profile; project/staging/output roots can persist. This upstream hardcodes ports 5173 and 19790, so only one instance per network namespace is supported. Occupied ports fail before startup.
 
 ```sh
