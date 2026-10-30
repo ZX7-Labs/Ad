@@ -28,6 +28,20 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y blender ffmpeg melt frei0r-plugins inkscape xvfb python3-tk fonts-dejavu-core fonts-noto-core
           python -m pip install --no-cache-dir "numpy>=1.26,<3" "Pillow>=10,<13" "opentimelineio>=0.17,<1" "fonttools>=4,<5" "OpenEXR>=3.3,<4" "opencolorio>=2.5,<2.6" "opencv-python-headless>=4.10,<5"
+          # The full test discovery includes native model/editor controls,
+          # whose declared extra requires MCP and jsonschema. Without it,
+          # 92 controller tests fail during setup before any real assertion.
+          # Use the existing pinned project extra; never skip these tests.
+          python -m pip install --no-cache-dir '.[editor]'
+          python - <<'PY'
+          import importlib.metadata as metadata
+          import jsonschema
+          import mcp
+          print("DECLARED EDITOR TEST DEPENDENCIES", {
+              "jsonschema": metadata.version("jsonschema"),
+              "mcp": metadata.version("mcp"),
+          })
+          PY
       - name: Verify complete contracts, real process death, pause/restart/resume and actual graphical client
         env:
           ZX7_DESKTOP_QA_PNG: ${{ github.workspace }}/output/body-release-proof/desktop-qa.png
