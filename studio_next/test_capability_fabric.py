@@ -95,6 +95,52 @@ class CapabilityFabricTests(unittest.TestCase):
         self.assertFalse(precise["requires_refinement"])
         self.assertEqual(precise["matches"][0]["id"], "video/create_project")
 
+    def test_exact_identity_unblocks_real_2b_project_creation_without_unsafe_ties(self):
+        # Actual 2026-10-30 Qwen3.5-2B trial searched create_project four
+        # times; lexical tie refusal returned zero invokable matches despite
+        # the exact granted ID being available in the earlier host frontier.
+        ops = [
+            tool("create_project", "Preview or create a new Velorn project"),
+            tool("create_project_checkpoint", "Create in-memory project checkpoint"),
+            tool("create_timeline", "Create an editable project timeline"),
+            tool("open_project", "Open the project"),
+            tool("get_project", "Inspect existing project state"),
+        ]
+        fabric = CapabilityFabric({"native": (
+            ops, {entry.name: ("read" if entry.name == "get_project" else "write")
+                  for entry in ops})})
+        for query in ("create_project", "native/create_project", " create_project "):
+            result = fabric.search(query, limit=1)
+            self.assertEqual(result["candidates_examined"], 1)
+            self.assertFalse(result["requires_refinement"])
+            self.assertFalse(result["has_more"])
+            self.assertEqual([m["id"] for m in result["matches"]],
+                             ["native/create_project"])
+            self.assertEqual(fabric.describe("native/create_project",
+                             revision=result["revision"])["access"], "write")
+        self.assertEqual(fabric.search("unknown_tool_id", limit=1)["matches"], [])
+        broad = fabric.search("create", limit=1)
+        self.assertTrue(broad["requires_refinement"])
+        self.assertEqual(broad["matches"], [])
+        self.assertGreaterEqual(len(broad["candidate_examples"]), 2)
+
+    def test_exact_name_collision_requires_namespace_or_multiple_visible_choices(self):
+        f = CapabilityFabric({
+            "video": ([tool("render", "Native video export")], {"render": "write"}),
+            "motion": ([tool("render", "Native motion export")], {"render": "write"}),
+        })
+        ambiguous = f.search("render", limit=1)
+        self.assertTrue(ambiguous["requires_refinement"])
+        self.assertEqual(ambiguous["matches"], [])
+        self.assertEqual(ambiguous["candidates_examined"], 2)
+        explicit = f.search("motion/render", limit=1)
+        self.assertEqual([r["id"] for r in explicit["matches"]], ["motion/render"])
+        self.assertEqual(explicit["candidates_examined"], 1)
+        all_matches = f.search("render", limit=2)
+        self.assertEqual({r["id"] for r in all_matches["matches"]},
+                         {"motion/render", "video/render"})
+        self.assertFalse(all_matches["requires_refinement"])
+
     def test_sparse_specialist_search_examines_only_host_granted_postings(self):
         ops = [tool(f"job_{i:04d}",
                "Render original visual composition" if i != 911
