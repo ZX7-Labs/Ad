@@ -292,6 +292,9 @@ def _model_event_window(events):
         if kind == "discovered":
             item["native_tool_count"] = event.get(
                 "native_tool_count", len(event.get("tools", ())))
+        elif kind == "model_finish_rejected":
+            item["unmet_evidence"] = event.get("unmet_evidence", [])
+            item["no_native_dispatch"] = True
         elif kind == "capability_searched":
             item["result_tool_names"] = event.get("result_tool_names", [])[:8]
             item["no_native_dispatch"] = True
@@ -362,7 +365,8 @@ class NativeCreativeControl:
     def __init__(self, session, model, *, max_turns=32, receipt_path: Path | None = None,
                  host_tool_access: dict[str, str] | None = None,
                  catalog_mode: str = "full",
-                 host_tool_requirements: dict[str, list[str]] | None = None):
+                 host_tool_requirements: dict[str, list[str]] | None = None,
+                 required_evidence: tuple[str, ...] = ()):
         if type(max_turns) is not int or not 1 <= max_turns <= 128:
             raise NativeCreativeControlError("Native model session requires finite turn budget")
         if not callable(getattr(model, "decide", None)):
@@ -379,6 +383,15 @@ class NativeCreativeControl:
             raise NativeCreativeControlError("Unknown capability catalog mode")
         if catalog_mode == "indexed" and host_tool_access is None:
             raise NativeCreativeControlError("Indexed capability discovery requires trusted host grants")
+        allowed_evidence = {"native_mutation", "verified_export", "observed_export"}
+        if (not isinstance(required_evidence, tuple) or
+                len(required_evidence) > 3 or
+                any(not isinstance(x, str) or x not in allowed_evidence
+                    for x in required_evidence) or
+                len(set(required_evidence)) != len(required_evidence)):
+            raise NativeCreativeControlError(
+                "Only host-owned supported completion evidence may be required")
+        self.required_evidence = required_evidence
         self.catalog_mode = catalog_mode
         # This metadata must come from the trusted capability adapter, NOT
         # from the creative model or source tool descriptions.
@@ -456,6 +469,25 @@ class NativeCreativeControl:
             raise NativeCreativeControlError(
                 "Model requested ungranted, unsearched tool or invalid inputs")
         return raw
+
+    def _unmet_evidence(self):
+        # Machine-authenticated conditions, not a subjective assessment of
+        # creative quality. No assertion made by the replaceable brain counts.
+        completed = {
+            "native_mutation": any(
+                e.get("kind") == "native_tool_result" and
+                self.host_tool_access is not None and
+                self.host_tool_access.get(e.get("tool")) == "write"
+                for e in self.events),
+            "verified_export": bool(self._verified_exports),
+            "observed_export": any(
+                e.get("kind") == "native_tool_result" and
+                e.get("observed_export_sha256") in self._verified_exports and
+                e.get("observed_export_sha256") is not None
+                for e in self.events),
+        }
+        return [requirement for requirement in self.required_evidence
+                if not completed[requirement]]
 
     def _trusted_facts(self):
         # The only currently sensed fact is the real native project snapshot.
@@ -679,6 +711,7 @@ class NativeCreativeControl:
                     "last_native_result_texts": self._last_native_texts,
                     "native_project_presence_from_last_inspection": self._project_presence,
                     "host_attested_capability_facts": self._trusted_facts(),
+                    "unmet_required_deliverable_evidence": self._unmet_evidence(),
                     # A schema error is known BEFORE any native RPC. Instead
                     # of burning another costly inference on metadata discovery,
                     # expose the exact bounded host schema for independent
@@ -740,6 +773,26 @@ class NativeCreativeControl:
                 # A new successful native call replaces this text below.
                 action, args = decision["action"], decision["arguments"]
                 if action == "finish":
+                    unmet = self._unmet_evidence()
+                    if unmet:
+                        # In the physical trial the 2B model falsely claimed
+                        # a complete saved/edited movie on turn zero, despite
+                        # the host proving no project was open. Reject the
+                        # unsupported finish without choosing a creative step.
+                        # The model may independently recover; real writes are
+                        # NEVER auto-replayed by this gate.
+                        self._last_preflight_feedback = {
+                            "validation_keyword": "completion",
+                            "unmet_required_evidence": unmet,
+                            "no_native_dispatch": True}
+                        self._append({"kind": "model_finish_rejected",
+                                      "turn": turn, **timing,
+                                      "unmet_evidence": unmet,
+                                      "summary_sha256": hashlib.sha256(
+                                          args["summary"].encode("utf-8")).hexdigest(),
+                                      "no_native_dispatch": True,
+                                      "creative_quality_independently_approved": False})
+                        continue
                     self._append({"kind": "model_finished", "turn": turn,
                                   **timing,
                                   # The model's free-form summary can echo a private
