@@ -113,6 +113,15 @@ class CapabilityFabric:
             raise CapabilityContractError("No executable host-granted capabilities")
         self._records = records
         self._namespaces = sorted(sources)
+        # Inverted capability index: search only real host-granted candidates
+        # whose indexed terms overlap the model's tiny query. Tool discovery
+        # and permission checks still come from the current trusted sources.
+        # No embedding endpoint, LLM prompt expansion or creative plan.
+        postings = {}
+        for identity, record in records.items():
+            for token in record["name_tokens"] | record["description_tokens"]:
+                postings.setdefault(token, set()).add(identity)
+        self._postings = {key: frozenset(ids) for key, ids in postings.items()}
         # A deterministic contract revision invalidates a stale model-side
         # selection even when the *name* is reused for a different ABI/grant.
         self.revision = hashlib.sha256(_wire([{
@@ -176,8 +185,15 @@ class CapabilityFabric:
         terms = _tokens(query)
         if not terms:
             raise CapabilityContractError("Search query has no searchable terms")
+        # O(sum matching term postings) instead of O(all installed tools).
+        # Full-catalog scans become expensive when the BODY grows to thousands
+        # of creative operations, even if the brain is a 1 GB specialist.
+        candidate_ids = set()
+        for term in terms:
+            candidate_ids.update(self._postings.get(term, ()))
         scored = []
-        for ident, record in self._records.items():
+        for ident in candidate_ids:
+            record = self._records[ident]
             name_hits = terms & record["name_tokens"]
             desc_hits = terms & record["description_tokens"]
             if not (name_hits or desc_hits):
@@ -199,7 +215,8 @@ class CapabilityFabric:
                        for _, ident, record in scored[:6]]
             return {"revision": self.revision, "matches": [],
                     "has_more": True, "requires_refinement": True,
-                    "candidate_examples": choices}
+                    "candidate_examples": choices,
+                    "candidates_examined": len(candidate_ids)}
         items = []
         for _, ident, record in scored[:limit]:
             schema = record["input_schema"]
@@ -210,7 +227,8 @@ class CapabilityFabric:
                           "parameters_sample": param_names,
                           "requires": record["requires"]})
         return {"revision": self.revision, "matches": items,
-                "has_more": len(scored) > limit}
+                "has_more": len(scored) > limit,
+                "candidates_examined": len(candidate_ids)}
 
     def describe(self, operation_id: str, *, revision: str, max_schema_bytes=16_384):
         record = self.resolve(operation_id, revision=revision)
