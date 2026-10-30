@@ -29,6 +29,10 @@ _FRAME_OBSERVERS = frozenset({
     "zx7_observe_verified_export_samples",
 })
 _EXPORT = "zx7_verify_native_export"
+_COMPLETION_EVIDENCE_TYPES = frozenset({
+    "native_write_acknowledged", "physical_export_verified",
+    "verified_export_frame_observed",
+})
 _AUDIO = "zx7_observe_verified_export_audio"
 _CRITICAL_END = frozenset({
     "native_tool_reported_error", "native_tool_uncertain_outcome",
@@ -117,6 +121,11 @@ def audit_native_journal(events, *, host_tool_access):
         raise NativeJournalError("Invalid event sequence or host access inventory")
     if not isinstance(events[0], dict) or events[0].get("kind") != "session_started":
         raise NativeJournalError("Journal lacks a session identity")
+    required = events[0].get("required_completion_evidence", [])
+    if (not isinstance(required, list) or required != sorted(set(required)) or
+            any(not isinstance(item, str) or item not in _COMPLETION_EVIDENCE_TYPES
+                for item in required)):
+        raise NativeJournalError("Unknown or malformed host completion requirements")
     pending = None
     verified = set()
     observed = {}
@@ -124,6 +133,18 @@ def audit_native_journal(events, *, host_tool_access):
     observed_then_written = []
     finished = False
     terminal = None
+
+    def missing_evidence():
+        proven = set()
+        if writes:
+            proven.add("native_write_acknowledged")
+        if verified:
+            proven.add("physical_export_verified")
+        if any(tool in _FRAME_OBSERVERS for kinds in observed.values()
+               for tool in kinds):
+            proven.add("verified_export_frame_observed")
+        return sorted(set(required) - proven)
+
     for i, event in enumerate(events):
         if not isinstance(event, dict) or type(event.get("sequence")) is not int or event["sequence"] != i:
             raise NativeJournalError("Journal event sequence is broken")
@@ -205,6 +226,14 @@ def audit_native_journal(events, *, host_tool_access):
                     any(not isinstance(tool, str) or tool not in host_tool_access
                         for tool in tools) or len(set(tools)) != len(tools)):
                 raise NativeJournalError("Search fabricated an ungranted native capability")
+            continue
+        if kind == "model_finish_rejected":
+            # This is a model-selected finish REFUSED by the owner host: no
+            # native dispatch and no claim that artistic work was completed.
+            if (pending is not None or event.get("no_native_dispatch") is not True or
+                    not missing_evidence() or
+                    event.get("missing_completion_evidence") != missing_evidence()):
+                raise NativeJournalError("Unproven or fabricated completion refusal")
             continue
         if kind == "model_action_rejected":
             # Input-schema preflight rejected a model proposal BEFORE any RPC.
@@ -308,7 +337,7 @@ def audit_native_journal(events, *, host_tool_access):
                 finished = True
             continue
         if kind == "model_finished":
-            if pending is not None:
+            if pending is not None or missing_evidence():
                 raise NativeJournalError("Model finished with an unresolved native write")
             # Preserve old valid journal compatibility, but require new
             # private-summary receipts to have a real SHA and length, never
