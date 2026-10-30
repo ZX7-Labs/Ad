@@ -303,7 +303,20 @@ class NativeCreativeControl:
                     "audio_semantically_reviewed": False,
                 }
                 model_started = time.monotonic_ns()
-                decision = self._decision(await self._infer(context))
+                try:
+                    decision = self._decision(await self._infer(context))
+                except BaseException as exc:
+                    # A model failure is neither a finished film nor exhausted
+                    # budget. Persist a terminal fact without exposing model
+                    # prompts, output or secrets from the exception message.
+                    failed_ms = round((time.monotonic_ns() - model_started) / 1_000_000, 3)
+                    self._model_wall_ms_total += failed_ms
+                    self._append({"kind": "model_decision_failed", "turn": turn,
+                                  "measured_model_wall_ms": failed_ms,
+                                  "error_type": type(exc).__name__,
+                                  "no_automatic_retry": True,
+                                  "creative_quality_independently_approved": False})
+                    raise
                 model_ms = round((time.monotonic_ns() - model_started) / 1_000_000, 3)
                 self._model_wall_ms_total += model_ms
                 # This is *not* independent token accounting. Native and
