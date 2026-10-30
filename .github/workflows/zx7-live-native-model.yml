@@ -2,7 +2,9 @@ name: "ZX7 BODY — Live Local Model Native Editor Trial"
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    # Temporary isolated research branches may run the *actual* pinned model
+    # without merging unfinished AI behavior into main.
+    branches: [main, "trial/**"]
     paths:
       - ".github/workflows/zx7-live-native-model.yml"
       - "scripts/run_native_model_trial.py"
