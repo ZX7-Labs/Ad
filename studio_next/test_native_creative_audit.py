@@ -304,6 +304,27 @@ class NativeCreativeAuditTests(unittest.TestCase):
         with self.assertRaises(NativeJournalError):
             audit_native_journal(misplaced, host_tool_access=access)
 
+    def test_capability_search_audit_fails_on_ungranted_or_forged_identity(self):
+        baseline = trace()
+        template = {"kind": "capability_searched", "turn": 0,
+                    "query_sha256": A, "catalog_revision": B,
+                    "result_tool_names": ["get_timeline"],
+                    "no_native_dispatch": True}
+        baseline.insert(1, {"sequence": 1, **template})
+        for i, event in enumerate(baseline):
+            event["sequence"] = i
+        self.assertTrue(audit_native_journal(
+            baseline, host_tool_access=HOST)["journal_chain_structurally_valid"])
+        for wrong in ({"result_tool_names": ["invented"]},
+                      {"result_tool_names": ["get_timeline", "get_timeline"]},
+                      {"result_tool_names": "get_timeline"},
+                      {"catalog_revision": "bad"},
+                      {"no_native_dispatch": False}):
+            clone = copy.deepcopy(baseline)
+            clone[1].update(wrong)
+            with self.subTest(wrong=wrong), self.assertRaises(NativeJournalError):
+                audit_native_journal(clone, host_tool_access=HOST)
+
 
 if __name__ == "__main__":
     unittest.main()
