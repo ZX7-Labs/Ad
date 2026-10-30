@@ -241,6 +241,48 @@ def _native_tool_hints(available):
     return hints
 
 
+
+def _model_event_window(events):
+    """Loss-aware, bounded model working memory over an *unaltered* journal.
+
+    The journal stays complete for independent custody auditing. Models get
+    typed operation outcomes, the most recent native schema, and real decoded
+    observations separately, not duplicated catalog inventories, opaque SHA
+    fields, model timings or eight full past tool schemas each turn.
+    """
+    recent = events[-8:]
+    last_schema = max((i for i, ev in enumerate(recent)
+                       if ev.get("kind") == "native_tool_schema"), default=-1)
+    retained = []
+    for i, event in enumerate(recent):
+        kind = event.get("kind")
+        item = {field: event[field] for field in ("kind", "turn", "tool")
+                if field in event}
+        if kind == "discovered":
+            item["native_tool_count"] = len(event.get("tools", ()))
+        elif kind == "native_tool_schema":
+            if i == last_schema:
+                item["description"] = event.get("description", "")
+                item["input_schema"] = event.get("input_schema")
+            else:
+                item["schema_available_by_describe"] = True
+        elif kind == "model_action_rejected":
+            for field in ("validation_keyword", "schema_location", "no_native_dispatch"):
+                if field in event:
+                    item[field] = event[field]
+        elif kind in ("native_tool_result", "native_observation_rejected",
+                      "native_tool_reported_error", "native_tool_uncertain_outcome"):
+            # Preserve modality and physical export/source identity, never
+            # recreate raw media or author an unsupported quality conclusion.
+            for field in ("observed_export_sha256", "independently_verified_export_sha256",
+                          "image_sha256", "audio_sha256", "must_reconcile_native_state"):
+                if event.get(field) is not None:
+                    item[field] = event[field]
+        retained.append(item)
+    return retained
+
+
+
 class NativeCreativeControl:
     """Single in-process driver of an already host-authorized official MCP session.
 
@@ -391,7 +433,7 @@ class NativeCreativeControl:
                     # Keep stable context first for local runtime prefix caching;
                     # this never caches decisions or replays native operations.
                     "turn": turn,
-                    "latest_events": self.events[-8:],
+                    "latest_events": _model_event_window(self.events),
                     "last_native_result_texts": self._last_native_texts,
                     "native_project_presence_from_last_inspection": self._project_presence,
                     # Evidence-based progress facts persist beyond the 8-event
