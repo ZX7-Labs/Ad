@@ -246,6 +246,43 @@ class GatewayTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(g.evidence(), [])
 
 
+    async def test_versioned_mcp_page_two_executes_only_after_live_revalidation(self):
+        class Versioned(Engine):
+            async def list_tools(self, *, cursor=None):
+                if cursor is None:
+                    return {"jsonrpc": "2.0", "id": 1, "result": {
+                        "resultType": "complete", "tools": [tool("inspect")],
+                        "nextCursor": "next-vfx-page"}}
+                if cursor == "next-vfx-page":
+                    return {"jsonrpc": "2.0", "id": 2, "result": {
+                        "resultType": "complete", "tools": [tool("glow")]}}
+                raise AssertionError("Untrusted cursor")
+        engine = Versioned([])
+        gateway = CapabilityGateway({"vfx": (engine, {
+            "inspect": "read", "glow": "write"})})
+        rev = (await gateway.refresh())["revision"]
+        result = await gateway.invoke("vfx/glow", revision=rev, inputs={})
+        self.assertEqual(result["state"], "host_reported_success_unverified")
+        self.assertEqual(engine.calls, [("glow", {})])
+
+    async def test_versioned_mcp_partial_revalidation_blocks_all_native_writes(self):
+        class Changing(Engine):
+            def __init__(self):
+                super().__init__([tool("write")])
+                self.incomplete = False
+            async def list_tools(self):
+                return {"result": {"resultType":
+                    "input_required" if self.incomplete else "complete",
+                    "tools": [tool("write")]}}
+        engine = Changing()
+        gateway = CapabilityGateway({"graphics": (engine, {"write": "write"})})
+        rev = (await gateway.refresh())["revision"]
+        engine.incomplete = True
+        with self.assertRaises(CapabilityContractError):
+            await gateway.invoke("graphics/write", revision=rev, inputs={})
+        self.assertEqual(engine.calls, [])
+        self.assertEqual(gateway.evidence(), [])
+
     async def test_gateway_revalidates_target_discovered_on_second_mcp_page(self):
         class Paged(Engine):
             async def list_tools(self, *, cursor=None):
