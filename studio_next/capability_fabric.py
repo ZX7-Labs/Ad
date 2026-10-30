@@ -179,6 +179,18 @@ class CapabilityFabric:
                      5 * len(name_hits) + len(desc_hits))
             scored.append((-score, ident, record))
         scored.sort(key=lambda x: (x[0], x[1]))
+        # Failure from actual neural trial: a single-word "create" query
+        # with limit=1 returned create_asset_folder instead of create_project,
+        # merely because of lexical ID ordering. Never turn arbitrary tie
+        # breaking into permission to execute an unrelated write. Return
+        # a few genuine alternatives for model-selected refinement instead.
+        if len(scored) > limit and scored and scored[limit][0] == scored[limit - 1][0]:
+            choices = [{"id": ident, "description": record["description"][:96],
+                        "access": record["access"]}
+                       for _, ident, record in scored[:6]]
+            return {"revision": self.revision, "matches": [],
+                    "has_more": True, "requires_refinement": True,
+                    "candidate_examples": choices}
         items = []
         for _, ident, record in scored[:limit]:
             schema = record["input_schema"]
