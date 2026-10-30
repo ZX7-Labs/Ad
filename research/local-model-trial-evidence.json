@@ -55,7 +55,16 @@
       "main_finding": "The actual neural model spent 19/22 decisions on metadata discovery/schema descriptions, repeatedly inspecting the absent native project and eventually sending invalid inspect_clip inputs. Model-facing native observation text was cleared after each metadata decision; this was separately identified in the controller source, not validated as the only cause of failure.",
       "artistic_quality_approved": false,
       "native_video_field_complete": false,
-      "evidence_reproduced_from_actual_zip": true
+      "evidence_reproduced_from_actual_zip": true,
+      "measured_inference_wall_seconds_sum": 1770.266,
+      "measured_inference_wall_seconds_scope": "sum of 22 RecordedModel actual HTTP decision timings, not whole GitHub job wall time",
+      "local_server_reported_prompt_tokens_sum": 67319,
+      "local_server_reported_completion_tokens_sum": 2951,
+      "token_usage_independently_verified": false,
+      "repeated_metadata_action_turns": 19,
+      "successful_native_read_results": 2,
+      "successful_native_write_results": 0,
+      "timing_and_token_evidence_source": "CI artifact 12959508682/inference-transcript.jsonl and native-journal.jsonl"
     }
   ]
 }
