@@ -36,21 +36,32 @@ def sha(path):
 
 def download(entry, root):
     target = root / entry['filename']
-    if target.is_file() and sha(target) == entry['sha256']:
+    expected = entry.get('bytes')
+    limit = expected if type(expected) is int else entry.get('max_bytes')
+    if (type(limit) is not int or not 0 < limit <= 10_000_000_000 or
+            (expected is not None and (type(expected) is not int or expected != limit))):
+        raise ValueError('Pinned input requires verified byte size or strict download upper bound')
+    if target.is_file() and target.stat().st_size <= limit and (
+            expected is None or target.stat().st_size == expected) and sha(target) == entry['sha256']:
         return target
     partial = target.with_suffix(target.suffix + '.partial')
     print('Downloading pinned input:', entry['filename'], flush=True)
-    with urlopen(entry['url'], timeout=120) as response, partial.open('wb') as dest:
-        count = 0
-        while block := response.read(1024 * 1024):
-            count += len(block)
-            if count > entry['bytes']:
-                raise ValueError('Download exceeds pinned size')
-            dest.write(block)
-    if partial.stat().st_size != entry['bytes'] or sha(partial) != entry['sha256']:
-        raise ValueError('Pinned download identity mismatch: ' + entry['filename'])
-    partial.replace(target)
-    return target
+    try:
+        with urlopen(entry['url'], timeout=120) as response, partial.open('wb') as dest:
+            count = 0
+            while block := response.read(1024 * 1024):
+                count += len(block)
+                if count > limit:
+                    raise ValueError('Download exceeds pinned safety bound')
+                dest.write(block)
+        if ((expected is not None and partial.stat().st_size != expected) or
+                partial.stat().st_size <= 0 or sha(partial) != entry['sha256']):
+            raise ValueError('Pinned download identity mismatch: ' + entry['filename'])
+        partial.replace(target)
+        return target
+    finally:
+        if partial.exists():
+            partial.unlink()
 
 
 class RecordedModel:
@@ -216,6 +227,9 @@ def main():
         parser.add_argument('--' + name, required=True, type=Path)
     parser.add_argument('--xvfb-binary', default='/usr/bin/Xvfb')
     parser.add_argument('--display', default='127.0.0.1:95')
+    parser.add_argument('--model-lock', type=Path,
+        default=ROOT / 'engines/velorn/local-model-trial.lock.json',
+        help='Local pinned model manifest; default remains the verified 2B baseline')
     args = parser.parse_args()
     args.source, args.runtime, args.artifacts = (getattr(args, name).resolve() for name in ('source', 'runtime', 'artifacts'))
     args.artifacts.mkdir(parents=True, exist_ok=False)
@@ -224,13 +238,20 @@ def main():
                 'native_field_complete': False, 'script_supplied_editor_mutations': 0,
                 'cpu_count': os.cpu_count(), 'model_ram_independently_measured': False}
     process = None
-    lock = json.loads((ROOT / 'engines/velorn/local-model-trial.lock.json').read_text())
+    lock = json.loads(args.model_lock.resolve().read_text())
+    if lock.get('model', {}).get('license') != 'Apache-2.0':
+        raise ValueError('Candidate model needs an explicit compatible model-weight license')
     try:
         if os.geteuid() == 0:
             raise RuntimeError('Live editor trial requires ordinary non-root Chromium sandbox execution')
         evidence['pinned_inputs'] = lock
         archive = download(lock['runtime']['archive'], args.runtime)
         files = {entry['kind']: download(entry, args.runtime) for entry in lock['model']['files']}
+        # A candidate pointer published by a third party is a *proposed*
+        # hash until this process actually rehashes the downloaded bytes.
+        evidence['actual_model_file_sha256_verified'] = {
+            kind: {'sha256': sha(path), 'bytes': path.stat().st_size}
+            for kind, path in files.items()}
         with tarfile.open(archive) as source:
             source.extractall(args.runtime, filter='data')
         binary = args.runtime / lock['runtime']['binary_relative_path']
