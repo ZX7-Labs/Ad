@@ -348,6 +348,27 @@ class NativeCreativeAuditTests(unittest.TestCase):
             audit_native_journal(events, host_tool_access=allow)
         # The previous event was a read, not a successful mutation.
 
+    def test_forged_finish_refusal_must_be_bounded_and_never_certify_video(self):
+        baseline = trace()
+        event = {"kind": "model_finish_rejected", "turn": 0,
+                 "unmet_evidence": ["verified_export"],
+                 "summary_sha256": A,
+                 "no_native_dispatch": True,
+                 "creative_quality_independently_approved": False}
+        baseline.insert(1, event)
+        for i, entry in enumerate(baseline):
+            entry["sequence"] = i
+        self.assertTrue(audit_native_journal(
+            baseline, host_tool_access=HOST)["journal_chain_structurally_valid"])
+        for bad in ({"unmet_evidence": []}, {"unmet_evidence": ["imaginary_movie"]},
+                    {"summary_sha256": "fake"}, {"no_native_dispatch": False},
+                    {"creative_quality_independently_approved": True}):
+            copy_events = copy.deepcopy(baseline)
+            copy_events[1].update(bad)
+            with self.subTest(bad=bad), self.assertRaises(NativeJournalError):
+                audit_native_journal(copy_events, host_tool_access=HOST)
+
+
 
 if __name__ == "__main__":
     unittest.main()
