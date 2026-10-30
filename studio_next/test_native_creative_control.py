@@ -482,5 +482,51 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(outcome["native_editing_capability_complete"])
 
 
+    async def test_invalid_native_arguments_corrected_by_model_before_editor_dispatch(self):
+        model = ScriptedModel([
+            decision("invoke", tool="update_text_clip", inputs={"clipId": 42}),
+            decision("describe", tool="update_text_clip"),
+            decision("invoke", tool="update_text_clip", inputs={"clipId": "model-chosen-id"}),
+            decision("finish", summary="Native schema correction tested, no aesthetic claim"),
+        ])
+        session = FakeSession()
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root) / "preflight.jsonl"
+            result = await NativeCreativeControl(session, model, max_turns=4,
+                                                  receipt_path=path).run("Repair native text")
+            self.assertEqual(result["status"], "model_finished_unverified")
+            self.assertEqual(session.calls, [
+                ("update_text_clip", {"clipId": "model-chosen-id"})])
+            self.assertEqual([e["kind"] for e in result["events"]], [
+                "session_started", "model_action_rejected", "native_tool_schema",
+                "native_tool_submitted", "native_tool_result", "model_finished"])
+            rejected = result["events"][1]
+            self.assertEqual(rejected["validation_keyword"], "type")
+            self.assertTrue(rejected["no_native_dispatch"])
+            self.assertNotIn("42", json.dumps(rejected))
+            self.assertEqual(model.observed[1]["latest_events"][-1]["kind"],
+                             "model_action_rejected")
+            from studio_next.native_creative_audit import audit_native_journal
+            audit = audit_native_journal(result["events"],
+                                         host_tool_access={"update_text_clip": "write",
+                                                           "get_timeline": "read",
+                                                           "zx7_verify_native_export": "read",
+                                                           "zx7_observe_verified_export_frame": "read"})
+            self.assertEqual(audit["recorded_native_write_result_count"], 1)
+            self.assertFalse(audit["video_editing_capability_complete"])
+
+    async def test_preflight_exhaustion_never_executes_invalid_native_write(self):
+        attempts = [decision("invoke", tool="update_text_clip", inputs={"clipId": False})
+                    for _ in range(4)]
+        session = FakeSession()
+        result = await NativeCreativeControl(session, ScriptedModel(attempts),
+                                             max_turns=4).run("A safe native text revision")
+        self.assertEqual(result["status"], "turn_budget_exhausted")
+        self.assertEqual(session.calls, [])
+        self.assertEqual(len([e for e in result["events"]
+                             if e["kind"] == "model_action_rejected"]), 4)
+        self.assertFalse(result["native_editing_capability_complete"])
+
+
 if __name__ == "__main__":
     unittest.main()
