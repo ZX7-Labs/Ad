@@ -1200,6 +1200,21 @@ class NativeCreativeControl:
                               "tool": native_name,
                               "measured_native_mcp_wall_ms": native_ms,
                               "text_sha256": [hashlib.sha256(s.encode()).hexdigest() for s in texts],
+                              # A write result is credited only after the
+                              # native APPLICATION's explicit boolean ACK,
+                              # never an MCP transport success alone. The
+                              # signed-off receipt digest ties this assertion
+                              # to the exact source result stored in the
+                              # journal; no raw response bytes are persisted.
+                              "host_application_write_acknowledged": (
+                                  True if self.host_tool_access is not None and
+                                  self.host_tool_access.get(native_name) == "write"
+                                  else None),
+                              "host_application_write_receipt_sha256": (
+                                  hashlib.sha256(texts[0].encode()).hexdigest()
+                                  if self.host_tool_access is not None and
+                                  self.host_tool_access.get(native_name) == "write"
+                                  else None),
                               "image_sha256": hashes,
                               "audio_sha256": audio_evidence["wav_sha256"] if audio_evidence else None,
                               "independently_verified_export_sha256": new_export_sha,
@@ -1299,7 +1314,17 @@ class NativeCreativeControl:
                                       "text_sha256": [
                                           hashlib.sha256(x.encode()).hexdigest()
                                           for x in state_texts]})
-                        if observation != "absent":
+                        if observation == "unknown":
+                            # Contradictory/partial native fields do NOT mean
+                            # the editor has opened a project. Require a new
+                            # independent inspection instead of hiding the
+                            # inconsistent snapshot from the model.
+                            self._post_write_state_warning = {
+                                "read_only_reconciliation_incomplete": True,
+                                "project_state_unknown": True,
+                                "must_inspect_native_project": True}
+                            break
+                        if observation == "present":
                             break
                         if read_attempt == 2:
                             # An ACK plus two absent observations is
