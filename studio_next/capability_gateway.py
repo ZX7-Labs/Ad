@@ -113,11 +113,9 @@ class CapabilityGateway:
         if inspect.isawaitable(facts):
             facts = await facts
         choices = self._current().affordance_frontier(
-            trusted_facts=facts, limit=8)
-        selected = [item for item in choices["matches"]
-                    if item["id"].startswith(namespace + "/")]
-        return {"revision": choices["revision"], "matches": selected[:limit],
-                "has_more": len(selected) > limit,
+            trusted_facts=facts, limit=limit, namespace=namespace)
+        return {"revision": choices["revision"], "matches": choices["matches"],
+                "has_more": choices["has_more"],
                 "facts_are_host_attested": True,
                 "no_creative_operation_executed": True}
 
