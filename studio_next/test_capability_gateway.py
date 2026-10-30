@@ -222,5 +222,29 @@ class GatewayTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(gateway.evidence(), [])
 
 
+    async def test_incomplete_native_receipt_is_not_a_write_success(self):
+        engine = Engine([tool("write_file")])
+        engine.result = {"content": [{"type": "text", "text": "maybe saved"}]}
+        g = CapabilityGateway({"graphics": (engine, {"write_file": "write"})})
+        rev = (await g.refresh())["revision"]
+        with self.assertRaisesRegex(CapabilityExecutionError, "status envelope"):
+            await g.invoke("graphics/write_file", revision=rev, inputs={})
+        self.assertEqual(g.evidence()[0]["state"],
+                         "write_uncertain_reconciliation_required")
+        self.assertEqual(len(engine.calls), 1)
+
+    async def test_nonfinite_and_oversized_model_payloads_do_not_dispatch(self):
+        engine = Engine([tool("draw", {"meta": {"type": "object"}})])
+        g = CapabilityGateway({"graphics": (engine, {"draw": "write"})})
+        rev = (await g.refresh())["revision"]
+        for raw in ({"meta": {"danger": float("nan")}},
+                    {"meta": {"huge": "x" * 262_200}}):
+            with self.subTest(size=len(str(raw))):
+                with self.assertRaises(CapabilityExecutionError):
+                    await g.invoke("graphics/draw", revision=rev, inputs=raw)
+        self.assertEqual(engine.calls, [])
+        self.assertEqual(g.evidence(), [])
+
+
 if __name__ == "__main__":
     unittest.main()
