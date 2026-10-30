@@ -8,6 +8,7 @@ No operation is inferred from the brief, encoded as a preset, or auto-retried.
 from __future__ import annotations
 
 import asyncio
+import copy
 import base64
 import hashlib
 import json
@@ -395,6 +396,11 @@ class NativeCreativeControl:
         return raw
 
     async def _infer(self, context: dict):
+        # A replaceable model adapter is an execution boundary, not an owner
+        # of native validator schemas, immutable journal events, or observed
+        # project state. Hand it an isolated snapshot to prevent accidental
+        # or malicious in-place mutations during custom model inference.
+        context = copy.deepcopy(context)
         pictures = self._last_images
         hashes = self._last_hashes
         audio = self._last_audio
