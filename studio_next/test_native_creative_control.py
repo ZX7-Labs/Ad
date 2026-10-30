@@ -44,7 +44,8 @@ class FakeSession:
             name="get_timeline", description="Read the real native project",
             input_schema={"type": "object", "properties": {"includeClips": {"type": "boolean"}}}),
             SimpleNamespace(name="update_text_clip", description="Edit native text",
-                            input_schema={"type": "object", "properties": {"clipId": {"type": "string"}}}),
+                            input_schema={"type": "object", "properties": {
+                                "clipId": {"type": "string"}, "text": {"type": "string"}}}),
             SimpleNamespace(name="zx7_verify_native_export", description="Independently verify final movie",
                             input_schema={"type": "object"}),
             SimpleNamespace(name="zx7_observe_verified_export_frame", description="Read verified PNG",
@@ -702,6 +703,59 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(model.observed[3]["latest_events"][-1]["input_schema"],
                          session.tools[1].input_schema)
         self.assertEqual(len(session.calls), 1)
+
+
+    async def test_undeclared_native_top_level_model_inputs_never_reach_editor(self):
+        session = FakeSession()
+        # Real pinned open_project uses projectPath, projectName, previewOnly,
+        # and the upstream schema omits additionalProperties and required.
+        session.tools.append(SimpleNamespace(name="open_project",
+            description="Open an existing native project",
+            input_schema={"type": "object", "properties": {
+                "projectPath": {"type": "string"},
+                "projectName": {"type": "string"},
+                "previewOnly": {"type": "boolean"}}}))
+        model = ScriptedModel([
+            decision("invoke", tool="open_project",
+                     inputs={"project_name": "invented alias", "folder": "/invented"}),
+            decision("describe", tool="open_project"),
+            decision("invoke", tool="open_project",
+                     inputs={"projectName": "real recent project", "previewOnly": True}),
+            decision("finish", summary="Only native-declared fields dispatched"),
+        ])
+        result = await NativeCreativeControl(session, model, max_turns=4).run(
+            "Safely open an existing native video project")
+        self.assertEqual(result["status"], "model_finished_unverified")
+        self.assertEqual(session.calls, [("open_project",
+            {"projectName": "real recent project", "previewOnly": True})])
+        self.assertEqual(result["events"][1]["kind"], "model_action_rejected")
+        self.assertEqual(result["events"][1]["validation_keyword"], "additionalProperties")
+        self.assertTrue(result["events"][1]["no_native_dispatch"])
+        self.assertEqual(model.observed[0]["host_declared_tool_hints"][-1]
+                         ["declared_parameter_names_sample"],
+                         ["projectPath", "projectName", "previewOnly"])
+        self.assertFalse(result["native_editing_capability_complete"])
+
+    async def test_deliberately_unrestricted_artistic_schema_stays_expressive(self):
+        session = FakeSession()
+        session.tools.append(SimpleNamespace(name="native_style",
+            description="Artist-directed native parameter graph",
+            input_schema={"type": "object", "properties": {
+                "node": {"type": "string"},
+                "parameters": {"type": "object", "additionalProperties": True}},
+                "additionalProperties": True}))
+        model = ScriptedModel([
+            decision("invoke", tool="native_style",
+                     inputs={"node": "model-node",
+                             "parameters": {"shaders": {"custom": [0.1, 0.75]}},
+                             "extension": {"customArtistField": 9}}),
+            decision("finish", summary="Permissive native extension accepted"),
+        ])
+        result = await NativeCreativeControl(session, model, max_turns=2).run(
+            "Model chooses its own expressive parameters")
+        self.assertEqual(len(session.calls), 1)
+        self.assertEqual(session.calls[0][1]["extension"]["customArtistField"], 9)
+        self.assertEqual(result["status"], "model_finished_unverified")
 
 
 if __name__ == "__main__":
