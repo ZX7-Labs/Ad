@@ -102,6 +102,9 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(model.observed[3]["missing_completion_evidence"],
                          ["physical_export_verified"])
         self.assertEqual(model.observed[4]["missing_completion_evidence"], [])
+        for index in range(4):
+            self.assertNotIn("finish", model.observed[index]["available_actions"])
+        self.assertIn("finish", model.observed[4]["available_actions"])
         self.assertTrue(audit_native_journal(result["events"],
                                              host_tool_access=grants)["journal_chain_structurally_valid"])
         self.assertFalse(result["native_editing_capability_complete"])
