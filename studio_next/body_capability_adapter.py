@@ -71,6 +71,9 @@ async def connect_installed_zx7_body(workspace, *, allowed_access=("read", "writ
 
     adapter = InstalledBodyAdapter(workspace, allowed_access=allowed_access,
                                    editor_client=editor_client)
-    gateway = CapabilityGateway({"zx7": (adapter, adapter.trusted_grants())})
+    # This trusted host callback re-evaluates actual installed/allowed local
+    # BODY operations on future refreshes. A creative model cannot mint
+    # grants, and external plugin connections remain explicitly host-authorized.
+    gateway = CapabilityGateway({"zx7": (adapter, adapter.trusted_grants)})
     await gateway.refresh()
     return gateway
