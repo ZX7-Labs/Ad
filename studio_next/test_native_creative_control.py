@@ -1654,5 +1654,108 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([x[0] for x in session.calls], ["get_timeline"])
 
 
+    async def test_trial_single_project_policy_blocks_repeated_model_create(self):
+        """Actual saved project beats the small model's repeated create guesses."""
+        from studio_next.native_creative_audit import audit_native_journal
+        session = FakeSession()
+        session.tools += [
+            SimpleNamespace(name="get_project", description="Inspect actual project identity",
+                            input_schema={"type": "object", "properties": {}}),
+            SimpleNamespace(name="create_project", description="Create native project",
+                            input_schema={"type": "object", "properties": {
+                                "name": {"type": "string"},
+                                "previewOnly": {"type": "boolean"}}}),
+        ]
+        create_count = 0
+        async def native(name, inputs):
+            nonlocal create_count
+            session.calls.append((name, inputs))
+            if name == "get_project":
+                payload = {"project": {"id": "actual-native"} if create_count else None,
+                           "mcp": {"hasProject": bool(create_count)}}
+            elif name == "create_project":
+                create_count += 1
+                payload = {"success": True, "result": {"previewOnly": False}}
+            else:
+                payload = {"timeline": [], "real_project": bool(create_count)}
+            return SimpleNamespace(is_error=False, content=[
+                SimpleNamespace(type="text", text=json.dumps(payload))])
+        session.call_tool = native
+        grants = {t.name: ("write" if t.name == "create_project" else "read")
+                  for t in session.tools}
+        model = ScriptedModel([
+            decision("invoke", tool="create_project",
+                     inputs={"name": "One native movie", "previewOnly": False}),
+            decision("search", query="create_project", limit=1),
+            decision("invoke", tool="create_project",
+                     inputs={"name": "Duplicated movie", "previewOnly": False}),
+            decision("search", query="get_timeline", limit=1),
+            decision("invoke", tool="get_timeline", inputs={}),
+            decision("finish", summary="Only one native project; not an artistic pass"),
+        ])
+        result = await NativeCreativeControl(
+            session, model, max_turns=6, host_tool_access=grants,
+            catalog_mode="indexed",
+            host_possible_effects={"create_project": ["project_open"]},
+            host_once_after_acknowledged_write=("create_project",)).run(
+                "Build one original editable video")
+        self.assertEqual(create_count, 1)
+        self.assertEqual(result["status"], "model_finished_unverified")
+        self.assertEqual(model.observed[1]["selectable_native_tools"], [])
+        self.assertEqual(model.observed[1]["native_project_presence_from_last_inspection"],
+                         "present")
+        self.assertEqual(model.observed[3]["last_rejected_native_action_feedback"]
+                         ["validation_keyword"], "host_single_write")
+        self.assertEqual([name for name, _ in session.calls],
+                         ["get_project", "create_project", "get_project", "get_timeline"])
+        self.assertEqual(sum(e["kind"] == "native_tool_result" and
+                             e.get("tool") == "create_project" for e in result["events"]), 1)
+        self.assertTrue(audit_native_journal(result["events"],
+            host_tool_access=grants)["journal_chain_structurally_valid"])
+
+    async def test_preview_does_not_exhaust_single_project_policy(self):
+        session = FakeSession()
+        session.tools += [
+            SimpleNamespace(name="create_project", description="Create or preview",
+                            input_schema={"type": "object", "properties": {
+                                "name": {"type": "string"}, "previewOnly": {"type": "boolean"}}}),
+        ]
+        async def native(name, args):
+            session.calls.append((name, args))
+            preview = args.get("previewOnly", True)
+            payload = {"success": not preview, "result": {"previewOnly": preview}}
+            return SimpleNamespace(is_error=False, content=[
+                SimpleNamespace(type="text", text=json.dumps(payload))])
+        session.call_tool = native
+        grants = {tool.name: ("write" if tool.name == "create_project" else "read")
+                  for tool in session.tools}
+        model = ScriptedModel([
+            decision("search", query="create_project", limit=1),
+            decision("invoke", tool="create_project",
+                     inputs={"name": "Proposal", "previewOnly": True}),
+            decision("invoke", tool="create_project",
+                     inputs={"name": "Applied", "previewOnly": False}),
+            decision("finish", summary="Native project, not full video"),
+        ])
+        result = await NativeCreativeControl(session, model, max_turns=4,
+            catalog_mode="indexed", host_tool_access=grants,
+            host_once_after_acknowledged_write=("create_project",)).run(
+                "Create an editable project from a real model choice")
+        self.assertEqual(result["status"], "model_finished_unverified")
+        self.assertEqual([name for name, _ in session.calls],
+                         ["create_project", "create_project"])
+        self.assertEqual(sum(e["kind"] == "native_tool_preview" for e in result["events"]), 1)
+        self.assertEqual(sum(e["kind"] == "native_tool_result" for e in result["events"]), 1)
+
+    async def test_host_one_write_policy_requires_only_granted_write_tools(self):
+        session = FakeSession()
+        for bad in (("get_timeline",), ("unknown",), ("update_text_clip", "update_text_clip")):
+            with self.subTest(policy=bad), self.assertRaises(NativeCreativeControlError):
+                NativeCreativeControl(session, ScriptedModel([]),
+                    host_tool_access={"get_timeline": "read",
+                                      "update_text_clip": "write"},
+                    host_once_after_acknowledged_write=bad)
+
+
 if __name__ == "__main__":
     unittest.main()
