@@ -122,9 +122,9 @@ def audit_native_journal(events, *, host_tool_access):
     if not isinstance(events[0], dict) or events[0].get("kind") != "session_started":
         raise NativeJournalError("Journal lacks a session identity")
     required = events[0].get("required_completion_evidence", [])
-    if (not isinstance(required, list) or required != sorted(set(required)) or
+    if (not isinstance(required, list) or
             any(not isinstance(item, str) or item not in _COMPLETION_EVIDENCE_TYPES
-                for item in required)):
+                for item in required) or required != sorted(set(required))):
         raise NativeJournalError("Unknown or malformed host completion requirements")
     pending = None
     verified = set()
