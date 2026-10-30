@@ -185,5 +185,177 @@ class NativeCreativeAuditTests(unittest.TestCase):
                 read_native_journal(source)
 
 
+    def test_new_private_intent_receipts_and_legacy_proofs_are_both_checked(self):
+        events = trace()
+        for event in events:
+            if event["kind"] == "native_tool_submitted":
+                reason = event.pop("model_reason")
+                event["model_reason_sha256"] = hashlib.sha256(reason.encode()).hexdigest()
+                event["model_reason_utf8_bytes"] = len(reason.encode())
+            if event["kind"] == "model_finished":
+                summary = event.pop("summary")
+                event["summary_sha256"] = hashlib.sha256(summary.encode()).hexdigest()
+                event["summary_utf8_bytes"] = len(summary.encode())
+        accepted = audit_native_journal(events, host_tool_access=HOST)
+        self.assertTrue(accepted["journal_chain_structurally_valid"])
+        # Ambiguous old+new envelopes must not become an escape hatch.
+        modifications = [
+            (1, {"model_reason": "private leak"}),
+            (1, {"model_reason_utf8_bytes": True}),
+            (1, {"model_reason_sha256": "invalid"}),
+            (1, {"model_reason_utf8_bytes": -1}),
+            (-1, {"summary": "private leak"}),
+            (-1, {"summary_utf8_bytes": True}),
+            (-1, {"summary_sha256": "bad"}),
+            (-1, {"summary_utf8_bytes": 0}),
+        ]
+        for index, change in modifications:
+            with self.subTest(index=index, change=change):
+                broken = copy.deepcopy(events)
+                broken[index].update(change)
+                with self.assertRaises(NativeJournalError):
+                    audit_native_journal(broken, host_tool_access=HOST)
+
+
+    def test_forged_model_preflight_cannot_claim_no_native_mutation(self):
+        events = trace()
+        before = {"sequence": 1, "kind": "model_action_rejected",
+                  "turn": 0, "tool": "update_text_clip",
+                  "inputs_sha256": A, "validation_keyword": "type",
+                  "no_native_dispatch": True}
+        events.insert(1, before)
+        for i, event in enumerate(events):
+            event["sequence"] = i
+        result = audit_native_journal(events, host_tool_access=HOST)
+        self.assertTrue(result["journal_chain_structurally_valid"])
+        self.assertEqual(result["recorded_native_write_result_count"], 4)
+        for change in (
+            {"no_native_dispatch": False},
+            {"tool": "not_granted"},
+            {"validation_keyword": ""},
+            {"inputs_sha256": "wrong"},
+        ):
+            broken = copy.deepcopy(events)
+            broken[1].update(change)
+            with self.subTest(change=change), self.assertRaises(NativeJournalError):
+                audit_native_journal(broken, host_tool_access=HOST)
+        # A preflight rejection cannot be interleaved after an unresolved write.
+        broken = trace()
+        broken.insert(2, copy.deepcopy(before))
+        for i, event in enumerate(broken):
+            event["sequence"] = i
+        with self.assertRaisesRegex(NativeJournalError, "preflight"):
+            audit_native_journal(broken, host_tool_access=HOST)
+
+
+    def test_read_only_error_can_be_followed_by_another_model_action(self):
+        baseline = trace()
+        marker = baseline.index(next(x for x in baseline if x["kind"] == "native_tool_result"))
+        submission = baseline[marker-1]
+        submission["tool"] = "get_timeline"
+        read_error = {"sequence": marker, "kind": "native_read_tool_reported_error",
+                      "turn": submission["turn"], "tool": "get_timeline",
+                      "error_sha256": A, "error_text_exceeded_evidence_budget": False,
+                      "host_attested_read_only": True,
+                      "no_successful_native_observation": True}
+        baseline[marker] = read_error
+        for i, event in enumerate(baseline):
+            event["sequence"] = i
+        good = audit_native_journal(baseline, host_tool_access=HOST)
+        self.assertTrue(good["journal_chain_structurally_valid"])
+        self.assertEqual(good["model_reported_end_state"], "model_finished")
+        for change in (
+            {"host_attested_read_only": False},
+            {"no_successful_native_observation": False},
+            {"error_sha256": None},
+            {"error_text_exceeded_evidence_budget": True},
+            {"tool": "update_text_clip"},
+        ):
+            bad = copy.deepcopy(baseline)
+            bad[marker].update(change)
+            with self.subTest(change=change), self.assertRaises(NativeJournalError):
+                audit_native_journal(bad, host_tool_access=HOST)
+
+
+    def test_initial_project_read_requires_real_host_read_grant_and_sequence(self):
+        events = trace()
+        read = {"kind": "host_project_bootstrap_observation", "sequence": 1,
+                "tool": "get_project", "host_attested_read_only": True,
+                "text_sha256": [A], "project_presence": "absent",
+                "no_model_selected_mutation": True}
+        events.insert(1, read)
+        for i, event in enumerate(events):
+            event["sequence"] = i
+        access = dict(HOST, get_project="read")
+        self.assertTrue(audit_native_journal(events, host_tool_access=access)
+                        ["journal_chain_structurally_valid"])
+        for change in ({"host_attested_read_only": False}, {"project_presence": "magic"},
+                       {"text_sha256": []}, {"no_model_selected_mutation": False}):
+            altered = copy.deepcopy(events)
+            altered[1].update(change)
+            with self.subTest(change=change), self.assertRaises(NativeJournalError):
+                audit_native_journal(altered, host_tool_access=access)
+        with self.assertRaises(NativeJournalError):
+            audit_native_journal(events, host_tool_access=dict(HOST, get_project="write"))
+        misplaced = copy.deepcopy(events)
+        misplaced.insert(2, misplaced.pop(1))
+        for i, event in enumerate(misplaced):
+            event["sequence"] = i
+        with self.assertRaises(NativeJournalError):
+            audit_native_journal(misplaced, host_tool_access=access)
+
+    def test_capability_search_audit_fails_on_ungranted_or_forged_identity(self):
+        baseline = trace()
+        template = {"kind": "capability_searched", "turn": 0,
+                    "query_sha256": A, "catalog_revision": B,
+                    "result_tool_names": ["get_timeline"],
+                    "no_native_dispatch": True}
+        baseline.insert(1, {"sequence": 1, **template})
+        for i, event in enumerate(baseline):
+            event["sequence"] = i
+        self.assertTrue(audit_native_journal(
+            baseline, host_tool_access=HOST)["journal_chain_structurally_valid"])
+        for wrong in ({"result_tool_names": ["invented"]},
+                      {"result_tool_names": ["get_timeline", "get_timeline"]},
+                      {"result_tool_names": "get_timeline"},
+                      {"catalog_revision": "bad"},
+                      {"no_native_dispatch": False}):
+            clone = copy.deepcopy(baseline)
+            clone[1].update(wrong)
+            with self.subTest(wrong=wrong), self.assertRaises(NativeJournalError):
+                audit_native_journal(clone, host_tool_access=HOST)
+
+
+    def test_source_attested_machine_frontier_rejects_forged_project_state(self):
+        events = trace()
+        # The same ordered native bootstrap previously established in this
+        # test suite, then an advisory no-RPC candidate list.
+        bootstrap = {"kind": "host_project_bootstrap_observation",
+            "tool": "get_project", "host_attested_read_only": True,
+            "text_sha256": [A], "project_presence": "absent",
+            "no_model_selected_mutation": True}
+        frontier = {"kind": "host_capability_frontier",
+                    "catalog_revision": A,
+                    "result_tool_names": ["get_timeline"],
+                    "trusted_machine_fact": "project_open",
+                    "host_observed_value": False,
+                    "no_native_dispatch": True}
+        events.insert(1, bootstrap)
+        events.insert(2, frontier)
+        for idx, item in enumerate(events):
+            item["sequence"] = idx
+        grants = dict(HOST, get_project="read")
+        self.assertTrue(audit_native_journal(events, host_tool_access=grants)[
+            "journal_chain_structurally_valid"])
+        for change in ({"host_observed_value": True},
+                       {"result_tool_names": ["fantasy"]},
+                       {"trusted_machine_fact": "model_guess"},
+                       {"no_native_dispatch": False}):
+            invalid = copy.deepcopy(events)
+            invalid[2].update(change)
+            with self.subTest(change=change), self.assertRaises(NativeJournalError):
+                audit_native_journal(invalid, host_tool_access=grants)
+
+
 if __name__ == "__main__":
     unittest.main()

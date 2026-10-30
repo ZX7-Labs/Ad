@@ -13,9 +13,34 @@ import json
 from pathlib import Path
 
 from .body_integration import body_catalog
+from .capability_fabric import CapabilityFabric
 from .creative_tool_registry import creative_tool_inventory
 from .generative_video_providers import discover_local_generators
 from .body_document_schemas import document_contracts
+
+
+def installed_body_capability_fabric(workspace, *, editor_client=None):
+    """Live installed ZX7 operations (including granted native app adapters).
+
+    This makes the *existing* full BODY catalog available to the same compact
+    brain-facing lookup used for a native editor, with no MD description file,
+    no invented tools and no permission expansion. The catalog itself remains
+    responsible for real execution, source policy, and independent receipts.
+    """
+    installed = body_catalog(workspace, editor_client=editor_client)
+    granted_ids = installed.executable_ids({"read", "write"})
+    native_tools = []
+    access = {}
+    for entry in installed.discover():
+        if entry["id"] not in granted_ids:
+            continue
+        native_tools.append({
+            "name": entry["id"],
+            "description": entry["capability"] + ". " + entry["description"],
+            "inputSchema": entry["schema"],
+        })
+        access[entry["id"]] = entry["access"]
+    return CapabilityFabric({"zx7": (native_tools, access)})
 
 
 def operational_tool_summary(workspace,*,keywords=None):
@@ -78,10 +103,13 @@ def main():
     p.add_argument("--workspace",type=Path,required=True)
     p.add_argument("--tool-id")
     p.add_argument("--keyword",action="append")
+    p.add_argument("--query",help="Search live host-granted BODY capabilities, without reading MD")
     p.add_argument("--out",type=Path)
     x=p.parse_args()
     if x.tool_id:
         result=explain_operational_tool(x.workspace,x.tool_id)
+    elif x.query:
+        result=installed_body_capability_fabric(x.workspace).search(x.query)
     elif x.keyword:
         result={"tools":operational_tool_summary(x.workspace,keywords=x.keyword)}
     else:
