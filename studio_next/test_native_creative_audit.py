@@ -69,6 +69,9 @@ def trace():
 
 class NativeCreativeAuditTests(unittest.TestCase):
     def test_new_edit_invalidates_previous_export_and_frame_completion_proofs(self):
+        def review_audit(events, **kwargs):
+            return audit_native_journal(
+                events, host_content_revision_tools=("update_text_clip",), **kwargs)
         events = trace()
         required = ["native_write_acknowledged", "physical_export_verified",
                     "post_observation_native_write_acknowledged",
@@ -91,19 +94,22 @@ class NativeCreativeAuditTests(unittest.TestCase):
         for idx, event in enumerate(events):
             event["sequence"] = idx
         with self.assertRaisesRegex(NativeJournalError, "unresolved native write"):
-            audit_native_journal(events, host_tool_access=HOST,
+            review_audit(events, host_tool_access=HOST,
                                  expected_required_evidence=required)
         events[-1] = {"sequence": len(events)-1, "kind": "model_finish_rejected",
                       "turn": 10, "no_native_dispatch": True,
                       "missing_completion_evidence": [
                           "physical_export_verified", "verified_export_frame_observed"]}
-        checked = audit_native_journal(events, host_tool_access=HOST,
+        checked = review_audit(events, host_tool_access=HOST,
                                        expected_required_evidence=required)
         self.assertTrue(checked["host_completion_policy_independently_matched"])
         self.assertEqual(checked["observed_verified_export_digests"], [A, B])
         self.assertFalse(checked["video_editing_capability_complete"])
 
     def test_post_observation_revision_requires_a_real_native_write(self):
+        def review_audit(events, **kwargs):
+            return audit_native_journal(
+                events, host_content_revision_tools=("update_text_clip",), **kwargs)
         events = trace()
         # A first edit/export/frame is insufficient to prove the requested
         # review-and-revision loop. Remove the later edit, keeping both valid
@@ -115,17 +121,20 @@ class NativeCreativeAuditTests(unittest.TestCase):
         required = ["post_observation_native_write_acknowledged"]
         events[0]["required_completion_evidence"] = required
         with self.assertRaisesRegex(NativeJournalError, "unresolved native write"):
-            audit_native_journal(events, host_tool_access=HOST,
+            review_audit(events, host_tool_access=HOST,
                                  expected_required_evidence=required)
         events[-1] = {
             "sequence": len(events) - 1, "kind": "model_finish_rejected",
             "turn": 9, "no_native_dispatch": True,
             "missing_completion_evidence": required}
-        verified = audit_native_journal(
+        verified = review_audit(
             events, host_tool_access=HOST, expected_required_evidence=required)
         self.assertTrue(verified["host_completion_policy_independently_matched"])
 
     def test_host_required_completion_evidence_is_independently_recomputed(self):
+        def review_audit(events, **kwargs):
+            return audit_native_journal(
+                events, host_content_revision_tools=("update_text_clip",), **kwargs)
         original = trace()
         required = ["native_write_acknowledged", "physical_export_verified",
                     "post_observation_native_write_acknowledged",
@@ -137,34 +146,34 @@ class NativeCreativeAuditTests(unittest.TestCase):
         original.insert(1, refusal)
         for index, event in enumerate(original):
             event["sequence"] = index
-        verified = audit_native_journal(
+        verified = review_audit(
             original, host_tool_access=HOST,
             expected_required_evidence=required)
         self.assertTrue(verified["journal_chain_structurally_valid"])
         self.assertTrue(verified["host_completion_policy_independently_matched"])
-        self.assertFalse(audit_native_journal(
+        self.assertFalse(review_audit(
             original, host_tool_access=HOST)["host_completion_policy_independently_matched"])
         altered_policy = copy.deepcopy(original)
         altered_policy[0]["required_completion_evidence"] = []
         with self.assertRaisesRegex(NativeJournalError, "differs from trusted host"):
-            audit_native_journal(altered_policy, host_tool_access=HOST,
+            review_audit(altered_policy, host_tool_access=HOST,
                                  expected_required_evidence=required)
         with self.assertRaisesRegex(NativeJournalError, "Invalid independent host completion policy"):
-            audit_native_journal(original, host_tool_access=HOST,
+            review_audit(original, host_tool_access=HOST,
                                  expected_required_evidence=["invented_quality"])
 
         forged = copy.deepcopy(original)
         forged[1]["missing_completion_evidence"] = ["physical_export_verified"]
         with self.assertRaisesRegex(NativeJournalError, "completion refusal"):
-            audit_native_journal(forged, host_tool_access=HOST)
+            review_audit(forged, host_tool_access=HOST)
         forged = copy.deepcopy(original)
         forged[1]["no_native_dispatch"] = False
         with self.assertRaisesRegex(NativeJournalError, "completion refusal"):
-            audit_native_journal(forged, host_tool_access=HOST)
+            review_audit(forged, host_tool_access=HOST)
         forged = copy.deepcopy(original)
         forged[0]["required_completion_evidence"] = ["invented_quality_claim"]
         with self.assertRaisesRegex(NativeJournalError, "completion requirements"):
-            audit_native_journal(forged, host_tool_access=HOST)
+            review_audit(forged, host_tool_access=HOST)
         # All surviving receipts may be structurally valid, yet a final model
         # declaration still cannot satisfy a required frame that never arrived.
         missing_frames = [event for event in trace()
@@ -174,7 +183,7 @@ class NativeCreativeAuditTests(unittest.TestCase):
         missing_frames[0]["required_completion_evidence"] = [
             "verified_export_frame_observed"]
         with self.assertRaisesRegex(NativeJournalError, "unresolved native write"):
-            audit_native_journal(missing_frames, host_tool_access=HOST)
+            review_audit(missing_frames, host_tool_access=HOST)
 
 
     def test_honest_technical_custody_without_fake_artistic_claim(self):
