@@ -327,6 +327,37 @@
         "completion_tokens_sum": 937,
         "independently_verified": false
       }
+    },
+    {
+      "body_commit": "63c1ff7cc6d47fd209743b4e7176b658ce6e30c3",
+      "workflow_run": 41076356213,
+      "artifact_id": 12988106954,
+      "artifact_zip_sha256": "fe22919319e0a63f5ae09c5f83c567368948e1019446e0370fe69d0f1deca059",
+      "model": "unsloth/Qwen3.5-2B-GGUF",
+      "quantization": "Q4_K_M",
+      "cpu_only": true,
+      "actual_inference_turns": 13,
+      "measured_inference_wall_seconds_sum": 412.947,
+      "model_selected_actions": {
+        "search": 9,
+        "invoke": 4
+      },
+      "preflight_rejected_invokes": 1,
+      "acknowledged_native_writes": 2,
+      "native_project_file_created": true,
+      "native_project_asset_count": 0,
+      "native_project_timeline_count": 1,
+      "native_project_timeline_clip_count": 0,
+      "native_reported_write_errors": 1,
+      "verified_exports": 0,
+      "physically_observed_frames": 0,
+      "technical_trial_completed": false,
+      "model_status": "native_error_requires_state_reconciliation",
+      "artistic_quality_approved": false,
+      "native_video_field_complete": false,
+      "root_cause": "The indexed exact-ID fix #101 enabled real model-controlled creation of an editable empty Velorn project. After successful create_project, the controller invalidated project presence to 'unknown' rather than independently re-reading get_project. The 2B model then searched broad terms, repeatedly retried create_project on an already existing project, and stopped on a reported native write error. This run proves neither media editing nor export.",
+      "next_safety_fix": "Use one trusted post-write get_project READ after a model-chosen project_open enabling operation, record immutable read evidence and preserve actual project identity in the next inference context. Still requires independent live model end-to-end trial.",
+      "source_proof_scope": "Runner-uploaded ZIP SHA independently checked in artifact reader; project.comfystudio contained one empty timeline and no assets. Human creative acceptance not attempted."
     }
   ]
 }
