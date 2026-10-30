@@ -437,5 +437,50 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn("secret-b", path.read_text())
 
 
+    async def test_real_host_tool_descriptions_help_model_without_creative_templates(self):
+        from studio_next.native_creative_control import _native_tool_hints
+        session = FakeSession()
+        # The host supplies every name/description; the adapter invents none.
+        session.tools[0].description = "  Read   the native\\n project   state "
+        session.tools[1].description = "N" * 100_000
+        model = ScriptedModel([
+            decision("discover"),
+            decision("describe", tool="get_timeline"),
+            decision("finish", summary="Tool selection remains model-controlled"),
+        ])
+        outcome = await NativeCreativeControl(session, model, max_turns=3).run(
+            "Creative brief without hardcoded steps")
+        initial = model.observed[0]
+        after_discovery = model.observed[1]
+        final = model.observed[2]
+        self.assertEqual(initial["actual_granted_native_tools"],
+                         [tool.name for tool in session.tools])
+        hints = initial["host_declared_tool_hints"]
+        self.assertEqual(hints, _native_tool_hints(session.tools))
+        self.assertEqual(hints[0]["description"], "Read the native project state")
+        self.assertEqual(len(hints[1]["description"]), 160)
+        self.assertEqual(hints, after_discovery["host_declared_tool_hints"])
+        self.assertNotIn("host_declared_tool_hints", final)
+        self.assertEqual(session.calls, [])
+        self.assertEqual(outcome["status"], "model_finished_unverified")
+
+    async def test_tool_hints_bounded_in_aggregate_with_real_host_names_retained(self):
+        from studio_next.native_creative_control import _native_tool_hints
+        session = FakeSession()
+        session.tools = [
+            SimpleNamespace(name=f"native_action_{i}", description="界" * 1000,
+                            input_schema={"type": "object"})
+            for i in range(120)
+        ]
+        hints = _native_tool_hints(session.tools)
+        self.assertLessEqual(sum(len(x["description"].encode("utf-8")) for x in hints), 12_000)
+        model = ScriptedModel([decision("finish", summary="No chosen edit")])
+        outcome = await NativeCreativeControl(session, model, max_turns=1).run(
+            "Discover every editor tool identity")
+        self.assertEqual(len(model.observed[0]["actual_granted_native_tools"]), 120)
+        self.assertEqual(model.observed[0]["host_declared_tool_hints"], hints)
+        self.assertFalse(outcome["native_editing_capability_complete"])
+
+
 if __name__ == "__main__":
     unittest.main()
