@@ -183,7 +183,12 @@ class CapabilityFabric:
                     "operation_id": identity, "source": namespace,
                     "native_name": name, "description": summary,
                     "access": grants[name],
-                    "input_schema": json.loads(_wire(schema)),
+                    # Preserve the host's declared parameter order for
+                    # compact model hints. Contract hashing remains canonical
+                    # via _wire(sort_keys=True); the JSON roundtrip isolates
+                    # our source snapshot from later host-side mutations.
+                    "input_schema": json.loads(json.dumps(
+                        schema, ensure_ascii=False, allow_nan=False)),
                     "schema_bytes": schema_bytes,
                     "name_tokens": _tokens(name + " " + namespace),
                     "description_tokens": _tokens(summary),
