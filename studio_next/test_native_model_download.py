@@ -84,7 +84,7 @@ class NativeModelDownloadTests(unittest.TestCase):
         for name, url in (
             ("../escaped.gguf", "https://example.invalid/fixture"),
             ("nested/escaped.gguf", "https://example.invalid/fixture"),
-            ("evil\\\\part.gguf", "https://example.invalid/fixture"),
+            ("evil" + chr(92) + "part.gguf", "https://example.invalid/fixture"),
             ("valid.gguf", "file:///etc/passwd"),
             ("valid.gguf", "http://127.0.0.1:8080/private"),
             ("valid.gguf", "https://me:secret@example.invalid/fixture"),
