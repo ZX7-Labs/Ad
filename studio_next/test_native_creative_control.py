@@ -1704,6 +1704,11 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(model.observed[1]["selectable_native_tools"], [])
         self.assertEqual(model.observed[1]["native_project_presence_from_last_inspection"],
                          "present")
+        self.assertNotIn("host_granted_search_terms",
+                         model.observed[0]["capability_overview"])
+        self.assertIn("timeline",
+                      model.observed[1]["capability_overview"]["host_granted_search_terms"])
+        self.assertLess(len(json.dumps(model.observed[1]["capability_overview"])), 950)
         # Re-searching the exhausted write returns no executable result, even
         # though the original host operation still exists in the catalog.
         filtered = model.observed[2]["last_capability_search_result"]
