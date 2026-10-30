@@ -217,5 +217,36 @@ class NativeCreativeAuditTests(unittest.TestCase):
                     audit_native_journal(broken, host_tool_access=HOST)
 
 
+    def test_forged_model_preflight_cannot_claim_no_native_mutation(self):
+        events = trace()
+        before = {"sequence": 1, "kind": "model_action_rejected",
+                  "turn": 0, "tool": "update_text_clip",
+                  "inputs_sha256": A, "validation_keyword": "type",
+                  "no_native_dispatch": True}
+        events.insert(1, before)
+        for i, event in enumerate(events):
+            event["sequence"] = i
+        result = audit_native_journal(events, host_tool_access=HOST)
+        self.assertTrue(result["journal_chain_structurally_valid"])
+        self.assertEqual(result["recorded_native_write_result_count"], 4)
+        for change in (
+            {"no_native_dispatch": False},
+            {"tool": "not_granted"},
+            {"validation_keyword": ""},
+            {"inputs_sha256": "wrong"},
+        ):
+            broken = copy.deepcopy(events)
+            broken[1].update(change)
+            with self.subTest(change=change), self.assertRaises(NativeJournalError):
+                audit_native_journal(broken, host_tool_access=HOST)
+        # A preflight rejection cannot be interleaved after an unresolved write.
+        broken = trace()
+        broken.insert(2, copy.deepcopy(before))
+        for i, event in enumerate(broken):
+            event["sequence"] = i
+        with self.assertRaisesRegex(NativeJournalError, "preflight"):
+            audit_native_journal(broken, host_tool_access=HOST)
+
+
 if __name__ == "__main__":
     unittest.main()
