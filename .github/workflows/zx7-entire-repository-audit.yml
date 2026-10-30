@@ -25,7 +25,7 @@ jobs:
       - name: Verify adapter path policy and interrupted startup cleanup
         run: node --test engines/velorn/*.test.mjs
       - name: Verify local model parsing and native control evidence boundaries
-        run: python -m unittest studio_next.test_provider studio_next.test_native_creative_control studio_next.test_native_creative_audit studio_next.test_native_audio_model_input -v
+        run: python -m unittest studio_next.test_provider studio_next.test_native_action_schema studio_next.test_native_creative_control studio_next.test_native_creative_audit studio_next.test_native_audio_model_input -v
   full-tree-audit:
     runs-on: ubuntu-latest
     timeout-minutes: 18

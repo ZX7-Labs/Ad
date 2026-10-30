@@ -132,6 +132,35 @@ class NativeCreativeAuditTests(unittest.TestCase):
         with self.assertRaisesRegex(NativeJournalError, "audio"):
             audit_native_journal(events, host_tool_access=HOST)
 
+    def test_model_inference_failure_is_terminal_and_cannot_be_forged_as_completion(self):
+        events = [
+            {"kind": "session_started", "sequence": 0, "brief_sha256": A},
+            {"kind": "model_decision_failed", "sequence": 1, "turn": 0,
+             "measured_model_wall_ms": 2.1, "error_type": "TimeoutError",
+             "no_automatic_retry": True,
+             "creative_quality_independently_approved": False},
+        ]
+        evidence = audit_native_journal(events, host_tool_access=HOST)
+        self.assertEqual(evidence["model_reported_end_state"], "model_decision_failed")
+        self.assertFalse(evidence["video_editing_capability_complete"])
+        for corrupt in (
+            {"no_automatic_retry": False},
+            {"measured_model_wall_ms": -1},
+            {"measured_model_wall_ms": float("inf")},
+            {"measured_model_wall_ms": True},
+            {"creative_quality_independently_approved": True},
+        ):
+            broken = copy.deepcopy(events)
+            broken[-1].update(corrupt)
+            with self.subTest(corrupt=corrupt), self.assertRaises(NativeJournalError):
+                audit_native_journal(broken, host_tool_access=HOST)
+        extended = copy.deepcopy(events)
+        extended.append({"kind": "model_finished", "sequence": 2, "turn": 1,
+                         "summary": "fake completion",
+                         "creative_quality_independently_approved": False})
+        with self.assertRaises(NativeJournalError):
+            audit_native_journal(extended, host_tool_access=HOST)
+
     def test_a_real_jsonl_file_cannot_be_swapped_by_symlink_or_forged_keys(self):
         with tempfile.TemporaryDirectory() as root:
             root=Path(root)

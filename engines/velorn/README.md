@@ -155,6 +155,14 @@ sample rate and binary-to-receipt identity. The model server and weights
 **must** truly support audio for this to work. Accepted transport and a
 model response do **not** prove correct interpretation of music, dialogue,
 spatial mix or mastered sound; independent native model trials are still due.
+The local model gateway reports **measured monotonic wall time** for each
+completed model decision and native MCP call, and includes aggregate timing
+in its final response. If the actual local inference server supplies numeric
+token counts, they are preserved as `local_server_reported_token_usage`;
+otherwise the field is null, **not zero**. These counts are not independently
+tokenized, do not include an independently measured VRAM/RAM/power budget, and
+must never be presented as verified inference performance or artistic quality.
+
 The receipt is local mode 0600, never overwritten;
 after uncertain execution the current project must be reconciled manually
 before any deliberate continuation.
@@ -222,6 +230,12 @@ invented when absent. A failed or incomplete run remains a failed run; even a
 successful technical trial does not certify professional creative quality.
 The `ZX7 BODY — Live Local Model Native Editor Trial` workflow preserves its
 results, including failures, separately from deterministic renderer tests.
+The [measured trial record](../../research/local-model-trial-evidence.json)
+retains negative results too. For a local backend supporting JSON Schema
+structured decoding, `native-model-client.py --structured-actions` binds only
+the control envelope and discovered tool identities. It never supplies an edit
+sequence or creative parameter values. Backends without that capability retain
+the default interface and strict host-side validation.
 
 Paths must be absolute. Each launch requires a fresh profile; project/staging/output roots can persist. This upstream hardcodes ports 5173 and 19790, so only one instance per network namespace is supported. Occupied ports fail before startup.
 

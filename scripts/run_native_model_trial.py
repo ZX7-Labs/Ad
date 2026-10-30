@@ -23,6 +23,7 @@ sys.path.insert(0, str(ROOT))
 from studio_next.native_creative_control import NativeCreativeControl, NATIVE_CREATIVE_SYSTEM
 from studio_next.native_creative_audit import audit_native_journal, read_native_journal
 from studio_next.providers import LocalCreativeModel, LocalModelSettings
+from studio_next.native_action_schema import native_action_schema
 
 
 def sha(path):
@@ -58,8 +59,15 @@ class RecordedModel:
         self.model, self.settings, self.artifacts = model, model.settings, artifacts
         self.turn = 0
 
+    @property
+    def last_call_usage(self):
+        return self.model.last_call_usage
+
     def infer(self, context, images=()):
         started = time.monotonic()
+        self.model.settings.sampling['response_format'] = {'type': 'json_schema', 'json_schema': {
+            'name': 'native_editor_action', 'strict': True,
+            'schema': native_action_schema(context['actual_granted_native_tools'])}}
         record = {'turn': self.turn, 'context': context, 'image_sha256': []}
         for index, (_, raw) in enumerate(images):
             path = self.artifacts / 'observations' / f'{self.turn}-{index}.png'
@@ -76,6 +84,7 @@ class RecordedModel:
             raise
         finally:
             record['measured_wall_seconds'] = time.monotonic() - started
+            record['server_reported_token_usage'] = self.model.last_call_usage
             with (self.artifacts / 'inference-transcript.jsonl').open('a') as journal:
                 journal.write(json.dumps(record, ensure_ascii=False, allow_nan=False) + '\n')
             print('Actual model turn', self.turn, 'seconds', round(record['measured_wall_seconds'], 2),

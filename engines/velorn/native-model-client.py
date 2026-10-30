@@ -22,6 +22,7 @@ if str(ROOT) not in sys.path:
 
 from studio_next.native_creative_control import NativeCreativeControl, NATIVE_CREATIVE_SYSTEM
 from studio_next.providers import LocalCreativeModel, LocalModelSettings
+from studio_next.native_action_schema import native_action_schema
 
 
 async def main(args):
@@ -52,6 +53,11 @@ async def main(args):
     async with stdio_client(conn) as (read, write):
         async with ClientSession(read, write, read_timeout_seconds=120) as session:
             await session.initialize()
+            if args.structured_actions:
+                discovered = (await session.list_tools()).tools
+                model.settings.sampling['response_format'] = {
+                    'type': 'json_schema', 'json_schema': {'name': 'native_editor_action',
+                        'strict': True, 'schema': native_action_schema([tool.name for tool in discovered])}}
             outcome = await NativeCreativeControl(
                 session, model, max_turns=args.max_turns,
                 receipt_path=args.receipt).run(brief)
@@ -59,6 +65,9 @@ async def main(args):
         "status": outcome["status"],
         "local_model_id_reported": outcome["actual_model_id_reported"],
         "events": len(outcome["events"]),
+        "measured_model_wall_ms_total": outcome["measured_model_wall_ms_total"],
+        "measured_native_mcp_wall_ms_total": outcome["measured_native_mcp_wall_ms_total"],
+        "token_usage_independently_verified": False,
         "receipt": str(args.receipt),
         "native_editing_capability_complete": False,
         "artistic_quality_independently_approved": False,
@@ -79,6 +88,8 @@ if __name__ == "__main__":
     p.add_argument("--base-url", default="http://127.0.0.1:8080")
     p.add_argument("--model-timeout", type=int, default=480)
     p.add_argument("--max-turns", type=int, default=32)
+    p.add_argument("--structured-actions", action="store_true",
+                   help="Use native action JSON Schema on a backend supporting structured decoding")
     p.add_argument("--xvfb-binary")
     p.add_argument("--xvfb-lib-dir")
     p.add_argument("--display")

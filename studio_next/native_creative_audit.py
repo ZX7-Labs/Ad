@@ -33,6 +33,7 @@ _AUDIO = "zx7_observe_verified_export_audio"
 _CRITICAL_END = frozenset({
     "native_tool_reported_error", "native_tool_uncertain_outcome",
     "native_observation_rejected", "model_finished",
+    "model_decision_failed",
 })
 
 
@@ -136,6 +137,19 @@ def audit_native_journal(events, *, host_tool_access):
                 raise NativeJournalError("Duplicate or unbound creative session")
             continue
         if i == 0:
+            continue
+        if kind == "model_decision_failed":
+            duration = event.get("measured_model_wall_ms")
+            if (pending is not None or i != len(events) - 1 or
+                    event.get("no_automatic_retry") is not True or
+                    event.get("creative_quality_independently_approved") is not False or
+                    not isinstance(event.get("error_type"), str) or
+                    not event["error_type"] or
+                    type(duration) not in (int, float) or
+                    not math.isfinite(duration) or duration < 0):
+                raise NativeJournalError("Model inference failure has invalid terminal evidence")
+            terminal = kind
+            finished = True
             continue
         if kind in ("discovered", "native_tool_schema"):
             if pending is not None:
