@@ -8,6 +8,7 @@ No README/Markdown parsing, hosted search, embeddings or vendor dependency.
 """
 from __future__ import annotations
 
+import asyncio
 import copy
 import hashlib
 import json
@@ -250,3 +251,43 @@ class CapabilityFabric:
         return {"operation_id": operation_id, "revision": self.revision,
                 "admissible": not (missing or blocked),
                 "unknown_state": missing, "unsatisfied": blocked}
+
+
+class LiveCapabilityRegistry:
+    """Atomic host-controlled capability refresh across many source engines.
+
+    Native MCP tool-list-change notifications can call refresh() without any
+    model inference. Sources and grants are never added by model text. A failed
+    refresh keeps the previous valid snapshot; stale operation references are
+    rejected by the new revision after a successful refresh. No background
+    polling or unverified permission expansion is implied.
+    """
+
+    def __init__(self, connections: Mapping):
+        if not isinstance(connections, Mapping) or not connections:
+            raise CapabilityContractError("Host connections must be registered explicitly")
+        self._connections = dict(connections)
+        self._current: CapabilityFabric | None = None
+        self._lock = asyncio.Lock()
+
+    def snapshot(self):
+        if self._current is None:
+            raise CapabilityContractError("No independently discovered installed catalog yet")
+        return self._current
+
+    async def refresh(self, *, host_connections: Mapping | None = None):
+        if host_connections is not None and (
+                not isinstance(host_connections, Mapping) or not host_connections):
+            raise CapabilityContractError("Updated host connections must be a mapping")
+        async with self._lock:
+            candidate_connections = (dict(self._connections) if host_connections is None
+                                     else dict(host_connections))
+            # Only a fully validated candidate may replace the previous
+            # published snapshot. This is not an LLM-authorized tool install.
+            candidate = await CapabilityFabric.from_connections(candidate_connections)
+            self._connections = candidate_connections
+            self._current = candidate
+            return candidate.overview()
+
+    def select(self, operation_id: str, *, revision: str):
+        return self.snapshot().resolve(operation_id, revision=revision)
