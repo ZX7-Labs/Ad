@@ -231,7 +231,7 @@ class CapabilityFabric:
         return copy.deepcopy(self._records[operation_id])
 
     def affordance_frontier(self, *, trusted_facts: Mapping,
-                            limit: int = 4):
+                            limit: int = 4, namespace: str | None = None):
         """Show bounded real operations able to enable currently missing facts.
 
         Only the trusted host supplies the facts and possible machine effects.
@@ -243,9 +243,13 @@ class CapabilityFabric:
                     for key, value in trusted_facts.items()) or
                 type(limit) is not int or not 1 <= limit <= 8):
             raise CapabilityContractError("Host-attested boolean fact state required")
+        if namespace is not None and namespace not in self._namespaces:
+            raise CapabilityContractError("Unknown trusted creative source")
         needed = {key for key, value in trusted_facts.items() if not value}
         items = []
         for identifier, record in sorted(self._records.items()):
+            if namespace is not None and record["source"] != namespace:
+                continue
             enables = needed.intersection(record["may_enable"])
             if not enables:
                 continue
