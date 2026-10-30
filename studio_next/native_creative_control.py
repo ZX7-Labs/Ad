@@ -299,11 +299,14 @@ def _model_event_window(events):
                 if field in event:
                     item[field] = event[field]
         elif kind in ("native_tool_result", "native_observation_rejected",
-                      "native_tool_reported_error", "native_tool_uncertain_outcome"):
+                      "native_tool_reported_error", "native_read_tool_reported_error",
+                      "native_tool_uncertain_outcome"):
             # Preserve modality and physical export/source identity, never
             # recreate raw media or author an unsupported quality conclusion.
             for field in ("observed_export_sha256", "independently_verified_export_sha256",
-                          "image_sha256", "audio_sha256", "must_reconcile_native_state"):
+                          "image_sha256", "audio_sha256", "must_reconcile_native_state",
+                          "host_attested_read_only", "no_successful_native_observation",
+                          "error_text_exceeded_evidence_budget"):
                 if event.get(field) is not None:
                     item[field] = event[field]
         retained.append(item)
@@ -320,11 +323,21 @@ class NativeCreativeControl:
     event stream supports independent review; it is not an automatic replay log.
     """
 
-    def __init__(self, session, model, *, max_turns=32, receipt_path: Path | None = None):
+    def __init__(self, session, model, *, max_turns=32, receipt_path: Path | None = None,
+                 host_tool_access: dict[str, str] | None = None):
         if type(max_turns) is not int or not 1 <= max_turns <= 128:
             raise NativeCreativeControlError("Native model session requires finite turn budget")
         if not callable(getattr(model, "decide", None)):
             raise NativeCreativeControlError("A concrete creative decision model is required")
+        # Only trusted host grants, NEVER model-provided tool descriptions,
+        # can classify a native operation as side-effect-free. In the
+        # absence of an explicit map the old fail-closed behavior applies.
+        if host_tool_access is not None and (
+                not isinstance(host_tool_access, dict) or
+                any(not isinstance(k, str) or not k or v not in ("read", "write")
+                    for k, v in host_tool_access.items())):
+            raise NativeCreativeControlError("Trusted host tool access must be read/write grants")
+        self.host_tool_access = dict(host_tool_access) if host_tool_access is not None else None
         self.session = session
         self.model = model
         self.max_turns = max_turns
@@ -419,6 +432,9 @@ class NativeCreativeControl:
         self.tools = {_field(x, "name"): x for x in available}
         if len(self.tools) != len(available):
             raise NativeCreativeControlError("Native editor has duplicate operation identities")
+        if self.host_tool_access is not None and set(self.tools) != set(self.host_tool_access):
+            raise NativeCreativeControlError(
+                "Trusted host grants must match the exact discovered native tool set")
         tool_hints = _native_tool_hints(available)
         show_tool_hints = True
         # Same local-only schema family as the MCP host: preflight avoids
@@ -606,10 +622,24 @@ class NativeCreativeControl:
                 self._native_mcp_wall_ms_total += native_ms
                 if _field(result, "is_error", _field(result, "isError", False)):
                     digest, out_of_budget = _bounded_error_digest(result)
-                    # A reported native error does not prove a write never
-                    # happened. Stop; the next session must reconcile the
-                    # actual saved state before issuing another mutation.
-                    # Do not hash/serialize arbitrary unbounded native errors.
+                    if (self.host_tool_access is not None and
+                            self.host_tool_access[native_name] == "read"):
+                        # The explicit host-owned grant proves this call is
+                        # read-only, not a write whose outcome is uncertain.
+                        # Record bounded, private evidence and let the MODEL
+                        # select the next action. Never silently treat the
+                        # failed observation as successful or retry it.
+                        self._append({"kind": "native_read_tool_reported_error",
+                                      "turn": turn, "tool": native_name,
+                                      "measured_native_mcp_wall_ms": native_ms,
+                                      "error_sha256": digest,
+                                      "error_text_exceeded_evidence_budget": out_of_budget,
+                                      "host_attested_read_only": True,
+                                      "no_successful_native_observation": True})
+                        continue
+                    # A reported write error (or an operation of unknown
+                    # access) does not prove that a mutation never happened.
+                    # Stop and reconcile the actual native saved state.
                     self._append({"kind": "native_tool_reported_error", "turn": turn,
                                   "tool": native_name,
                                   "measured_native_mcp_wall_ms": native_ms,
