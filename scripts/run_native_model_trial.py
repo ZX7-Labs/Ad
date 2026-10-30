@@ -179,6 +179,13 @@ async def trial(args, lock, artifacts, command):
         system_prompt=NATIVE_CREATIVE_SYSTEM), artifacts)
     # This mapping originates in the trusted host config, not the
     # replaceable neural model. Only READ errors may be safely corrected.
+    # Machine-readable adapter semantics live outside the strictly parsed
+    # native editor permission config. This file is maintainer-trusted source,
+    # never an LLM artifact or a long MD instruction to the brain.
+    contract = json.loads((ROOT / 'engines/velorn/host-capability-contract.json').read_text())
+    if contract.get('schema') != 1 or contract.get('source') != 'velorn':
+        raise ValueError('Invalid host-attested capability contract revision')
+    requirements = contract['host_attested_requirements']
     host = dict(config['allowed_tools'])
     host.update({name: 'read' for name in ('zx7_verify_native_export',
         'zx7_observe_verified_export_frame', 'zx7_observe_verified_export_samples',
@@ -190,7 +197,7 @@ async def trial(args, lock, artifacts, command):
                 outcome = await asyncio.wait_for(NativeCreativeControl(session, model, max_turns=48,
                     receipt_path=artifacts / 'native-journal.jsonl',
                     host_tool_access=host,
-                    host_tool_requirements=config.get('tool_preconditions', {}),
+                    host_tool_requirements=requirements,
                     catalog_mode="indexed").run(brief), timeout=2400)
     audit = audit_native_journal(read_native_journal(artifacts / 'native-journal.jsonl'), host_tool_access=host)
     (artifacts / 'journal-audit.json').write_text(json.dumps(audit, indent=2))
