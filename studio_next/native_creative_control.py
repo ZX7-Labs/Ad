@@ -454,6 +454,7 @@ class NativeCreativeControl:
         # Ground project presence only in actual native get_project results,
         # never in model text, metadata discovery, or an earlier session.
         self._project_presence = "unknown"
+        self._post_write_state_warning: dict | None = None
         self._last_preflight_feedback: dict | None = None
         self._last_audio: list[tuple[str, bytes]] = []
         self._last_audio_evidence: dict | None = None
@@ -793,6 +794,9 @@ class NativeCreativeControl:
                     "latest_events": _model_event_window(self.events),
                     "last_native_result_texts": self._last_native_texts,
                     "native_project_presence_from_last_inspection": self._project_presence,
+                    # A successful write and a lagging native READ are a
+                    # contradiction, never permission to create again.
+                    "last_host_project_write_reconciliation": self._post_write_state_warning,
                     # A schema error is known BEFORE any native RPC. Instead
                     # of burning another costly inference on metadata discovery,
                     # expose the exact bounded host schema for independent
@@ -1205,12 +1209,12 @@ class NativeCreativeControl:
                     # No creative operation is selected or dispatched here.
                     self._selectable_tools = []
                     self._last_search_result = None
-                # A successful native create/open response is a WRITE receipt,
-                # not independent evidence that a project is now open. Observe
-                # the actual host state once with the owner's READ grant,
-                # without choosing any creative action for the model. This
-                # prevents stale/unknown project facts from wasting inference
-                # turns or provoking duplicate project creation.
+                # A successful project-opening write may precede the editor's
+                # asynchronous project snapshot. Source-evidence from the real
+                # CPU trial showed one actual create ACK followed immediately
+                # by get_project reporting 'absent'. Recheck at most ONCE,
+                # using only the host-authorized native READ. Neither read may
+                # create a project, mutate a timeline or invent success.
                 effects = self._host_possible_effects.get(native_name, ())
                 if (isinstance(effects, (list, tuple)) and
                         "project_open" in effects and
@@ -1218,51 +1222,97 @@ class NativeCreativeControl:
                         self.host_tool_access.get("get_project") == "read" and
                         "get_project" in validators and
                         validators["get_project"].is_valid({})):
-                    try:
-                        refreshed = await self.session.call_tool("get_project", {})
-                    except Exception as exc:
-                        self._append({"kind": "host_project_post_write_error",
-                                      "tool": "get_project",
-                                      "triggered_by_native_tool": native_name,
-                                      "host_attested_read_only": True,
-                                      "no_model_selected_mutation": True,
-                                      "error_type": type(exc).__name__})
-                    else:
-                        if _field(refreshed, "is_error",
-                                  _field(refreshed, "isError", False)):
-                            digest, oversized = _bounded_error_digest(refreshed)
+                    self._post_write_state_warning = None
+                    for read_attempt in (1, 2):
+                        if read_attempt == 2:
+                            # Bounded grace period for Electron/renderer -> MCP
+                            # snapshot propagation, not a creative scheduling
+                            # policy. No unattended retry of any native WRITE.
+                            await asyncio.sleep(0.2)
+                        try:
+                            refreshed = await self.session.call_tool("get_project", {})
+                        except Exception as exc:
+                            self._project_presence = "unknown"
+                            self._post_write_state_warning = {
+                                "read_only_reconciliation_incomplete": True,
+                                "project_state_unknown": True,
+                                "must_inspect_native_project": True}
                             self._append({"kind": "host_project_post_write_error",
                                           "tool": "get_project",
                                           "triggered_by_native_tool": native_name,
+                                          "read_attempt": read_attempt,
+                                          "host_attested_read_only": True,
+                                          "no_model_selected_mutation": True,
+                                          "error_type": type(exc).__name__})
+                            break
+                        if _field(refreshed, "is_error",
+                                  _field(refreshed, "isError", False)):
+                            digest, oversized = _bounded_error_digest(refreshed)
+                            self._project_presence = "unknown"
+                            self._post_write_state_warning = {
+                                "read_only_reconciliation_incomplete": True,
+                                "project_state_unknown": True,
+                                "must_inspect_native_project": True}
+                            self._append({"kind": "host_project_post_write_error",
+                                          "tool": "get_project",
+                                          "triggered_by_native_tool": native_name,
+                                          "read_attempt": read_attempt,
                                           "host_attested_read_only": True,
                                           "no_model_selected_mutation": True,
                                           "error_sha256": digest,
                                           "error_text_exceeded_evidence_budget": oversized})
-                        else:
-                            try:
-                                state_texts, state_images, state_audio = _native_content(refreshed)
-                                if len(state_texts) != 1 or state_images or state_audio:
-                                    raise NativeCreativeControlError(
-                                        "Project state read needs one bounded text receipt only")
-                            except NativeCreativeControlError:
-                                self._append({"kind": "host_project_post_write_error",
-                                              "tool": "get_project",
-                                              "triggered_by_native_tool": native_name,
-                                              "host_attested_read_only": True,
-                                              "no_model_selected_mutation": True,
-                                              "error_type": "InvalidBoundedProjectObservation"})
-                            else:
-                                self._project_presence = _native_project_presence_from_text(state_texts)
-                                self._last_native_texts = state_texts
-                                self._append({"kind": "host_project_post_write_observation",
-                                              "tool": "get_project",
-                                              "triggered_by_native_tool": native_name,
-                                              "host_attested_read_only": True,
-                                              "no_model_selected_mutation": True,
-                                              "project_presence": self._project_presence,
-                                              "text_sha256": [
-                                                  hashlib.sha256(x.encode()).hexdigest()
-                                                  for x in state_texts]})
+                            break
+                        try:
+                            state_texts, state_images, state_audio = _native_content(refreshed)
+                            if len(state_texts) != 1 or state_images or state_audio:
+                                raise NativeCreativeControlError(
+                                    "Project state read needs one bounded text receipt only")
+                        except NativeCreativeControlError:
+                            self._project_presence = "unknown"
+                            self._post_write_state_warning = {
+                                "read_only_reconciliation_incomplete": True,
+                                "project_state_unknown": True,
+                                "must_inspect_native_project": True}
+                            self._append({"kind": "host_project_post_write_error",
+                                          "tool": "get_project",
+                                          "triggered_by_native_tool": native_name,
+                                          "read_attempt": read_attempt,
+                                          "host_attested_read_only": True,
+                                          "no_model_selected_mutation": True,
+                                          "error_type": "InvalidBoundedProjectObservation"})
+                            break
+                        observation = _native_project_presence_from_text(state_texts)
+                        self._project_presence = observation
+                        self._last_native_texts = state_texts
+                        self._append({"kind": "host_project_post_write_observation",
+                                      "tool": "get_project",
+                                      "triggered_by_native_tool": native_name,
+                                      "read_attempt": read_attempt,
+                                      "host_attested_read_only": True,
+                                      "no_model_selected_mutation": True,
+                                      "project_presence": observation,
+                                      "text_sha256": [
+                                          hashlib.sha256(x.encode()).hexdigest()
+                                          for x in state_texts]})
+                        if observation != "absent":
+                            break
+                        if read_attempt == 2:
+                            # An ACK plus two absent observations is
+                            # inconsistent/uncertain, not authorization to
+                            # create another project. Preserve the real reads
+                            # in the journal; make the state unknown.
+                            self._project_presence = "unknown"
+                            self._post_write_state_warning = {
+                                "read_only_reconciliation_incomplete": True,
+                                "project_state_unknown": True,
+                                "must_inspect_native_project": True}
+                            self._append({
+                                "kind": "host_project_post_write_inconsistent",
+                                "triggered_by_native_tool": native_name,
+                                "bounded_read_attempts": 2,
+                                "claimed_project_success_unconfirmed": True,
+                                "no_model_selected_mutation": True,
+                                "no_automatic_write_retry": True})
             return {
                 "status": outcome, "events": self.events.copy(),
                 "measured_model_wall_ms_total": round(self._model_wall_ms_total, 3),
