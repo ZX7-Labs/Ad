@@ -385,6 +385,9 @@ class NativeCreativeControl:
         if (not isinstance(self._host_preconditions, dict) or
                 not isinstance(self._host_possible_effects, dict)):
             raise NativeCreativeControlError("Trusted machine contracts must be objects")
+        if (self._host_preconditions or self._host_possible_effects) and host_tool_access is None:
+            raise NativeCreativeControlError(
+                "Machine contracts require an explicit trusted host grant map")
         self._capabilities = None
         self._last_search_result = None
         self._selectable_tools: list[str] = []
@@ -784,6 +787,35 @@ class NativeCreativeControl:
                                       list(invalid.schema_path)[:16])[:512],
                                   "no_native_dispatch": True})
                     continue
+                if (self._capabilities is not None and
+                        native_name in self._host_preconditions):
+                    known_facts = {}
+                    if self._project_presence in ("present", "absent"):
+                        known_facts["project_open"] = self._project_presence == "present"
+                    readiness = self._capabilities.check_prerequisites(
+                        "native/" + native_name,
+                        revision=self._capabilities.revision,
+                        trusted_facts=known_facts)
+                    if not readiness["admissible"]:
+                        # No RPC happened. Allow an independent model choice
+                        # to inspect true machine state or choose a different
+                        # previously discovered native operation. Never infer
+                        # that a project was created by an unsuccessful edit.
+                        failures = sorted(set(readiness["unknown_state"] +
+                                              readiness["unsatisfied"]))
+                        self._last_preflight_feedback = {
+                            "tool": native_name,
+                            "validation_keyword": "host_precondition",
+                            "missing_machine_facts": failures[:8],
+                            "no_native_dispatch": True}
+                        self._append({"kind": "model_action_rejected", "turn": turn,
+                                      **timing, "tool": native_name,
+                                      "inputs_sha256": hashlib.sha256(
+                                          _wire(args["inputs"]).encode()).hexdigest(),
+                                      "validation_keyword": "host_precondition",
+                                      "schema_location": ",".join(failures)[:512],
+                                      "no_native_dispatch": True})
+                        continue
                 self._last_preflight_feedback = None
                 self._append({"kind": "native_tool_submitted", "turn": turn,
                               **timing,
