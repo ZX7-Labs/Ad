@@ -380,6 +380,7 @@ class NativeCreativeControl:
         self.catalog_mode = catalog_mode
         self._capabilities = None
         self._last_search_result = None
+        self._selectable_tools: list[str] = []
         self.host_tool_access = dict(host_tool_access) if host_tool_access is not None else None
         self.session = session
         self.model = model
@@ -437,11 +438,16 @@ class NativeCreativeControl:
                 raise NativeCreativeControlError("Search requires bounded natural-language query")
         elif action == "describe":
             if (set(args) != {"tool"} or not isinstance(args["tool"], str)
-                    or args["tool"] not in self.tools):
-                raise NativeCreativeControlError("Model requested an ungranted native tool")
+                    or args["tool"] not in self.tools or
+                    (self.catalog_mode == "indexed" and
+                     args["tool"] not in self._selectable_tools)):
+                raise NativeCreativeControlError("Model requested an ungranted or unsearched native tool")
         elif (set(args) != {"tool", "inputs"} or not isinstance(args["tool"], str)
-                or args["tool"] not in self.tools or not isinstance(args["inputs"], dict)):
-            raise NativeCreativeControlError("Model requested ungranted tool or invalid inputs")
+                or args["tool"] not in self.tools or not isinstance(args["inputs"], dict) or
+                (self.catalog_mode == "indexed" and
+                 args["tool"] not in self._selectable_tools)):
+            raise NativeCreativeControlError(
+                "Model requested ungranted, unsearched tool or invalid inputs")
         return raw
 
     async def _infer(self, context: dict):
@@ -594,6 +600,7 @@ class NativeCreativeControl:
                     "actual_granted_native_tools": (
                         [] if self.catalog_mode == "indexed" else list(self.tools)),
                     "compact_tool_catalog": self.catalog_mode == "indexed",
+                    "selectable_native_tools": list(self._selectable_tools),
                     "capability_overview": (self._capabilities.overview()
                                             if self._capabilities is not None else None),
                     "last_capability_search_result": self._last_search_result,
@@ -688,6 +695,8 @@ class NativeCreativeControl:
                         {**match, "tool": self._capabilities.resolve(
                             match["id"], revision=self._capabilities.revision)["native_name"]}
                         for match in self._last_search_result["matches"]]
+                    self._selectable_tools = [
+                        match["tool"] for match in self._last_search_result["matches"]]
                     self._append({"kind": "capability_searched", "turn": turn, **timing,
                                   "query_sha256": hashlib.sha256(
                                       args["query"].encode("utf-8")).hexdigest(),
