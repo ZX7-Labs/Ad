@@ -1704,6 +1704,14 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(model.observed[1]["selectable_native_tools"], [])
         self.assertEqual(model.observed[1]["native_project_presence_from_last_inspection"],
                          "present")
+        # Re-searching the exhausted write returns no executable result, even
+        # though the original host operation still exists in the catalog.
+        filtered = model.observed[2]["last_capability_search_result"]
+        self.assertEqual(filtered["matches"], [])
+        self.assertEqual(filtered["already_acknowledged_host_once_tools"],
+                         ["create_project"])
+        self.assertTrue(filtered["host_requires_new_capability_query"])
+        self.assertEqual(model.observed[2]["selectable_native_tools"], [])
         self.assertEqual(model.observed[3]["last_rejected_native_action_feedback"]
                          ["validation_keyword"], "host_single_write")
         self.assertEqual([name for name, _ in session.calls],
