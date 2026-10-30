@@ -105,7 +105,12 @@ class CapabilityFabricTests(unittest.TestCase):
         overview = json.dumps(fabric.overview(), separators=(",", ":"))
         self.assertLess(len(overview), 220)
         result = fabric.search("color grade", limit=6)
-        self.assertEqual(len(result["matches"]), 6)
+        # With 1,000 indistinguishable write capabilities, selecting six
+        # arbitrary IDs would mislead a compact neural brain. Require a
+        # narrower intent query without granting any guessed operation.
+        self.assertEqual(result["matches"], [])
+        self.assertTrue(result["requires_refinement"])
+        self.assertEqual(len(result["candidate_examples"]), 6)
         self.assertTrue(result["has_more"])
         self.assertLess(len(json.dumps(result)), 1600)
         self.assertEqual(result, fabric.search("color grade", limit=6))
