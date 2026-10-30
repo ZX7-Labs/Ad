@@ -504,7 +504,7 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(rejected["validation_keyword"], "type")
             self.assertEqual(rejected["schema_location"], "properties/clipId/type")
             self.assertTrue(rejected["no_native_dispatch"])
-            self.assertNotIn("clipId", json.dumps(rejected))
+            self.assertNotIn('"inputs":', json.dumps(rejected))
             self.assertEqual(model.observed[1]["latest_events"][-1]["kind"],
                              "model_action_rejected")
             from studio_next.native_creative_audit import audit_native_journal
