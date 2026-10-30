@@ -32,6 +32,7 @@ _VERIFIED_EXPORT_TOOL = "zx7_verify_native_export"
 _VERIFIED_ENVELOPE_TOOL = "zx7_observe_verified_export_audio_timeline"
 _COMPLETION_EVIDENCE_TYPES = frozenset({
     "native_write_acknowledged", "physical_export_verified",
+    "post_observation_native_write_acknowledged",
     "verified_export_frame_observed",
 })
 
@@ -442,12 +443,16 @@ class NativeCreativeControl:
         proven = set()
         current_verified = set()
         current_frames = set()
+        saw_verified_frame = False
+        post_observation_write = False
         for event in self.events:
             if event.get("kind") != "native_tool_result":
                 continue
             if (self.host_tool_access is not None and
                     self.host_tool_access.get(event.get("tool")) == "write"):
                 proven.add("native_write_acknowledged")
+                if saw_verified_frame:
+                    post_observation_write = True
                 current_verified.clear()
                 current_frames.clear()
             verified = event.get("independently_verified_export_sha256")
@@ -456,6 +461,9 @@ class NativeCreativeControl:
             observed = event.get("observed_export_sha256")
             if (observed in current_verified and event.get("image_sha256")):
                 current_frames.add(observed)
+                saw_verified_frame = True
+        if post_observation_write:
+            proven.add("post_observation_native_write_acknowledged")
         if current_verified:
             proven.add("physical_export_verified")
         if current_frames:
@@ -569,15 +577,22 @@ class NativeCreativeControl:
         # This is capability feasibility, never a host-selected creative step.
         if self.required_evidence:
             grants = self.host_tool_access
-            missing_write = ("native_write_acknowledged" in self.required_evidence and
-                             not any(access == "write" for access in grants.values()))
+            needs_review_write = (
+                "post_observation_native_write_acknowledged" in self.required_evidence)
+            missing_write = (bool(self.required_evidence & {
+                "native_write_acknowledged",
+                "post_observation_native_write_acknowledged"}) and
+                not any(access == "write" for access in grants.values()))
             needs_export = bool(self.required_evidence & {
-                "physical_export_verified", "verified_export_frame_observed"})
+                "physical_export_verified", "verified_export_frame_observed",
+                "post_observation_native_write_acknowledged"})
             missing_export = (needs_export and
                               grants.get(_VERIFIED_EXPORT_TOOL) != "read")
-            missing_frame = ("verified_export_frame_observed" in self.required_evidence and
-                             not any(grants.get(name) == "read" for name in
-                                     _VERIFIED_FRAME_TOOLS))
+            missing_frame = (
+                ("verified_export_frame_observed" in self.required_evidence or
+                 needs_review_write) and
+                not any(grants.get(name) == "read" for name in
+                        _VERIFIED_FRAME_TOOLS))
             if missing_write or missing_export or missing_frame:
                 raise NativeCreativeControlError(
                     "Host requires completion evidence unsupported by granted native tools")
