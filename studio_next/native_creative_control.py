@@ -221,39 +221,51 @@ def _bounded_error_digest(result):
 
 
 def _native_tool_hints(available):
-    """Bounded, untrusted *descriptions from actual host discovery*, never
-    prescribed creative actions or expanded execution authority. Full input
-    schemas remain accessible through the model-chosen describe action.
+    """Host-derived compact affordances, not an action plan or new grants.
+
+    The total serialized UTF-8 hint envelope is actually bounded, including
+    tool identities, JSON field names, and parameters (not just descriptions).
+    Across large tool catalogs, divide description space fairly and allocate
+    parameter-name samples round-robin rather than dropping later tools first.
+    Every full native schema remains available through model-chosen describe.
     """
-    hints, remaining = [], 12_000
+    limit = 12_000
+    count = max(1, len(available))
+    description_limit = max(24, min(80, 10_000 // count - 60))
+    hints, parameter_options = [], []
     for tool in available:
         name = _field(tool, "name")
         description = _field(tool, "description", "")
-        if not isinstance(description, str):
+        if not isinstance(name, str) or not isinstance(description, str):
             continue
-        # Slice before splitting to avoid copying a hostile, huge description.
-        short = " ".join(description[:1024].split())[:160]
-        size = len(short.encode("utf-8"))
-        if not short or size > remaining:
+        short = " ".join(description[:1024].split())[:description_limit]
+        if not short:
             continue
-        hint = {"tool": name, "description": short}
-        # Param *names* come only from actual native host discovery. This
-        # avoids hallucinating parameters without duplicating full tool schemas
-        # on every local CPU-model turn. Creative values remain unrestricted.
+        entry = {"tool": name, "description": short}
+        if len(_wire(hints + [entry]).encode("utf-8")) > limit:
+            continue
+        hints.append(entry)
         schema = _field(tool, "input_schema", _field(tool, "inputSchema"))
-        props = schema.get("properties") if isinstance(schema, dict) else None
-        if isinstance(props, dict):
-            names = [key for key in list(props)[:12]
-                     if isinstance(key, str) and 0 < len(key) <= 64]
-            param_cost = sum(len(key.encode("utf-8")) + 4 for key in names)
-            if names and size + param_cost <= remaining:
-                hint["declared_parameter_names_sample"] = names
-                hint["additional_parameters_require_describe"] = len(props) > len(names)
-                size += param_cost
-        hints.append(hint)
-        remaining -= size
+        properties = schema.get("properties") if isinstance(schema, dict) else None
+        candidates = ([name for name in properties
+                       if isinstance(name, str) and 0 < len(name) <= 64][:12]
+                      if isinstance(properties, dict) else [])
+        parameter_options.append(candidates)
+    # All recorded fields come from host schemas, never a fabricated creative
+    # template. Later tools receive an opportunity before earlier tools obtain
+    # second/third parameter hints. These are a SAMPLE, not an exhaustive ABI.
+    for rank in range(12):
+        for idx, names in enumerate(parameter_options):
+            if rank >= len(names):
+                continue
+            sample = hints[idx].get("declared_parameter_names_sample", [])
+            candidate = dict(hints[idx],
+                             declared_parameter_names_sample=sample + [names[rank]])
+            updated = hints.copy()
+            updated[idx] = candidate
+            if len(_wire(updated).encode("utf-8")) <= limit:
+                hints[idx] = candidate
     return hints
-
 
 
 def _model_event_window(events):
