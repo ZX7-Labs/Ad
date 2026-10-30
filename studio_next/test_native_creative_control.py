@@ -784,5 +784,72 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
 
 
 
+    async def test_host_attested_read_failure_allows_independent_model_correction(self):
+        from studio_next.native_creative_audit import audit_native_journal
+        session = FakeSession()
+        access = {x.name: "read" for x in session.tools}
+        access["update_text_clip"] = "write"
+        failed_once = [True]
+        async def native_tool(name, inputs):
+            session.calls.append((name, inputs))
+            if name == "get_timeline" and failed_once[0]:
+                failed_once[0] = False
+                return SimpleNamespace(is_error=True, content=[
+                    SimpleNamespace(type="text", text="Private source not yet open")])
+            return SimpleNamespace(is_error=False, content=[
+                SimpleNamespace(type="text", text='{"success":true}')])
+        session.call_tool = native_tool
+        model = ScriptedModel([
+            decision("invoke", tool="get_timeline", inputs={}),
+            decision("describe", tool="get_timeline"),
+            decision("invoke", tool="get_timeline", inputs={"includeClips": True}),
+            decision("finish", summary="Read corrected without editing any file"),
+        ])
+        with tempfile.TemporaryDirectory() as root:
+            receipt = Path(root) / "read-recovery.jsonl"
+            result = await NativeCreativeControl(session, model, max_turns=4,
+                receipt_path=receipt, host_tool_access=access).run("Inspect actual state")
+            self.assertEqual(result["status"], "model_finished_unverified")
+            self.assertEqual(len(session.calls), 2)
+            failure = result["events"][2]
+            self.assertEqual(failure["kind"], "native_read_tool_reported_error")
+            self.assertTrue(failure["host_attested_read_only"])
+            self.assertTrue(failure["no_successful_native_observation"])
+            self.assertEqual(model.observed[1]["latest_events"][-1]["kind"],
+                             "native_read_tool_reported_error")
+            self.assertNotIn("Private source", receipt.read_text())
+            self.assertTrue(audit_native_journal(
+                result["events"], host_tool_access=access)["journal_chain_structurally_valid"])
+            self.assertEqual(len([x for x in result["events"] if x["kind"] == "native_tool_result"]), 1)
+            self.assertFalse(result["native_editing_capability_complete"])
+
+    async def test_unknown_or_write_failure_still_terminates_even_with_host_grants(self):
+        for access_mode in ("read", "write"):
+            session = FakeSession()
+            session.custom_response = SimpleNamespace(is_error=True, content=[
+                SimpleNamespace(type="text", text="Uncertain private native outcome")])
+            access = {x.name: "read" for x in session.tools}
+            access["update_text_clip"] = "write"
+            model = ScriptedModel([
+                decision("invoke", tool="update_text_clip", inputs={"clipId": "original"}),
+                decision("finish", summary="Should never reach this state"),
+            ])
+            with self.subTest(access_mode=access_mode):
+                grants = access if access_mode == "write" else None
+                result = await NativeCreativeControl(session, model,
+                        host_tool_access=grants, max_turns=2).run("Guard native writes")
+                self.assertEqual(result["status"], "native_error_requires_state_reconciliation")
+                self.assertEqual(len(session.calls), 1)
+                self.assertTrue(result["events"][-1]["must_reconcile_native_state"])
+
+    async def test_trusted_read_grants_must_cover_exact_discovered_tools(self):
+        session = FakeSession()
+        with self.assertRaisesRegex(NativeCreativeControlError, "match"):
+            await NativeCreativeControl(session, ScriptedModel([
+                decision("finish", summary="No native actions")]),
+                host_tool_access={"get_timeline": "read"}).run("No grant escalation")
+        self.assertEqual(session.calls, [])
+
+
 if __name__ == "__main__":
     unittest.main()
