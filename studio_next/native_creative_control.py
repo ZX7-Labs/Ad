@@ -433,25 +433,33 @@ class NativeCreativeControl:
         self._receipt = None
 
     def _missing_completion_evidence(self):
-        """Only accepted native results satisfy the owner-host technical gate.
+        """Use only accepted native results and current-edit export custody.
 
-        This is a minimal machine-proof gate, not a filmmaking recipe or an
-        artistic verdict. An uncertain/failed write grants no positive fact.
+        An older verified frame cannot certify a later native revision. Each
+        acknowledged write invalidates the session's *completion* proof cache,
+        without discarding historical media/source custody and recovery evidence.
         """
         proven = set()
+        current_verified = set()
+        current_frames = set()
         for event in self.events:
             if event.get("kind") != "native_tool_result":
                 continue
             if (self.host_tool_access is not None and
                     self.host_tool_access.get(event.get("tool")) == "write"):
                 proven.add("native_write_acknowledged")
+                current_verified.clear()
+                current_frames.clear()
             verified = event.get("independently_verified_export_sha256")
             if verified is not None and verified in self._verified_exports:
-                proven.add("physical_export_verified")
+                current_verified.add(verified)
             observed = event.get("observed_export_sha256")
-            if (observed is not None and observed in self._verified_exports and
-                    event.get("image_sha256")):
-                proven.add("verified_export_frame_observed")
+            if (observed in current_verified and event.get("image_sha256")):
+                current_frames.add(observed)
+        if current_verified:
+            proven.add("physical_export_verified")
+        if current_frames:
+            proven.add("verified_export_frame_observed")
         return sorted(self.required_evidence - proven)
 
     def _append(self, event: dict):
