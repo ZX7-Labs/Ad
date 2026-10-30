@@ -49,7 +49,9 @@ class FakeSession:
             SimpleNamespace(name="zx7_verify_native_export", description="Independently verify final movie",
                             input_schema={"type": "object"}),
             SimpleNamespace(name="zx7_observe_verified_export_frame", description="Read verified PNG",
-                            input_schema={"type": "object", "properties": {"at_seconds": {"type": "number"}}})]
+                            input_schema={"type": "object", "properties": {
+                                "path": {"type": "string"},
+                                "at_seconds": {"type": "number"}}})]
         self.calls = []
         self.raise_on_call = None
         self.custom_response = None
