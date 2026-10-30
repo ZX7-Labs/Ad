@@ -459,7 +459,8 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
         hints = initial["host_declared_tool_hints"]
         self.assertEqual(hints, _native_tool_hints(session.tools))
         self.assertEqual(hints[0]["description"], "Read the native project state")
-        self.assertEqual(len(hints[1]["description"]), 160)
+        self.assertGreater(len(hints[1]["description"]), 0)
+        self.assertLessEqual(len(hints[1]["description"]), 80)
         self.assertEqual(hints, after_discovery["host_declared_tool_hints"])
         self.assertNotIn("host_declared_tool_hints", final)
         self.assertEqual(session.calls, [])
@@ -756,6 +757,29 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(session.calls), 1)
         self.assertEqual(session.calls[0][1]["extension"]["customArtistField"], 9)
         self.assertEqual(result["status"], "model_finished_unverified")
+
+
+    async def test_native_affordance_envelope_has_exact_12kb_budget_and_fair_late_tool_sampling(self):
+        from studio_next.native_creative_control import _native_tool_hints
+        tools = [
+            SimpleNamespace(name=f"tool_{i:03d}", description="D" * 5000,
+                            input_schema={"type": "object", "properties": {
+                                "nativeFirst": {"type": "string"},
+                                "nativeSecond": {"type": "number"},
+                                "nativeThird": {"type": "boolean"}}})
+            for i in range(80)
+        ]
+        hints = _native_tool_hints(tools)
+        self.assertEqual(len(hints), 80)
+        encoded = json.dumps(hints, sort_keys=True, separators=(",", ":"),
+                             ensure_ascii=False).encode("utf-8")
+        self.assertLessEqual(len(encoded), 12_000)
+        self.assertTrue(hints[0]["declared_parameter_names_sample"])
+        self.assertTrue(hints[-1]["declared_parameter_names_sample"])
+        self.assertEqual(hints[-1]["declared_parameter_names_sample"][0], "nativeFirst")
+        self.assertTrue(all(len(item["description"]) <= 80 for item in hints))
+        self.assertNotIn("nativeFirst", tools[0].description)
+
 
 
 if __name__ == "__main__":
