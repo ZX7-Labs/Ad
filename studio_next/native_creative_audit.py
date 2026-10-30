@@ -138,6 +138,60 @@ def audit_native_journal(events, *, host_tool_access):
             continue
         if i == 0:
             continue
+        if kind in ("host_project_bootstrap_observation", "host_project_bootstrap_error"):
+            if (i != 1 or pending is not None or
+                    event.get("tool") != "get_project" or
+                    host_tool_access.get("get_project") != "read" or
+                    event.get("host_attested_read_only") is not True):
+                raise NativeJournalError("Host bootstrap project read lacks read-only evidence")
+            if kind == "host_project_bootstrap_observation":
+                text_hashes = event.get("text_sha256")
+                if (not isinstance(text_hashes, list) or len(text_hashes) != 1 or
+                        not all(_sha(x) for x in text_hashes) or
+                        event.get("project_presence") not in ("unknown", "absent", "present") or
+                        event.get("no_model_selected_mutation") is not True):
+                    raise NativeJournalError("Project bootstrap did not preserve bounded host read proof")
+            else:
+                digest = event.get("error_sha256")
+                oversized = event.get("error_text_exceeded_evidence_budget")
+                etype = event.get("error_type")
+                reported = (type(oversized) is bool and
+                            ((digest is None) == oversized) and
+                            (digest is None or _sha(digest)) and etype is None)
+                exception = (isinstance(etype, str) and bool(etype) and
+                             digest is None and oversized is None)
+                if not (reported or exception):
+                    raise NativeJournalError("Malformed failed project bootstrap evidence")
+            continue
+        if kind in ("host_project_postwrite_observation", "host_project_postwrite_error"):
+            previous = events[i - 1] if i else {}
+            if (pending is not None or
+                    previous.get("kind") != "native_tool_result" or
+                    host_tool_access.get(previous.get("tool")) != "write" or
+                    event.get("turn") != previous.get("turn") or
+                    event.get("tool") != "get_project" or
+                    host_tool_access.get("get_project") != "read" or
+                    event.get("host_attested_read_only") is not True):
+                raise NativeJournalError("Native postwrite sensing is not linked to a verified write")
+            if kind == "host_project_postwrite_observation":
+                hashes = event.get("text_sha256")
+                if (not isinstance(hashes, list) or len(hashes) != 1 or
+                        not all(_sha(x) for x in hashes) or
+                        event.get("project_presence") not in ("unknown", "absent", "present") or
+                        event.get("no_model_selected_mutation") is not True):
+                    raise NativeJournalError("Postwrite snapshot has invalid source proof")
+            else:
+                digest = event.get("error_sha256")
+                oversized = event.get("error_text_exceeded_evidence_budget")
+                error_type = event.get("error_type")
+                reported = (type(oversized) is bool and
+                            ((digest is None) == oversized) and
+                            (digest is None or _sha(digest)) and error_type is None)
+                raised = (isinstance(error_type, str) and bool(error_type) and
+                          digest is None and oversized is None)
+                if not (reported or raised):
+                    raise NativeJournalError("Postwrite read error lacks bounded evidence")
+            continue
         if kind == "model_decision_failed":
             duration = event.get("measured_model_wall_ms")
             if (pending is not None or i != len(events) - 1 or
@@ -155,23 +209,84 @@ def audit_native_journal(events, *, host_tool_access):
             if pending is not None:
                 raise NativeJournalError("Tool catalog interleaved with unfinished native operation")
             continue
+        if kind == "capability_searched":
+            tools = event.get("result_tool_names")
+            if (pending is not None or
+                    not _sha(event.get("query_sha256")) or
+                    not _sha(event.get("catalog_revision")) or
+                    event.get("no_native_dispatch") is not True or
+                    not isinstance(tools, list) or len(tools) > 8 or
+                    any(not isinstance(tool, str) or tool not in host_tool_access
+                        for tool in tools) or len(set(tools)) != len(tools)):
+                raise NativeJournalError("Search fabricated an ungranted native capability")
+            continue
+        if kind == "model_finish_rejected":
+            unmet = event.get("unmet_evidence")
+            if (pending is not None or
+                    not isinstance(unmet, list) or not 1 <= len(unmet) <= 3 or
+                    len(set(unmet)) != len(unmet) or
+                    any(x not in {"native_mutation", "verified_export",
+                                  "observed_export"} for x in unmet) or
+                    not _sha(event.get("summary_sha256")) or
+                    event.get("no_native_dispatch") is not True or
+                    event.get("creative_quality_independently_approved") is not False):
+                raise NativeJournalError("Premature finish lacks trustworthy negative evidence")
+            continue
+        if kind == "model_action_rejected":
+            # Input-schema preflight rejected a model proposal BEFORE any RPC.
+            # This is safe to correct, unlike an unknown native write result.
+            # Never count preflight rejection as an editor operation.
+            if (pending is not None or
+                    event.get("tool") not in host_tool_access or
+                    not _sha(event.get("inputs_sha256")) or
+                    event.get("no_native_dispatch") is not True or
+                    not isinstance(event.get("validation_keyword"), str) or
+                    not 1 <= len(event["validation_keyword"]) <= 64 or
+                    (event.get("schema_location") is not None and
+                     (not isinstance(event["schema_location"], str) or
+                      len(event["schema_location"]) > 512))):
+                raise NativeJournalError("Model preflight rejection lacks proof of no native dispatch")
+            continue
         if kind == "native_tool_submitted":
             if pending is not None:
                 raise NativeJournalError("Second tool submitted before native outcome")
             tool = event.get("tool")
+            # Historic receipts carry a plaintext reason. New receipts carry
+            # a digest and exact byte length, so model-authored text (which
+            # might quote private briefs/assets) does not leak into journals.
+            old_reason = event.get("model_reason")
+            private_reason = event.get("model_reason_sha256")
+            private_len = event.get("model_reason_utf8_bytes")
+            legacy = (isinstance(old_reason, str) and bool(old_reason.strip()) and
+                      private_reason is None and private_len is None)
+            hashed = (_sha(private_reason) and type(private_len) is int and
+                      1 <= private_len <= 262144 and old_reason is None)
             if (not isinstance(tool, str) or tool not in host_tool_access or
-                    not _sha(event.get("inputs_sha256")) or
-                    not isinstance(event.get("model_reason"), str) or
-                    not event["model_reason"].strip()):
+                    not _sha(event.get("inputs_sha256")) or not (legacy or hashed)):
                 raise NativeJournalError("Native operation lacks model intent or host grant")
             pending = (event.get("turn"), tool, host_tool_access[tool])
             continue
         if kind in ("native_tool_result", "native_tool_reported_error",
-                    "native_tool_uncertain_outcome", "native_observation_rejected"):
+                    "native_tool_uncertain_outcome", "native_observation_rejected",
+                    "native_read_tool_reported_error"):
             if pending is None or (event.get("turn"), event.get("tool")) != pending[:2]:
                 raise NativeJournalError("Native outcome does not match a submitted call")
             turn, tool, access = pending
             pending = None
+            if kind == "native_read_tool_reported_error":
+                # This branch is only valid for a host-attested READ. Failed
+                # reads are not positive native evidence and grant no ability
+                # to advance artistic/export/source-completion counters.
+                digest = event.get("error_sha256")
+                flag = event.get("error_text_exceeded_evidence_budget")
+                if (access != "read" or
+                        event.get("host_attested_read_only") is not True or
+                        event.get("no_successful_native_observation") is not True or
+                        type(flag) is not bool or
+                        ((digest is None) != flag) or
+                        (digest is not None and not _sha(digest))):
+                    raise NativeJournalError("Untrusted or malformed recoverable read failure")
+                continue
             if kind == "native_tool_result":
                 if event.get("human_or_artistic_quality_approved") is not False:
                     raise NativeJournalError("Technical tool output cannot assert artistic approval")
@@ -221,7 +336,18 @@ def audit_native_journal(events, *, host_tool_access):
         if kind == "model_finished":
             if pending is not None:
                 raise NativeJournalError("Model finished with an unresolved native write")
-            if event.get("creative_quality_independently_approved") is not False or i != len(events) - 1:
+            # Preserve old valid journal compatibility, but require new
+            # private-summary receipts to have a real SHA and length, never
+            # a mixture that hides an unexamined raw-text leakage.
+            old_summary = event.get("summary")
+            private_sha = event.get("summary_sha256")
+            private_len = event.get("summary_utf8_bytes")
+            legacy = (isinstance(old_summary, str) and bool(old_summary.strip()) and
+                      private_sha is None and private_len is None)
+            hashed = (_sha(private_sha) and type(private_len) is int and
+                      1 <= private_len <= 262144 and old_summary is None)
+            if (event.get("creative_quality_independently_approved") is not False or
+                    i != len(events) - 1 or not (legacy or hashed)):
                 raise NativeJournalError("Model statement cannot approve artistic quality")
             terminal = kind
             finished = True
