@@ -35,6 +35,39 @@ def sha(path):
     return digest.hexdigest()
 
 
+def parse_linux_proc_peak_rss(status_text):
+    """Peak RSS of one live model-server PID; never extrapolate system RAM.
+
+    Linux procfs VmHWM is a per-process high-water resident set in KiB.
+    It does not include the Electron editor, OS page cache, or every shared
+    mapping's machine-wide cost. Invalid/missing status is *unmeasured*.
+    """
+    if not isinstance(status_text, str):
+        return None
+    entries = [line.split(":", 1)[1].strip() for line in status_text.splitlines()
+               if line.startswith("VmHWM:")]
+    if len(entries) != 1:
+        return None
+    parts = entries[0].split()
+    if len(parts) != 2 or parts[1] != "kB" or not parts[0].isdecimal():
+        return None
+    kib = int(parts[0])
+    if not 0 < kib <= 1024 * 1024 * 1024:
+        return None
+    return kib * 1024
+
+
+def read_live_linux_model_peak_rss(pid):
+    """Observe the specific still-running server; absent procfs fails closed."""
+    if os.name != "posix" or sys.platform != "linux" or type(pid) is not int or pid <= 0:
+        return None
+    try:
+        return parse_linux_proc_peak_rss(
+            Path(f"/proc/{pid}/status").read_text(encoding="ascii"))
+    except (OSError, UnicodeError):
+        return None
+
+
 def download(entry, root):
     # A research manifest is committed code, not permission to write arbitrary
     # filesystem paths or fetch local URLs during a privileged CI trial.
@@ -338,6 +371,17 @@ def main():
         raise
     finally:
         if process is not None:
+            # Read /proc while this exact child is still owned and alive.
+            # Successful parsing is independent observation, not the model's
+            # claimed memory consumption or a cross-process system peak.
+            if process.poll() is None:
+                peak = read_live_linux_model_peak_rss(process.pid)
+                if peak is not None:
+                    evidence['model_server_process_peak_rss_bytes'] = peak
+                    evidence['model_ram_independently_measured'] = True
+                    evidence['model_ram_measurement_scope'] = (
+                        'Linux /proc/PID/status VmHWM of this model-server PID only; '
+                        'not editor+OS total or cgroup peak')
             process.terminate()
             try: process.wait(timeout=10)
             except subprocess.TimeoutExpired: process.kill(); process.wait()

@@ -37,6 +37,8 @@ jobs:
           sudo apt-get install -y ffmpeg
       - name: Compile all checked-in Python source
         run: python -m compileall -q studio_next motion_studio creative_director director_research voice_lab src scripts
+      - name: Prove independent Linux model-process peak RSS evidence fails closed
+        run: python -m unittest studio_next.test_native_model_resource_evidence -v
       - name: Reject ambiguous local model responses before native editing
         run: python -m unittest studio_next.test_provider studio_next.test_native_action_schema -v
       - name: Native editor transport, BODY grants and unchanged native schemas
