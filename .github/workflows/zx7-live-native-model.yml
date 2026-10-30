@@ -16,7 +16,8 @@ on:
       - ".github/workflows/zx7-live-native-model.yml"
       - "engines/velorn/local-model-trial-4b.candidate.json"
   push:
-    branches: [main]
+    # Temporary research branch only. Never merge this push trigger into main.
+    branches: [main, research/isolated-4b-real-model-trial-20261030]
     paths:
       - ".github/workflows/zx7-live-native-model.yml"
       - "scripts/run_native_model_trial.py"
@@ -108,7 +109,9 @@ jobs:
           test "$(stat -c '%u:%a' "$helper")" = "0:4755"
       - name: Run identified CPU model with real native editor and source-bound observations
         env:
-          MODEL_VARIANT: ${{ inputs.model_variant || 'qwen3.5-2b' }}
+          # This isolated branch runs the pinned 4B once on a source push;
+          # regular main pushes retain the 2B baseline and no new schedule.
+          MODEL_VARIANT: ${{ github.ref == 'refs/heads/research/isolated-4b-real-model-trial-20261030' && 'qwen3.5-4b' || inputs.model_variant || 'qwen3.5-2b' }}
         run: |
           # Exact source-pinned model choices only; no arbitrary user-supplied
           # paths, shell code, hosted inference, or unverifiable weights.
@@ -133,7 +136,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: zx7-live-native-model-${{ inputs.model_variant || 'qwen3.5-2b' }}-${{ github.sha }}
+          name: zx7-live-native-model-${{ github.ref == 'refs/heads/research/isolated-4b-real-model-trial-20261030' && 'qwen3.5-4b' || inputs.model_variant || 'qwen3.5-2b' }}-${{ github.sha }}
           path: output/live-native-model/
           if-no-files-found: warn
           retention-days: 14
