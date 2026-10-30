@@ -30,6 +30,10 @@ _VERIFIED_FRAME_TOOLS = frozenset({
 _VERIFIED_AUDIO_TOOLS = frozenset({"zx7_observe_verified_export_audio"})
 _VERIFIED_EXPORT_TOOL = "zx7_verify_native_export"
 _VERIFIED_ENVELOPE_TOOL = "zx7_observe_verified_export_audio_timeline"
+_COMPLETION_EVIDENCE_TYPES = frozenset({
+    "native_write_acknowledged", "physical_export_verified",
+    "verified_export_frame_observed",
+})
 
 
 def _strict_receipt(texts, label):
@@ -304,6 +308,9 @@ def _model_event_window(events):
                 item["input_schema"] = event.get("input_schema")
             else:
                 item["schema_available_by_describe"] = True
+        elif kind == "model_finish_rejected":
+            item["missing_completion_evidence"] = event["missing_completion_evidence"]
+            item["no_native_dispatch"] = True
         elif kind == "model_action_rejected":
             for field in ("validation_keyword", "schema_location", "no_native_dispatch"):
                 if field in event:
@@ -365,7 +372,8 @@ class NativeCreativeControl:
                  host_tool_access: dict[str, str] | None = None,
                  catalog_mode: str = "full",
                  host_preconditions: dict | None = None,
-                 host_possible_effects: dict | None = None):
+                 host_possible_effects: dict | None = None,
+                 required_evidence: tuple[str, ...] = ()):
         if type(max_turns) is not int or not 1 <= max_turns <= 128:
             raise NativeCreativeControlError("Native model session requires finite turn budget")
         if not callable(getattr(model, "decide", None)):
@@ -382,6 +390,14 @@ class NativeCreativeControl:
             raise NativeCreativeControlError("Unknown capability catalog mode")
         if catalog_mode == "indexed" and host_tool_access is None:
             raise NativeCreativeControlError("Indexed capability discovery requires trusted host grants")
+        if (not isinstance(required_evidence, (list, tuple, frozenset)) or
+                any(not isinstance(item, str) or
+                    item not in _COMPLETION_EVIDENCE_TYPES for item in required_evidence) or
+                len(set(required_evidence)) != len(required_evidence) or
+                (required_evidence and host_tool_access is None)):
+            raise NativeCreativeControlError(
+                "Completion evidence must be a unique trusted host requirement")
+        self.required_evidence = frozenset(required_evidence)
         self.catalog_mode = catalog_mode
         self._host_preconditions = copy.deepcopy(host_preconditions or {})
         self._host_possible_effects = copy.deepcopy(host_possible_effects or {})
@@ -415,6 +431,28 @@ class NativeCreativeControl:
         self._native_mcp_wall_ms_total = 0.0
         self._started = False
         self._receipt = None
+
+    def _missing_completion_evidence(self):
+        """Only accepted native results satisfy the owner-host technical gate.
+
+        This is a minimal machine-proof gate, not a filmmaking recipe or an
+        artistic verdict. An uncertain/failed write grants no positive fact.
+        """
+        proven = set()
+        for event in self.events:
+            if event.get("kind") != "native_tool_result":
+                continue
+            if (self.host_tool_access is not None and
+                    self.host_tool_access.get(event.get("tool")) == "write"):
+                proven.add("native_write_acknowledged")
+            verified = event.get("independently_verified_export_sha256")
+            if verified is not None and verified in self._verified_exports:
+                proven.add("physical_export_verified")
+            observed = event.get("observed_export_sha256")
+            if (observed is not None and observed in self._verified_exports and
+                    event.get("image_sha256")):
+                proven.add("verified_export_frame_observed")
+        return sorted(self.required_evidence - proven)
 
     def _append(self, event: dict):
         event = json.loads(_wire({"sequence": len(self.events), **event}))
@@ -567,6 +605,7 @@ class NativeCreativeControl:
                 "model_id_reported": getattr(identity, "model_id", None),
                 "model_adapter": type(self.model).__qualname__,
                 "native_tool_count": len(self.tools),
+                "required_completion_evidence": sorted(self.required_evidence),
                 "neural_autonomy_or_artistic_quality_verified": False,
             })
             outcome = "turn_budget_exhausted"
@@ -654,6 +693,8 @@ class NativeCreativeControl:
                                             if self._capabilities is not None else None),
                     "last_capability_search_result": self._last_search_result,
                     "completion_does_not_certify_artistic_quality": True,
+                    "required_completion_evidence": sorted(self.required_evidence),
+                    "missing_completion_evidence": self._missing_completion_evidence(),
                     "audio_semantically_reviewed": False,
                     # Keep stable context first for local runtime prefix caching;
                     # this never caches decisions or replays native operations.
@@ -722,6 +763,14 @@ class NativeCreativeControl:
                 # A new successful native call replaces this text below.
                 action, args = decision["action"], decision["arguments"]
                 if action == "finish":
+                    missing = self._missing_completion_evidence()
+                    if missing:
+                        # No native operation occurred. Keep the independently
+                        # thinking model in control of its next creative action.
+                        self._append({"kind": "model_finish_rejected", "turn": turn,
+                                      **timing, "missing_completion_evidence": missing,
+                                      "no_native_dispatch": True})
+                        continue
                     self._append({"kind": "model_finished", "turn": turn,
                                   **timing,
                                   # The model's free-form summary can echo a private
