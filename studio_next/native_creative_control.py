@@ -557,6 +557,22 @@ class NativeCreativeControl:
         if self.host_tool_access is not None and set(self.tools) != set(self.host_tool_access):
             raise NativeCreativeControlError(
                 "Trusted host grants must match the exact discovered native tool set")
+        # Reject impossible owner proof requirements before expensive inference.
+        # This is capability feasibility, never a host-selected creative step.
+        if self.required_evidence:
+            grants = self.host_tool_access
+            missing_write = ("native_write_acknowledged" in self.required_evidence and
+                             not any(access == "write" for access in grants.values()))
+            needs_export = bool(self.required_evidence & {
+                "physical_export_verified", "verified_export_frame_observed"})
+            missing_export = (needs_export and
+                              grants.get(_VERIFIED_EXPORT_TOOL) != "read")
+            missing_frame = ("verified_export_frame_observed" in self.required_evidence and
+                             not any(grants.get(name) == "read" for name in
+                                     _VERIFIED_FRAME_TOOLS))
+            if missing_write or missing_export or missing_frame:
+                raise NativeCreativeControlError(
+                    "Host requires completion evidence unsupported by granted native tools")
         if self.catalog_mode == "indexed":
             from .capability_fabric import CapabilityFabric
             self._capabilities = CapabilityFabric(
