@@ -220,6 +220,29 @@ class LiveMachineDiscoveryTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(CapabilityContractError, "Stale"):
             after.describe("video/create_project", revision=before.revision)
 
+    async def test_versioned_mcp_complete_envelope_is_supported_without_false_tools(self):
+        class Latest:
+            async def list_tools(self):
+                return SimpleNamespace(result={
+                    "resultType": "complete",
+                    "tools": [tool("apply_motion", "Animate original motion")],
+                    "requestState": "opaque-cursor-custody-not-a-model-tool"})
+        f = await CapabilityFabric.from_connections({
+            "motion": (Latest(), {"apply_motion": "write"})})
+        self.assertEqual(f.count, 1)
+        self.assertEqual(f.search("animate motion")["matches"][0]["id"],
+                         "motion/apply_motion")
+        self.assertNotIn("requestState", json.dumps(f.overview()))
+
+    async def test_versioned_noncomplete_mcp_tool_result_never_exposes_partial_grants(self):
+        class Partial:
+            async def list_tools(self):
+                return SimpleNamespace(result={"resultType": "incomplete",
+                    "tools": [tool("fake_early")], "requestState": "not-finished"})
+        with self.assertRaisesRegex(CapabilityContractError, "not a completed"):
+            await CapabilityFabric.from_connections({
+                "motion": (Partial(), {"fake_early": "write"})})
+
     async def test_paginated_or_ungranted_sources_never_claim_complete_discovery(self):
         class Paged:
             async def list_tools(self):
