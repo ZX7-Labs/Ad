@@ -184,6 +184,16 @@ async def trial(args, lock, artifacts, command):
     host.update({name: 'read' for name in ('zx7_verify_native_export',
         'zx7_observe_verified_export_frame', 'zx7_observe_verified_export_samples',
         'zx7_observe_verified_export_audio', 'zx7_observe_verified_export_audio_timeline')})
+    content_tools = {'update_text_clip', 'update_shape_clip', 'set_clip_style', 'set_clip_mask',
+        'set_clip_keyframes', 'set_clip_audio', 'set_clip_speed', 'move_clips', 'trim_clips',
+        'delete_clips', 'add_asset_to_timeline', 'add_assets_to_timeline', 'replace_clip_with_asset',
+        'add_text_clip', 'add_shape_clip', 'add_solid_color', 'add_adjustment_clip', 'duplicate_clip',
+        'add_transition', 'update_transition', 'remove_transitions', 'add_glsl_effect',
+        'update_glsl_effect', 'remove_glsl_effect', 'set_master_audio', 'update_track', 'remove_track'}
+    # Trusted native role inventory, never derived from model utterances:
+    # save/export create files but are not artistic content revisions.
+    host_content_revision_tools = tuple(sorted(
+        name for name in content_tools if host.get(name) == "write"))
     completion_evidence = (
         "native_write_acknowledged",
         "physical_export_verified",
@@ -211,18 +221,15 @@ async def trial(args, lock, artifacts, command):
                     # Technical owner acceptance facts, NOT an editing plan.
                     # Failed model claims cannot end the trial before actual
                     # native activity, source-verified export and visual sensing.
-                    required_evidence=completion_evidence).run(brief), timeout=2400)
+                    required_evidence=completion_evidence,
+                    host_content_revision_tools=host_content_revision_tools).run(brief),
+                    timeout=2400)
     audit = audit_native_journal(
         read_native_journal(artifacts / 'native-journal.jsonl'),
-        host_tool_access=host, expected_required_evidence=completion_evidence)
+        host_tool_access=host, expected_required_evidence=completion_evidence,
+        host_content_revision_tools=host_content_revision_tools)
     (artifacts / 'journal-audit.json').write_text(json.dumps(audit, indent=2))
     actual_images = len(list((artifacts / 'observations').glob('*.png')))
-    content_tools = {'update_text_clip', 'update_shape_clip', 'set_clip_style', 'set_clip_mask',
-        'set_clip_keyframes', 'set_clip_audio', 'set_clip_speed', 'move_clips', 'trim_clips',
-        'delete_clips', 'add_asset_to_timeline', 'add_assets_to_timeline', 'replace_clip_with_asset',
-        'add_text_clip', 'add_shape_clip', 'add_solid_color', 'add_adjustment_clip', 'duplicate_clip',
-        'add_transition', 'update_transition', 'remove_transitions', 'add_glsl_effect',
-        'update_glsl_effect', 'remove_glsl_effect', 'set_master_audio', 'update_track', 'remove_track'}
     movies = {}
     for path in outputs.glob('*.mp4'):
         movies.setdefault(sha(path), set()).add(path.resolve())
