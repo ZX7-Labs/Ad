@@ -106,6 +106,31 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
                                              host_tool_access=grants)["journal_chain_structurally_valid"])
         self.assertFalse(result["native_editing_capability_complete"])
 
+    async def test_impossible_host_evidence_contract_fails_before_neural_inference(self):
+        session = FakeSession()
+        grants = {tool.name: "read" for tool in session.tools}
+        model = ScriptedModel([decision("finish", summary="Wrongly finished")])
+        with self.assertRaisesRegex(NativeCreativeControlError,
+                                    "unsupported by granted native tools"):
+            await NativeCreativeControl(
+                session, model, host_tool_access=grants,
+                required_evidence=("native_write_acknowledged",)).run("Original film")
+        self.assertEqual(model.observed, [])
+        self.assertEqual(session.calls, [])
+
+        no_verifier = FakeSession()
+        no_verifier.tools = [tool for tool in no_verifier.tools
+                             if tool.name != "zx7_verify_native_export"]
+        access = {tool.name: ("write" if tool.name == "update_text_clip" else "read")
+                  for tool in no_verifier.tools}
+        with self.assertRaisesRegex(NativeCreativeControlError,
+                                    "unsupported by granted native tools"):
+            await NativeCreativeControl(
+                no_verifier, model, host_tool_access=access,
+                required_evidence=("verified_export_frame_observed",)).run("Original film")
+        self.assertEqual(no_verifier.calls, [])
+        self.assertEqual(model.observed, [])
+
     async def test_unmet_required_evidence_cannot_be_faked_by_finish_or_bad_host_contract(self):
         session = FakeSession()
         grants = {tool.name: "read" for tool in session.tools}
