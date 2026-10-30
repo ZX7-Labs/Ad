@@ -773,8 +773,15 @@ class NativeCreativeControl:
                         [] if self.catalog_mode == "indexed" else list(self.tools)),
                     "compact_tool_catalog": self.catalog_mode == "indexed",
                     "selectable_native_tools": list(self._selectable_tools),
-                    "capability_overview": (self._capabilities.overview()
-                                            if self._capabilities is not None else None),
+                    # After an acknowledged one-shot machine operation,
+                    # reveal a compact term vocabulary grounded only in other
+                    # real granted native tool names. The tiny brain chooses
+                    # the actual next query and every creative decision.
+                    "capability_overview": (
+                        self._capabilities.overview(include_search_facets=any(
+                            self._host_write_already_acknowledged(name)
+                            for name in self._host_once_after_ack))
+                        if self._capabilities is not None else None),
                     "last_capability_search_result": self._last_search_result,
                     "completion_does_not_certify_artistic_quality": True,
                     "required_completion_evidence": sorted(self.required_evidence),
