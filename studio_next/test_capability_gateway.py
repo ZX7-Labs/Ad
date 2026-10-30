@@ -246,5 +246,26 @@ class GatewayTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(g.evidence(), [])
 
 
+    async def test_gateway_revalidates_target_discovered_on_second_mcp_page(self):
+        class Paged(Engine):
+            async def list_tools(self, *, cursor=None):
+                if cursor is None:
+                    return SimpleNamespace(tools=[tool("first")], nextCursor="cursor42")
+                self.calls.append(("paging_read", {}))
+                return SimpleNamespace(tools=[tool("real_project_edit")],
+                                       nextCursor=None)
+        engine = Paged([])
+        gateway = CapabilityGateway({"video": (engine, {
+            "first": "read", "real_project_edit": "write"})})
+        rev = (await gateway.refresh())["revision"]
+        self.assertEqual(gateway.search("project edit")["matches"][0]["id"],
+                         "video/real_project_edit")
+        engine.calls.clear()
+        result = await gateway.invoke("video/real_project_edit", revision=rev, inputs={})
+        self.assertEqual(result["state"], "host_reported_success_unverified")
+        self.assertEqual(engine.calls, [
+            ("paging_read", {}), ("real_project_edit", {})])
+
+
 if __name__ == "__main__":
     unittest.main()
