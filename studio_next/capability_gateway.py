@@ -99,17 +99,28 @@ class CapabilityGateway:
         record = prior.resolve(operation_id, revision=revision)
         namespace, name = record["source"], record["native_name"]
         async with self._locks[namespace]:
-            # Do not let a stale model action survive an install/grant/schema
-            # change. Refresh all sources so the cross-engine catalog revision
-            # always describes the actual installed state being used.
-            await self.refresh()
-            current = self._current()
-            if revision != current.revision:
-                raise CapabilityExecutionError("Capability changed since model discovery")
-            record = current.resolve(operation_id, revision=revision)
-            session, grants, _, fact_reader = self._bindings[namespace]
+            # Revalidate ONLY the selected engine, not every connected
+            # creative app on each frame/operation. Cross-domain scaling
+            # must not make single-engine edits O(all connected tools).
+            session, grants, conditions, fact_reader = self._bindings[namespace]
+            response = await session.list_tools()
+            cursor = getattr(response, "nextCursor",
+                             getattr(response, "next_cursor", None))
+            if isinstance(response, dict):
+                cursor = response.get("nextCursor", response.get("next_cursor"))
+            if cursor not in (None, ""):
+                raise CapabilityExecutionError("Incomplete current host tool inventory")
+            advertised = (response.get("tools") if isinstance(response, dict)
+                          else getattr(response, "tools", None))
+            fresh = CapabilityFabric({namespace: (advertised, grants, conditions)})
+            live_record = fresh.resolve(operation_id, revision=fresh.revision)
+            for field in ("access", "input_schema", "description", "requires"):
+                if record[field] != live_record[field]:
+                    raise CapabilityExecutionError(
+                        "Native operation contract changed; rediscover capability")
             if name not in grants or grants[name] != record["access"]:
                 raise CapabilityExecutionError("Native grant changed before operation")
+            current = prior
             schema = copy.deepcopy(record["input_schema"])
             _local_schema_references(schema)
             import jsonschema
