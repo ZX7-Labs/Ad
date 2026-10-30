@@ -386,5 +386,56 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(audit["video_editing_capability_complete"])
 
 
+    async def test_native_error_text_is_bounded_without_replaying_uncertain_write(self):
+        oversize = [
+            [SimpleNamespace(type="text", text="PRIVATE-ERROR-SECRET-" * 7000)],
+            [SimpleNamespace(type="text", text="x" * 35000),
+             SimpleNamespace(type="text", text="y" * 35000)],
+            [SimpleNamespace(type="text", text="short") for _ in range(65)],
+        ]
+        for blocks in oversize:
+            with self.subTest(parts=len(blocks)), tempfile.TemporaryDirectory() as root:
+                session = FakeSession()
+                session.custom_response = SimpleNamespace(is_error=True, content=blocks)
+                model = ScriptedModel([
+                    decision("invoke", tool="update_text_clip", inputs={"clipId": "possibly-mutated"}),
+                    decision("invoke", tool="update_text_clip", inputs={"clipId": "must-never-replay"}),
+                ])
+                path = Path(root) / "redacted-error.jsonl"
+                outcome = await NativeCreativeControl(session, model, max_turns=2,
+                                                       receipt_path=path).run("A private native project")
+                self.assertEqual(outcome["status"], "native_error_requires_state_reconciliation")
+                self.assertEqual(len(session.calls), 1)
+                terminal = outcome["events"][-1]
+                self.assertEqual(terminal["kind"], "native_tool_reported_error")
+                self.assertIsNone(terminal["error_sha256"])
+                self.assertTrue(terminal["error_text_exceeded_evidence_budget"])
+                self.assertTrue(terminal["must_reconcile_native_state"])
+                self.assertNotIn("PRIVATE-ERROR-SECRET-", path.read_text())
+                from studio_next.native_creative_audit import audit_native_journal
+                verified = audit_native_journal(outcome["events"],
+                                                host_tool_access={"update_text_clip": "write"})
+                self.assertEqual(verified["model_reported_end_state"], "native_tool_reported_error")
+                self.assertFalse(verified["video_editing_capability_complete"])
+
+    async def test_small_native_errors_keep_complete_hash_without_raw_error(self):
+        session = FakeSession()
+        error = ["secret-a", "secret-b"]
+        session.custom_response = SimpleNamespace(is_error=True, content=[
+            SimpleNamespace(type="text", text=value) for value in error])
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root) / "errors.jsonl"
+            controller = NativeCreativeControl(session, ScriptedModel([
+                decision("invoke", tool="get_timeline", inputs={})]), receipt_path=path)
+            result = await controller.run("Bounded error proof")
+            receipt = result["events"][-1]
+            self.assertFalse(receipt["error_text_exceeded_evidence_budget"])
+            self.assertEqual(receipt["error_sha256"], hashlib.sha256(
+                json.dumps(error, sort_keys=True, ensure_ascii=False,
+                           separators=(",", ":")).encode()).hexdigest())
+            self.assertNotIn("secret-a", path.read_text())
+            self.assertNotIn("secret-b", path.read_text())
+
+
 if __name__ == "__main__":
     unittest.main()
