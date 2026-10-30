@@ -101,7 +101,8 @@ class RecordedModel:
         started = time.monotonic()
         self.model.settings.sampling['response_format'] = {'type': 'json_schema', 'json_schema': {
             'name': 'native_editor_action', 'strict': True,
-            'schema': native_action_schema(context['actual_granted_native_tools'])}}
+            'schema': native_action_schema(context['actual_granted_native_tools'],
+                 compact_catalog=context.get('compact_tool_catalog', False))}}
         record = {'turn': self.turn, 'context': context, 'image_sha256': []}
         for index, (_, raw) in enumerate(images):
             path = self.artifacts / 'observations' / f'{self.turn}-{index}.png'
@@ -187,7 +188,7 @@ async def trial(args, lock, artifacts, command):
                 await session.initialize()
                 outcome = await asyncio.wait_for(NativeCreativeControl(session, model, max_turns=48,
                     receipt_path=artifacts / 'native-journal.jsonl',
-                    host_tool_access=host).run(brief), timeout=2400)
+                    host_tool_access=host, catalog_mode="indexed").run(brief), timeout=2400)
     audit = audit_native_journal(read_native_journal(artifacts / 'native-journal.jsonl'), host_tool_access=host)
     (artifacts / 'journal-audit.json').write_text(json.dumps(audit, indent=2))
     actual_images = len(list((artifacts / 'observations').glob('*.png')))
