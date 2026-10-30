@@ -124,6 +124,16 @@ class CapabilityFabricTests(unittest.TestCase):
         self.assertEqual(broad["matches"], [])
         self.assertGreaterEqual(len(broad["candidate_examples"]), 2)
 
+    def test_opaque_exact_host_ids_do_not_require_lexical_tokens(self):
+        fabric = CapabilityFabric({"native": (
+            [tool("__", "Explicitly granted opaque native action")],
+            {"__": "read"})})
+        self.assertEqual([x["id"] for x in fabric.search("__")["matches"]],
+                         ["native/__"])
+        self.assertEqual(fabric.search("native/__", limit=1)["candidates_examined"], 1)
+        with self.assertRaisesRegex(CapabilityContractError, "searchable terms"):
+            fabric.search("??")
+
     def test_exact_name_collision_requires_namespace_or_multiple_visible_choices(self):
         f = CapabilityFabric({
             "video": ([tool("render", "Native video export")], {"render": "write"}),
