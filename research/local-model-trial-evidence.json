@@ -163,6 +163,43 @@
       "native_video_field_complete": false,
       "failure": "Two model input-shape errors were correctly stopped before editor RPC. A subsequent read-only inspect_export_file on a nonexistent export was dispatched, failed, and unnecessarily terminated the session because the controller had not received trusted host read/write grants.",
       "proposed_change": "Pass trusted host grant map to controller and independent audit so *reported read-only errors* may be followed by model-chosen correction; write or unknown errors still stop."
+    },
+    {
+      "body_commit": "a8a1813267a25bf49d2c275e1a4cb7b16fbcc1ca",
+      "workflow_run": 41024794156,
+      "artifact_id": 12963196933,
+      "artifact_zip_sha256": "8f52d8fcb4c14fc23b0bd669a7412546ac852ef53eddd27be4d1c05311143a79",
+      "model": "unsloth/Qwen3.5-2B-GGUF",
+      "revision": "f6d5376be1edb4d416d56da11e5397a961aca8ae",
+      "quantization": "Q4_K_M",
+      "cpu_only": true,
+      "ordinary_nonroot_chromium_sandbox": true,
+      "actual_inference_turns": 1,
+      "measured_inference_wall_seconds_sum": 54.638,
+      "model_selected_actions": {
+        "invoke": 1
+      },
+      "model_selected_tool": "import_asset_from_path",
+      "host_project_presence_bootstrap": "absent",
+      "host_project_bootstrap_read_success": true,
+      "actual_native_editor_calls": 2,
+      "actual_native_editor_calls_detail": "One host-initiated read-only get_project plus one model-selected import_asset_from_path",
+      "model_attempted_import_before_open_project": true,
+      "model_selected_import_args": [
+        "path",
+        "filePath"
+      ],
+      "successful_native_editor_writes": 0,
+      "verified_exports": 0,
+      "physically_observed_frames": 0,
+      "technical_trial_completed": false,
+      "model_status": "native_error_requires_state_reconciliation",
+      "terminal_event": "native_tool_reported_error",
+      "no_automatic_write_replay": true,
+      "artistic_quality_approved": false,
+      "native_video_field_complete": false,
+      "failure": "The host produced a true absent-project snapshot before neural inference. The pinned 2B model nevertheless attempted import_asset_from_path without an existing open project. The real native editor failed closed; no project, edit or export was produced.",
+      "decision_implication": "Project sensing is working. Tool argument safety is working. Neural multi-step precondition comprehension remains insufficient; evaluate the replaceable brain rather than merely adding ad hoc controller patches."
     }
   ]
 }
