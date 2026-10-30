@@ -108,11 +108,30 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(session.calls, [("custom_native_glow", {"intensity": 0.42})])
         self.assertEqual(model.observed[0]["actual_granted_native_tools"], [])
         self.assertEqual(model.observed[0]["available_actions"],
-                         ["search", "describe", "invoke", "finish"])
+                         ["search", "finish"])
         self.assertEqual(model.observed[0]["capability_overview"]["operation_count"],
                          len(session.tools))
         self.assertEqual(model.observed[1]["last_capability_search_result"]["matches"][0]
                          ["tool"], "custom_native_glow")
+        self.assertEqual(model.observed[1]["available_actions"],
+                         ["search", "describe", "invoke", "finish"])
+        self.assertFalse(outcome["native_editing_capability_complete"])
+
+    async def test_indexed_search_with_no_matches_advertises_no_unselectable_native_action(self):
+        session = FakeSession()
+        grants = {tool.name: "read" for tool in session.tools}
+        model = ScriptedModel([
+            decision("search", query="this_capability_has_no_matching_identity_9999"),
+            decision("finish", summary="Search returned no applicable editing operation"),
+        ])
+        outcome = await NativeCreativeControl(
+            session, model, host_tool_access=grants, catalog_mode="indexed",
+            max_turns=2).run("Look for a specific original native video edit capability")
+        self.assertEqual(model.observed[0]["available_actions"], ["search", "finish"])
+        self.assertEqual(model.observed[1]["available_actions"], ["search", "finish"])
+        self.assertEqual(model.observed[1]["selectable_native_tools"], [])
+        self.assertEqual(session.calls, [])
+        self.assertEqual(outcome["status"], "model_finished_unverified")
         self.assertFalse(outcome["native_editing_capability_complete"])
 
     async def test_compact_model_does_not_waste_turns_on_unavailable_discover(self):
@@ -126,7 +145,7 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
                 max_turns=1).run("A native film with searchable editor tools")
         self.assertEqual(session.calls, [])
         self.assertEqual(model.observed[0]["available_actions"],
-                         ["search", "describe", "invoke", "finish"])
+                         ["search", "finish"])
 
     async def test_native_model_rejects_incomplete_paged_tool_list_before_inference(self):
         class PartialEditor(FakeSession):
