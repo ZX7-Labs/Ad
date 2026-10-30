@@ -75,6 +75,48 @@
         "estimated_serialized_context_bytes_reduction_percent": 59.2,
         "note": "Same 22 historical context payloads, replacing ONLY latest_events with bounded projection; not actual new model inference, not verified model token savings, latency improvement, quality or autonomous video success."
       }
+    },
+    {
+      "body_commit": "9fdc94598521f55bdab3967f4e384dc4852fd867",
+      "workflow_run": 41021762725,
+      "artifact_id": 12961698813,
+      "artifact_zip_sha256": "2f02172bf95c363942d1002e46cf291a413f833bd0b1dcaee8d67eff954f6b40",
+      "model": "unsloth/Qwen3.5-2B-GGUF",
+      "revision": "f6d5376be1edb4d416d56da11e5397a961aca8ae",
+      "quantization": "Q4_K_M",
+      "cpu_only": true,
+      "ordinary_nonroot_chromium_sandbox": true,
+      "actual_inference_turns": 1,
+      "first_inference_wall_seconds": 169.865,
+      "local_server_reported_prompt_tokens": 4989,
+      "local_server_reported_completion_tokens": 422,
+      "token_usage_independently_verified": false,
+      "model_selected_first_action": "invoke",
+      "model_selected_tool": "open_project",
+      "model_selected_undeclared_native_arguments": [
+        "project_name",
+        "folder",
+        "assets"
+      ],
+      "native_upstream_schema_declared_top_level": [
+        "projectPath",
+        "projectName",
+        "previewOnly"
+      ],
+      "native_upstream_schema_missing_top_level_additionalProperties_clause": true,
+      "native_model_preflight_accepted_undeclared_keys": true,
+      "editor_writes": 0,
+      "verified_exports": 0,
+      "physically_observed_frames": 0,
+      "technical_trial_completed": false,
+      "model_status": "native_error_requires_state_reconciliation",
+      "terminal_event": "native_tool_reported_error",
+      "terminal_requires_native_state_reconciliation": true,
+      "no_automatic_write_replay": true,
+      "artistic_quality_approved": false,
+      "native_video_field_complete": false,
+      "failure": "Tool schemas permitted unspecified extra top-level fields, so the model's hallucinated open_project keys passed preflight and the real native host rejected the call; no project/edit/export was produced.",
+      "next_proposed_fix": "Model-only top-level declared-parameter admission plus host-derived bounded parameter-name hints; no changes to the native host schema or creative input values."
     }
   ]
 }
