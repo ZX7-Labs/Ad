@@ -219,6 +219,53 @@ class LiveMachineDiscoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(state.count, 2)
         self.assertEqual(state.search("future VFX")["matches"][0]["id"], "video/future_fx")
 
+    async def test_versioned_mcp_json_rpc_pages_are_complete_before_discovery(self):
+        """A newer MCP wrapper and an opaque cursor must coexist."""
+        seen = []
+        class Versioned:
+            async def list_tools(self, *, cursor=None):
+                seen.append(cursor)
+                if cursor is None:
+                    return {"jsonrpc": "2.0", "id": 1, "result": {
+                        "resultType": "complete",
+                        "tools": [tool("first", "Initial video tool")],
+                        "nextCursor": "opaque-v2"}}
+                if cursor == "opaque-v2":
+                    return {"jsonrpc": "2.0", "id": 2, "result": {
+                        "resultType": "complete",
+                        "tools": [tool("future_glow", "Specialized native glow VFX")]}}
+                raise AssertionError("MCP cursor was fabricated")
+        fabric = await CapabilityFabric.from_connections({
+            "vfx": (Versioned(), {
+                "first": "read", "future_glow": "write"})})
+        self.assertEqual(seen, [None, "opaque-v2"])
+        self.assertEqual(fabric.count, 2)
+        self.assertEqual(
+            fabric.search("specialized glow")["matches"][0]["id"],
+            "vfx/future_glow")
+
+    async def test_versioned_partial_errors_and_malformed_results_never_admit_tools(self):
+        class Response:
+            def __init__(self, payload):
+                self.payload = payload
+            async def list_tools(self):
+                return self.payload
+        unsafe = [
+            {"result": {"resultType": "input_required",
+                        "tools": [tool("write")]}},
+            {"result": {"resultType": "progress",
+                        "tools": [tool("write")]}},
+            {"error": {"code": -32603, "message": "not ready"},
+             "result": {"resultType": "complete", "tools": [tool("write")]}},
+            {"result": {"resultType": "complete", "tools": "not a list"}},
+            {"result": None, "tools": [tool("write")]},
+        ]
+        for payload in unsafe:
+            with self.subTest(payload=str(payload)[:90]):
+                with self.assertRaises(CapabilityContractError):
+                    await CapabilityFabric.from_connections({
+                        "vfx": (Response(payload), {"write": "write"})})
+
     async def test_cursorless_adapter_and_repeated_cursor_fail_closed(self):
         class NonPaging:
             async def list_tools(self):
