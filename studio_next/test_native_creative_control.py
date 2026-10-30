@@ -1161,5 +1161,48 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
                          [e["kind"] for e in result["events"]])
 
 
+    async def test_wrong_order_import_is_rejected_without_stateful_editor_rpc(self):
+        from studio_next.native_creative_audit import audit_native_journal
+        session = FakeSession()
+        session.tools += [
+            SimpleNamespace(name="get_project", description="Read native project",
+                            input_schema={"type": "object"}),
+            SimpleNamespace(name="create_project", description="Create native project",
+                            input_schema={"type": "object", "properties": {
+                                "name": {"type": "string"}}}),
+            SimpleNamespace(name="import_asset_from_path",
+                            description="Import asset to an open project",
+                            input_schema={"type": "object", "properties": {
+                                "path": {"type": "string"}}}),
+        ]
+        session.custom_response = SimpleNamespace(is_error=False, content=[
+            SimpleNamespace(type="text", text=json.dumps({
+                "project": None, "mcp": {"hasProject": False}}))])
+        grants = {x.name: ("read" if x.name in ("get_project", "get_timeline")
+                          else "write") for x in session.tools}
+        model = ScriptedModel([
+            decision("search", query="import asset"),
+            decision("invoke", tool="import_asset_from_path",
+                     inputs={"path": "/authorized/source.mp4"}),
+            decision("finish", summary="No mutation without an actual project"),
+        ])
+        result = await NativeCreativeControl(session, model,
+            catalog_mode="indexed", host_tool_access=grants, max_turns=3,
+            host_preconditions={"import_asset_from_path": ["project_open"]},
+            host_possible_effects={"create_project": ["project_open"]}).run(
+                "Create an independently authored video")
+        self.assertEqual(session.calls, [("get_project", {})])
+        invalid = [e for e in result["events"] if e["kind"] == "model_action_rejected"]
+        self.assertEqual(len(invalid), 1)
+        self.assertEqual(invalid[0]["validation_keyword"], "host_precondition")
+        self.assertEqual(invalid[0]["schema_location"], "project_open")
+        self.assertTrue(invalid[0]["no_native_dispatch"])
+        self.assertEqual(model.observed[-1]["last_rejected_native_action_feedback"]
+                         ["missing_machine_facts"], ["project_open"])
+        self.assertTrue(audit_native_journal(
+            result["events"], host_tool_access=grants)["journal_chain_structurally_valid"])
+        self.assertFalse(result["native_editing_capability_complete"])
+
+
 if __name__ == "__main__":
     unittest.main()
