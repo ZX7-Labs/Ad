@@ -785,6 +785,156 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(outcome["artistic_quality_independently_approved"])
 
 
+    async def test_host_preview_plan_never_mints_a_native_write_proof(self):
+        from studio_next.native_creative_audit import audit_native_journal, NativeJournalError
+        session = FakeSession()
+        session.tools.append(SimpleNamespace(
+            name="create_project", description="Create or preview a project",
+            input_schema={"type": "object", "properties": {
+                "name": {"type": "string"}, "previewOnly": {"type": "boolean"}}}))
+        grants = {t.name: ("write" if t.name == "create_project" else "read")
+                  for t in session.tools}
+        async def native_call(name, inputs):
+            session.calls.append((name, inputs))
+            if name == "create_project" and inputs.get("previewOnly", True):
+                receipt = {"success": False, "action": "create_project",
+                           "result": {"previewOnly": True,
+                                      "plan": {"name": inputs["name"]}},
+                           "suggestedApplyCall": {"tool": "create_project",
+                                                  "arguments": {"name": inputs["name"],
+                                                                "previewOnly": False}}}
+            else:
+                receipt = {"success": True, "action": name, "result": {"created": True}}
+            return SimpleNamespace(is_error=False, content=[
+                SimpleNamespace(type="text", text=json.dumps(receipt))])
+        session.call_tool = native_call
+        model = ScriptedModel([
+            decision("invoke", tool="create_project", inputs={"name": "Owned short"}),
+            decision("finish", summary="A preview is NOT an actual project"),
+            decision("invoke", tool="create_project",
+                     inputs={"name": "Owned short", "previewOnly": False}),
+            decision("finish", summary="Native project applied; no movie delivered"),
+        ])
+        result = await NativeCreativeControl(
+            session, model, max_turns=4, host_tool_access=grants,
+            required_evidence=("native_write_acknowledged",)).run("Create original editable work")
+        kinds = [e["kind"] for e in result["events"]]
+        self.assertEqual(kinds.count("native_tool_preview"), 1)
+        self.assertEqual(kinds.count("native_tool_result"), 1)
+        self.assertEqual(kinds.count("model_finish_rejected"), 1)
+        self.assertEqual(result["status"], "model_finished_unverified")
+        self.assertEqual(model.observed[1]["missing_completion_evidence"],
+                         ["native_write_acknowledged"])
+        self.assertEqual(model.observed[3]["missing_completion_evidence"], [])
+        self.assertEqual([c[0] for c in session.calls], ["create_project", "create_project"])
+        self.assertTrue(audit_native_journal(
+            result["events"], host_tool_access=grants)["journal_chain_structurally_valid"])
+        forged = [dict(e) for e in result["events"]]
+        event = next(e for e in forged if e["kind"] == "native_tool_preview")
+        event["host_reported_preview_only"] = False
+        with self.assertRaisesRegex(NativeJournalError, "forged"):
+            audit_native_journal(forged, host_tool_access=grants)
+
+    async def test_actual_project_open_write_is_followed_by_independent_read_once(self):
+        from studio_next.native_creative_audit import audit_native_journal
+        session = FakeSession()
+        session.tools += [
+            SimpleNamespace(name="get_project", description="Host project identity",
+                            input_schema={"type": "object", "properties": {},
+                                          "additionalProperties": False}),
+            SimpleNamespace(name="create_project", description="Create editable native project",
+                            input_schema={"type": "object", "properties": {
+                                "name": {"type": "string"},
+                                "previewOnly": {"type": "boolean"}}}),
+        ]
+        read_count = 0
+        async def native_call(name, arguments):
+            nonlocal read_count
+            session.calls.append((name, arguments))
+            if name == "get_project":
+                read_count += 1
+                payload = ({"project": None, "mcp": {"hasProject": False}}
+                           if read_count == 1 else
+                           {"project": {"id": "real-native-project"}, "mcp": {"hasProject": True}})
+                return SimpleNamespace(is_error=False, content=[
+                    SimpleNamespace(type="text", text=json.dumps(payload))])
+            return SimpleNamespace(is_error=False, content=[
+                SimpleNamespace(type="text", text=json.dumps({"success": True}))])
+        session.call_tool = native_call
+        grants = {t.name: ("write" if t.name == "create_project" else "read")
+                  for t in session.tools}
+        model = ScriptedModel([
+            decision("invoke", tool="create_project",
+                     inputs={"name": "Independent owned work", "previewOnly": False}),
+            decision("finish", summary="Project state is host-verified, not an artistic pass"),
+        ])
+        result = await NativeCreativeControl(
+            session, model, max_turns=2, catalog_mode="indexed",
+            host_tool_access=grants,
+            host_possible_effects={"create_project": ["project_open"]}).run(
+                "Create a genuine editable native movie project")
+        self.assertEqual([name for name, _ in session.calls],
+                         ["get_project", "create_project", "get_project"])
+        self.assertEqual([c["native_project_presence_from_last_inspection"]
+                          for c in model.observed], ["absent", "present"])
+        self.assertIn("real-native-project",
+                      model.observed[1]["last_native_result_texts"][0])
+        reviews = [e for e in result["events"]
+                   if e["kind"] == "host_project_post_write_observation"]
+        self.assertEqual(len(reviews), 1)
+        self.assertEqual(reviews[0]["project_presence"], "present")
+        self.assertTrue(audit_native_journal(
+            result["events"], host_tool_access=grants)["journal_chain_structurally_valid"])
+        forged = [dict(x) for x in result["events"]]
+        forged[reviews[0]["sequence"]]["triggered_by_native_tool"] = "get_project"
+        from studio_next.native_creative_audit import NativeJournalError
+        with self.assertRaisesRegex(NativeJournalError, "read-after-write"):
+            audit_native_journal(forged, host_tool_access=grants)
+        self.assertFalse(result["native_editing_capability_complete"])
+
+    async def test_post_write_project_read_error_does_not_fabricate_presence_or_retry_write(self):
+        from studio_next.native_creative_audit import audit_native_journal
+        session = FakeSession()
+        session.tools += [
+            SimpleNamespace(name="get_project", description="Project status",
+                            input_schema={"type": "object", "properties": {}}),
+            SimpleNamespace(name="create_project", description="Create project",
+                            input_schema={"type": "object", "properties": {
+                                "name": {"type": "string"}}}),
+        ]
+        n = 0
+        async def native_call(name, args):
+            nonlocal n
+            session.calls.append((name, args))
+            if name == "get_project":
+                n += 1
+                if n == 1:
+                    return SimpleNamespace(is_error=False, content=[
+                        SimpleNamespace(type="text", text=json.dumps({
+                            "project": None, "mcp": {"hasProject": False}}))])
+                return SimpleNamespace(is_error=True, content=[
+                    SimpleNamespace(type="text", text="Native read failed")])
+            return SimpleNamespace(is_error=False, content=[
+                SimpleNamespace(type="text", text='{"success":true}')])
+        session.call_tool = native_call
+        grants = {t.name: ("write" if t.name == "create_project" else "read")
+                  for t in session.tools}
+        model = ScriptedModel([
+            decision("invoke", tool="create_project", inputs={"name": "Owned work"}),
+            decision("finish", summary="Read error does not imply an open project"),
+        ])
+        result = await NativeCreativeControl(
+            session, model, catalog_mode="indexed", host_tool_access=grants,
+            host_possible_effects={"create_project": ["project_open"]},
+            max_turns=2).run("Create editable work with verified presence")
+        self.assertEqual(sum(name == "create_project" for name, _ in session.calls), 1)
+        self.assertEqual(model.observed[1]["native_project_presence_from_last_inspection"],
+                         "unknown")
+        self.assertIn("host_project_post_write_error",
+                      [e["kind"] for e in result["events"]])
+        self.assertTrue(audit_native_journal(
+            result["events"], host_tool_access=grants)["journal_chain_structurally_valid"])
+
     async def test_native_project_presence_is_observed_not_inferred_from_model_words(self):
         session = FakeSession()
         session.tools.append(SimpleNamespace(name="get_project", description="Real native project",

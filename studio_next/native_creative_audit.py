@@ -214,6 +214,37 @@ def audit_native_journal(events, *, host_tool_access, expected_required_evidence
                 if not (reported or exception):
                     raise NativeJournalError("Malformed failed project bootstrap evidence")
             continue
+        if kind in ("host_project_post_write_observation",
+                    "host_project_post_write_error"):
+            previous = events[i - 1] if i > 0 else {}
+            if (pending is not None or
+                    previous.get("kind") != "native_tool_result" or
+                    event.get("triggered_by_native_tool") != previous.get("tool") or
+                    host_tool_access.get(previous.get("tool")) != "write" or
+                    host_tool_access.get("get_project") != "read" or
+                    event.get("tool") != "get_project" or
+                    event.get("host_attested_read_only") is not True or
+                    event.get("no_model_selected_mutation") is not True):
+                raise NativeJournalError(
+                    "Post-write project observation lacks a trusted read-after-write")
+            if kind == "host_project_post_write_observation":
+                hashes = event.get("text_sha256")
+                if (not isinstance(hashes, list) or len(hashes) != 1 or
+                        any(not _sha(x) for x in hashes) or
+                        event.get("project_presence") not in ("unknown", "absent", "present")):
+                    raise NativeJournalError("Post-write project state proof malformed")
+            else:
+                digest = event.get("error_sha256")
+                oversized = event.get("error_text_exceeded_evidence_budget")
+                etype = event.get("error_type")
+                reported = (type(oversized) is bool and
+                            ((digest is None) == oversized) and
+                            (digest is None or _sha(digest)) and etype is None)
+                exception = (isinstance(etype, str) and bool(etype) and
+                             digest is None and oversized is None)
+                if not (reported or exception):
+                    raise NativeJournalError("Untrusted failed post-write project read")
+            continue
         if kind == "model_decision_failed":
             duration = event.get("measured_model_wall_ms")
             if (pending is not None or i != len(events) - 1 or
@@ -299,13 +330,27 @@ def audit_native_journal(events, *, host_tool_access, expected_required_evidence
                 raise NativeJournalError("Native operation lacks model intent or host grant")
             pending = (event.get("turn"), tool, host_tool_access[tool])
             continue
-        if kind in ("native_tool_result", "native_tool_reported_error",
-                    "native_tool_uncertain_outcome", "native_observation_rejected",
-                    "native_read_tool_reported_error"):
+        if kind in ("native_tool_result", "native_tool_preview",
+                    "native_tool_reported_error", "native_tool_uncertain_outcome",
+                    "native_observation_rejected", "native_read_tool_reported_error"):
             if pending is None or (event.get("turn"), event.get("tool")) != pending[:2]:
                 raise NativeJournalError("Native outcome does not match a submitted call")
             turn, tool, access = pending
             pending = None
+            if kind == "native_tool_preview":
+                # The native application acknowledged *a proposed plan*, not
+                # an applied edit. It has no authority to advance write proof.
+                # Its exact bounded text remains hash-attested; physical
+                # mutation proof requires a distinct later native result.
+                hashes = event.get("text_sha256")
+                if (access != "write" or
+                        event.get("host_reported_preview_only") is not True or
+                        event.get("no_accepted_write_evidence") is not True or
+                        event.get("human_or_artistic_quality_approved") is not False or
+                        not isinstance(hashes, list) or len(hashes) != 1 or
+                        not all(_sha(x) for x in hashes)):
+                    raise NativeJournalError("Native preview was forged as an applied write")
+                continue
             if kind == "native_read_tool_reported_error":
                 # This branch is only valid for a host-attested READ. Failed
                 # reads are not positive native evidence and grant no ability
