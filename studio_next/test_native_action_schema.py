@@ -1,5 +1,6 @@
 """Constrain the control protocol, never select the model's creative actions."""
 import importlib.util
+import json
 import unittest
 from studio_next.native_action_schema import native_action_schema
 
