@@ -529,5 +529,35 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result["native_editing_capability_complete"])
 
 
+    async def test_actual_native_observation_survives_metadata_and_invalid_proposals(self):
+        session = FakeSession()
+        model = ScriptedModel([
+            decision("invoke", tool="get_timeline", inputs={"includeClips": True}),
+            decision("discover"),
+            decision("describe", tool="update_text_clip"),
+            decision("invoke", tool="update_text_clip", inputs={"clipId": 404}),
+            decision("invoke", tool="update_text_clip", inputs={"clipId": "editable-model-choice"}),
+            decision("finish", summary="Native observation continuity checked"),
+        ])
+        outcome = await NativeCreativeControl(session, model, max_turns=6).run(
+            "Inspect state and independently choose an edit")
+        self.assertEqual(outcome["status"], "model_finished_unverified")
+        self.assertEqual([name for name, _ in session.calls], [
+            "get_timeline", "update_text_clip"])
+        native_observed = model.observed[1]["last_native_result_texts"]
+        self.assertTrue(native_observed)
+        for turn in (2, 3, 4):
+            with self.subTest(turn=turn):
+                self.assertEqual(model.observed[turn]["last_native_result_texts"],
+                                 native_observed)
+                self.assertEqual(model.observed[turn]["successful_native_tool_results"], 1)
+        self.assertEqual(model.observed[3]["described_native_tools"], ["update_text_clip"])
+        self.assertIn("update_text_clip", model.observed[5]["last_native_result_texts"][0])
+        self.assertEqual(model.observed[5]["successful_native_tool_results"], 2)
+        self.assertEqual(len([e for e in outcome["events"]
+                             if e["kind"] == "model_action_rejected"]), 1)
+        self.assertFalse(outcome["artistic_quality_independently_approved"])
+
+
 if __name__ == "__main__":
     unittest.main()
