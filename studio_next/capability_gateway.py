@@ -50,15 +50,30 @@ class CapabilityGateway:
             facts = entry[3] if len(entry) == 4 else None
             if (not callable(getattr(session, "list_tools", None)) or
                     not callable(getattr(session, "call_tool", None)) or
-                    not isinstance(grants, Mapping) or
-                    any(not isinstance(k, str) or v not in ("read", "write")
-                        for k, v in grants.items()) or
+                    not (isinstance(grants, Mapping) or callable(grants)) or
+                    (isinstance(grants, Mapping) and
+                     any(not isinstance(k, str) or v not in ("read", "write")
+                         for k, v in grants.items())) or
                     (facts is not None and not callable(facts))):
                 raise CapabilityExecutionError("Host source bindings are invalid")
-            self._bindings[namespace] = (session, dict(grants), copy.deepcopy(requires), facts)
+            # A trusted, host-owned callable can reflect newly installed
+            # first-party tools after refresh; static grants for external
+            # plugins remain fixed unless the host explicitly reconfigures.
+            grant_source = grants if callable(grants) else dict(grants)
+            self._bindings[namespace] = (session, grant_source,
+                                         copy.deepcopy(requires), facts)
             self._locks[namespace] = asyncio.Lock()
         self._fabric = None
         self._events = []
+
+    def _live_grants(self, namespace):
+        source = self._bindings[namespace][1]
+        grants = source() if callable(source) else source
+        if (not isinstance(grants, Mapping) or
+                any(not isinstance(k, str) or not k or v not in ("read", "write")
+                    for k, v in grants.items())):
+            raise CapabilityExecutionError("Trusted host grants unavailable or malformed")
+        return dict(grants)
 
     async def refresh(self):
         """Rebuild from real connected sources, e.g. after MCP list_changed.
@@ -66,7 +81,7 @@ class CapabilityGateway:
         Refreshing changes the contract digest. Previously selected handles
         never gain authority under an updated ABI or grant set.
         """
-        discovery = {name: (entry[0], entry[1], entry[2])
+        discovery = {name: (entry[0], self._live_grants(name), entry[2])
                      for name, entry in self._bindings.items()}
         fabric = await CapabilityFabric.from_connections(discovery)
         self._fabric = fabric
@@ -102,7 +117,8 @@ class CapabilityGateway:
             # Revalidate ONLY the selected engine, not every connected
             # creative app on each frame/operation. Cross-domain scaling
             # must not make single-engine edits O(all connected tools).
-            session, grants, conditions, fact_reader = self._bindings[namespace]
+            session, _, conditions, fact_reader = self._bindings[namespace]
+            grants = self._live_grants(namespace)
             response = await session.list_tools()
             cursor = getattr(response, "nextCursor",
                              getattr(response, "next_cursor", None))
