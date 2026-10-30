@@ -201,6 +201,16 @@ class CapabilityFabric:
             raise CapabilityContractError("No executable host-granted capabilities")
         self._records = records
         self._namespaces = sorted(sources)
+        # Exact local names remain an explicitly grounded retrieval route:
+        # a brain that copied a real tool ID from BODY must not be trapped by
+        # lexical ties with unrelated descriptions (as in the real 2B trial).
+        # Keep namespace collisions visible rather than arbitrarily choosing
+        # which engine owns a write.
+        by_native_name = {}
+        for identity, record in records.items():
+            by_native_name.setdefault(record["native_name"], []).append(identity)
+        self._exact_native_names = {
+            name: tuple(sorted(ids)) for name, ids in by_native_name.items()}
         # Immutable inverted postings index over only host-discovered, granted
         # operations. Rare specialist terms examine only matching candidates;
         # neither entire tool schemas nor MD manuals enter neural context.
@@ -261,21 +271,33 @@ class CapabilityFabric:
         terms = _tokens(query)
         if not terms:
             raise CapabilityContractError("Search query has no searchable terms")
-        candidates = set()
-        for term in terms:
-            candidates.update(self._postings.get(term, ()))
+        # Exact host-granted operation identity is stronger than any lexical
+        # similarity. This never invents a tool, widens grants or authorizes
+        # dispatch: it only returns the existing contract for model inspection.
+        # An unqualified name shared by multiple engines remains an explicit
+        # bounded tie, never an arbitrary winner.
+        exact = query.strip()
+        exact_ids = ((exact,) if exact in self._records
+                     else self._exact_native_names.get(exact, ()))
+        candidates = set(exact_ids)
         scored = []
-        for ident in candidates:
-            record = self._records[ident]
-            name_hits = terms & record["name_tokens"]
-            desc_hits = terms & record["description_tokens"]
-            if not (name_hits or desc_hits):
-                continue
-            # Deterministic all-term preference, then stronger identity match.
-            covered = len(name_hits | desc_hits)
-            score = (100 * (covered == len(terms)) + 10 * covered +
-                     5 * len(name_hits) + len(desc_hits))
-            scored.append((-score, ident, record))
+        if exact_ids:
+            scored = [(-1_000_000, ident, self._records[ident])
+                      for ident in exact_ids]
+        else:
+            for term in terms:
+                candidates.update(self._postings.get(term, ()))
+            for ident in candidates:
+                record = self._records[ident]
+                name_hits = terms & record["name_tokens"]
+                desc_hits = terms & record["description_tokens"]
+                if not (name_hits or desc_hits):
+                    continue
+                # Deterministic all-term preference, then identity similarity.
+                covered = len(name_hits | desc_hits)
+                score = (100 * (covered == len(terms)) + 10 * covered +
+                         5 * len(name_hits) + len(desc_hits))
+                scored.append((-score, ident, record))
         scored.sort(key=lambda x: (x[0], x[1]))
         # A tiny specialist must not treat arbitrary alphabetical tie-breaks
         # as an informed choice between different creative write operations.
