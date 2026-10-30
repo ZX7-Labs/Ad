@@ -231,7 +231,9 @@ def _native_tool_hints(available):
     """
     limit = 12_000
     count = max(1, len(available))
-    description_limit = max(24, min(80, 10_000 // count - 60))
+    # Leave a fair allowance for at least one host-declared parameter name
+    # per tool when that fits the fixed 12 KiB envelope.
+    description_limit = max(24, min(72, 10_000 // count - 75))
     hints, parameter_options = [], []
     for tool in available:
         name = _field(tool, "name")
