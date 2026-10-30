@@ -43,11 +43,12 @@ class CapabilityGateway:
         self._bindings = {}
         self._locks = {}
         for namespace, entry in bindings.items():
-            if not isinstance(entry, tuple) or len(entry) not in (2, 3, 4):
+            if not isinstance(entry, tuple) or len(entry) not in (2, 3, 4, 5):
                 raise CapabilityExecutionError("Source requires a real connection and grants")
             session, grants = entry[:2]
             requires = entry[2] if len(entry) >= 3 else {}
-            facts = entry[3] if len(entry) == 4 else None
+            facts = entry[3] if len(entry) >= 4 else None
+            possible_effects = entry[4] if len(entry) == 5 else {}
             if (not callable(getattr(session, "list_tools", None)) or
                     not callable(getattr(session, "call_tool", None)) or
                     not (isinstance(grants, Mapping) or callable(grants)) or
@@ -61,7 +62,8 @@ class CapabilityGateway:
             # plugins remain fixed unless the host explicitly reconfigures.
             grant_source = grants if callable(grants) else dict(grants)
             self._bindings[namespace] = (session, grant_source,
-                                         copy.deepcopy(requires), facts)
+                                         copy.deepcopy(requires), facts,
+                                         copy.deepcopy(possible_effects))
             self._locks[namespace] = asyncio.Lock()
         self._fabric = None
         self._events = []
@@ -81,7 +83,8 @@ class CapabilityGateway:
         Refreshing changes the contract digest. Previously selected handles
         never gain authority under an updated ABI or grant set.
         """
-        discovery = {name: (entry[0], self._live_grants(name), entry[2])
+        discovery = {name: (entry[0], self._live_grants(name),
+                            entry[2], entry[4])
                      for name, entry in self._bindings.items()}
         fabric = await CapabilityFabric.from_connections(discovery)
         self._fabric = fabric
@@ -97,6 +100,26 @@ class CapabilityGateway:
 
     def describe(self, operation_id, *, revision):
         return self._current().describe(operation_id, revision=revision)
+
+    async def host_affordances(self, namespace: str, *, limit=4):
+        """Only source-attested project facts; model cannot mint readiness."""
+        self._current()
+        if namespace not in self._bindings:
+            raise CapabilityExecutionError("Unknown connected creative engine")
+        _, _, _, reader, _ = self._bindings[namespace]
+        if reader is None:
+            raise CapabilityExecutionError("Missing trusted source state reader")
+        facts = reader()
+        if inspect.isawaitable(facts):
+            facts = await facts
+        choices = self._current().affordance_frontier(
+            trusted_facts=facts, limit=8)
+        selected = [item for item in choices["matches"]
+                    if item["id"].startswith(namespace + "/")]
+        return {"revision": choices["revision"], "matches": selected[:limit],
+                "has_more": len(selected) > limit,
+                "facts_are_host_attested": True,
+                "no_creative_operation_executed": True}
 
     def evidence(self):
         """Only bounded identity/digest and outcome, never raw private media."""
@@ -117,7 +140,7 @@ class CapabilityGateway:
             # Revalidate ONLY the selected engine, not every connected
             # creative app on each frame/operation. Cross-domain scaling
             # must not make single-engine edits O(all connected tools).
-            session, _, conditions, fact_reader = self._bindings[namespace]
+            session, _, conditions, fact_reader, effects = self._bindings[namespace]
             grants = self._live_grants(namespace)
             response = await session.list_tools()
             cursor = getattr(response, "nextCursor",
@@ -128,9 +151,11 @@ class CapabilityGateway:
                 raise CapabilityExecutionError("Incomplete current host tool inventory")
             advertised = (response.get("tools") if isinstance(response, dict)
                           else getattr(response, "tools", None))
-            fresh = CapabilityFabric({namespace: (advertised, grants, conditions)})
+            fresh = CapabilityFabric({namespace: (
+                advertised, grants, conditions, effects)})
             live_record = fresh.resolve(operation_id, revision=fresh.revision)
-            for field in ("access", "input_schema", "description", "requires"):
+            for field in ("access", "input_schema", "description",
+                          "requires", "may_enable"):
                 if record[field] != live_record[field]:
                     raise CapabilityExecutionError(
                         "Native operation contract changed; rediscover capability")
