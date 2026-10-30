@@ -353,5 +353,38 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(session.calls), 1)
 
 
+    async def test_private_model_intent_and_summary_are_hashed_not_journaled(self):
+        private = "PRIVATE-BRIEF-PATH-AND-SECRET-DO-NOT-PERSIST"
+        session = FakeSession()
+        model = ScriptedModel([
+            {"action": "invoke", "arguments": {"tool": "get_timeline", "inputs": {}},
+             "reason": private},
+            {"action": "finish", "arguments": {"summary": private},
+             "reason": "done"},
+        ])
+        with tempfile.TemporaryDirectory() as root:
+            journal = Path(root) / "private-proof.jsonl"
+            outcome = await NativeCreativeControl(session, model, max_turns=2,
+                                                   receipt_path=journal).run("Private test")
+            raw = journal.read_text()
+            self.assertNotIn(private, raw)
+            events = [json.loads(line) for line in raw.splitlines()]
+            submitted = next(x for x in events if x["kind"] == "native_tool_submitted")
+            terminal = events[-1]
+            self.assertEqual(submitted["model_reason_sha256"],
+                             hashlib.sha256(private.encode()).hexdigest())
+            self.assertEqual(submitted["model_reason_utf8_bytes"], len(private.encode()))
+            self.assertNotIn("model_reason", submitted)
+            self.assertEqual(terminal["summary_sha256"],
+                             hashlib.sha256(private.encode()).hexdigest())
+            self.assertEqual(terminal["summary_utf8_bytes"], len(private.encode()))
+            self.assertNotIn("summary", terminal)
+            self.assertNotIn(private, json.dumps(outcome["events"]))
+            from studio_next.native_creative_audit import audit_native_journal
+            audit = audit_native_journal(events, host_tool_access={"get_timeline": "read"})
+            self.assertTrue(audit["journal_chain_structurally_valid"])
+            self.assertFalse(audit["video_editing_capability_complete"])
+
+
 if __name__ == "__main__":
     unittest.main()
