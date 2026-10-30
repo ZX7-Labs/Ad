@@ -607,6 +607,20 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([x[0] for x in session.calls], ["get_project", "update_text_clip"])
         self.assertFalse(result["artistic_quality_independently_approved"])
 
+    async def test_missing_project_field_cannot_be_misreported_as_absent(self):
+        session = FakeSession()
+        session.tools.append(SimpleNamespace(name="get_project", description="Native project",
+                                             input_schema={"type": "object", "additionalProperties": False}))
+        session.custom_response = SimpleNamespace(is_error=False, content=[SimpleNamespace(
+            type="text", text=json.dumps({"mcp": {"hasProject": False}}))])
+        model = ScriptedModel([
+            decision("invoke", tool="get_project", inputs={}),
+            decision("finish", summary="Missing project field is not evidence of no project"),
+        ])
+        await NativeCreativeControl(session, model, max_turns=2).run("Check project truth")
+        self.assertEqual(model.observed[1]["native_project_presence_from_last_inspection"],
+                         "unknown")
+
     async def test_contradictory_native_project_snapshot_is_not_treated_as_fact(self):
         session = FakeSession()
         session.tools.append(SimpleNamespace(name="get_project", description="Native project",
