@@ -180,6 +180,21 @@ def audit_native_journal(events, *, host_tool_access):
             if pending is not None:
                 raise NativeJournalError("Tool catalog interleaved with unfinished native operation")
             continue
+        if kind == "host_capability_frontier":
+            tools = event.get("result_tool_names")
+            prior = events[i - 1] if i > 0 else {}
+            if (i != 2 or pending is not None or
+                    prior.get("kind") != "host_project_bootstrap_observation" or
+                    prior.get("project_presence") != "absent" or
+                    event.get("trusted_machine_fact") != "project_open" or
+                    event.get("host_observed_value") is not False or
+                    not _sha(event.get("catalog_revision")) or
+                    event.get("no_native_dispatch") is not True or
+                    not isinstance(tools, list) or not 1 <= len(tools) <= 4 or
+                    any(not isinstance(tool, str) or tool not in host_tool_access
+                        for tool in tools) or len(set(tools)) != len(tools)):
+                raise NativeJournalError("Untrusted or fabricated initial machine affordance")
+            continue
         if kind == "capability_searched":
             tools = event.get("result_tool_names")
             if (pending is not None or
