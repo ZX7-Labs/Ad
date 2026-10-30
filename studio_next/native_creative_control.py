@@ -97,13 +97,20 @@ def _native_content(result: Any) -> tuple[list[str], list[tuple[str, bytes]], li
     blocks = _field(result, "content", ())
     if not isinstance(blocks, (list, tuple)):
         raise NativeCreativeControlError("Native MCP returned no inspectable content")
-    texts, images, audio, total = [], [], [], 0
+    # Bound the whole MCP observation, not just each text part. A host may
+    # legitimately return several parts; unbounded concatenated text must not
+    # exhaust the model context or the private journal.
+    if len(blocks) > 64:
+        raise NativeCreativeControlError("Native MCP returned too many content blocks")
+    texts, images, audio, total, total_text_bytes = [], [], [], 0, 0
     for block in blocks:
         kind = _field(block, "type")
         if kind == "text":
             txt = _field(block, "text")
-            if not isinstance(txt, str) or len(txt.encode("utf-8")) > _MAX_RESULT_TEXT:
+            size = len(txt.encode("utf-8")) if isinstance(txt, str) else -1
+            if size < 0 or size > _MAX_RESULT_TEXT or total_text_bytes + size > _MAX_RESULT_TEXT:
                 raise NativeCreativeControlError("Native text evidence was missing or oversized")
+            total_text_bytes += size
             texts.append(txt)
         elif kind == "image":
             mime = _field(block, "mime_type", _field(block, "mimeType"))
