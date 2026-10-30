@@ -232,6 +232,34 @@
       "next_fix": "Only the small set of tools returned by live host-granted search may appear in the next model's structured invoke/describe grammar; no giant static tool enumeration.",
       "artistic_quality_approved": false,
       "native_video_field_complete": false
+    },
+    {
+      "body_commit": "4adb179d5666270b8e7c40cf187d576d46b56b5f",
+      "workflow_run": 41030642230,
+      "artifact_id": 12965507783,
+      "artifact_zip_sha256": "11c4531df0653f5718f7cf8574e5cba58d0de79d9192ee972f4ddd57ec2bc225",
+      "model": "unsloth/Qwen3.5-2B-GGUF",
+      "quantization": "Q4_K_M",
+      "cpu_only": true,
+      "actual_inference_turns": 1,
+      "measured_inference_wall_seconds_sum": 23.17,
+      "host_project_bootstrap_observed": "absent",
+      "model_selected_actions": {
+        "finish": 1
+      },
+      "native_write_attempts": 0,
+      "actual_native_editor_calls": 1,
+      "actual_native_editor_calls_detail": "Only host-initiated read-only get_project",
+      "model_fabricated_finished_project": true,
+      "native_project_created": false,
+      "verified_exports": 0,
+      "physically_observed_frames": 0,
+      "technical_trial_completed": false,
+      "model_status": "model_finished_unverified",
+      "artistic_quality_approved": false,
+      "native_video_field_complete": false,
+      "root_cause": "2B model falsely declared a fully created, saved and exported native project on its first decision, contradicted by real host project=null/hasProject=false and zero native writes or exports.",
+      "next_safety_fix": "Host-owned generic required_evidence gate refuses premature finish; does not select creative actions or count model prose as an artifact."
     }
   ]
 }
