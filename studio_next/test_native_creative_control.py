@@ -622,5 +622,73 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
                          "unknown")
 
 
+    async def test_model_window_compacts_redundant_catalogs_not_real_observations(self):
+        from studio_next.native_creative_control import _model_event_window
+        giant_tool_names = [f"real_host_tool_{i:04d}" for i in range(130)]
+        events = [{"kind": "discovered", "turn": i, "sequence": i,
+                   "tools": giant_tool_names, "measured_model_wall_ms": 30000}
+                  for i in range(5)]
+        events += [
+            {"kind": "native_tool_schema", "turn": 5, "tool": "old_tool",
+             "description": "old", "input_schema": {"type": "object", "padding": "x" * 1500}},
+            {"kind": "native_tool_schema", "turn": 6, "tool": "new_tool",
+             "description": "new", "input_schema": {"type": "object", "properties": {
+                 "nativeField": {"type": "string"}}}},
+            {"kind": "model_action_rejected", "turn": 7, "tool": "new_tool",
+             "validation_keyword": "required", "schema_location": "required",
+             "no_native_dispatch": True, "inputs_sha256": "a" * 64},
+        ]
+        before = json.dumps(events, sort_keys=True)
+        window = _model_event_window(events)
+        self.assertEqual(len(window), 8)
+        self.assertTrue(all(x["native_tool_count"] == 130 for x in window[:5]))
+        self.assertNotIn("tools", window[0])
+        self.assertNotIn("input_schema", window[5])
+        self.assertTrue(window[5]["schema_available_by_describe"])
+        self.assertEqual(window[6]["input_schema"], events[6]["input_schema"])
+        self.assertTrue(window[-1]["no_native_dispatch"])
+        self.assertEqual(window[-1]["schema_location"], "required")
+        self.assertNotIn("inputs_sha256", window[-1])
+        self.assertLess(len(json.dumps(window).encode()), len(before.encode()) // 4)
+        self.assertEqual(before, json.dumps(events, sort_keys=True))  # durable trace untouched
+
+    async def test_model_window_preserves_verified_export_identity_and_native_result(self):
+        from studio_next.native_creative_control import _model_event_window
+        events = [
+            {"kind": "native_tool_result", "turn": 2,
+             "tool": "zx7_verify_native_export",
+             "independently_verified_export_sha256": "a" * 64,
+             "human_or_artistic_quality_approved": False},
+            {"kind": "native_tool_result", "turn": 3,
+             "tool": "zx7_observe_verified_export_frame",
+             "observed_export_sha256": "a" * 64,
+             "image_sha256": ["b" * 64],
+             "human_or_artistic_quality_approved": False},
+        ]
+        window = _model_event_window(events)
+        self.assertEqual(window[0]["independently_verified_export_sha256"], "a" * 64)
+        self.assertEqual(window[1]["observed_export_sha256"], "a" * 64)
+        self.assertEqual(window[1]["image_sha256"], ["b" * 64])
+        self.assertNotIn("human_or_artistic_quality_approved", window[1])
+
+    async def test_real_native_observation_still_reaches_model_with_compact_history(self):
+        session = FakeSession()
+        model = ScriptedModel([
+            decision("discover"),
+            decision("invoke", tool="get_timeline", inputs={}),
+            decision("describe", tool="update_text_clip"),
+            decision("finish", summary="Observed actual native result"),
+        ])
+        result = await NativeCreativeControl(session, model, max_turns=4).run(
+            "Inspect an editor and choose project work")
+        self.assertEqual(result["status"], "model_finished_unverified")
+        self.assertTrue(model.observed[2]["last_native_result_texts"])
+        self.assertEqual(model.observed[2]["latest_events"][0]["kind"], "session_started")
+        self.assertNotIn("tools", model.observed[2]["latest_events"][1])
+        self.assertEqual(model.observed[3]["latest_events"][-1]["input_schema"],
+                         session.tools[1].input_schema)
+        self.assertEqual(len(session.calls), 1)
+
+
 if __name__ == "__main__":
     unittest.main()
