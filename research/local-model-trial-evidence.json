@@ -358,6 +358,39 @@
       "root_cause": "The indexed exact-ID fix #101 enabled real model-controlled creation of an editable empty Velorn project. After successful create_project, the controller invalidated project presence to 'unknown' rather than independently re-reading get_project. The 2B model then searched broad terms, repeatedly retried create_project on an already existing project, and stopped on a reported native write error. This run proves neither media editing nor export.",
       "next_safety_fix": "Use one trusted post-write get_project READ after a model-chosen project_open enabling operation, record immutable read evidence and preserve actual project identity in the next inference context. Still requires independent live model end-to-end trial.",
       "source_proof_scope": "Runner-uploaded ZIP SHA independently checked in artifact reader; project.comfystudio contained one empty timeline and no assets. Human creative acceptance not attempted."
+    },
+    {
+      "body_commit": "63508238160b52c9cefcce2d3451e84b29f8ef7a",
+      "workflow_run": 41077291711,
+      "artifact_id": 12988875890,
+      "artifact_zip_sha256": "975b8262bd06efa80442005edfc66c327f596a78ba0cbd467feaa7513aac006d",
+      "model": "unsloth/Qwen3.5-4B-GGUF",
+      "quantization": "Q4_K_M",
+      "cpu_only": true,
+      "actual_verified_weight_bytes": 2740937888,
+      "actual_verified_vision_projector_bytes": 672423616,
+      "actual_inference_turns": 5,
+      "measured_inference_wall_seconds_sum": 394.477,
+      "model_selected_actions": {
+        "invoke": 4,
+        "describe": 1
+      },
+      "host_reported_preview_only_responses": 1,
+      "acknowledged_native_write_results_reported_by_old_controller": 2,
+      "independently_confirmed_project_open_after_apply": false,
+      "native_project_file_created": true,
+      "native_project_timeline_clip_count": 0,
+      "preflight_rejected_invokes": 1,
+      "native_reported_write_errors": 1,
+      "verified_exports": 0,
+      "physically_observed_frames": 0,
+      "technical_trial_completed": false,
+      "model_status": "native_error_requires_state_reconciliation",
+      "artistic_quality_approved": false,
+      "native_video_field_complete": false,
+      "root_cause": "The stronger 4B independently selected create_project but used its default previewOnly=true, receiving a host response with success=false, result.previewOnly=true and no applied project. A second model-selected create_project with previewOnly=false created an empty native project. The controller nonetheless counted the preview plan as a successful native write. Project presence was then set to unknown; the model repeatedly invoked create_project and terminated on a native reported write error without timeline edits/exports.",
+      "next_safety_fix": "Distinguish preview-only host responses from acknowledged applied writes, independently read actual native project presence after create/open when granted read-only access, and preserve proof that 2B/4B failed real creative acceptance. Do not claim performance superiority from these different incomplete runs.",
+      "model_ram_independently_measured": false
     }
   ]
 }
