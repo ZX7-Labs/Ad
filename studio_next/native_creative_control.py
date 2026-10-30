@@ -361,7 +361,11 @@ class NativeCreativeControl:
                 if action == "finish":
                     self._append({"kind": "model_finished", "turn": turn,
                                   **timing,
-                                  "summary": args["summary"][:4000],
+                                  # The model's free-form summary can echo a private
+                                  # brief, media path, or credential. Persist only
+                                  # a verifiable digest, not its contents.
+                                  "summary_sha256": hashlib.sha256(args["summary"].encode("utf-8")).hexdigest(),
+                                  "summary_utf8_bytes": len(args["summary"].encode("utf-8")),
                                   "creative_quality_independently_approved": False})
                     outcome = "model_finished_unverified"
                     break
@@ -386,7 +390,12 @@ class NativeCreativeControl:
                               **timing,
                               "tool": native_name,
                               "inputs_sha256": hashlib.sha256(_wire(args["inputs"]).encode()).hexdigest(),
-                              "model_reason": decision["reason"][:3000],
+                              # A model's purported reason may echo arbitrary
+                              # private assets/briefs. Use a digest as evidence
+                              # of the chosen rationale, never the raw text.
+                              "model_reason_sha256": hashlib.sha256(
+                                  decision["reason"].encode("utf-8")).hexdigest(),
+                              "model_reason_utf8_bytes": len(decision["reason"].encode("utf-8")),
                               "uncertain_write_do_not_replay": True})
                 call_started = time.monotonic_ns()
                 try:
