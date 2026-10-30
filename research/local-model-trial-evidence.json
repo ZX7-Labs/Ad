@@ -23,6 +23,39 @@
       "model_inference_not_replaced_with_script": true,
       "artistic_quality_approved": false,
       "failure": "Model confused controller action name with a granted native tool; strict host boundary rejected it."
+    },
+    {
+      "body_commit": "0e122ba1f83104106ff606078b85287287fa47fd",
+      "workflow_run": 41013244673,
+      "artifact_id": 12959508682,
+      "artifact_zip_sha256": "a0f5fb6f3d05c07bc2505684f52fb82196f4725af016be7181f24d43354c02ee",
+      "model": "unsloth/Qwen3.5-2B-GGUF",
+      "revision": "f6d5376be1edb4d416d56da11e5397a961aca8ae",
+      "quantization": "Q4_K_M",
+      "cpu_only": true,
+      "ordinary_nonroot_chromium_sandbox": true,
+      "actual_inference_turns": 22,
+      "model_selected_actions": {
+        "discover": 9,
+        "describe": 10,
+        "invoke": 3
+      },
+      "successful_native_tool_results": {
+        "get_project": 2
+      },
+      "editor_writes": 0,
+      "verified_exports": 0,
+      "physically_observed_frames": 0,
+      "technical_trial_completed": false,
+      "model_status": "native_error_requires_state_reconciliation",
+      "last_model_chosen_tool": "inspect_clip",
+      "terminal_event": "native_tool_reported_error",
+      "terminal_requires_native_state_reconciliation": true,
+      "no_automatic_write_replay": true,
+      "main_finding": "The actual neural model spent 19/22 decisions on metadata discovery/schema descriptions, repeatedly inspecting the absent native project and eventually sending invalid inspect_clip inputs. Model-facing native observation text was cleared after each metadata decision; this was separately identified in the controller source, not validated as the only cause of failure.",
+      "artistic_quality_approved": false,
+      "native_video_field_complete": false,
+      "evidence_reproduced_from_actual_zip": true
     }
   ]
 }
