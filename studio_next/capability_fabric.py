@@ -61,10 +61,10 @@ class CapabilityFabric:
                     any(not isinstance(name, str) or
                         not isinstance(conditions, (list, tuple)) or
                         len(conditions) > 8 or
-                        len(set(conditions)) != len(conditions) or
                         any(not isinstance(term, str) or
                             re.fullmatch(r"[a-z][a-z0-9_]{0,63}", term) is None
-                            for term in conditions)
+                            for term in conditions) or
+                        len(set(conditions)) != len(conditions)
                         for name, conditions in requirements.items())):
                 raise CapabilityContractError("Only trusted typed machine prerequisites are allowed")
             if any(name not in grants for name in requirements):
@@ -119,6 +119,34 @@ class CapabilityFabric:
             "summary": value["description"], "schema": value["input_schema"],
             "requires": value["requires"]
         } for key, value in sorted(records.items())]).encode("utf-8")).hexdigest()
+
+    @classmethod
+    async def from_connections(cls, connections: Mapping):
+        """Refresh live machine contracts from connected, authorized engines.
+
+        No MD or guessed capability list. Every source supplies a real
+        list_tools interface plus host-owned grants; omitted/ungranted tools
+        never enter the model catalog. A changed snapshot receives a new
+        revision so stale model decisions fail closed at the boundary.
+        """
+        if not isinstance(connections, Mapping) or not 1 <= len(connections) <= 256:
+            raise CapabilityContractError("Real connected source inventory required")
+        sources = {}
+        for namespace, binding in connections.items():
+            if not isinstance(binding, tuple) or len(binding) not in (2, 3):
+                raise CapabilityContractError("Source requires session and host grants")
+            session, grants = binding[:2]
+            if not callable(getattr(session, "list_tools", None)):
+                raise CapabilityContractError("Native source lacks live tool discovery")
+            response = await session.list_tools()
+            cursor = _field(response, "nextCursor", _field(response, "next_cursor"))
+            if cursor not in (None, ""):
+                raise CapabilityContractError(
+                    "Partial paginated MCP discovery cannot define complete capabilities")
+            advertised = _field(response, "tools")
+            requirements = binding[2] if len(binding) == 3 else {}
+            sources[namespace] = (advertised, grants, requirements)
+        return cls(sources)
 
     @property
     def count(self):
