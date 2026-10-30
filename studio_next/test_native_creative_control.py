@@ -109,6 +109,53 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
                                              host_tool_access=grants)["journal_chain_structurally_valid"])
         self.assertFalse(result["native_editing_capability_complete"])
 
+    async def test_stale_export_cannot_certify_a_later_native_edit(self):
+        from studio_next.native_creative_audit import audit_native_journal
+        png = b"\x89PNG\r\n\x1a\n" + b"bounded-fixture"
+        png_hash = hashlib.sha256(png).hexdigest()
+        class FrameSession(FakeSession):
+            async def call_tool(self, name, arguments):
+                if name == "zx7_observe_verified_export_frame":
+                    self.calls.append((name, arguments))
+                    return SimpleNamespace(is_error=False, content=[
+                        SimpleNamespace(type="text", text=json.dumps({
+                            "export_sha256": "a" * 64,
+                            "png_sha256": png_hash})),
+                        SimpleNamespace(type="image", mime_type="image/png",
+                            data=base64.b64encode(png).decode())])
+                return await super().call_tool(name, arguments)
+        session = FrameSession()
+        grants = {tool.name: ("write" if tool.name == "update_text_clip" else "read")
+                  for tool in session.tools}
+        model = ScriptedModel([
+            decision("invoke", tool="update_text_clip", inputs={"clipId": "one"}),
+            decision("invoke", tool="zx7_verify_native_export", inputs={}),
+            decision("invoke", tool="zx7_observe_verified_export_frame", inputs={}),
+            decision("invoke", tool="update_text_clip", inputs={"clipId": "one", "text": "new"}),
+            decision("finish", summary="The frame was from before my latest edit"),
+            decision("invoke", tool="zx7_verify_native_export", inputs={}),
+            decision("invoke", tool="zx7_observe_verified_export_frame", inputs={}),
+            decision("finish", summary="New verified source; still not artistic acceptance"),
+        ])
+        required = ("native_write_acknowledged", "physical_export_verified",
+                    "verified_export_frame_observed")
+        result = await NativeCreativeControl(
+            session, model, max_turns=8, host_tool_access=grants,
+            required_evidence=required).run("Independent editable video")
+        self.assertEqual(result["status"], "model_finished_unverified")
+        refused = [e for e in result["events"] if e["kind"] == "model_finish_rejected"]
+        self.assertEqual(len(refused), 1)
+        self.assertEqual(refused[0]["missing_completion_evidence"], [
+            "physical_export_verified", "verified_export_frame_observed"])
+        audited = audit_native_journal(
+            result["events"], host_tool_access=grants,
+            expected_required_evidence=required)
+        self.assertTrue(audited["host_completion_policy_independently_matched"])
+        self.assertEqual(sum(e["kind"] == "native_tool_result" and
+                             e.get("independently_verified_export_sha256") is not None
+                             for e in result["events"]), 2)
+        self.assertFalse(result["native_editing_capability_complete"])
+
     async def test_impossible_host_evidence_contract_fails_before_neural_inference(self):
         session = FakeSession()
         grants = {tool.name: "read" for tool in session.tools}
