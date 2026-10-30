@@ -5,7 +5,9 @@ unrestricted here and are validated by the editor's own discovered schemas.
 """
 
 
-def native_action_schema(tool_names, *, compact_catalog=False, selected_tools=None):
+def native_action_schema(tool_names, *, compact_catalog=False, selected_tools=None, allow_finish=True):
+    if type(allow_finish) is not bool:
+        raise ValueError('Finish eligibility must be host-attested boolean')
     names = list(tool_names)
     if ((not names and not compact_catalog) or
             any(not isinstance(name, str) or not name for name in names) or
@@ -46,6 +48,8 @@ def native_action_schema(tool_names, *, compact_catalog=False, selected_tools=No
         del arguments['discover']
     else:
         del arguments['search']
+    if not allow_finish:
+        del arguments['finish']
     if tool is None:
         del arguments['describe']
         del arguments['invoke']
