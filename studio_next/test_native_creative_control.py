@@ -1076,6 +1076,90 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("search", model.observed[1]["selectable_native_tools"])
         self.assertLessEqual(len(model.observed[1]["selectable_native_tools"]), 8)
 
+    async def test_genuine_write_triggers_machine_state_refresh_without_model_inference(self):
+        from studio_next.native_creative_audit import audit_native_journal
+        session = FakeSession()
+        session.tools.extend([
+            SimpleNamespace(name="get_project", description="Real editor project state",
+                            input_schema={"type": "object", "additionalProperties": False}),
+            SimpleNamespace(name="create_project", description="Create editable project",
+                            input_schema={"type": "object", "properties": {
+                                "name": {"type": "string"}}}),
+        ])
+        grants = {x.name: ("write" if x.name in
+                          ("update_text_clip", "create_project") else "read")
+                  for x in session.tools}
+        read_count = [0]
+        async def called(name, args):
+            session.calls.append((name, args))
+            if name == "get_project":
+                read_count[0] += 1
+                if read_count[0] == 1:
+                    snapshot = {"project": None, "mcp": {"hasProject": False}}
+                else:
+                    snapshot = {"project": {"id": "source-owned-project"},
+                                "mcp": {"hasProject": True}}
+                return SimpleNamespace(is_error=False, content=[
+                    SimpleNamespace(type="text", text=json.dumps(snapshot))])
+            return SimpleNamespace(is_error=False, content=[
+                SimpleNamespace(type="text", text='{"success":true}')])
+        session.call_tool = called
+        model = ScriptedModel([
+            decision("search", query="create project"),
+            decision("invoke", tool="create_project",
+                     inputs={"name": "Brain original project"}),
+            decision("finish", summary="Native project opened; quality not approved"),
+        ])
+        with tempfile.TemporaryDirectory() as root:
+            obj = NativeCreativeControl(session, model, max_turns=3,
+                catalog_mode="indexed", host_tool_access=grants,
+                host_tool_requirements={"create_project": []},
+                receipt_path=Path(root) / "postwrite.jsonl")
+            result = await obj.run("Build original native project")
+        self.assertEqual([name for name, _ in session.calls],
+                         ["get_project", "create_project", "get_project"])
+        self.assertEqual(model.observed[-1]["native_project_presence_from_last_inspection"],
+                         "present")
+        self.assertEqual(result["events"][-2]["kind"],
+                         "host_project_postwrite_observation")
+        self.assertEqual(result["events"][-2]["project_presence"], "present")
+        self.assertTrue(audit_native_journal(
+            result["events"], host_tool_access=grants)["journal_chain_structurally_valid"])
+        self.assertFalse(result["native_editing_capability_complete"])
+
+    async def test_host_postwrite_read_error_does_not_invent_a_project(self):
+        from studio_next.native_creative_audit import audit_native_journal
+        session = FakeSession()
+        session.tools.append(SimpleNamespace(name="get_project", description="Project",
+                                input_schema={"type": "object"}))
+        grants = {x.name: ("write" if x.name == "update_text_clip" else "read")
+                  for x in session.tools}
+        count = [0]
+        async def native(name, arguments):
+            session.calls.append((name, arguments))
+            if name == "get_project":
+                count[0] += 1
+                if count[0] > 1:
+                    return SimpleNamespace(is_error=True, content=[
+                        SimpleNamespace(type="text", text="PRIVATE-PATH-DO-NOT-REVEAL")])
+                return SimpleNamespace(is_error=False, content=[
+                    SimpleNamespace(type="text", text='{"project":{"id":"p"},"mcp":{"hasProject":true}}')])
+            return SimpleNamespace(is_error=False, content=[
+                SimpleNamespace(type="text", text='{"success":true}')])
+        session.call_tool = native
+        model = ScriptedModel([
+            decision("invoke", tool="update_text_clip", inputs={"clipId": "real"}),
+            decision("finish", summary="No false positive host fact"),
+        ])
+        result = await NativeCreativeControl(session, model, max_turns=2,
+            host_tool_access=grants, catalog_mode="full").run("Modify editable text")
+        self.assertEqual(result["events"][-2]["kind"], "host_project_postwrite_error")
+        self.assertEqual(model.observed[-1]["native_project_presence_from_last_inspection"],
+                         "unknown")
+        self.assertNotIn("PRIVATE-PATH-DO-NOT-REVEAL", json.dumps(result["events"]))
+        self.assertTrue(audit_native_journal(
+            result["events"], host_tool_access=grants)["journal_chain_structurally_valid"])
+
     async def test_trusted_project_prerequisites_hide_nonready_tools_from_small_brain(self):
         from studio_next.native_creative_audit import audit_native_journal
         session = FakeSession()
