@@ -1188,6 +1188,11 @@ class NativeCreativeControl:
                 self._project_presence = (
                     _native_project_presence_from_text(texts)
                     if native_name == "get_project" else "unknown")
+                if native_name == "get_project" and self._project_presence != "unknown":
+                    # A newer independent native inspection supersedes the
+                    # post-write inconsistency; preserve the historical
+                    # warning and raw evidence in immutable journal events.
+                    self._post_write_state_warning = None
                 self._last_native_texts = texts
                 self._last_images, self._last_hashes = images, hashes
                 self._last_audio, self._last_audio_evidence = audio, audio_evidence
