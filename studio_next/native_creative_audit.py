@@ -31,6 +31,7 @@ _FRAME_OBSERVERS = frozenset({
 _EXPORT = "zx7_verify_native_export"
 _COMPLETION_EVIDENCE_TYPES = frozenset({
     "native_write_acknowledged", "physical_export_verified",
+    "post_observation_native_write_acknowledged",
     "verified_export_frame_observed",
 })
 _AUDIO = "zx7_observe_verified_export_audio"
@@ -144,6 +145,8 @@ def audit_native_journal(events, *, host_tool_access, expected_required_evidence
     # Current-edit proof, distinct from the immutable historical custody ledger.
     fresh_verified = set()
     fresh_frames = set()
+    saw_verified_frame = False
+    post_observation_write = False
     writes = []
     observed_then_written = []
     finished = False
@@ -153,6 +156,8 @@ def audit_native_journal(events, *, host_tool_access, expected_required_evidence
         proven = set()
         if writes:
             proven.add("native_write_acknowledged")
+        if post_observation_write:
+            proven.add("post_observation_native_write_acknowledged")
         if fresh_verified:
             proven.add("physical_export_verified")
         if fresh_frames:
@@ -316,6 +321,8 @@ def audit_native_journal(events, *, host_tool_access, expected_required_evidence
                 seen_sha = event.get("observed_export_sha256")
                 if access == "write":
                     writes.append((i, tool))
+                    if saw_verified_frame:
+                        post_observation_write = True
                     if observed:
                         observed_then_written.append((i, tool))
                     fresh_verified.clear()
@@ -331,6 +338,7 @@ def audit_native_journal(events, *, host_tool_access, expected_required_evidence
                     observed.setdefault(seen_sha, set()).add(tool)
                     if seen_sha in fresh_verified and tool in _FRAME_OBSERVERS:
                         fresh_frames.add(seen_sha)
+                        saw_verified_frame = True
                 if tool == _EXPORT and new_sha is None:
                     raise NativeJournalError("No physical export proof on successful verification")
                 if tool in _OBSERVERS and seen_sha is None:
