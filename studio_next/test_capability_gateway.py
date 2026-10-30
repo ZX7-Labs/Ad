@@ -42,6 +42,42 @@ class Engine:
 
 
 class GatewayTests(unittest.IsolatedAsyncioTestCase):
+    async def test_versioned_complete_tool_list_is_consistent_at_search_and_dispatch(self):
+        class VersionedEngine(Engine):
+            async def list_tools(self):
+                return SimpleNamespace(result={
+                    "resultType": "complete", "tools": self.tools,
+                    "requestState": "opaque-not-model-authorized"})
+        e = VersionedEngine([tool("render", {"frames": {"type": "integer"}})])
+        gateway = CapabilityGateway({"motion": (e, {"render": "write"})})
+        before = await gateway.refresh()
+        self.assertEqual(before["operation_count"], 1)
+        result = await gateway.invoke("motion/render", revision=before["revision"],
+                                      inputs={"frames": 48})
+        self.assertEqual(result["state"], "host_reported_success_unverified")
+        self.assertEqual(e.calls, [("render", {"frames": 48})])
+
+    async def test_partial_versioned_mcp_catalog_must_fail_closed(self):
+        class PartialEngine(Engine):
+            def __init__(self, ops):
+                super().__init__(ops)
+                self.partial = False
+            async def list_tools(self):
+                if self.partial:
+                    return SimpleNamespace(result={
+                        "resultType": "incomplete", "tools": self.tools,
+                        "requestState": "not-ready"})
+                return SimpleNamespace(result={
+                    "resultType": "complete", "tools": self.tools})
+        e = PartialEngine([tool("render", {"frames": {"type": "integer"}})])
+        gateway = CapabilityGateway({"motion": (e, {"render": "write"})})
+        granted = (await gateway.refresh())["revision"]
+        e.partial = True
+        with self.assertRaisesRegex(CapabilityContractError, "not complete"):
+            await gateway.invoke("motion/render", revision=granted,
+                                 inputs={"frames": 48})
+        self.assertEqual(e.calls, [])
+
     async def test_two_creative_engines_same_name_route_with_separate_grants(self):
         video = Engine([tool("render", {"frames": {"type": "integer"}},
                              required=["frames"])])
