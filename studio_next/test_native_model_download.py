@@ -78,5 +78,38 @@ class NativeModelDownloadTests(unittest.TestCase):
             self.assertTrue("bytes" in entry or "max_bytes" in entry)
 
 
+    def test_manifest_cannot_escape_runtime_root_or_fetch_local_urls(self):
+        good = b"verified-fixture"
+        checksum = hashlib.sha256(good).hexdigest()
+        for name, url in (
+            ("../escaped.gguf", "https://example.invalid/fixture"),
+            ("nested/escaped.gguf", "https://example.invalid/fixture"),
+            ("evil\\\\part.gguf", "https://example.invalid/fixture"),
+            ("valid.gguf", "file:///etc/passwd"),
+            ("valid.gguf", "http://127.0.0.1:8080/private"),
+            ("valid.gguf", "https://me:secret@example.invalid/fixture"),
+        ):
+            with self.subTest(name=name, url=url), TemporaryDirectory() as root:
+                spec = {"filename": name, "url": url, "bytes": len(good),
+                        "sha256": checksum}
+                with self.assertRaises(ValueError):
+                    download(spec, Path(root))
+
+    def test_symlink_target_is_refused_before_read_or_replace(self):
+        binary = b"private unrelated file"
+        with TemporaryDirectory() as root:
+            root = Path(root)
+            private = root / "private.txt"
+            private.write_bytes(binary)
+            (root / "model.gguf").symlink_to(private)
+            entry = {"filename": "model.gguf",
+                     "url": "https://example.invalid/fixture",
+                     "bytes": len(binary),
+                     "sha256": hashlib.sha256(binary).hexdigest()}
+            with self.assertRaisesRegex(ValueError, "symbolic link"):
+                download(entry, root)
+            self.assertEqual(private.read_bytes(), binary)
+
+
 if __name__ == "__main__":
     unittest.main()
