@@ -528,6 +528,13 @@ class NativeCreativeControl:
                     validators["get_project"].is_valid({})):
                 try:
                     native_bootstrap = await self.session.call_tool("get_project", {})
+                except Exception as exc:
+                    # Only the *remote READ call* is recoverable. Journal
+                    # write/fsync errors must propagate and fail closed.
+                    self._append({"kind": "host_project_bootstrap_error",
+                                  "tool": "get_project", "host_attested_read_only": True,
+                                  "error_type": type(exc).__name__})
+                else:
                     if _field(native_bootstrap, "is_error",
                               _field(native_bootstrap, "isError", False)):
                         digest, oversized = _bounded_error_digest(native_bootstrap)
@@ -555,13 +562,6 @@ class NativeCreativeControl:
                                                           for x in texts],
                                           "project_presence": self._project_presence,
                                           "no_model_selected_mutation": True})
-                except Exception as exc:
-                    # An unsuccessful read makes no positive claim about
-                    # project state. Keep the exception type, never its private
-                    # text, and let the model select its next action.
-                    self._append({"kind": "host_project_bootstrap_error",
-                                  "tool": "get_project", "host_attested_read_only": True,
-                                  "error_type": type(exc).__name__})
             for turn in range(self.max_turns):
                 context = {
                     "creative_brief": brief,
