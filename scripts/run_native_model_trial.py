@@ -183,6 +183,11 @@ async def trial(args, lock, artifacts, command):
     host.update({name: 'read' for name in ('zx7_verify_native_export',
         'zx7_observe_verified_export_frame', 'zx7_observe_verified_export_samples',
         'zx7_observe_verified_export_audio', 'zx7_observe_verified_export_audio_timeline')})
+    completion_evidence = (
+        "native_write_acknowledged",
+        "physical_export_verified",
+        "verified_export_frame_observed",
+    )
     with (artifacts / 'editor-stderr.log').open('w') as log:
         async with stdio_client(StdioServerParameters(command='node', args=params, cwd=ROOT), errlog=log) as (read, write):
             async with ClientSession(read, write, read_timeout_seconds=180) as session:
@@ -204,12 +209,10 @@ async def trial(args, lock, artifacts, command):
                     # Technical owner acceptance facts, NOT an editing plan.
                     # Failed model claims cannot end the trial before actual
                     # native activity, source-verified export and visual sensing.
-                    required_evidence=(
-                        "native_write_acknowledged",
-                        "physical_export_verified",
-                        "verified_export_frame_observed",
-                    )).run(brief), timeout=2400)
-    audit = audit_native_journal(read_native_journal(artifacts / 'native-journal.jsonl'), host_tool_access=host)
+                    required_evidence=completion_evidence).run(brief), timeout=2400)
+    audit = audit_native_journal(
+        read_native_journal(artifacts / 'native-journal.jsonl'),
+        host_tool_access=host, expected_required_evidence=completion_evidence)
     (artifacts / 'journal-audit.json').write_text(json.dumps(audit, indent=2))
     actual_images = len(list((artifacts / 'observations').glob('*.png')))
     content_tools = {'update_text_clip', 'update_shape_clip', 'set_clip_style', 'set_clip_mask',
