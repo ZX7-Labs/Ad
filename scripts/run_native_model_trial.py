@@ -141,16 +141,19 @@ async def trial(args, lock, artifacts, command):
     model = RecordedModel(LocalCreativeModel(LocalModelSettings(
         model_id=lock['server']['alias'], base_url='http://127.0.0.1:8080', timeout_seconds=300),
         system_prompt=NATIVE_CREATIVE_SYSTEM), artifacts)
+    # This mapping originates in the trusted host config, not the
+    # replaceable neural model. Only READ errors may be safely corrected.
+    host = dict(config['allowed_tools'])
+    host.update({name: 'read' for name in ('zx7_verify_native_export',
+        'zx7_observe_verified_export_frame', 'zx7_observe_verified_export_samples',
+        'zx7_observe_verified_export_audio', 'zx7_observe_verified_export_audio_timeline')})
     with (artifacts / 'editor-stderr.log').open('w') as log:
         async with stdio_client(StdioServerParameters(command='node', args=params, cwd=ROOT), errlog=log) as (read, write):
             async with ClientSession(read, write, read_timeout_seconds=180) as session:
                 await session.initialize()
                 outcome = await asyncio.wait_for(NativeCreativeControl(session, model, max_turns=48,
-                    receipt_path=artifacts / 'native-journal.jsonl').run(brief), timeout=2400)
-    host = dict(config['allowed_tools'])
-    host.update({name: 'read' for name in ('zx7_verify_native_export',
-        'zx7_observe_verified_export_frame', 'zx7_observe_verified_export_samples',
-        'zx7_observe_verified_export_audio', 'zx7_observe_verified_export_audio_timeline')})
+                    receipt_path=artifacts / 'native-journal.jsonl',
+                    host_tool_access=host).run(brief), timeout=2400)
     audit = audit_native_journal(read_native_journal(artifacts / 'native-journal.jsonl'), host_tool_access=host)
     (artifacts / 'journal-audit.json').write_text(json.dumps(audit, indent=2))
     actual_images = len(list((artifacts / 'observations').glob('*.png')))
