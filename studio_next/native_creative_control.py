@@ -189,6 +189,29 @@ def _source_bound_audio(texts: list[str], audio: list[tuple[str, bytes]]):
             "wav_sha256": receipt["wav_sha256"]}
 
 
+def _bounded_error_digest(result):
+    """Digest only bounded MCP error text. Large errors are never echoed or
+    serialized into a secondary unbounded string. An oversized or malformed
+    response has no claimed complete digest; the native write remains uncertain.
+    """
+    blocks = _field(result, "content", ())
+    if not isinstance(blocks, (list, tuple)) or len(blocks) > 64:
+        return None, True
+    texts, size = [], 0
+    for block in blocks:
+        if _field(block, "type") != "text":
+            continue
+        value = _field(block, "text")
+        if not isinstance(value, str) or len(value) > _MAX_RESULT_TEXT:
+            return None, True
+        encoded = value.encode("utf-8")
+        size += len(encoded)
+        if size > _MAX_RESULT_TEXT:
+            return None, True
+        texts.append(value)
+    return hashlib.sha256(_wire(texts).encode("utf-8")).hexdigest(), False
+
+
 class NativeCreativeControl:
     """Single in-process driver of an already host-authorized official MCP session.
 
@@ -411,17 +434,16 @@ class NativeCreativeControl:
                 native_ms = round((time.monotonic_ns() - call_started) / 1_000_000, 3)
                 self._native_mcp_wall_ms_total += native_ms
                 if _field(result, "is_error", _field(result, "isError", False)):
-                    texts = [_field(x, "text") for x in _field(result, "content", ())
-                             if _field(x, "type") == "text" and
-                             isinstance(_field(x, "text"), str)]
+                    digest, out_of_budget = _bounded_error_digest(result)
                     # A reported native error does not prove a write never
                     # happened. Stop; the next session must reconcile the
                     # actual saved state before issuing another mutation.
+                    # Do not hash/serialize arbitrary unbounded native errors.
                     self._append({"kind": "native_tool_reported_error", "turn": turn,
                                   "tool": native_name,
                                   "measured_native_mcp_wall_ms": native_ms,
-                                  "error_sha256": hashlib.sha256(
-                                      _wire(texts).encode("utf-8")).hexdigest(),
+                                  "error_sha256": digest,
+                                  "error_text_exceeded_evidence_budget": out_of_budget,
                                   "must_reconcile_native_state": True,
                                   "no_automatic_retry": True})
                     outcome = "native_error_requires_state_reconciliation"
