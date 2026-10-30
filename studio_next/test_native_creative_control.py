@@ -107,11 +107,26 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(outcome["status"], "model_finished_unverified")
         self.assertEqual(session.calls, [("custom_native_glow", {"intensity": 0.42})])
         self.assertEqual(model.observed[0]["actual_granted_native_tools"], [])
+        self.assertEqual(model.observed[0]["available_actions"],
+                         ["search", "describe", "invoke", "finish"])
         self.assertEqual(model.observed[0]["capability_overview"]["operation_count"],
                          len(session.tools))
         self.assertEqual(model.observed[1]["last_capability_search_result"]["matches"][0]
                          ["tool"], "custom_native_glow")
         self.assertFalse(outcome["native_editing_capability_complete"])
+
+    async def test_compact_model_does_not_waste_turns_on_unavailable_discover(self):
+        session = FakeSession()
+        grants = {tool.name: "read" for tool in session.tools}
+        model = ScriptedModel([decision("discover")])
+        with self.assertRaisesRegex(NativeCreativeControlError,
+                                    "unavailable catalog action"):
+            await NativeCreativeControl(
+                session, model, host_tool_access=grants, catalog_mode="indexed",
+                max_turns=1).run("A native film with searchable editor tools")
+        self.assertEqual(session.calls, [])
+        self.assertEqual(model.observed[0]["available_actions"],
+                         ["search", "describe", "invoke", "finish"])
 
     async def test_native_model_rejects_incomplete_paged_tool_list_before_inference(self):
         class PartialEditor(FakeSession):
