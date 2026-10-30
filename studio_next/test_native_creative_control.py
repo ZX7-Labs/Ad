@@ -925,5 +925,64 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(outcome["status"], "model_finished_unverified")
 
 
+    async def test_trusted_host_project_sensing_precedes_first_model_decision(self):
+        session = FakeSession()
+        session.tools.append(SimpleNamespace(name="get_project",
+             description="Real native project state",
+             input_schema={"type": "object", "additionalProperties": False}))
+        session.custom_response = SimpleNamespace(is_error=False, content=[
+            SimpleNamespace(type="text", text=json.dumps({
+                "project": None, "mcp": {"hasProject": False}}))])
+        access = {x.name: ("write" if x.name == "update_text_clip" else "read")
+                  for x in session.tools}
+        model = ScriptedModel([decision("finish", summary="Only inspected project truth")])
+        with tempfile.TemporaryDirectory() as root:
+            receipt = Path(root) / "host-bootstrap.jsonl"
+            result = await NativeCreativeControl(session, model, max_turns=1,
+                 host_tool_access=access, receipt_path=receipt).run("Independent creative project")
+            self.assertEqual(session.calls, [("get_project", {})])
+            self.assertEqual(model.observed[0]["native_project_presence_from_last_inspection"],
+                             "absent")
+            self.assertEqual(model.observed[0]["latest_events"][1]["kind"],
+                             "host_project_bootstrap_observation")
+            self.assertEqual(result["events"][1]["kind"], "host_project_bootstrap_observation")
+            self.assertTrue(result["events"][1]["no_model_selected_mutation"])
+            from studio_next.native_creative_audit import audit_native_journal
+            audit = audit_native_journal(result["events"], host_tool_access=access)
+            self.assertTrue(audit["journal_chain_structurally_valid"])
+            self.assertEqual(audit["recorded_native_write_result_count"], 0)
+            self.assertFalse(audit["video_editing_capability_complete"])
+
+    async def test_bootstrap_no_read_grant_does_not_invent_state_or_call_editor(self):
+        session = FakeSession()
+        session.tools.append(SimpleNamespace(name="get_project",
+             description="Project state", input_schema={"type": "object"}))
+        grants = {x.name: ("write" if x.name in ("get_project", "update_text_clip")
+                          else "read") for x in session.tools}
+        model = ScriptedModel([decision("finish", summary="No automatic write-granted sensing")])
+        result = await NativeCreativeControl(session, model, max_turns=1,
+            host_tool_access=grants).run("A video project")
+        self.assertEqual(session.calls, [])
+        self.assertEqual(model.observed[0]["native_project_presence_from_last_inspection"],
+                         "unknown")
+        self.assertEqual(result["events"][1]["kind"], "model_finished")
+
+    async def test_host_project_sensing_error_is_never_a_successful_observation(self):
+        session = FakeSession()
+        session.tools.append(SimpleNamespace(name="get_project",
+            description="Native current project", input_schema={"type": "object"}))
+        session.custom_response = SimpleNamespace(is_error=True, content=[
+            SimpleNamespace(type="text", text="Private filesystem location is absent")])
+        grants = {x.name: ("write" if x.name == "update_text_clip" else "read")
+                  for x in session.tools}
+        model = ScriptedModel([decision("finish", summary="Not a successful inspection")])
+        result = await NativeCreativeControl(session, model, max_turns=1,
+            host_tool_access=grants).run("Inspect project")
+        self.assertEqual(result["events"][1]["kind"], "host_project_bootstrap_error")
+        self.assertEqual(model.observed[0]["native_project_presence_from_last_inspection"], "unknown")
+        self.assertNotIn("Private filesystem", json.dumps(result["events"]))
+        self.assertFalse(result["native_editing_capability_complete"])
+
+
 if __name__ == "__main__":
     unittest.main()
