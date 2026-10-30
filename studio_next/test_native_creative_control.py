@@ -1092,5 +1092,74 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
 
 
 
+    async def test_host_observed_missing_project_preloads_real_native_possibilities(self):
+        from studio_next.native_creative_audit import audit_native_journal
+        session = FakeSession()
+        session.tools += [
+            SimpleNamespace(name="get_project", description="Inspect editable native project",
+                            input_schema={"type": "object"}),
+            SimpleNamespace(name="create_project", description="Create native editable project",
+                            input_schema={"type": "object", "properties": {
+                                "name": {"type": "string"}}}),
+            SimpleNamespace(name="open_project", description="Open existing native project",
+                            input_schema={"type": "object", "properties": {
+                                "projectName": {"type": "string"}}}),
+            SimpleNamespace(name="import_asset_from_path",
+                            description="Import footage to current project",
+                            input_schema={"type": "object", "properties": {
+                                "path": {"type": "string"}}}),
+        ]
+        session.custom_response = SimpleNamespace(is_error=False, content=[
+            SimpleNamespace(type="text", text=json.dumps({
+                "project": None, "mcp": {"hasProject": False}}))])
+        grants = {x.name: ("read" if x.name in ("get_project", "get_timeline")
+                         else "write") for x in session.tools}
+        model = ScriptedModel([
+            decision("describe", tool="create_project"),
+            decision("finish", summary="Real options known; art still model-selected"),
+        ])
+        result = await NativeCreativeControl(
+            session, model, max_turns=2, catalog_mode="indexed",
+            host_tool_access=grants,
+            host_preconditions={"import_asset_from_path": ["project_open"]},
+            host_possible_effects={
+                "create_project": ["project_open"],
+                "open_project": ["project_open"],
+            }).run("A source-owned film")
+        initial = model.observed[0]
+        self.assertEqual(initial["native_project_presence_from_last_inspection"], "absent")
+        self.assertEqual(set(initial["selectable_native_tools"]),
+                         {"create_project", "open_project"})
+        self.assertEqual(set(x["tool"] for x in initial[
+            "last_capability_search_result"]["matches"]),
+            {"create_project", "open_project"})
+        self.assertEqual(session.calls, [("get_project", {})])
+        self.assertEqual(result["events"][2]["kind"], "host_capability_frontier")
+        self.assertTrue(audit_native_journal(
+            result["events"], host_tool_access=grants)["journal_chain_structurally_valid"])
+        self.assertFalse(result["native_editing_capability_complete"])
+
+    async def test_unknown_project_state_does_not_grant_invented_affordances(self):
+        session = FakeSession()
+        session.tools += [
+            SimpleNamespace(name="get_project", description="Project state",
+                            input_schema={"type": "object"}),
+            SimpleNamespace(name="create_project", description="Create project",
+                            input_schema={"type": "object"}),
+        ]
+        session.custom_response = SimpleNamespace(is_error=False, content=[
+            SimpleNamespace(type="text", text=json.dumps({
+                "mcp": {"hasProject": False}}))])
+        grants = {x.name: ("read" if x.name == "get_project" else "write")
+                  for x in session.tools}
+        model = ScriptedModel([decision("finish", summary="Unknown state")])
+        result = await NativeCreativeControl(session, model, max_turns=1,
+            catalog_mode="indexed", host_tool_access=grants,
+            host_possible_effects={"create_project": ["project_open"]}).run("Video")
+        self.assertEqual(model.observed[0]["selectable_native_tools"], [])
+        self.assertNotIn("host_capability_frontier",
+                         [e["kind"] for e in result["events"]])
+
+
 if __name__ == "__main__":
     unittest.main()
