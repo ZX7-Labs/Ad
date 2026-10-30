@@ -1005,6 +1005,48 @@ class NativeCreativeControl:
                         raise NativeCreativeControlError("Untrusted tool supplied image evidence")
                     if audio and native_name not in _VERIFIED_AUDIO_TOOLS:
                         raise NativeCreativeControlError("Untrusted tool supplied audio evidence")
+                    # A native tool may report a successful MCP transport
+                    # while its application explicitly supplied only a preview
+                    # plan. Velorn's default previewOnly=True returns
+                    # success=false and result.previewOnly=true. That is NOT
+                    # an acknowledged native mutation, even for a host-granted
+                    # write tool. Never satisfy completion via a preview plan.
+                    if (self.host_tool_access is not None and
+                            self.host_tool_access.get(native_name) == "write" and
+                            len(texts) == 1 and not images and not audio):
+                        try:
+                            host_response = _strict_receipt(texts, "native write response")
+                        except NativeCreativeControlError:
+                            host_response = {}
+                        if host_response.get("success") is False:
+                            host_result = host_response.get("result")
+                            if (isinstance(host_result, dict) and
+                                    host_result.get("previewOnly") is True):
+                                self._last_native_texts = texts
+                                self._last_images, self._last_hashes = [], []
+                                self._last_audio, self._last_audio_evidence = [], None
+                                self._append({
+                                    "kind": "native_tool_preview", "turn": turn,
+                                    "tool": native_name,
+                                    "measured_native_mcp_wall_ms": native_ms,
+                                    "text_sha256": [
+                                        hashlib.sha256(x.encode()).hexdigest()
+                                        for x in texts],
+                                    "host_reported_preview_only": True,
+                                    "no_accepted_write_evidence": True,
+                                    "human_or_artistic_quality_approved": False})
+                                continue
+                            digest = hashlib.sha256(texts[0].encode()).hexdigest()
+                            self._append({
+                                "kind": "native_tool_reported_error", "turn": turn,
+                                "tool": native_name,
+                                "measured_native_mcp_wall_ms": native_ms,
+                                "error_sha256": digest,
+                                "error_text_exceeded_evidence_budget": False,
+                                "must_reconcile_native_state": True,
+                                "no_automatic_retry": True})
+                            outcome = "native_error_requires_state_reconciliation"
+                            break
                     hashes = _source_bound_images(texts, images)
                     audio_evidence = _source_bound_audio(texts, audio)
                     new_export_sha = None
