@@ -68,6 +68,32 @@ def trace():
 
 
 class NativeCreativeAuditTests(unittest.TestCase):
+    def test_host_required_completion_evidence_is_independently_recomputed(self):
+        original = trace()
+        required = ["native_write_acknowledged", "physical_export_verified",
+                    "verified_export_frame_observed"]
+        original[0]["required_completion_evidence"] = required
+        refusal = {"kind": "model_finish_rejected", "turn": 0,
+                   "missing_completion_evidence": required,
+                   "no_native_dispatch": True}
+        original.insert(1, refusal)
+        for index, event in enumerate(original):
+            event["sequence"] = index
+        self.assertTrue(audit_native_journal(
+            original, host_tool_access=HOST)["journal_chain_structurally_valid"])
+        forged = copy.deepcopy(original)
+        forged[1]["missing_completion_evidence"] = ["physical_export_verified"]
+        with self.assertRaisesRegex(NativeJournalError, "completion refusal"):
+            audit_native_journal(forged, host_tool_access=HOST)
+        forged = copy.deepcopy(original)
+        forged[1]["no_native_dispatch"] = False
+        with self.assertRaisesRegex(NativeJournalError, "completion refusal"):
+            audit_native_journal(forged, host_tool_access=HOST)
+        forged = copy.deepcopy(original)
+        forged[0]["required_completion_evidence"] = ["invented_quality_claim"]
+        with self.assertRaisesRegex(NativeJournalError, "completion requirements"):
+            audit_native_journal(forged, host_tool_access=HOST)
+
     def test_honest_technical_custody_without_fake_artistic_claim(self):
         evidence = audit_native_journal(trace(), host_tool_access=HOST)
         self.assertTrue(evidence["journal_chain_structurally_valid"])
