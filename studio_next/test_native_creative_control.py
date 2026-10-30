@@ -851,5 +851,46 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(session.calls, [])
 
 
+    async def test_actual_host_schema_is_provided_after_preflight_without_second_metadata_turn(self):
+        session = FakeSession()
+        model = ScriptedModel([
+            decision("invoke", tool="update_text_clip", inputs={"clipId": 12}),
+            decision("invoke", tool="update_text_clip", inputs={"clipId": "model-chosen"}),
+            decision("finish", summary="Corrected native input against discovered ABI"),
+        ])
+        result = await NativeCreativeControl(session, model, max_turns=3).run(
+            "Model chooses its own native text update")
+        first = model.observed[0]["last_rejected_native_action_feedback"]
+        second = model.observed[1]["last_rejected_native_action_feedback"]
+        third = model.observed[2]["last_rejected_native_action_feedback"]
+        self.assertIsNone(first)
+        self.assertEqual(second["tool"], "update_text_clip")
+        self.assertEqual(second["validation_keyword"], "type")
+        self.assertTrue(second["no_native_dispatch"])
+        self.assertEqual(second["actual_host_input_schema"]["properties"]
+                         ["clipId"]["type"], "string")
+        self.assertIsNone(third)
+        self.assertEqual(session.calls, [("update_text_clip", {"clipId": "model-chosen"})])
+        self.assertNotIn("actual_host_input_schema", json.dumps(result["events"]))
+        self.assertFalse(result["artistic_quality_independently_approved"])
+
+    async def test_oversized_actual_schema_not_replayed_to_model(self):
+        session = FakeSession()
+        session.tools.append(SimpleNamespace(name="huge_native",
+             description="Native customizable geometry",
+             input_schema={"type": "object", "properties": {
+                 "artistValues": {"type": "string", "description": "A" * 30000}}}))
+        model = ScriptedModel([
+            decision("invoke", tool="huge_native", inputs={"artistValues": 123}),
+            decision("finish", summary="Cannot infer large schema from undersized context"),
+        ])
+        outcome = await NativeCreativeControl(session, model, max_turns=2).run("An original edit")
+        next_feedback = model.observed[1]["last_rejected_native_action_feedback"]
+        self.assertTrue(next_feedback["request_schema_with_describe"])
+        self.assertNotIn("actual_host_input_schema", next_feedback)
+        self.assertEqual(session.calls, [])
+        self.assertFalse(outcome["native_editing_capability_complete"])
+
+
 if __name__ == "__main__":
     unittest.main()
