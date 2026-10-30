@@ -200,7 +200,15 @@ async def trial(args, lock, artifacts, command):
                     host_possible_effects={
                         "create_project": ["project_open"],
                         "open_project": ["project_open"],
-                    }).run(brief), timeout=2400)
+                    },
+                    # Technical owner acceptance facts, NOT an editing plan.
+                    # Failed model claims cannot end the trial before actual
+                    # native activity, source-verified export and visual sensing.
+                    required_evidence=(
+                        "native_write_acknowledged",
+                        "physical_export_verified",
+                        "verified_export_frame_observed",
+                    )).run(brief), timeout=2400)
     audit = audit_native_journal(read_native_journal(artifacts / 'native-journal.jsonl'), host_tool_access=host)
     (artifacts / 'journal-audit.json').write_text(json.dumps(audit, indent=2))
     actual_images = len(list((artifacts / 'observations').glob('*.png')))
