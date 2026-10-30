@@ -53,10 +53,11 @@ class CapabilityFabric:
         for namespace, pair in sources.items():
             if (not isinstance(namespace, str) or
                     re.fullmatch(r"[a-z][a-z0-9_-]{0,47}", namespace) is None or
-                    not isinstance(pair, tuple) or len(pair) not in (2, 3)):
+                    not isinstance(pair, tuple) or len(pair) not in (2, 3, 4)):
                 raise CapabilityContractError("Source identity and trusted grants required")
             tools, grants = pair[:2]
-            requirements = pair[2] if len(pair) == 3 else {}
+            requirements = pair[2] if len(pair) >= 3 else {}
+            potential_enablers = pair[3] if len(pair) == 4 else {}
             if (not isinstance(requirements, Mapping) or
                     any(not isinstance(name, str) or
                         not isinstance(conditions, (list, tuple)) or
@@ -69,6 +70,17 @@ class CapabilityFabric:
                 raise CapabilityContractError("Only trusted typed machine prerequisites are allowed")
             if any(name not in grants for name in requirements):
                 raise CapabilityContractError("Prerequisite references an ungranted capability")
+            if (not isinstance(potential_enablers, Mapping) or
+                    any(not isinstance(name, str) or
+                        not isinstance(facts, (list, tuple)) or
+                        len(facts) > 8 or
+                        any(not isinstance(v, str) or
+                            re.fullmatch(r"[a-z][a-z0-9_]{0,63}", v) is None
+                            for v in facts) or
+                        len(set(facts)) != len(facts)
+                        for name, facts in potential_enablers.items()) or
+                    any(name not in grants for name in potential_enablers)):
+                raise CapabilityContractError("Host potential effects require valid granted tools")
             if (not isinstance(tools, (list, tuple)) or len(tools) > 5000 or
                     not isinstance(grants, Mapping) or
                     any(not isinstance(k, str) or v not in ("read", "write")
@@ -107,6 +119,9 @@ class CapabilityFabric:
                     "name_tokens": _tokens(name + " " + namespace),
                     "description_tokens": _tokens(summary),
                     "requires": list(requirements.get(name, ())),
+                    # Potential effect is an affordance, NOT evidence that a
+                    # later native call actually changed a project fact.
+                    "may_enable": list(potential_enablers.get(name, ())),
                 }
         if not records:
             raise CapabilityContractError("No executable host-granted capabilities")
@@ -117,7 +132,7 @@ class CapabilityFabric:
         self.revision = hashlib.sha256(_wire([{
             "id": key, "access": value["access"],
             "summary": value["description"], "schema": value["input_schema"],
-            "requires": value["requires"]
+            "requires": value["requires"], "may_enable": value["may_enable"]
         } for key, value in sorted(records.items())]).encode("utf-8")).hexdigest()
 
     @classmethod
@@ -133,7 +148,7 @@ class CapabilityFabric:
             raise CapabilityContractError("Real connected source inventory required")
         sources = {}
         for namespace, binding in connections.items():
-            if not isinstance(binding, tuple) or len(binding) not in (2, 3):
+            if not isinstance(binding, tuple) or len(binding) not in (2, 3, 4):
                 raise CapabilityContractError("Source requires session and host grants")
             session, grants = binding[:2]
             if not callable(getattr(session, "list_tools", None)):
@@ -144,8 +159,9 @@ class CapabilityFabric:
                 raise CapabilityContractError(
                     "Partial paginated MCP discovery cannot define complete capabilities")
             advertised = _field(response, "tools")
-            requirements = binding[2] if len(binding) == 3 else {}
-            sources[namespace] = (advertised, grants, requirements)
+            requirements = binding[2] if len(binding) >= 3 else {}
+            enablers = binding[3] if len(binding) == 4 else {}
+            sources[namespace] = (advertised, grants, requirements, enablers)
         return cls(sources)
 
     @property
@@ -187,7 +203,8 @@ class CapabilityFabric:
             items.append({"id": ident, "description": record["description"][:96],
                           "access": record["access"],
                           "parameters_sample": param_names,
-                          "requires": record["requires"]})
+                          "requires": record["requires"],
+                          "may_enable": record["may_enable"]})
         return {"revision": self.revision, "matches": items,
                 "has_more": len(scored) > limit}
 
@@ -202,6 +219,7 @@ class CapabilityFabric:
         return {"operation_id": operation_id, "revision": self.revision,
                 "access": record["access"],
                 "requires": record["requires"],
+                "may_enable": record["may_enable"],
                 "input_schema": record["input_schema"],
                 "description": record["description"]}
 
@@ -211,6 +229,41 @@ class CapabilityFabric:
         if not isinstance(operation_id, str) or operation_id not in self._records:
             raise CapabilityContractError("Unknown or ungranted BODY capability")
         return copy.deepcopy(self._records[operation_id])
+
+    def affordance_frontier(self, *, trusted_facts: Mapping,
+                            limit: int = 4):
+        """Show bounded real operations able to enable currently missing facts.
+
+        Only the trusted host supplies the facts and possible machine effects.
+        This is not a recipe, recommended aesthetic choice, executable grant or
+        success prediction. The creative model independently selects an action.
+        """
+        if (not isinstance(trusted_facts, Mapping) or
+                any(not isinstance(key, str) or type(value) is not bool
+                    for key, value in trusted_facts.items()) or
+                type(limit) is not int or not 1 <= limit <= 8):
+            raise CapabilityContractError("Host-attested boolean fact state required")
+        needed = {key for key, value in trusted_facts.items() if not value}
+        items = []
+        for identifier, record in sorted(self._records.items()):
+            enables = needed.intersection(record["may_enable"])
+            if not enables:
+                continue
+            readiness = self.check_prerequisites(
+                identifier, revision=self.revision, trusted_facts=trusted_facts)
+            if not readiness["admissible"]:
+                continue
+            items.append({"id": identifier,
+                          "description": record["description"][:96],
+                          "access": record["access"],
+                          "may_enable": sorted(enables),
+                          "parameters_sample": list(
+                              record["input_schema"].get("properties", {}))[:6]})
+        return {"revision": self.revision,
+                "matches": items[:limit],
+                "has_more": len(items) > limit,
+                "facts_are_host_attested": True,
+                "effects_are_possibilities_not_verified_results": True}
 
     def check_prerequisites(self, operation_id: str, *, revision: str,
                            trusted_facts: Mapping):
