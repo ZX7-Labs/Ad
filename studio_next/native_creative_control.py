@@ -636,9 +636,12 @@ class NativeCreativeControl:
                         if isinstance(status, dict) and isinstance(status.get("mcp"), dict):
                             has = status["mcp"].get("hasProject")
                             project = status.get("project")
-                            if has is False and project is None:
+                            # Missing "project" is not a verified null
+                            # project. The real host must explicitly supply
+                            # BOTH independent fields before asserting status.
+                            if "project" in status and has is False and project is None:
                                 self._project_presence = "absent"
-                            elif has is True and isinstance(project, dict):
+                            elif "project" in status and has is True and isinstance(project, dict):
                                 self._project_presence = "present"
                 else:
                     self._project_presence = "unknown"
