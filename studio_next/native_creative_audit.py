@@ -29,6 +29,11 @@ _FRAME_OBSERVERS = frozenset({
     "zx7_observe_verified_export_samples",
 })
 _EXPORT = "zx7_verify_native_export"
+_COMPLETION_EVIDENCE_TYPES = frozenset({
+    "native_write_acknowledged", "physical_export_verified",
+    "post_observation_native_write_acknowledged",
+    "verified_export_frame_observed",
+})
 _AUDIO = "zx7_observe_verified_export_audio"
 _CRITICAL_END = frozenset({
     "native_tool_reported_error", "native_tool_uncertain_outcome",
@@ -102,7 +107,8 @@ def read_native_journal(path: Path):
     return events
 
 
-def audit_native_journal(events, *, host_tool_access):
+def audit_native_journal(events, *, host_tool_access, expected_required_evidence=None,
+                         host_content_revision_tools=()):
     """Check every transition and trace real export-to-observation identity.
 
     host_tool_access comes from the trusted owner grants, not from model text.
@@ -117,13 +123,58 @@ def audit_native_journal(events, *, host_tool_access):
         raise NativeJournalError("Invalid event sequence or host access inventory")
     if not isinstance(events[0], dict) or events[0].get("kind") != "session_started":
         raise NativeJournalError("Journal lacks a session identity")
+    required = events[0].get("required_completion_evidence", [])
+    if (not isinstance(required, list) or
+            any(not isinstance(item, str) or item not in _COMPLETION_EVIDENCE_TYPES
+                for item in required) or required != sorted(set(required))):
+        raise NativeJournalError("Unknown or malformed host completion requirements")
+    # Independent policy witness is supplied by the trusted host caller, not
+    # copied from the journal being evaluated. Existing callers may omit it,
+    # but that omission cannot certify the configured completion policy.
+    if expected_required_evidence is not None:
+        if (not isinstance(expected_required_evidence, (list, tuple, frozenset)) or
+                any(not isinstance(item, str) or
+                    item not in _COMPLETION_EVIDENCE_TYPES
+                    for item in expected_required_evidence) or
+                len(set(expected_required_evidence)) != len(expected_required_evidence)):
+            raise NativeJournalError("Invalid independent host completion policy")
+        if required != sorted(expected_required_evidence):
+            raise NativeJournalError("Journal completion policy differs from trusted host")
+    if (not isinstance(host_content_revision_tools, (list, tuple, frozenset)) or
+            any(not isinstance(name, str) or not name or
+                host_tool_access.get(name) != "write"
+                for name in host_content_revision_tools) or
+            len(set(host_content_revision_tools)) != len(host_content_revision_tools) or
+            ("post_observation_native_write_acknowledged" in required
+             and not host_content_revision_tools)):
+        raise NativeJournalError(
+            "Independent review revision roles require trusted native write grants")
+    host_content_revision_tools = frozenset(host_content_revision_tools)
     pending = None
     verified = set()
     observed = {}
+    # Current-edit proof, distinct from the immutable historical custody ledger.
+    fresh_verified = set()
+    fresh_frames = set()
+    saw_verified_frame = False
+    post_observation_write = False
     writes = []
     observed_then_written = []
     finished = False
     terminal = None
+
+    def missing_evidence():
+        proven = set()
+        if writes:
+            proven.add("native_write_acknowledged")
+        if post_observation_write:
+            proven.add("post_observation_native_write_acknowledged")
+        if fresh_verified:
+            proven.add("physical_export_verified")
+        if fresh_frames:
+            proven.add("verified_export_frame_observed")
+        return sorted(set(required) - proven)
+
     for i, event in enumerate(events):
         if not isinstance(event, dict) or type(event.get("sequence")) is not int or event["sequence"] != i:
             raise NativeJournalError("Journal event sequence is broken")
@@ -206,6 +257,14 @@ def audit_native_journal(events, *, host_tool_access):
                         for tool in tools) or len(set(tools)) != len(tools)):
                 raise NativeJournalError("Search fabricated an ungranted native capability")
             continue
+        if kind == "model_finish_rejected":
+            # This is a model-selected finish REFUSED by the owner host: no
+            # native dispatch and no claim that artistic work was completed.
+            if (pending is not None or event.get("no_native_dispatch") is not True or
+                    not missing_evidence() or
+                    event.get("missing_completion_evidence") != missing_evidence()):
+                raise NativeJournalError("Unproven or fabricated completion refusal")
+            continue
         if kind == "model_action_rejected":
             # Input-schema preflight rejected a model proposal BEFORE any RPC.
             # This is safe to correct, unlike an unknown native write result.
@@ -271,14 +330,26 @@ def audit_native_journal(events, *, host_tool_access):
                     raise NativeJournalError("Native data has malformed source checksums")
                 new_sha = event.get("independently_verified_export_sha256")
                 seen_sha = event.get("observed_export_sha256")
+                if access == "write":
+                    writes.append((i, tool))
+                    if saw_verified_frame and tool in host_content_revision_tools:
+                        post_observation_write = True
+                    if observed:
+                        observed_then_written.append((i, tool))
+                    fresh_verified.clear()
+                    fresh_frames.clear()
                 if new_sha is not None:
                     if tool != _EXPORT or not _sha(new_sha):
                         raise NativeJournalError("Fake physical export verification attribution")
                     verified.add(new_sha)
+                    fresh_verified.add(new_sha)
                 if seen_sha is not None:
                     if tool not in _OBSERVERS or not _sha(seen_sha) or seen_sha not in verified:
                         raise NativeJournalError("Unverified exported media was observed")
                     observed.setdefault(seen_sha, set()).add(tool)
+                    if seen_sha in fresh_verified and tool in _FRAME_OBSERVERS:
+                        fresh_frames.add(seen_sha)
+                        saw_verified_frame = True
                 if tool == _EXPORT and new_sha is None:
                     raise NativeJournalError("No physical export proof on successful verification")
                 if tool in _OBSERVERS and seen_sha is None:
@@ -291,10 +362,6 @@ def audit_native_journal(events, *, host_tool_access):
                         raise NativeJournalError("Unknown tool forged an audio recording")
                 if tool == _AUDIO and audio_sha is None:
                     raise NativeJournalError("Native WAV is absent")
-                if access == "write":
-                    writes.append((i, tool))
-                    if observed:
-                        observed_then_written.append((i, tool))
             else:
                 if access == "write" and kind == "native_observation_rejected":
                     # A rejected result might follow a completed write; cannot
@@ -308,7 +375,7 @@ def audit_native_journal(events, *, host_tool_access):
                 finished = True
             continue
         if kind == "model_finished":
-            if pending is not None:
+            if pending is not None or missing_evidence():
                 raise NativeJournalError("Model finished with an unresolved native write")
             # Preserve old valid journal compatibility, but require new
             # private-summary receipts to have a real SHA and length, never
@@ -333,6 +400,7 @@ def audit_native_journal(events, *, host_tool_access):
     return {
         "schema": 1,
         "journal_chain_structurally_valid": True,
+        "host_completion_policy_independently_matched": expected_required_evidence is not None,
         "event_count": len(events),
         "recorded_native_write_result_count": len(writes),
         "export_digests_independently_reported_by_native_host": sorted(verified),

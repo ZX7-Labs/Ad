@@ -30,6 +30,11 @@ _VERIFIED_FRAME_TOOLS = frozenset({
 _VERIFIED_AUDIO_TOOLS = frozenset({"zx7_observe_verified_export_audio"})
 _VERIFIED_EXPORT_TOOL = "zx7_verify_native_export"
 _VERIFIED_ENVELOPE_TOOL = "zx7_observe_verified_export_audio_timeline"
+_COMPLETION_EVIDENCE_TYPES = frozenset({
+    "native_write_acknowledged", "physical_export_verified",
+    "post_observation_native_write_acknowledged",
+    "verified_export_frame_observed",
+})
 
 
 def _strict_receipt(texts, label):
@@ -304,6 +309,9 @@ def _model_event_window(events):
                 item["input_schema"] = event.get("input_schema")
             else:
                 item["schema_available_by_describe"] = True
+        elif kind == "model_finish_rejected":
+            item["missing_completion_evidence"] = event["missing_completion_evidence"]
+            item["no_native_dispatch"] = True
         elif kind == "model_action_rejected":
             for field in ("validation_keyword", "schema_location", "no_native_dispatch"):
                 if field in event:
@@ -365,7 +373,9 @@ class NativeCreativeControl:
                  host_tool_access: dict[str, str] | None = None,
                  catalog_mode: str = "full",
                  host_preconditions: dict | None = None,
-                 host_possible_effects: dict | None = None):
+                 host_possible_effects: dict | None = None,
+                 required_evidence: tuple[str, ...] = (),
+                 host_content_revision_tools: tuple[str, ...] = ()):
         if type(max_turns) is not int or not 1 <= max_turns <= 128:
             raise NativeCreativeControlError("Native model session requires finite turn budget")
         if not callable(getattr(model, "decide", None)):
@@ -382,6 +392,27 @@ class NativeCreativeControl:
             raise NativeCreativeControlError("Unknown capability catalog mode")
         if catalog_mode == "indexed" and host_tool_access is None:
             raise NativeCreativeControlError("Indexed capability discovery requires trusted host grants")
+        if (not isinstance(required_evidence, (list, tuple, frozenset)) or
+                any(not isinstance(item, str) or
+                    item not in _COMPLETION_EVIDENCE_TYPES for item in required_evidence) or
+                len(set(required_evidence)) != len(required_evidence) or
+                (required_evidence and host_tool_access is None)):
+            raise NativeCreativeControlError(
+                "Completion evidence must be a unique trusted host requirement")
+        self.required_evidence = frozenset(required_evidence)
+        if (not isinstance(host_content_revision_tools, (list, tuple, frozenset)) or
+                any(not isinstance(name, str) or not name
+                    for name in host_content_revision_tools) or
+                len(set(host_content_revision_tools)) != len(host_content_revision_tools) or
+                any(host_tool_access is None or host_tool_access.get(name) != "write"
+                    for name in host_content_revision_tools) or
+                ("post_observation_native_write_acknowledged" in self.required_evidence
+                 and not host_content_revision_tools)):
+            raise NativeCreativeControlError(
+                "Reviewed native content revision requires trusted write-role tool grants")
+        # The *host*, not the replaceable model, attests which actual writes
+        # affect creative content. Save/export metadata writes are not revisions.
+        self.host_content_revision_tools = frozenset(host_content_revision_tools)
         self.catalog_mode = catalog_mode
         self._host_preconditions = copy.deepcopy(host_preconditions or {})
         self._host_possible_effects = copy.deepcopy(host_possible_effects or {})
@@ -415,6 +446,44 @@ class NativeCreativeControl:
         self._native_mcp_wall_ms_total = 0.0
         self._started = False
         self._receipt = None
+
+    def _missing_completion_evidence(self):
+        """Use only accepted native results and current-edit export custody.
+
+        An older verified frame cannot certify a later native revision. Each
+        acknowledged write invalidates the session's *completion* proof cache,
+        without discarding historical media/source custody and recovery evidence.
+        """
+        proven = set()
+        current_verified = set()
+        current_frames = set()
+        saw_verified_frame = False
+        post_observation_write = False
+        for event in self.events:
+            if event.get("kind") != "native_tool_result":
+                continue
+            if (self.host_tool_access is not None and
+                    self.host_tool_access.get(event.get("tool")) == "write"):
+                proven.add("native_write_acknowledged")
+                if (saw_verified_frame and
+                        event.get("tool") in self.host_content_revision_tools):
+                    post_observation_write = True
+                current_verified.clear()
+                current_frames.clear()
+            verified = event.get("independently_verified_export_sha256")
+            if verified is not None and verified in self._verified_exports:
+                current_verified.add(verified)
+            observed = event.get("observed_export_sha256")
+            if (observed in current_verified and event.get("image_sha256")):
+                current_frames.add(observed)
+                saw_verified_frame = True
+        if post_observation_write:
+            proven.add("post_observation_native_write_acknowledged")
+        if current_verified:
+            proven.add("physical_export_verified")
+        if current_frames:
+            proven.add("verified_export_frame_observed")
+        return sorted(self.required_evidence - proven)
 
     def _append(self, event: dict):
         event = json.loads(_wire({"sequence": len(self.events), **event}))
@@ -519,6 +588,32 @@ class NativeCreativeControl:
         if self.host_tool_access is not None and set(self.tools) != set(self.host_tool_access):
             raise NativeCreativeControlError(
                 "Trusted host grants must match the exact discovered native tool set")
+        if not self.host_content_revision_tools.issubset(self.tools):
+            raise NativeCreativeControlError(
+                "Host content revision roles reference absent native tools")
+        # Reject impossible owner proof requirements before expensive inference.
+        # This is capability feasibility, never a host-selected creative step.
+        if self.required_evidence:
+            grants = self.host_tool_access
+            needs_review_write = (
+                "post_observation_native_write_acknowledged" in self.required_evidence)
+            missing_write = (bool(self.required_evidence & {
+                "native_write_acknowledged",
+                "post_observation_native_write_acknowledged"}) and
+                not any(access == "write" for access in grants.values()))
+            needs_export = bool(self.required_evidence & {
+                "physical_export_verified", "verified_export_frame_observed",
+                "post_observation_native_write_acknowledged"})
+            missing_export = (needs_export and
+                              grants.get(_VERIFIED_EXPORT_TOOL) != "read")
+            missing_frame = (
+                ("verified_export_frame_observed" in self.required_evidence or
+                 needs_review_write) and
+                not any(grants.get(name) == "read" for name in
+                        _VERIFIED_FRAME_TOOLS))
+            if missing_write or missing_export or missing_frame:
+                raise NativeCreativeControlError(
+                    "Host requires completion evidence unsupported by granted native tools")
         if self.catalog_mode == "indexed":
             from .capability_fabric import CapabilityFabric
             self._capabilities = CapabilityFabric(
@@ -567,6 +662,7 @@ class NativeCreativeControl:
                 "model_id_reported": getattr(identity, "model_id", None),
                 "model_adapter": type(self.model).__qualname__,
                 "native_tool_count": len(self.tools),
+                "required_completion_evidence": sorted(self.required_evidence),
                 "neural_autonomy_or_artistic_quality_verified": False,
             })
             outcome = "turn_budget_exhausted"
@@ -641,11 +737,15 @@ class NativeCreativeControl:
             for turn in range(self.max_turns):
                 context = {
                     "creative_brief": brief,
+                    # Expose only actions that the exact current grammar
+                    # can represent. A premature finish is not an option when
+                    # independently required host evidence is absent.
                     "available_actions": ((
-                        ["search", "describe", "invoke", "finish"]
-                        if self._selectable_tools else ["search", "finish"])
+                        ["search", "describe", "invoke"]
+                        if self._selectable_tools else ["search"])
                         if self.catalog_mode == "indexed" else
-                        ["discover", "describe", "invoke", "finish"]),
+                        ["discover", "describe", "invoke"]) +
+                        ([] if self._missing_completion_evidence() else ["finish"]),
                     "actual_granted_native_tools": (
                         [] if self.catalog_mode == "indexed" else list(self.tools)),
                     "compact_tool_catalog": self.catalog_mode == "indexed",
@@ -654,6 +754,8 @@ class NativeCreativeControl:
                                             if self._capabilities is not None else None),
                     "last_capability_search_result": self._last_search_result,
                     "completion_does_not_certify_artistic_quality": True,
+                    "required_completion_evidence": sorted(self.required_evidence),
+                    "missing_completion_evidence": self._missing_completion_evidence(),
                     "audio_semantically_reviewed": False,
                     # Keep stable context first for local runtime prefix caching;
                     # this never caches decisions or replays native operations.
@@ -722,6 +824,14 @@ class NativeCreativeControl:
                 # A new successful native call replaces this text below.
                 action, args = decision["action"], decision["arguments"]
                 if action == "finish":
+                    missing = self._missing_completion_evidence()
+                    if missing:
+                        # No native operation occurred. Keep the independently
+                        # thinking model in control of its next creative action.
+                        self._append({"kind": "model_finish_rejected", "turn": turn,
+                                      **timing, "missing_completion_evidence": missing,
+                                      "no_native_dispatch": True})
+                        continue
                     self._append({"kind": "model_finished", "turn": turn,
                                   **timing,
                                   # The model's free-form summary can echo a private
