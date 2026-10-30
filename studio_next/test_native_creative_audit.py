@@ -185,5 +185,37 @@ class NativeCreativeAuditTests(unittest.TestCase):
                 read_native_journal(source)
 
 
+    def test_new_private_intent_receipts_and_legacy_proofs_are_both_checked(self):
+        events = trace()
+        for event in events:
+            if event["kind"] == "native_tool_submitted":
+                reason = event.pop("model_reason")
+                event["model_reason_sha256"] = hashlib.sha256(reason.encode()).hexdigest()
+                event["model_reason_utf8_bytes"] = len(reason.encode())
+            if event["kind"] == "model_finished":
+                summary = event.pop("summary")
+                event["summary_sha256"] = hashlib.sha256(summary.encode()).hexdigest()
+                event["summary_utf8_bytes"] = len(summary.encode())
+        accepted = audit_native_journal(events, host_tool_access=HOST)
+        self.assertTrue(accepted["journal_chain_structurally_valid"])
+        # Ambiguous old+new envelopes must not become an escape hatch.
+        modifications = [
+            (1, {"model_reason": "private leak"}),
+            (1, {"model_reason_utf8_bytes": True}),
+            (1, {"model_reason_sha256": "invalid"}),
+            (1, {"model_reason_utf8_bytes": -1}),
+            (-1, {"summary": "private leak"}),
+            (-1, {"summary_utf8_bytes": True}),
+            (-1, {"summary_sha256": "bad"}),
+            (-1, {"summary_utf8_bytes": 0}),
+        ]
+        for index, change in modifications:
+            with self.subTest(index=index, change=change):
+                broken = copy.deepcopy(events)
+                broken[index].update(change)
+                with self.assertRaises(NativeJournalError):
+                    audit_native_journal(broken, host_tool_access=HOST)
+
+
 if __name__ == "__main__":
     unittest.main()
