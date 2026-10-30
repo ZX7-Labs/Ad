@@ -283,6 +283,50 @@
       "native_video_field_complete": false,
       "root_cause": "2B model falsely declared a fully created, saved and exported native project on its first decision, contradicted by real host project=null/hasProject=false and zero native writes or exports.",
       "next_safety_fix": "Host-owned generic required_evidence gate refuses premature finish; does not select creative actions or count model prose as an artifact."
+    },
+    {
+      "body_commit": "f0edeead504843e1c6938dbb0d32e35132f5e9ce",
+      "workflow_run": 41056509885,
+      "artifact_id": 12976842829,
+      "artifact_zip_sha256": "13ff4c2d2dffcc95f9d6e59f11fc56b455a9ad336adfefa2d0e44c49c03eafae",
+      "model": "unsloth/Qwen3.5-2B-GGUF",
+      "quantization": "Q4_K_M",
+      "cpu_only": true,
+      "actual_inference_turns": 7,
+      "measured_inference_wall_seconds_sum": 339.014,
+      "model_selected_actions": {
+        "search": 5,
+        "invoke": 2
+      },
+      "first_four_capability_searches": {
+        "query": "create_project",
+        "results_invokable": 0,
+        "requires_refinement": true,
+        "first_candidates_examined": 27
+      },
+      "actual_native_dispatches": 1,
+      "preflight_rejected_invokes": 1,
+      "preflight_rejection": {
+        "tool": "create_project",
+        "validator": "type",
+        "reason": "width/height/fps were sent as strings rather than native integer/number schema"
+      },
+      "terminal_native_error_tool": "open_project",
+      "terminal_native_error_cause": "Model passed an MP4 source-asset path as a native project path",
+      "acknowledged_native_writes": 0,
+      "verified_exports": 0,
+      "physically_observed_frames": 0,
+      "technical_trial_completed": false,
+      "model_status": "native_error_requires_state_reconciliation",
+      "artistic_quality_approved": false,
+      "native_video_field_complete": false,
+      "observed_root_cause": "An already host-advertised exact operation create_project was hidden behind lexical-tie requires_refinement across repeated searches. Model then made invalid project-creation arguments and a mistaken native project-open call. Multiple independent model/operation errors remain beyond retrieval.",
+      "candidate_fix": "Preserve ambiguous broad-search refusal, but resolve an exact host-granted native name or source-qualified operation ID before lexical ranking. Not evidence that the model can complete a creative video.",
+      "local_server_reported_token_usage": {
+        "prompt_tokens_sum": 13023,
+        "completion_tokens_sum": 937,
+        "independently_verified": false
+      }
     }
   ]
 }
