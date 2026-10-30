@@ -80,6 +80,22 @@ class CapabilityFabricTests(unittest.TestCase):
         self.assertFalse(specific.get("requires_refinement", False))
         self.assertEqual(specific["matches"][0]["id"], "editor/create_project")
 
+    def test_1000_tools_use_inverted_postings_not_full_catalog_scan(self):
+        tools = [tool(f"job_{idx:04d}",
+                      "Render creative composition" if idx != 911
+                      else "Private specialty foobar_only_native_capability")
+                 for idx in range(1000)]
+        f = CapabilityFabric({"studio": (tools, {x.name: "read" for x in tools})})
+        focused = f.search("foobar_only_native_capability", limit=1)
+        self.assertEqual(len(focused["matches"]), 1)
+        self.assertEqual(focused["matches"][0]["id"], "studio/job_0911")
+        self.assertEqual(focused["candidates_examined"], 1)
+        self.assertLess(len(json.dumps(focused)), 800)
+        broad = f.search("render", limit=6)
+        self.assertEqual(broad["candidates_examined"], 999)
+        self.assertTrue(broad["has_more"])
+        self.assertEqual(broad, f.search("render", limit=6))
+
     def test_1000_tool_catalog_is_only_short_result_not_1000_md_pages(self):
         tools = [tool(f"operation_{i:04d}", f"Color grade and geometry control {i}",
                       {f"native_value_{i}": {"type": "number"}})
