@@ -38,8 +38,9 @@ def _tokens(value):
 class CapabilityFabric:
     """Immutable, exact host-granted capability snapshot.
 
-    Sources: mapping of stable namespace -> (MCP tool descriptions, trusted
-    host grant map of tool name to 'read' or 'write'). A connected engine
+    Sources: mapping of namespace -> (MCP tools, trusted access grants), with
+    optional third element: trusted machine preconditions keyed by tool name.
+    A connected engine
     contributes only actual tools it advertised and the host explicitly
     authorized. Snapshots can be replaced when a source's catalog changes;
     stale references are rejected by the next snapshot's revision.
@@ -52,9 +53,22 @@ class CapabilityFabric:
         for namespace, pair in sources.items():
             if (not isinstance(namespace, str) or
                     re.fullmatch(r"[a-z][a-z0-9_-]{0,47}", namespace) is None or
-                    not isinstance(pair, tuple) or len(pair) != 2):
+                    not isinstance(pair, tuple) or len(pair) not in (2, 3)):
                 raise CapabilityContractError("Source identity and trusted grants required")
-            tools, grants = pair
+            tools, grants = pair[:2]
+            requirements = pair[2] if len(pair) == 3 else {}
+            if (not isinstance(requirements, Mapping) or
+                    any(not isinstance(name, str) or
+                        not isinstance(conditions, (list, tuple)) or
+                        len(conditions) > 8 or
+                        len(set(conditions)) != len(conditions) or
+                        any(not isinstance(term, str) or
+                            re.fullmatch(r"[a-z][a-z0-9_]{0,63}", term) is None
+                            for term in conditions)
+                        for name, conditions in requirements.items())):
+                raise CapabilityContractError("Only trusted typed machine prerequisites are allowed")
+            if any(name not in grants for name in requirements):
+                raise CapabilityContractError("Prerequisite references an ungranted capability")
             if (not isinstance(tools, (list, tuple)) or len(tools) > 5000 or
                     not isinstance(grants, Mapping) or
                     any(not isinstance(k, str) or v not in ("read", "write")
@@ -92,6 +106,7 @@ class CapabilityFabric:
                     "schema_bytes": schema_bytes,
                     "name_tokens": _tokens(name + " " + namespace),
                     "description_tokens": _tokens(summary),
+                    "requires": list(requirements.get(name, ())),
                 }
         if not records:
             raise CapabilityContractError("No executable host-granted capabilities")
@@ -101,7 +116,8 @@ class CapabilityFabric:
         # selection even when the *name* is reused for a different ABI/grant.
         self.revision = hashlib.sha256(_wire([{
             "id": key, "access": value["access"],
-            "summary": value["description"], "schema": value["input_schema"]
+            "summary": value["description"], "schema": value["input_schema"],
+            "requires": value["requires"]
         } for key, value in sorted(records.items())]).encode("utf-8")).hexdigest()
 
     @property
@@ -142,7 +158,8 @@ class CapabilityFabric:
             param_names = list(props)[:6] if isinstance(props, dict) else []
             items.append({"id": ident, "description": record["description"][:96],
                           "access": record["access"],
-                          "parameters_sample": param_names})
+                          "parameters_sample": param_names,
+                          "requires": record["requires"]})
         return {"revision": self.revision, "matches": items,
                 "has_more": len(scored) > limit}
 
@@ -156,6 +173,7 @@ class CapabilityFabric:
                     "required_schema_bytes": record["schema_bytes"]}
         return {"operation_id": operation_id, "revision": self.revision,
                 "access": record["access"],
+                "requires": record["requires"],
                 "input_schema": record["input_schema"],
                 "description": record["description"]}
 
@@ -165,3 +183,22 @@ class CapabilityFabric:
         if not isinstance(operation_id, str) or operation_id not in self._records:
             raise CapabilityContractError("Unknown or ungranted BODY capability")
         return copy.deepcopy(self._records[operation_id])
+
+    def check_prerequisites(self, operation_id: str, *, revision: str,
+                           trusted_facts: Mapping):
+        """Advisory machine-state check from the trusted host, never model text.
+
+        An unknown fact is NOT false and is NOT an authorization to execute.
+        Actual native host validation/approval remains mandatory on every
+        write. No tool execution or model creativity is implied by this check.
+        """
+        record = self.resolve(operation_id, revision=revision)
+        if (not isinstance(trusted_facts, Mapping) or
+                any(not isinstance(k, str) or type(v) is not bool
+                    for k, v in trusted_facts.items())):
+            raise CapabilityContractError("Only host-attested boolean state is permitted")
+        missing = [x for x in record["requires"] if x not in trusted_facts]
+        blocked = [x for x in record["requires"] if trusted_facts.get(x) is False]
+        return {"operation_id": operation_id, "revision": self.revision,
+                "admissible": not (missing or blocked),
+                "unknown_state": missing, "unsatisfied": blocked}
