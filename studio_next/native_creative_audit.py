@@ -155,6 +155,18 @@ def audit_native_journal(events, *, host_tool_access):
             if pending is not None:
                 raise NativeJournalError("Tool catalog interleaved with unfinished native operation")
             continue
+        if kind == "model_action_rejected":
+            # Input-schema preflight rejected a model proposal BEFORE any RPC.
+            # This is safe to correct, unlike an unknown native write result.
+            # Never count preflight rejection as an editor operation.
+            if (pending is not None or
+                    event.get("tool") not in host_tool_access or
+                    not _sha(event.get("inputs_sha256")) or
+                    event.get("no_native_dispatch") is not True or
+                    not isinstance(event.get("validation_keyword"), str) or
+                    not 1 <= len(event["validation_keyword"]) <= 64):
+                raise NativeJournalError("Model preflight rejection lacks proof of no native dispatch")
+            continue
         if kind == "native_tool_submitted":
             if pending is not None:
                 raise NativeJournalError("Second tool submitted before native outcome")
