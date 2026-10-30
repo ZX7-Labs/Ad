@@ -696,11 +696,15 @@ class NativeCreativeControl:
             for turn in range(self.max_turns):
                 context = {
                     "creative_brief": brief,
+                    # Expose only actions that the exact current grammar
+                    # can represent. A premature finish is not an option when
+                    # independently required host evidence is absent.
                     "available_actions": ((
-                        ["search", "describe", "invoke", "finish"]
-                        if self._selectable_tools else ["search", "finish"])
+                        ["search", "describe", "invoke"]
+                        if self._selectable_tools else ["search"])
                         if self.catalog_mode == "indexed" else
-                        ["discover", "describe", "invoke", "finish"]),
+                        ["discover", "describe", "invoke"]) +
+                        ([] if self._missing_completion_evidence() else ["finish"]),
                     "actual_granted_native_tools": (
                         [] if self.catalog_mode == "indexed" else list(self.tools)),
                     "compact_tool_catalog": self.catalog_mode == "indexed",
