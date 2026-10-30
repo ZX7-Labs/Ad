@@ -217,7 +217,10 @@ def audit_native_journal(events, *, host_tool_access, expected_required_evidence
         if kind in ("host_project_post_write_observation",
                     "host_project_post_write_error"):
             previous = events[i - 1] if i > 0 else {}
-            attempt = event.get("read_attempt", 1)
+            # Old receipts were never independently versioned; a missing
+            # attempt is not a valid new bounded-read claim. Historical
+            # artifacts must be examined with their original source version.
+            attempt = event.get("read_attempt")
             if type(attempt) is not int or attempt not in (1, 2):
                 raise NativeJournalError("Unbounded post-write read attempt")
             original_write = previous
@@ -416,6 +419,20 @@ def audit_native_journal(events, *, host_tool_access, expected_required_evidence
                 new_sha = event.get("independently_verified_export_sha256")
                 seen_sha = event.get("observed_export_sha256")
                 if access == "write":
+                    # This auditor reads a bounded journal, not the raw host
+                    # connection. Demand the control loop's explicit app-level
+                    # acknowledgment and tie its receipt hash to the recorded
+                    # native response digest before crediting a write. This
+                    # remains journal *internal* proof, not a cryptographic
+                    # signature from the upstream editor.
+                    if (event.get("host_application_write_acknowledged") is not True or
+                            len(event["text_sha256"]) != 1 or
+                            event.get("host_application_write_receipt_sha256") !=
+                            event["text_sha256"][0] or
+                            event["image_sha256"] or
+                            event.get("audio_sha256") is not None):
+                        raise NativeJournalError(
+                            "Native write has no bounded application acknowledgment receipt")
                     writes.append((i, tool))
                     if saw_verified_frame and tool in host_content_revision_tools:
                         post_observation_write = True
