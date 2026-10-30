@@ -41,8 +41,23 @@ class NativeActionSchemaTests(unittest.TestCase):
         validator.validate({"action": "search",
             "arguments": {"query": "editable motion project", "limit": 4},
             "reason": "Discover currently available host capabilities"})
-        validator.validate({"action": "describe",
-            "arguments": {"tool": "model_selected_actual_name"}, "reason": "Inspect the ABI"})
+        # No tool is selectable until BODY has actually searched/returned it.
+        self.assertFalse(validator.is_valid({"action": "describe",
+            "arguments": {"tool": "model_selected_actual_name"}, "reason": "Guess"}))
+        self.assertFalse(validator.is_valid({"action": "invoke",
+            "arguments": {"tool": "search", "inputs": {"query": "project"}},
+            "reason": "Confuse protocol with editor"}))
+        returned = native_action_schema([], compact_catalog=True,
+                                        selected_tools=["create_project", "get_project"])
+        exact = jsonschema.Draft202012Validator(returned)
+        exact.validate({"action": "invoke",
+            "arguments": {"tool": "create_project", "inputs": {"name": "Original"}},
+            "reason": "Model selected a real discovered project tool"})
+        self.assertFalse(exact.is_valid({"action": "invoke",
+            "arguments": {"tool": "search", "inputs": {}}, "reason": "wrong layer"}))
+        self.assertFalse(exact.is_valid({"action": "invoke",
+            "arguments": {"tool": "unreturned_tool", "inputs": {}},
+            "reason": "Made up a command"}))
         for bad in ({"query": "x", "limit": 12},
                     {"query": "", "limit": 1},
                     {"query": "x", "other": "hidden"}):
