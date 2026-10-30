@@ -1576,5 +1576,83 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result["native_editing_capability_complete"])
 
 
+    async def test_ambiguous_application_write_receipts_cannot_mint_completion_proof(self):
+        """A successful MCP transport is not proof the editor applied an edit."""
+        from studio_next.native_creative_audit import audit_native_journal
+        invalid_responses = (
+            json.dumps({"result": {"created": True}}),  # Missing explicit success
+            json.dumps({"success": None}),
+            json.dumps({"success": "true"}),
+            json.dumps({"success": 1}),  # Must reject bool-like JSON integers
+            json.dumps({"success": True, "result": {"previewOnly": True}}),
+            json.dumps({"success": True, "result": {"previewOnly": None}}),
+            '{"success":true,"success":false}',  # Duplicate receipt keys
+            "not-json-at-all",
+        )
+        for text in invalid_responses:
+            with self.subTest(response=text):
+                session = FakeSession()
+                session.custom_response = SimpleNamespace(
+                    is_error=False, content=[SimpleNamespace(type="text", text=text)])
+                grants = {tool.name: ("write" if tool.name == "update_text_clip" else "read")
+                          for tool in session.tools}
+                model = ScriptedModel([
+                    decision("invoke", tool="update_text_clip",
+                             inputs={"clipId": "one", "text": "Changed"}),
+                ])
+                required = ("native_write_acknowledged",)
+                outcome = await NativeCreativeControl(
+                    session, model, max_turns=1, host_tool_access=grants,
+                    required_evidence=required).run("Create one editable original revision")
+                self.assertEqual(outcome["status"], "native_error_requires_state_reconciliation")
+                self.assertEqual([name for name, _ in session.calls], ["update_text_clip"])
+                self.assertEqual(outcome["events"][-1]["kind"], "native_tool_uncertain_outcome")
+                self.assertTrue(outcome["events"][-1]["must_reconcile_native_state"])
+                self.assertTrue(outcome["events"][-1]["no_automatic_retry"])
+                self.assertNotIn(text, json.dumps(outcome["events"]))
+                proof = audit_native_journal(
+                    outcome["events"], host_tool_access=grants,
+                    expected_required_evidence=required)
+                self.assertEqual(proof["recorded_native_write_result_count"], 0)
+                self.assertFalse(outcome["native_editing_capability_complete"])
+
+    async def test_explicit_application_success_still_grants_write_proof(self):
+        from studio_next.native_creative_audit import audit_native_journal
+        session = FakeSession()
+        session.custom_response = SimpleNamespace(
+            is_error=False, content=[SimpleNamespace(type="text", text=json.dumps({
+                "success": True, "result": {"previewOnly": False, "editable": True}}))])
+        grants = {tool.name: ("write" if tool.name == "update_text_clip" else "read")
+                  for tool in session.tools}
+        model = ScriptedModel([
+            decision("invoke", tool="update_text_clip",
+                     inputs={"clipId": "one", "text": "Changed"}),
+            decision("finish", summary="One confirmed native edit, not a certified movie"),
+        ])
+        outcome = await NativeCreativeControl(
+            session, model, max_turns=2, host_tool_access=grants,
+            required_evidence=("native_write_acknowledged",)).run("Edit original title")
+        self.assertEqual(outcome["status"], "model_finished_unverified")
+        self.assertEqual(sum(x["kind"] == "native_tool_result" for x in outcome["events"]), 1)
+        self.assertEqual(model.observed[1]["missing_completion_evidence"], [])
+        self.assertEqual(audit_native_journal(
+            outcome["events"], host_tool_access=grants)["recorded_native_write_result_count"], 1)
+
+    async def test_read_observations_do_not_require_mutation_receipts(self):
+        session = FakeSession()
+        session.custom_response = SimpleNamespace(
+            is_error=False, content=[SimpleNamespace(type="text", text='{"timeline":[]}')])
+        grants = {tool.name: ("write" if tool.name == "update_text_clip" else "read")
+                  for tool in session.tools}
+        model = ScriptedModel([
+            decision("invoke", tool="get_timeline", inputs={}),
+            decision("finish", summary="Read only, no creative success asserted"),
+        ])
+        outcome = await NativeCreativeControl(session, model, max_turns=2,
+            host_tool_access=grants).run("Inspect the real timeline")
+        self.assertEqual(outcome["status"], "model_finished_unverified")
+        self.assertEqual([x[0] for x in session.calls], ["get_timeline"])
+
+
 if __name__ == "__main__":
     unittest.main()
