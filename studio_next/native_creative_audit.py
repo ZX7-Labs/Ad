@@ -159,10 +159,18 @@ def audit_native_journal(events, *, host_tool_access):
             if pending is not None:
                 raise NativeJournalError("Second tool submitted before native outcome")
             tool = event.get("tool")
+            # Historic receipts carry a plaintext reason. New receipts carry
+            # a digest and exact byte length, so model-authored text (which
+            # might quote private briefs/assets) does not leak into journals.
+            old_reason = event.get("model_reason")
+            private_reason = event.get("model_reason_sha256")
+            private_len = event.get("model_reason_utf8_bytes")
+            legacy = (isinstance(old_reason, str) and bool(old_reason.strip()) and
+                      private_reason is None and private_len is None)
+            hashed = (_sha(private_reason) and type(private_len) is int and
+                      1 <= private_len <= 262144 and old_reason is None)
             if (not isinstance(tool, str) or tool not in host_tool_access or
-                    not _sha(event.get("inputs_sha256")) or
-                    not isinstance(event.get("model_reason"), str) or
-                    not event["model_reason"].strip()):
+                    not _sha(event.get("inputs_sha256")) or not (legacy or hashed)):
                 raise NativeJournalError("Native operation lacks model intent or host grant")
             pending = (event.get("turn"), tool, host_tool_access[tool])
             continue
@@ -221,7 +229,18 @@ def audit_native_journal(events, *, host_tool_access):
         if kind == "model_finished":
             if pending is not None:
                 raise NativeJournalError("Model finished with an unresolved native write")
-            if event.get("creative_quality_independently_approved") is not False or i != len(events) - 1:
+            # Preserve old valid journal compatibility, but require new
+            # private-summary receipts to have a real SHA and length, never
+            # a mixture that hides an unexamined raw-text leakage.
+            old_summary = event.get("summary")
+            private_sha = event.get("summary_sha256")
+            private_len = event.get("summary_utf8_bytes")
+            legacy = (isinstance(old_summary, str) and bool(old_summary.strip()) and
+                      private_sha is None and private_len is None)
+            hashed = (_sha(private_sha) and type(private_len) is int and
+                      1 <= private_len <= 262144 and old_summary is None)
+            if (event.get("creative_quality_independently_approved") is not False or
+                    i != len(events) - 1 or not (legacy or hashed)):
                 raise NativeJournalError("Model statement cannot approve artistic quality")
             terminal = kind
             finished = True
