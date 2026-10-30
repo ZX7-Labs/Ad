@@ -38,6 +38,11 @@ def trace():
                       image_sha256=[], audio_sha256=None,
                       independently_verified_export_sha256=None, observed_export_sha256=None,
                       human_or_artistic_quality_approved=False)
+        if HOST.get(tool) == "write":
+            # Fixture-only app ACK shapes. These are intentionally fabricated
+            # technical protocol examples, never real neural or host proof.
+            fields["host_application_write_acknowledged"] = True
+            fields["host_application_write_receipt_sha256"] = C
         fields.update(kw)
         add("native_tool_result", **fields)
     # Build a real-shaped transcript with *fixture bytes only*. It cannot
@@ -87,6 +92,8 @@ class NativeCreativeAuditTests(unittest.TestCase):
              "model_reason": "Independent model chose an additional edit"},
             {"kind": "native_tool_result", "turn": 9, "tool": "update_text_clip",
              "text_sha256": [C], "image_sha256": [], "audio_sha256": None,
+             "host_application_write_acknowledged": True,
+             "host_application_write_receipt_sha256": C,
              "independently_verified_export_sha256": None,
              "observed_export_sha256": None, "human_or_artistic_quality_approved": False},
         ])
@@ -185,6 +192,27 @@ class NativeCreativeAuditTests(unittest.TestCase):
         with self.assertRaisesRegex(NativeJournalError, "unresolved native write"):
             review_audit(missing_frames, host_tool_access=HOST)
 
+
+    def test_native_write_acknowledgment_downgrade_cannot_mint_edit_proof(self):
+        """A fabricated transport-level result without application ACK is rejected."""
+        base = trace()
+        edit = next(event for event in base
+                    if event.get("kind") == "native_tool_result" and
+                    event.get("tool") == "update_text_clip")
+        for update in (
+            {"host_application_write_acknowledged": None},
+            {"host_application_write_acknowledged": "true"},
+            {"host_application_write_acknowledged": False},
+            {"host_application_write_receipt_sha256": None},
+            {"host_application_write_receipt_sha256": B},
+            {"text_sha256": []},
+            {"image_sha256": [A]},
+        ):
+            variant = copy.deepcopy(base)
+            variant[edit["sequence"]].update(update)
+            with self.subTest(update=update), self.assertRaisesRegex(
+                    NativeJournalError, "application acknowledgment"):
+                audit_native_journal(variant, host_tool_access=HOST)
 
     def test_honest_technical_custody_without_fake_artistic_claim(self):
         evidence = audit_native_journal(trace(), host_tool_access=HOST)
