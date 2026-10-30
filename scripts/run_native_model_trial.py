@@ -43,7 +43,7 @@ def download(entry, root):
     digest = entry.get('sha256')
     if (not isinstance(name, str) or not name or
             Path(name).name != name or name in (".", "..") or
-            "\\\\" in name or "\\x00" in name):
+            chr(92) in name or chr(0) in name):
         raise ValueError('Model input filename must be a safe basename')
     parsed = urlsplit(url) if isinstance(url, str) else None
     if (parsed is None or parsed.scheme != 'https' or not parsed.hostname or
