@@ -984,5 +984,30 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result["native_editing_capability_complete"])
 
 
+    async def test_bootstrap_receipt_write_failure_is_never_hidden_as_read_failure(self):
+        from unittest.mock import patch
+        session = FakeSession()
+        session.tools.append(SimpleNamespace(name="get_project",
+             description="Trusted native project snapshot",
+             input_schema={"type": "object", "additionalProperties": False}))
+        session.custom_response = SimpleNamespace(is_error=False, content=[
+            SimpleNamespace(type="text", text=json.dumps({
+                "project": None, "mcp": {"hasProject": False}}))])
+        grants = {x.name: ("write" if x.name == "update_text_clip" else "read")
+                  for x in session.tools}
+        model = ScriptedModel([decision("finish", summary="Must not run after audit failure")])
+        original_append = NativeCreativeControl._append
+        def reject_bootstrap_write(self, event):
+            if event.get("kind") == "host_project_bootstrap_observation":
+                raise OSError("Receipt fsync failed")
+            return original_append(self, event)
+        with patch.object(NativeCreativeControl, "_append", reject_bootstrap_write):
+            with self.assertRaisesRegex(OSError, "Receipt fsync failed"):
+                await NativeCreativeControl(session, model, max_turns=1,
+                    host_tool_access=grants).run("No model activity without evidence")
+        self.assertEqual(session.calls, [("get_project", {})])
+        self.assertEqual(model.observed, [])
+
+
 if __name__ == "__main__":
     unittest.main()
