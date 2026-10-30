@@ -15,6 +15,7 @@ import math
 import os
 from pathlib import Path
 import re
+import time
 from typing import Any
 
 
@@ -207,6 +208,8 @@ class NativeCreativeControl:
         self._last_audio: list[tuple[str, bytes]] = []
         self._last_audio_evidence: dict | None = None
         self._verified_exports: set[str] = set()
+        self._model_wall_ms_total = 0.0
+        self._native_mcp_wall_ms_total = 0.0
         self._started = False
         self._receipt = None
 
@@ -299,13 +302,44 @@ class NativeCreativeControl:
                     "completion_does_not_certify_artistic_quality": True,
                     "audio_semantically_reviewed": False,
                 }
-                decision = self._decision(await self._infer(context))
+                model_started = time.monotonic_ns()
+                try:
+                    decision = self._decision(await self._infer(context))
+                except BaseException as exc:
+                    # A model failure is neither a finished film nor exhausted
+                    # budget. Persist a terminal fact without exposing model
+                    # prompts, output or secrets from the exception message.
+                    failed_ms = round((time.monotonic_ns() - model_started) / 1_000_000, 3)
+                    self._model_wall_ms_total += failed_ms
+                    self._append({"kind": "model_decision_failed", "turn": turn,
+                                  "measured_model_wall_ms": failed_ms,
+                                  "error_type": type(exc).__name__,
+                                  "no_automatic_retry": True,
+                                  "creative_quality_independently_approved": False})
+                    raise
+                model_ms = round((time.monotonic_ns() - model_started) / 1_000_000, 3)
+                self._model_wall_ms_total += model_ms
+                # This is *not* independent token accounting. Native and
+                # third-party models may omit or fabricate token usage.
+                provider_usage = getattr(self.model, "last_call_usage", None)
+                if not isinstance(provider_usage, dict):
+                    provider_usage = None
+                else:
+                    provider_usage = {
+                        k: provider_usage[k]
+                        for k in ("prompt_tokens", "completion_tokens", "total_tokens")
+                        if type(provider_usage.get(k)) is int and
+                        0 <= provider_usage[k] <= 1_000_000_000
+                    } or None
+                timing = {"measured_model_wall_ms": model_ms,
+                          "local_server_reported_token_usage": provider_usage}
                 self._last_native_texts = []
                 action, args = decision["action"], decision["arguments"]
                 if action == "finish":
                     if set(args) != {"summary"} or not isinstance(args["summary"], str) or not args["summary"].strip():
                         raise NativeCreativeControlError("Model summary is required; quality is not host-certified")
                     self._append({"kind": "model_finished", "turn": turn,
+                                  **timing,
                                   "summary": args["summary"][:4000],
                                   "creative_quality_independently_approved": False})
                     outcome = "model_finished_unverified"
@@ -314,6 +348,7 @@ class NativeCreativeControl:
                     if args:
                         raise NativeCreativeControlError("Discover accepts no model arguments")
                     self._append({"kind": "discovered", "turn": turn,
+                                  **timing,
                                   "tools": [_field(t, "name") for t in available]})
                     continue
                 if action == "describe":
@@ -321,6 +356,7 @@ class NativeCreativeControl:
                         raise NativeCreativeControlError("Model requested an ungranted native tool")
                     tool = self.tools[args["tool"]]
                     self._append({"kind": "native_tool_schema", "turn": turn,
+                                  **timing,
                                   "tool": args["tool"],
                                   "description": _field(tool, "description", "")[:2048],
                                   "input_schema": _field(tool, "input_schema",
@@ -332,16 +368,24 @@ class NativeCreativeControl:
                 # configured MCP host. The model cannot override that host.
                 native_name = args["tool"]
                 self._append({"kind": "native_tool_submitted", "turn": turn,
+                              **timing,
                               "tool": native_name,
                               "inputs_sha256": hashlib.sha256(_wire(args["inputs"]).encode()).hexdigest(),
                               "model_reason": decision["reason"][:3000],
                               "uncertain_write_do_not_replay": True})
+                call_started = time.monotonic_ns()
                 try:
                     result = await self.session.call_tool(native_name, args["inputs"])
                 except BaseException:
+                    native_ms = round((time.monotonic_ns() - call_started) / 1_000_000, 3)
+                    self._native_mcp_wall_ms_total += native_ms
                     self._append({"kind": "native_tool_uncertain_outcome", "turn": turn,
-                                  "tool": native_name, "must_reconcile_native_state": True})
+                                  "tool": native_name,
+                                  "measured_native_mcp_wall_ms": native_ms,
+                                  "must_reconcile_native_state": True})
                     raise
+                native_ms = round((time.monotonic_ns() - call_started) / 1_000_000, 3)
+                self._native_mcp_wall_ms_total += native_ms
                 if _field(result, "is_error", _field(result, "isError", False)):
                     texts = [_field(x, "text") for x in _field(result, "content", ())
                              if _field(x, "type") == "text" and
@@ -351,6 +395,7 @@ class NativeCreativeControl:
                     # actual saved state before issuing another mutation.
                     self._append({"kind": "native_tool_reported_error", "turn": turn,
                                   "tool": native_name,
+                                  "measured_native_mcp_wall_ms": native_ms,
                                   "error_sha256": hashlib.sha256(
                                       _wire(texts).encode("utf-8")).hexdigest(),
                                   "must_reconcile_native_state": True,
@@ -395,6 +440,7 @@ class NativeCreativeControl:
                 except NativeCreativeControlError as exc:
                     self._append({"kind": "native_observation_rejected", "turn": turn,
                                   "tool": native_name, "error": str(exc),
+                                  "measured_native_mcp_wall_ms": native_ms,
                                   "must_reconcile_native_state": True})
                     raise
                 if new_export_sha is not None:
@@ -404,6 +450,7 @@ class NativeCreativeControl:
                 self._last_audio, self._last_audio_evidence = audio, audio_evidence
                 self._append({"kind": "native_tool_result", "turn": turn,
                               "tool": native_name,
+                              "measured_native_mcp_wall_ms": native_ms,
                               "text_sha256": [hashlib.sha256(s.encode()).hexdigest() for s in texts],
                               "image_sha256": hashes,
                               "audio_sha256": audio_evidence["wav_sha256"] if audio_evidence else None,
@@ -414,6 +461,9 @@ class NativeCreativeControl:
                               "human_or_artistic_quality_approved": False})
             return {
                 "status": outcome, "events": self.events.copy(),
+                "measured_model_wall_ms_total": round(self._model_wall_ms_total, 3),
+                "measured_native_mcp_wall_ms_total": round(self._native_mcp_wall_ms_total, 3),
+                "token_usage_independently_verified": False,
                 "actual_model_id_reported": getattr(getattr(self.model, "settings", None),
                                                     "model_id", None),
                 "native_editing_capability_complete": False,

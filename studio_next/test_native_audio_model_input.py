@@ -69,6 +69,28 @@ class AuditoryModelTransport(unittest.TestCase):
         self.assertEqual(json.loads(parts[1]["text"])["wav_sha256"],evidence["wav_sha256"])
         self.assertFalse(json.loads(parts[1]["text"])["original_multichannel_mastering_proven"])
 
+    def test_local_server_usage_is_reported_not_invented_or_verified(self):
+        class ReportedUsageReply(FakeReply):
+            def read(self, length):
+                return json.dumps({"usage": {"prompt_tokens": 71,
+                                            "completion_tokens": 9,
+                                            "total_tokens": 80,
+                                            "untrusted_extra": "do not persist"},
+                                   "choices": [{"finish_reason": "stop",
+                                                "message": {"content": "{}"}}]}).encode()[:length]
+        class UnreportedUsageReply(FakeReply):
+            pass
+        with patch("studio_next.providers.urlopen",
+                   return_value=ReportedUsageReply()):
+            self.model.decide({"test": "provider claims tokens"})
+        self.assertEqual(self.model.last_call_usage,
+                         {"prompt_tokens": 71, "completion_tokens": 9,
+                          "total_tokens": 80})
+        with patch("studio_next.providers.urlopen",
+                   return_value=UnreportedUsageReply()):
+            self.model.decide({"test": "no usage field"})
+        self.assertIsNone(self.model.last_call_usage)
+
     def test_wrong_custody_format_size_and_mixed_images_fail_before_http(self):
         audio=wav_bytes()
         context={"audio_evidence":{"export_sha256":"a"*64,"wav_sha256":"b"*64}}

@@ -229,6 +229,55 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
             await controller.run("Second session may not inherit first export proof")
         self.assertEqual(len([c for c in session.calls if c[0] == "zx7_verify_native_export"]), 1)
 
+    async def test_real_monotonic_timing_and_untrusted_token_reports_are_distinguished(self):
+        model = ScriptedModel([
+            decision("invoke", tool="get_timeline", inputs={"includeClips": True}),
+            decision("finish", summary="Time measured, aesthetic judgment remains unproven"),
+        ])
+        # Deliberately supply an implausible BOOL value: bool is an int
+        # subclass and must never be treated as a truthful token count.
+        model.last_call_usage = {"prompt_tokens": 11, "completion_tokens": True,
+                                 "total_tokens": -1}
+        outcome = await NativeCreativeControl(FakeSession(), model, max_turns=3).run(
+            "Use local native editing tools and record bounded timing")
+        self.assertGreaterEqual(outcome["measured_model_wall_ms_total"], 0)
+        self.assertGreaterEqual(outcome["measured_native_mcp_wall_ms_total"], 0)
+        self.assertFalse(outcome["token_usage_independently_verified"])
+        submitted = next(x for x in outcome["events"]
+                         if x["kind"] == "native_tool_submitted")
+        self.assertEqual(submitted["local_server_reported_token_usage"],
+                         {"prompt_tokens": 11})
+        self.assertGreaterEqual(submitted["measured_model_wall_ms"], 0)
+        result = next(x for x in outcome["events"]
+                      if x["kind"] == "native_tool_result")
+        self.assertGreaterEqual(result["measured_native_mcp_wall_ms"], 0)
+        finished = outcome["events"][-1]
+        self.assertEqual(finished["kind"], "model_finished")
+        self.assertFalse(outcome["native_editing_capability_complete"])
+
+    async def test_failing_local_model_gets_terminal_trace_without_leaking_error_text(self):
+        class BrokenLocalModel(ScriptedModel):
+            def decide(self, context):
+                raise RuntimeError("private media path and secret must NOT be logged")
+        with tempfile.TemporaryDirectory() as root:
+            journal = Path(root) / "inference-failed.jsonl"
+            with self.assertRaisesRegex(RuntimeError, "private media path"):
+                await NativeCreativeControl(FakeSession(), BrokenLocalModel([]),
+                                            receipt_path=journal).run("Review my film")
+            raw = journal.read_text()
+            events = [json.loads(line) for line in raw.splitlines()]
+            self.assertEqual([e["kind"] for e in events],
+                             ["session_started", "model_decision_failed"])
+            self.assertEqual(events[-1]["error_type"], "RuntimeError")
+            self.assertTrue(events[-1]["no_automatic_retry"])
+            self.assertGreaterEqual(events[-1]["measured_model_wall_ms"], 0)
+            self.assertNotIn("private media path", raw)
+            self.assertNotIn("Review my film", raw)
+            from studio_next.native_creative_audit import audit_native_journal
+            audit = audit_native_journal(events, host_tool_access={"get_timeline": "read"})
+            self.assertEqual(audit["model_reported_end_state"], "model_decision_failed")
+            self.assertFalse(audit["video_editing_capability_complete"])
+
     async def test_nonexistent_or_duplicate_native_tool_descriptors_refused(self):
         session = FakeSession()
         session.tools.append(session.tools[0])

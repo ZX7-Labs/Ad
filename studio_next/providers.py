@@ -68,8 +68,12 @@ class LocalCreativeModel:
     def __init__(self,settings:LocalModelSettings,system_prompt:str=_CREATIVE_SYSTEM):
         self.settings=settings
         self.system_prompt=system_prompt
+        # Reported tokens come from the local server, not an independent
+        # tokenizer. An absent count is unknown; never represent it as zero.
+        self.last_call_usage = None
 
     def _invoke(self,role,context,*,images=(),audio=()):
+        self.last_call_usage = None
         user_content=json.dumps(context,ensure_ascii=False,allow_nan=False)
         if images or audio:
             content=[{"type":"text","text":user_content}]
@@ -145,6 +149,16 @@ class LocalCreativeModel:
         if len(raw)>self.settings.max_response_bytes:
             raise ValueError("Local model response exceeds safe size limit")
         decoded=json.loads(raw.decode("utf-8"))
+        # Keep only bounded, integral usage fields actually supplied by the
+        # local inference service. These are server-reported, not measured.
+        usage = decoded.get("usage") if isinstance(decoded, dict) else None
+        if isinstance(usage, dict):
+            reported = {
+                key: usage[key]
+                for key in ("prompt_tokens", "completion_tokens", "total_tokens")
+                if type(usage.get(key)) is int and 0 <= usage[key] <= 1_000_000_000
+            }
+            self.last_call_usage = reported or None
         choice=decoded["choices"][0]
         if choice.get("finish_reason")=="length":
             raise ValueError("Local model's structured answer was truncated")
