@@ -38,6 +38,10 @@ class NativeActionSchemaTests(unittest.TestCase):
         self.assertNotIn("get_project", payload)
         self.assertNotIn('"enum"', payload)
         validator = jsonschema.Draft202012Validator(compact)
+        self.assertFalse(validator.is_valid({
+            "action": "discover", "arguments": {}, "reason": "No tools in indexed mode"}))
+        self.assertFalse(self.validator.is_valid({
+            "action": "search", "arguments": {"query": "video"}, "reason": "Full mode has no index"}))
         validator.validate({"action": "search",
             "arguments": {"query": "editable motion project", "limit": 4},
             "reason": "Discover currently available host capabilities"})
