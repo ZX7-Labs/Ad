@@ -180,6 +180,17 @@ def audit_native_journal(events, *, host_tool_access):
             if pending is not None:
                 raise NativeJournalError("Tool catalog interleaved with unfinished native operation")
             continue
+        if kind == "capability_searched":
+            tools = event.get("result_tool_names")
+            if (pending is not None or
+                    not _sha(event.get("query_sha256")) or
+                    not _sha(event.get("catalog_revision")) or
+                    event.get("no_native_dispatch") is not True or
+                    not isinstance(tools, list) or len(tools) > 8 or
+                    any(not isinstance(tool, str) or tool not in host_tool_access
+                        for tool in tools) or len(set(tools)) != len(tools)):
+                raise NativeJournalError("Search fabricated an ungranted native capability")
+            continue
         if kind == "model_action_rejected":
             # Input-schema preflight rejected a model proposal BEFORE any RPC.
             # This is safe to correct, unlike an unknown native write result.
