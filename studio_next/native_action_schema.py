@@ -38,6 +38,14 @@ def native_action_schema(tool_names, *, compact_catalog=False, selected_tools=No
         'finish': {'type': 'object', 'properties': {'summary': {'type': 'string', 'minLength': 1}},
                    'required': ['summary'], 'additionalProperties': False},
     }
+    # A compact catalog cannot reveal all tool names via `discover`;
+    # in that mode the only meaningful discovery instrument is `search`.
+    # In full mode search has no index. Do not advertise inert actions to
+    # tiny models as if they advanced native editing.
+    if compact_catalog:
+        del arguments['discover']
+    else:
+        del arguments['search']
     if tool is None:
         del arguments['describe']
         del arguments['invoke']

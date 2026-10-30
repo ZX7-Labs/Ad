@@ -75,6 +75,75 @@ class FakeSession:
 
 
 class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
+    async def test_actual_native_model_sees_and_calls_granted_tool_on_late_mcp_page(self):
+        class VersionedEditor(FakeSession):
+            async def list_tools(self, *, cursor=None):
+                if cursor is None:
+                    return {"jsonrpc": "2.0", "id": 1, "result": {
+                        "resultType": "complete",
+                        "tools": self.tools[:2], "nextCursor": "opaque-late-page"}}
+                if cursor == "opaque-late-page":
+                    return SimpleNamespace(result={
+                        "resultType": "complete",
+                        "tools": self.tools[2:]})
+                raise AssertionError("Unexpected or fabricated MCP cursor")
+
+        session = VersionedEditor()
+        session.tools.append(SimpleNamespace(
+            name="custom_native_glow", description="Apply specialized native glow",
+            input_schema={"type": "object", "properties": {
+                "intensity": {"type": "number"}}, "required": ["intensity"]}))
+        grants = {tool.name: ("read" if tool.name == "get_timeline" else "write")
+                  for tool in session.tools}
+        model = ScriptedModel([
+            decision("search", query="specialized glow"),
+            decision("describe", tool="custom_native_glow"),
+            decision("invoke", tool="custom_native_glow", inputs={"intensity": 0.42}),
+            decision("finish", summary="Native host reported a tool result, not artistic approval"),
+        ])
+        outcome = await NativeCreativeControl(
+            session, model, max_turns=4, host_tool_access=grants,
+            catalog_mode="indexed").run("Create an original look in the native video editor")
+        self.assertEqual(outcome["status"], "model_finished_unverified")
+        self.assertEqual(session.calls, [("custom_native_glow", {"intensity": 0.42})])
+        self.assertEqual(model.observed[0]["actual_granted_native_tools"], [])
+        self.assertEqual(model.observed[0]["available_actions"],
+                         ["search", "describe", "invoke", "finish"])
+        self.assertEqual(model.observed[0]["capability_overview"]["operation_count"],
+                         len(session.tools))
+        self.assertEqual(model.observed[1]["last_capability_search_result"]["matches"][0]
+                         ["tool"], "custom_native_glow")
+        self.assertFalse(outcome["native_editing_capability_complete"])
+
+    async def test_compact_model_does_not_waste_turns_on_unavailable_discover(self):
+        session = FakeSession()
+        grants = {tool.name: "read" for tool in session.tools}
+        model = ScriptedModel([decision("discover")])
+        with self.assertRaisesRegex(NativeCreativeControlError,
+                                    "unavailable catalog action"):
+            await NativeCreativeControl(
+                session, model, host_tool_access=grants, catalog_mode="indexed",
+                max_turns=1).run("A native film with searchable editor tools")
+        self.assertEqual(session.calls, [])
+        self.assertEqual(model.observed[0]["available_actions"],
+                         ["search", "describe", "invoke", "finish"])
+
+    async def test_native_model_rejects_incomplete_paged_tool_list_before_inference(self):
+        class PartialEditor(FakeSession):
+            async def list_tools(self, *, cursor=None):
+                if cursor is None:
+                    return SimpleNamespace(tools=self.tools[:2],
+                                           nextCursor="opaque-pagination")
+                return {"result": {"resultType": "input_required",
+                                   "tools": self.tools[2:]}}
+        session = PartialEditor()
+        model = ScriptedModel([decision("finish", summary="Not an actual edit")])
+        with self.assertRaisesRegex(ValueError, "not complete"):
+            await NativeCreativeControl(
+                session, model, max_turns=1).run("Inspect a real native project")
+        self.assertEqual(session.calls, [])
+        self.assertEqual(model.observed, [])
+
     async def test_model_decides_actions_no_fixed_edit_sequence_and_no_completion_claim(self):
         model = ScriptedModel([
             decision("discover"),
