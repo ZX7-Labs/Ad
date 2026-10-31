@@ -1300,8 +1300,28 @@ class NativeCreativeControl:
                                        if isinstance(host_response, dict) else None)
                         preview = (host_result.get("previewOnly")
                                    if isinstance(host_result, dict) else None)
-                        if success is False:
-                            if preview is True:
+                        # Two pinned source-backed read-only preview receipts:
+                        # (a) legacy specialized project tools return
+                        #     success:false + result.previewOnly:true;
+                        # (b) generic Velorn runRendererActionTool omits
+                        #     success entirely on preview, but binds BOTH
+                        #     wrapper and nested result to the native action.
+                        # Never infer no-write from an uncorrelated single
+                        # "previewOnly" flag or a contradictory success:true.
+                        wrapper_preview = (
+                            isinstance(host_response, dict) and
+                            host_response.get("previewOnly") is True and
+                            host_response.get("action") == native_name and
+                            isinstance(host_result, dict) and
+                            host_result.get("action") == native_name)
+                        acknowledged_preview = (
+                            preview is True and (
+                                (success is False and (
+                                    not isinstance(host_response, dict) or
+                                    host_response.get("previewOnly", True) is True
+                                )) or (success is None and wrapper_preview)))
+                        if success is False or acknowledged_preview:
+                            if acknowledged_preview:
                                 # Actual pinned editor defaults to a preview
                                 # rather than a mutation. This is NOT a model
                                 # choice to commit: expose the declared native
