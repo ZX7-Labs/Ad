@@ -351,6 +351,72 @@ class NativeLoopObservationTests(unittest.IsolatedAsyncioTestCase):
             result["events"], host_tool_access=grants)[
             "journal_chain_structurally_valid"])
 
+    async def test_real_2b_invalid_transition_ids_recover_without_write_replay(self):
+        # Actual 2B run #41219493015 invented two native clip IDs and
+        # received the pinned, pre-write missing-clip error. The creator must
+        # be free to inspect real clips instead of ending the job uncertain.
+        class PinnedTransitionSession(FakeSession):
+            def __init__(self, response=None):
+                super().__init__()
+                self.response = response or _PINNED_TRANSITION_CLIPS_ABSENT_ERROR
+                self.tools.append(SimpleNamespace(
+                    name="add_transition", description="Native between-clip edit",
+                    input_schema={"type": "object", "properties": {
+                        "clipAId": {"type": "string"},
+                        "clipBId": {"type": "string"},
+                        "previewOnly": {"type": "boolean"}}}))
+            async def call_tool(self, name, arguments):
+                if name == "add_transition":
+                    self.calls.append((name, arguments))
+                    return SimpleNamespace(is_error=True, content=[
+                        SimpleNamespace(type="text", text=self.response)])
+                return await super().call_tool(name, arguments)
+        invalid = {"clipAId": "invented-clip-0",
+                   "clipBId": "invented-clip-1", "previewOnly": False}
+        model = ScriptedModel([
+            decision("invoke", tool="add_transition", inputs=invalid),
+            decision("finish", summary="I must inspect real clips before editing"),
+        ])
+        session = PinnedTransitionSession()
+        grants = {t.name: ("write" if t.name in (
+            "add_transition", "update_text_clip") else "read")
+            for t in session.tools}
+        outcome = await NativeCreativeControl(
+            session, model, host_tool_access=grants, max_turns=2).run(
+                "Build an editable original movie")
+        self.assertEqual(outcome["status"], "model_finished_unverified")
+        self.assertEqual(model.observed[1]["last_rejected_native_action_feedback"][
+            "validation_keyword"], "native_transition_clip_identity_absent")
+        self.assertTrue(model.observed[1]["last_rejected_native_action_feedback"][
+            "no_native_write_acknowledged"])
+        self.assertTrue(any(e.get("kind") ==
+                            "native_source_pretransition_reported_error"
+                            for e in outcome["events"]))
+        self.assertFalse(any(e.get("kind") == "native_tool_result" and
+                             e.get("tool") == "add_transition"
+                             for e in outcome["events"]))
+        self.assertTrue(audit_native_journal(
+            outcome["events"], host_tool_access=grants)[
+                "journal_chain_structurally_valid"])
+        forged = copy.deepcopy(outcome["events"])
+        for event in forged:
+            if event.get("kind") == "native_source_pretransition_reported_error":
+                event["error_sha256"] = "f" * 64
+                break
+        with self.assertRaises(NativeJournalError):
+            audit_native_journal(forged, host_tool_access=grants)
+
+        bad = PinnedTransitionSession("Unrelated transition could have written")
+        wrong = await NativeCreativeControl(
+            bad, ScriptedModel([
+                decision("invoke", tool="add_transition", inputs=invalid)
+            ]), host_tool_access=grants, max_turns=1).run(
+                "Do not forgive unrelated native write errors")
+        self.assertEqual(wrong["status"],
+                         "native_error_requires_state_reconciliation")
+        self.assertEqual(wrong["events"][-1]["kind"],
+                         "native_tool_reported_error")
+
     async def test_preview_error_does_not_become_uncertain_creative_write(self):
         session = ActualNativeObservationSession(preview_error=True)
         model = ScriptedModel([
