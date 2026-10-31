@@ -1810,6 +1810,7 @@ class NativeCreativeControl:
                             isinstance(host_response, dict) and
                             host_response.get("previewOnly") is True and
                             host_response.get("action") == native_name and
+                            "plan" not in host_response and
                             isinstance(host_result, dict) and
                             host_result.get("action") == native_name)
                         from .native_state_evidence import (
@@ -1885,6 +1886,8 @@ class NativeCreativeControl:
                         nested_failure = contradictory_nested_write_receipt(
                             host_result)
                         if (success is not True or nested_failure or
+                                (isinstance(host_response, dict) and
+                                 host_response.get("previewOnly") is True) or
                                 (isinstance(host_result, dict) and
                                  "previewOnly" in host_result and preview is not False)):
                             # No application-level acknowledgment, or the host
