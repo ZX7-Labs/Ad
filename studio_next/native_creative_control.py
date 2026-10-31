@@ -13,6 +13,7 @@ import base64
 import hashlib
 import json
 import math
+from itertools import islice
 import os
 from pathlib import Path
 import re
@@ -317,19 +318,38 @@ def _selected_native_input_hints(tool_names, live_tools):
         required = schema.get("required")
         required = set(required) if isinstance(required, list) and all(
             isinstance(item, str) for item in required) else set()
-        for key, source in list(schema["properties"].items())[:16]:
-            if not isinstance(key, str) or not isinstance(source, dict):
+        # Avoid materializing an arbitrarily large host-provided schema.
+        # Do not truncate a property ID into a different, nonexistent input.
+        for key, source in islice(schema["properties"].items(), 16):
+            if (not isinstance(key, str) or not 1 <= len(key) <= 160 or
+                    not isinstance(source, dict)):
                 continue
             type_name = source.get("type")
             if (not isinstance(type_name, str) or
                     type_name not in ("string", "integer", "number", "boolean",
                                       "object", "array", "null")):
                 type_name = "complex_use_describe"
-            prop = {"name": key[:160], "json_type": type_name,
+            prop = {"name": key, "json_type": type_name,
                     "required": key in required}
             if isinstance(source.get("description"), str):
                 prop["host_source_description"] = " ".join(
                     source["description"].split())[:128]
+            # Optional scalar constraints are copied only from the actual
+            # native JSON Schema. They are descriptive, never permission.
+            if type_name in ("integer", "number"):
+                for bound in ("minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum"):
+                    val = source.get(bound)
+                    if type(val) in (int, float) and math.isfinite(val):
+                        prop[bound] = val
+            if type_name == "boolean" and type(source.get("default")) is bool:
+                prop["default"] = source["default"]
+            options = source.get("enum")
+            if (isinstance(options, list) and len(options) <= 8 and
+                    all((isinstance(v, str) and len(v) <= 100) or
+                        type(v) is bool or v is None or
+                        (type(v) in (float, int) and math.isfinite(v))
+                        for v in options)):
+                prop["enum"] = options[:]
             candidate = {**entry, "input_properties": entry["input_properties"] + [prop]}
             if len(_wire(result + [candidate]).encode("utf-8")) > 4096:
                 break
