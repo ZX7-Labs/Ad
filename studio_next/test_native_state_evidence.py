@@ -94,12 +94,15 @@ class SourcePreviewContracts(unittest.TestCase):
 
 
 class ActualNativeObservationSession(FakeSession):
-    def __init__(self, *, preview_error=False, state_error=False, nested_failure=False):
+    def __init__(self, *, preview_error=False, state_error=False, nested_failure=False,
+                 state_changes_on_third_read=False):
         super().__init__()
         self.created = False
         self.preview_error = preview_error
         self.state_error = state_error
         self.nested_failure = nested_failure
+        self.state_changes_on_third_read = state_changes_on_third_read
+        self.project_reads = 0
         self.tools.extend((
             SimpleNamespace(name="get_project",
                             description="Host native project read",
@@ -121,13 +124,18 @@ class ActualNativeObservationSession(FakeSession):
     async def call_tool(self, name, arguments):
         self.calls.append((name, arguments))
         if name == "get_project":
+            self.project_reads += 1
             if self.state_error and self.created:
                 return SimpleNamespace(is_error=True, content=[
                     SimpleNamespace(type="text", text="Native project read failed")])
             return SimpleNamespace(is_error=False, content=[
                 SimpleNamespace(type="text",
                                 text=json.dumps(native_snapshot(
-                                    present=self.created, clips=0, assets=0)))])
+                                    present=self.created,
+                                    clips=(2 if self.created and
+                                           self.state_changes_on_third_read and
+                                           self.project_reads >= 3 else 0),
+                                    assets=0)))])
         if name == "create_project":
             self.created = True
         if name == "add_asset_to_timeline" and self.preview_error:
@@ -183,6 +191,28 @@ class NativeLoopObservationTests(unittest.IsolatedAsyncioTestCase):
                 break
         with self.assertRaises(NativeJournalError):
             audit_native_journal(altered, host_tool_access=grants)
+
+    async def test_newer_direct_project_read_supersedes_stale_post_write_facts(self):
+        session = ActualNativeObservationSession(
+            state_changes_on_third_read=True)
+        model = ScriptedModel([
+            decision("invoke", tool="create_project", inputs={"name": "Original"}),
+            decision("invoke", tool="get_project", inputs={}),
+            decision("finish", summary="A later project read superseded cached counts"),
+        ])
+        grants = self.grants(session)
+        result = await NativeCreativeControl(
+            session, model, host_tool_access=grants,
+            max_turns=3).run("Independently inspect native project progress")
+        self.assertEqual(model.observed[1][
+            "latest_host_attested_native_project_progress"][
+            "current_timeline_clip_count"], 0)
+        self.assertEqual(model.observed[2][
+            "latest_host_attested_native_project_progress"][
+            "current_timeline_clip_count"], 2)
+        self.assertTrue(audit_native_journal(
+            result["events"], host_tool_access=grants)[
+            "journal_chain_structurally_valid"])
 
     async def test_preview_error_does_not_become_uncertain_creative_write(self):
         session = ActualNativeObservationSession(preview_error=True)
