@@ -145,7 +145,7 @@ class PhysicalNativeSourceAcceptanceTests(unittest.TestCase):
         # verifier. Reject every ambiguity instead of selecting a favorable one.
         for category in ("asset", "timeline", "track", "clip"):
             with self.subTest(category=category):
-                project = copy.deepcopy(self.project)
+                project = copy.deepcopy(self._original_project)
                 timeline = project["timelines"][0]
                 if category == "asset":
                     project["assets"].append({
