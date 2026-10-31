@@ -498,6 +498,8 @@ class NativeCreativeControl:
                 "Machine contracts require an explicit trusted host grant map")
         self._capabilities = None
         self._last_search_result = None
+        self._previous_search_signature = None
+        self._identical_search_repetitions = 0
         self._selectable_tools: list[str] = []
         # On a tied lexical search, show a bounded *inspectable-only*
         # set of actual host grants. A model must explicitly describe
@@ -993,8 +995,24 @@ class NativeCreativeControl:
                     if self._capabilities is None:
                         raise NativeCreativeControlError(
                             "Search requires explicitly attested host tool grants")
+                    # Search never calls a native editor operation. Mark
+                    # repeated identical metadata queries explicitly so a
+                    # small model need not infer that from eight journal
+                    # events. Do NOT choose or invoke a tool on its behalf.
+                    signature = (args["query"], args.get("limit", 6),
+                                 self._capabilities.revision)
+                    if signature == self._previous_search_signature:
+                        self._identical_search_repetitions += 1
+                    else:
+                        self._identical_search_repetitions = 0
+                    self._previous_search_signature = signature
                     self._last_search_result = self._capabilities.search(
                         args["query"], limit=args.get("limit", 6))
+                    if self._identical_search_repetitions:
+                        self._last_search_result["same_metadata_query_without_new_evidence"] = True
+                        self._last_search_result["identical_query_repeat_count"] = min(
+                            self._identical_search_repetitions, 100)
+                        self._last_search_result["no_native_edit_or_inspection_performed"] = True
                     # Only tool identities from actual discovery enter the
                     # model-facing result. Host grant map is authoritative.
                     discovered = [
