@@ -923,11 +923,19 @@ class NativeCreativeControl:
                             from .native_state_evidence import pinned_snapshot_summary
                             self._latest_native_state_facts = pinned_snapshot_summary(
                                 source_data)
-                            if self._latest_native_state_facts is None:
+                            presence = _native_project_presence_from_text(
+                                snapshot_texts)
+                            if (self._latest_native_state_facts is None or
+                                    presence == "unknown"):
                                 raise NativeCreativeControlError(
                                     "Native snapshot facts are contradictory or malformed")
                         except Exception as exc:
                             self._latest_native_state_facts = None
+                            self._project_presence = "unknown"
+                            self._post_write_state_warning = {
+                                "read_only_reconciliation_incomplete": True,
+                                "project_state_unknown": True,
+                                "must_inspect_native_project": True}
                             self._append({
                                 "kind": "host_native_state_progress_read_error",
                                 "tool": "get_project",
@@ -935,6 +943,13 @@ class NativeCreativeControl:
                                 "error_type": type(exc).__name__,
                                 "no_model_selected_mutation": True})
                         else:
+                            # Source read, not model text or a previous ACK,
+                            # establishes the current host project precondition.
+                            # Without this, subsequent editing writes are
+                            # blocked as state-unknown after even a marker save.
+                            self._project_presence = presence
+                            if presence == "present":
+                                self._post_write_state_warning = None
                             self._append({
                                 "kind": "host_native_state_progress_observation",
                                 "tool": "get_project",
