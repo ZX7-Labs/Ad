@@ -441,6 +441,10 @@ class NativeCreativeControl:
         self._capabilities = None
         self._last_search_result = None
         self._selectable_tools: list[str] = []
+        # On a tied lexical search, show a bounded *inspectable-only*
+        # set of actual host grants. A model must explicitly describe
+        # one candidate before it can submit a write. No automatic pick.
+        self._inspectable_tied_candidates: list[str] = []
         self.host_tool_access = dict(host_tool_access) if host_tool_access is not None else None
         self.session = session
         self.model = model
@@ -549,7 +553,8 @@ class NativeCreativeControl:
             if (set(args) != {"tool"} or not isinstance(args["tool"], str)
                     or args["tool"] not in self.tools or
                     (self.catalog_mode == "indexed" and
-                     args["tool"] not in self._selectable_tools)):
+                     args["tool"] not in self._selectable_tools and
+                     args["tool"] not in self._inspectable_tied_candidates)):
                 raise NativeCreativeControlError("Model requested an ungranted or unsearched native tool")
         elif (set(args) != {"tool", "inputs"} or not isinstance(args["tool"], str)
                 or args["tool"] not in self.tools or not isinstance(args["inputs"], dict) or
@@ -905,6 +910,28 @@ class NativeCreativeControl:
                             "host_requires_new_capability_query"] = True
                     self._selectable_tools = [
                         match["tool"] for match in self._last_search_result["matches"]]
+                    # When broad terms tie, the retrieval layer refuses to
+                    # grant executable matches. But making the real examples
+                    # uninspectable trapped the actual 2B model for seven
+                    # inference decisions (#41163313259). Expose ONLY these
+                    # host-granted example identities for a model-chosen
+                    # describe step; an invoke is still forbidden until then.
+                    self._inspectable_tied_candidates = []
+                    inspected = []
+                    if self._last_search_result.get("requires_refinement") is True:
+                        for candidate in self._last_search_result.get("candidate_examples", []):
+                            if not isinstance(candidate, dict):
+                                continue
+                            record = self._capabilities.resolve(
+                                candidate["id"], revision=self._capabilities.revision)
+                            tool_name = record["native_name"]
+                            if self._host_write_already_acknowledged(tool_name):
+                                continue
+                            if tool_name in self.tools and tool_name not in inspected:
+                                inspected.append(tool_name)
+                                candidate["tool"] = tool_name
+                                candidate["describe_to_select"] = True
+                    self._inspectable_tied_candidates = inspected[:6]
                     self._append({"kind": "capability_searched", "turn": turn, **timing,
                                   "query_sha256": hashlib.sha256(
                                       args["query"].encode("utf-8")).hexdigest(),
@@ -912,6 +939,8 @@ class NativeCreativeControl:
                                   "result_tool_names": [
                                       match["tool"] for match in
                                       self._last_search_result["matches"]],
+                                  "inspectable_candidate_tool_names":
+                                      self._inspectable_tied_candidates[:],
                                   "no_native_dispatch": True})
                     continue
                 if action == "discover":
@@ -924,9 +953,19 @@ class NativeCreativeControl:
                     continue
                 if action == "describe":
                     tool = self.tools[args["tool"]]
+                    from_tied_example = args["tool"] in self._inspectable_tied_candidates
+                    if from_tied_example:
+                        # The model named one exact real installed tool;
+                        # describing gives it a *single* explicit choice.
+                        # The next invocation still goes through trusted
+                        # grants, real native input-schema and machine-state
+                        # validation. No native operation has happened yet.
+                        self._selectable_tools = [args["tool"]]
+                        self._inspectable_tied_candidates = []
                     self._append({"kind": "native_tool_schema", "turn": turn,
                                   **timing,
                                   "tool": args["tool"],
+                                  "selected_from_noninvokable_search_tie": from_tied_example,
                                   "description": _field(tool, "description", "")[:2048],
                                   "input_schema": _field(tool, "input_schema",
                                                          _field(tool, "inputSchema"))})
@@ -950,6 +989,7 @@ class NativeCreativeControl:
                         "native_write_already_acknowledged": True,
                         "no_native_dispatch": True}
                     self._selectable_tools = [] if self.catalog_mode == "indexed" else self._selectable_tools
+                    self._inspectable_tied_candidates = []
                     self._last_search_result = None if self.catalog_mode == "indexed" else self._last_search_result
                     self._append({"kind": "model_action_rejected", "turn": turn,
                                   **timing, "tool": native_name,
@@ -1228,6 +1268,7 @@ class NativeCreativeControl:
                     # the model must independently search for any next tool.
                     # No creative operation is selected or dispatched here.
                     self._selectable_tools = []
+                    self._inspectable_tied_candidates = []
                     self._last_search_result = None
                 # A successful project-opening write may precede the editor's
                 # asynchronous project snapshot. Source-evidence from the real
