@@ -11,6 +11,9 @@ on:
           - qwen3.5-2b
           - qwen3.5-4b
   pull_request:
+    # An explicit internal-PR title marker opts into a physical model run.
+    # The edit event allows a maintainer to opt in after source CI is green.
+    types: [opened, synchronize, reopened, edited]
     branches: [main]
     paths:
       - ".github/workflows/zx7-live-native-model.yml"
@@ -62,7 +65,15 @@ jobs:
           print("Both source-pinned, bounded local CPU candidate contracts are present")
           PY
   actual-local-model-and-native-editor:
-    if: github.event_name != 'pull_request'
+    # Never launch the heavyweight neural trial for arbitrary public forks.
+    # Opt in by putting [native-model-proof] in an internal PR title, or by
+    # explicit workflow_dispatch as before. No model action is pre-scripted.
+    if: >-
+      github.event_name != 'pull_request' ||
+      (
+        github.event.pull_request.head.repo.full_name == github.repository &&
+        contains(github.event.pull_request.title, '[native-model-proof]')
+      )
     runs-on: ubuntu-24.04
     timeout-minutes: 55
     steps:
