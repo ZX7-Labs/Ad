@@ -113,7 +113,10 @@ def verify_original_footage_on_native_timeline(
                 if _sha256(owned) != owner_hash:
                     continue
                 accepted.append({
-                    "project_path": str(project),
+                    # Preserve only an owner-root-relative reference in
+                    # published CI artifacts; never disclose local absolute
+                    # media/project paths in technical provenance reports.
+                    "relative_native_project_file": str(project.relative_to(root)),
                     "native_asset_id": asset_id,
                     "source_sha256": owner_hash,
                     "project_owned_copy_sha256": owner_hash,
