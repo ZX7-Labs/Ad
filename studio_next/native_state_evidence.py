@@ -126,9 +126,10 @@ def pinned_direct_native_plan_preview(name, inputs, native_schema, receipt):
     """Recognize only an actual pinned Velorn read-only direct plan receipt.
 
     electron/mcpServer.js:addAssetToTimeline/addAssetsToTimeline/addSolidColor/
-    addAdjustmentClip and five transition/clip-edit handlers return
-    *top-level* {previewOnly, action, plan, suggestedApplyCall} BEFORE
-    performAction when previewOnly !== false. Native asset placement plans
+    addAdjustmentClip plus fourteen source-reviewed transition, sequence,
+    track and clip edit handlers return a *top-level*
+    {previewOnly, action, plan, suggestedApplyCall} BEFORE performAction
+    when previewOnly !== false. Native asset placement plans
     include an inner action/previewOnly; transition/move/trim plans instead
     contain semantic edit details and must not be forced into an unrelated
     asset schema. This only classifies source-proven, host-selected READ-only
