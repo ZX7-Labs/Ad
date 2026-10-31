@@ -360,6 +360,40 @@ def _selected_native_input_hints(tool_names, live_tools):
     return result
 
 
+def _host_attested_native_write_progress(events, host_tool_access,
+                                         content_revision_tools):
+    """Summarize actual application ACKs, not model claims or MCP transport.
+
+    A project-creation write is not an edited shot; a marker or a project
+    rename is not a post-observation creative content revision. This data
+    neither recommends a tool nor grants authority. Without explicit trusted
+    host access roles, even an apparent RPC success proves no write.
+    """
+    if host_tool_access is None:
+        return None
+    known_revisions = frozenset(content_revision_tools)
+    acknowledgments = [
+        event["tool"] for event in events
+        if event.get("kind") == "native_tool_result" and
+        host_tool_access.get(event.get("tool")) == "write"
+    ]
+    content = [name for name in acknowledgments if name in known_revisions]
+    # All identifiers originate in the trusted host grant map. A small
+    # specialist brain needs the role, not a dump of full tool descriptions.
+    declared = sorted(name for name in known_revisions
+                      if host_tool_access.get(name) == "write")
+    return {
+        "acknowledged_native_write_count": len(acknowledgments),
+        "acknowledged_content_revision_write_count": len(content),
+        "recent_acknowledged_write_tools": acknowledgments[-6:],
+        "recent_acknowledged_content_revision_tools": content[-6:],
+        "host_declared_content_revision_tools_sample": declared[:24],
+        "host_declared_content_revision_sample_incomplete": len(declared) > 24,
+        "model_summaries_and_previews_do_not_count_as_writes": True,
+        "content_revision_count_is_not_artistic_quality_proof": True,
+    }
+
+
 def _model_event_window(events):
     """Loss-aware, bounded model working memory over an *unaltered* journal.
 
@@ -909,6 +943,10 @@ class NativeCreativeControl:
                     "successful_native_tool_results": sum(
                         event.get("kind") == "native_tool_result"
                         for event in self.events),
+                    "host_attested_native_write_progress":
+                        _host_attested_native_write_progress(
+                            self.events, self.host_tool_access,
+                            self.host_content_revision_tools),
                 }
                 # A small local brain should not have to infer what 60+
                 # native operation names mean. Offer genuine, bounded host

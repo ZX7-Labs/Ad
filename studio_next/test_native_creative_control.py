@@ -2521,5 +2521,74 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
 
 
 
+    async def test_host_write_progress_distinguishes_native_project_creation_from_art_edit(self):
+        from studio_next.native_creative_control import _host_attested_native_write_progress
+        from studio_next.native_creative_audit import audit_native_journal
+        session = FakeSession()
+        session.tools.append(SimpleNamespace(
+            name="create_project", description="Create a real editable project",
+            input_schema={"type": "object", "properties": {
+                "name": {"type": "string"}, "previewOnly": {"type": "boolean"}}}))
+        grants = {tool.name: ("write" if tool.name in
+                  ("create_project", "update_text_clip") else "read")
+                  for tool in session.tools}
+        model = ScriptedModel([
+            decision("invoke", tool="create_project",
+                     inputs={"name": "Original", "previewOnly": False}),
+            decision("invoke", tool="update_text_clip",
+                     inputs={"clipId": "owned-title", "text": "Original message"}),
+            decision("finish", summary="Only application ACKs; no creative approval"),
+        ])
+        result = await NativeCreativeControl(
+            session, model, host_tool_access=grants,
+            host_content_revision_tools=("update_text_clip",),
+            max_turns=3).run("Make a native editable short")
+        first = model.observed[0]["host_attested_native_write_progress"]
+        second = model.observed[1]["host_attested_native_write_progress"]
+        third = model.observed[2]["host_attested_native_write_progress"]
+        self.assertEqual((first["acknowledged_native_write_count"],
+                          first["acknowledged_content_revision_write_count"]), (0, 0))
+        self.assertEqual((second["acknowledged_native_write_count"],
+                          second["acknowledged_content_revision_write_count"]), (1, 0))
+        self.assertEqual(second["recent_acknowledged_write_tools"],
+                         ["create_project"])
+        self.assertNotIn("create_project", second[
+            "host_declared_content_revision_tools_sample"])
+        self.assertEqual((third["acknowledged_native_write_count"],
+                          third["acknowledged_content_revision_write_count"]), (2, 1))
+        self.assertEqual(third["recent_acknowledged_content_revision_tools"],
+                         ["update_text_clip"])
+        self.assertTrue(audit_native_journal(
+            result["events"], host_tool_access=grants,
+            host_content_revision_tools=("update_text_clip",))[
+                "journal_chain_structurally_valid"])
+        self.assertFalse(result["native_editing_capability_complete"])
+
+        fake = [{"kind": "native_tool_preview", "tool": "create_project"},
+                {"kind": "model_action_rejected", "tool": "create_project"},
+                {"kind": "native_tool_result", "tool": "get_timeline"},
+                {"kind": "native_tool_result", "tool": "create_project"},
+                {"kind": "native_tool_result", "tool": "unknown_ungranted_tool"}]
+        summary = _host_attested_native_write_progress(
+            fake, grants, {"update_text_clip"})
+        self.assertEqual(summary["acknowledged_native_write_count"], 1)
+        self.assertEqual(summary["acknowledged_content_revision_write_count"], 0)
+        self.assertIsNone(_host_attested_native_write_progress(
+            fake, None, {"update_text_clip"}))
+
+    async def test_write_progress_has_bounded_grant_names_and_never_exposes_model_text(self):
+        from studio_next.native_creative_control import _host_attested_native_write_progress
+        names = {f"source_authoring_{i:02d}": "write" for i in range(70)}
+        journal = [{"kind": "native_tool_result", "tool": "source_authoring_42"}] * 17
+        progress = _host_attested_native_write_progress(
+            journal, names, frozenset(names))
+        self.assertEqual(progress["acknowledged_native_write_count"], 17)
+        self.assertEqual(progress["acknowledged_content_revision_write_count"], 17)
+        self.assertEqual(len(progress["host_declared_content_revision_tools_sample"]), 24)
+        self.assertTrue(progress["host_declared_content_revision_sample_incomplete"])
+        self.assertEqual(len(progress["recent_acknowledged_write_tools"]), 6)
+        self.assertNotIn("private owner brief", json.dumps(progress))
+
+
 if __name__ == "__main__":
     unittest.main()
