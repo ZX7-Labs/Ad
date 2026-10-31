@@ -355,6 +355,38 @@ def audit_native_journal(events, *, host_tool_access, expected_required_evidence
                         for tool in tools) or len(set(tools)) != len(tools)):
                 raise NativeJournalError("Untrusted or fabricated initial machine affordance")
             continue
+        if kind == "host_native_empty_asset_frontier":
+            # A real native get_project snapshot was followed immediately by a
+            # host-granted READ of get_assets. It reported an EMPTY complete
+            # inventory. Advertise possible tools only; no native write or
+            # model-authored operation is performed by this frontier.
+            tools = event.get("result_tool_names")
+            inventory = events[i - 1] if i >= 1 else {}
+            state = events[i - 2] if i >= 2 else {}
+            if (pending is not None or
+                    host_tool_access.get("get_assets") != "read" or
+                    state.get("kind") not in
+                    ("host_project_bootstrap_observation",
+                     "host_native_state_progress_observation") or
+                    (state.get("kind") == "host_project_bootstrap_observation" and
+                     state.get("project_presence") != "present") or
+                    inventory.get("kind") != "host_native_asset_inventory_observed" or
+                    inventory.get("tool") != "get_assets" or
+                    inventory.get("host_attested_read_only") is not True or
+                    not _sha(inventory.get("text_sha256")) or
+                    type(event.get("turn")) is not int or
+                    not 0 <= event["turn"] < 128 or
+                    event.get("trusted_machine_fact") != "project_asset_available" or
+                    event.get("host_observed_value") is not False or
+                    event.get("native_project_asset_count") != 0 or
+                    event.get("no_native_dispatch") is not True or
+                    not _sha(event.get("catalog_revision")) or
+                    not isinstance(tools, list) or not 1 <= len(tools) <= 4 or
+                    any(not isinstance(tool, str) or
+                        host_tool_access.get(tool) != "write" for tool in tools) or
+                    len(tools) != len(set(tools))):
+                raise NativeJournalError("Empty-project source frontier lacked native custody")
+            continue
         if kind == "host_native_asset_capability_frontier":
             # This is never a native tool call. The controller saw a real
             # host-granted get_assets EMPTY catalog and refused a model's
