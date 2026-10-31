@@ -294,6 +294,7 @@ class LocalEditorClientTests(unittest.TestCase):
             arguments = request["params"]["arguments"]
             if name == "get_timeline":
                 result = {"clips": [full_clip], "clipCount": 1,
+                          "fps": 24, "trackCount": 1,
                           "clipLimitApplied": False,
                           "tracks": [{"id": "video-1", "locked": False}],
                           "transitions": []}
