@@ -228,6 +228,50 @@ class LocalEditorClientTests(unittest.TestCase):
         self.assertEqual([r["params"]["name"] for r in self.requests[-3:]],
                          ["inspect_clip", "get_timeline", "split_clip"])
 
+    def test_split_hidden_effect_in_native_summary_is_caught_by_complete_snapshot(self):
+        # Pinned Velorn inspect_clip returns a compact summary WITHOUT
+        # effects/keyframes. The full get_timeline clip has their real state.
+        full_clip = {
+            "id": "full-a", "name": "source", "type": "video",
+            "assetId": "source", "trackId": "v1",
+            "startTime": 0, "duration": 10, "trimStart": 0,
+            "trimEnd": 10, "sourceDuration": 10, "speed": 1,
+            "enabled": True, "labelColor": "", "trackMatte": "none",
+            "lockMode": None, "syncLock": None,
+            "transform": {"opacity": 100},
+            "effects": [{"id": "protected-blur"}], "keyframes": {},
+            "textProperties": None, "shapeProperties": None,
+            "titleAnimation": None, "metadata": {"addedByMcp": True},
+            "captionScope": None, "overlayKind": None, "text": "",
+        }
+        def reply(request):
+            name = request["params"]["name"]
+            if name == "inspect_clip":
+                # Exact risk: native summary is not full editable state.
+                value = {"clip": {key: full_clip[key] for key in (
+                    "id", "trackId", "type", "assetId", "startTime",
+                    "duration", "trimStart", "speed", "transform")}}
+            elif name == "get_timeline":
+                value = {"clips": [full_clip], "clipCount": 1,
+                         "clipLimitApplied": False, "tracks": [{"id": "v1"}],
+                         "transitions": []}
+            elif name == "split_clip":
+                raise AssertionError("Effects-bearing clip must never be razored")
+            else:
+                raise AssertionError("Unexpected native operation")
+            return {"jsonrpc": "2.0", "id": request["id"],
+                    "result": {"content": [{"type": "text",
+                                            "text": json.dumps(value)}]}}
+        self.reply = reply
+        client = LocalEditorClient(self.endpoint, allowed_tools={
+            "inspect_clip": "read", "get_timeline": "read", "split_clip": "write"})
+        with self.assertRaisesRegex(EditorAccessError, "discard editable clip state"):
+            client.call("split_clip", {"clipId": "full-a",
+                        "timeSeconds": 3, "previewOnly": False},
+                        allowed_access={"read", "write"})
+        self.assertEqual([r["params"]["name"] for r in self.requests],
+                         ["inspect_clip", "get_timeline"])
+
     def test_native_extract_full_state_protection_rejects_hidden_effects_and_then_allows_plain(self):
         # This exercises the actual shared RPC client interception, not only a
         # direct call of the guard. The summary is purposely never consulted:
