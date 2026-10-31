@@ -37,7 +37,7 @@ class SourcePreviewContracts(unittest.TestCase):
         schema = {"type": "object", "properties": {
             "previewOnly": {"type": "boolean"}}}
         for name in ("add_asset_to_timeline", "add_assets_to_timeline",
-                     "add_solid_color"):
+                     "add_solid_color", "add_adjustment_clip"):
             self.assertTrue(source_reviewed_preview_is_readonly(
                 name, {}, schema))
             self.assertTrue(source_reviewed_preview_is_readonly(
@@ -62,6 +62,7 @@ class SourcePreviewContracts(unittest.TestCase):
             "add_asset_to_timeline": ("addAssetToTimeline", "replaceClipWithAsset"),
             "add_assets_to_timeline": ("addAssetsToTimeline", "addAdjustmentClip"),
             "add_solid_color": ("addSolidColor", "addAssetsToTimeline"),
+            "add_adjustment_clip": ("addAdjustmentClip", "duplicateClip"),
         }
         for name, (start, end) in functions.items():
             with self.subTest(name=name):
