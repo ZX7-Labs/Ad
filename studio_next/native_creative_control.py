@@ -330,7 +330,7 @@ def _source_attested_native_admission(tool_name: str, admission: dict) -> dict:
     # The underlying editor permits an empty/omitted color (host default),
     # or a trimmed # followed by exactly 6 hex digits. Never add '#'
     # automatically: an ambiguous/invalid model value is not an edit.
-    pattern = r"^[ \\t]*(?:#[0-9a-fA-F]{6})?[ \\t]*$"
+    pattern = r"^\s*(?:#[0-9a-fA-F]{6})?\s*$"
     outer["pattern"] = pattern
     inner["pattern"] = pattern
     return admission
