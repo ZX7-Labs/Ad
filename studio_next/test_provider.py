@@ -101,6 +101,13 @@ class ProviderTests(unittest.TestCase):
                 model.decide({"brief": "Never silently choose between duplicate fields"})
         self.assertEqual(exc.exception.code, "duplicate_json_field")
         self.assertNotIn("first", str(exc.exception))
+        self.assertTrue(exc.exception.__suppress_context__)
+        # Raw model-authored JSON property names must never appear in a
+        # printed traceback, which may be uploaded as shared CI evidence.
+        import traceback
+        chain = "".join(traceback.format_exception(exc.exception))
+        self.assertNotIn('Duplicate local model JSON field: title', chain)
+        self.assertNotIn('first', chain)
         for body, expected in (("not JSON", "invalid_json"),
                                ('{"incomplete":', "invalid_json"),
                                ('["list"]', "non_object_json"),
