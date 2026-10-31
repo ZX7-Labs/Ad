@@ -68,6 +68,40 @@ def source_reviewed_preview_is_readonly(name, inputs, native_schema):
     return inputs.get("previewOnly") is not False
 
 
+
+def pinned_direct_native_plan_preview(name, inputs, native_schema, receipt):
+    """Recognize only an actual pinned Velorn read-only direct plan receipt.
+
+    electron/mcpServer.js:addAssetToTimeline/addAssetsToTimeline/addSolidColor/
+    addAdjustmentClip return a *top-level* {previewOnly, action, plan,
+    suggestedApplyCall}, not a generic nested `result` wrapper. The four
+    handlers return this object BEFORE performAction when previewOnly !==
+    false. This only classifies source-proven, host-selected READ-only
+    previews; it never executes the proposed apply action or grants a write.
+    The complete receipt was parsed with duplicate-key rejection upstream.
+    """
+    if not source_reviewed_preview_is_readonly(name, inputs, native_schema):
+        return False
+    if not isinstance(receipt, dict):
+        return False
+    # A direct plan cannot simultaneously claim a completed write or carry a
+    # generic/nested result. Both are ambiguous and must fail closed.
+    if ("success" in receipt or "result" in receipt or
+            receipt.get("previewOnly") is not True or
+            receipt.get("action") != name or
+            receipt.get("error") not in (None, "")):
+        return False
+    plan = receipt.get("plan")
+    apply = receipt.get("suggestedApplyCall")
+    return (
+        isinstance(plan, dict) and plan.get("action") == name and
+        plan.get("previewOnly") is True and
+        isinstance(apply, dict) and apply.get("tool") == name and
+        isinstance(apply.get("arguments"), dict) and
+        apply["arguments"].get("previewOnly") is False
+    )
+
+
 def pinned_snapshot_summary(snapshot):
     """No raw private paths; positive facts only from the real get_project ABI.
 
