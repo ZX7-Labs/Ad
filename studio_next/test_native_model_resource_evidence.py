@@ -96,6 +96,22 @@ class PartialNativeTrialFailureEvidenceTests(unittest.TestCase):
             self.assertEqual(json.loads(
                 (work / "journal-audit-partial.json").read_text()), report)
 
+    def test_auditor_false_verdict_cannot_be_relabelled_valid(self):
+        with tempfile.TemporaryDirectory() as root:
+            work = Path(root)
+            (work / "native-journal.jsonl").write_text("present")
+            with patch("scripts.run_native_model_trial.read_native_journal",
+                       return_value=[{"kind": "model_decision_failed"}]), patch(
+                       "scripts.run_native_model_trial.audit_native_journal",
+                       return_value={"journal_chain_structurally_valid": False}):
+                report = preserve_native_trial_failure_audit(
+                    work, host_tool_access={}, expected_required_evidence=(),
+                    host_content_revision_tools=())
+            self.assertFalse(report["partial_journal_structurally_verified"])
+            self.assertFalse(report["technical_trial_completed"])
+            self.assertEqual(report["partial_journal_audit_error_type"],
+                             "ValueError")
+
     def test_no_native_journal_is_not_represented_as_verified(self):
         with tempfile.TemporaryDirectory() as root:
             work = Path(root)
