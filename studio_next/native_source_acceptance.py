@@ -111,13 +111,13 @@ def verify_original_footage_on_native_timeline(
             previous = settings.get("sourcePath")
             if not isinstance(previous, str):
                 continue
-            original = Path(previous)
-            if not original.is_absolute():
-                continue
-            original = original.resolve(strict=True)
-            owner_hash = sources.get(str(original))
+            # A saved editor project is not authority to make the trial
+            # verifier open arbitrary host paths. Check the exact caller-
+            # attested source identity BEFORE resolving or accessing it.
+            owner_hash = sources.get(previous)
             if not owner_hash:
                 continue
+            original = Path(previous)
             for path_field in ("absolutePath", "path"):
                 asset_location = asset.get(path_field)
                 if not isinstance(asset_location, str) or not asset_location:
