@@ -2439,6 +2439,110 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
 
 
 
+    async def test_direct_native_asset_plan_preview_allows_model_chosen_later_apply(self):
+        # Reproduce 4B run #41212032675: genuine imported asset exists,
+        # model selects an initial add_asset_to_timeline preview without
+        # previewOnly:false. The pinned *direct* MCP response is top-level,
+        # not runRendererActionTool's nested result. Never auto-apply.
+        class DirectNativePlan(FakeSession):
+            def __init__(self, malformed=None):
+                super().__init__()
+                self.malformed = malformed
+                self.tools.append(SimpleNamespace(
+                    name="add_asset_to_timeline",
+                    description="Place imported native asset (preview by default)",
+                    input_schema={"type": "object", "properties": {
+                        "assetName": {"type": "string"},
+                        "previewOnly": {"type": "boolean",
+                            "description": "When true, return a plan. Defaults to true."},
+                    }}))
+            async def call_tool(self, name, arguments):
+                if name != "add_asset_to_timeline":
+                    return await super().call_tool(name, arguments)
+                self.calls.append((name, dict(arguments)))
+                if arguments.get("previewOnly") is False:
+                    return SimpleNamespace(is_error=False, content=[
+                        SimpleNamespace(type="text", text=json.dumps({
+                            "success": True, "action": name,
+                            "result": {"success": True, "action": name}}))])
+                response = {
+                    "previewOnly": True, "action": name,
+                    "plan": {"action": name, "previewOnly": True,
+                             "asset": {"id": "actual-imported-asset"}},
+                    "suggestedApplyCall": {"tool": name, "arguments": {
+                        **arguments, "previewOnly": False}},
+                }
+                if self.malformed == "success_true":
+                    response["success"] = True
+                elif self.malformed == "mismatched_plan":
+                    response["plan"]["action"] = "delete_clips"
+                elif self.malformed == "mismatched_apply":
+                    response["suggestedApplyCall"]["tool"] = "delete_clips"
+                elif self.malformed == "wrong_apply_flag":
+                    response["suggestedApplyCall"]["arguments"]["previewOnly"] = True
+                elif self.malformed == "no_plan":
+                    response.pop("plan")
+                elif self.malformed == "nested_generic":
+                    response["result"] = {
+                        "previewOnly": True, "action": name}
+                return SimpleNamespace(is_error=False, content=[
+                    SimpleNamespace(type="text", text=json.dumps(response))])
+
+        session = DirectNativePlan()
+        grants = {t.name: ("write" if t.name in (
+            "add_asset_to_timeline", "update_text_clip") else "read")
+            for t in session.tools}
+        model = ScriptedModel([
+            decision("invoke", tool="add_asset_to_timeline",
+                     inputs={"assetName": "owner-original.mp4"}),
+            decision("invoke", tool="add_asset_to_timeline",
+                     inputs={"assetName": "owner-original.mp4",
+                             "previewOnly": False}),
+            decision("finish", summary="A model-selected native apply; not aesthetic QA"),
+        ])
+        outcome = await NativeCreativeControl(
+            session, model, host_tool_access=grants, max_turns=3,
+            required_evidence=("native_write_acknowledged",)).run(
+            "Import a real source and place it only after reviewing the native plan")
+        self.assertEqual(outcome["status"], "model_finished_unverified")
+        self.assertEqual([args.get("previewOnly") for name,args in session.calls
+                          if name == "add_asset_to_timeline"], [None, False])
+        self.assertEqual(model.observed[1]["last_native_preview_feedback"][
+            "native_declared_preview_control"]["field"], "previewOnly")
+        self.assertEqual(model.observed[1]["missing_completion_evidence"],
+                         ["native_write_acknowledged"])
+        self.assertEqual(sum(e["kind"] == "native_tool_preview"
+                             for e in outcome["events"]), 1)
+        self.assertEqual(sum(e["kind"] == "native_tool_result" and
+                             e.get("tool") == "add_asset_to_timeline"
+                             for e in outcome["events"]), 1)
+        self.assertTrue(audit_native_journal(
+            outcome["events"], host_tool_access=grants,
+            expected_required_evidence=("native_write_acknowledged",))[
+                "journal_chain_structurally_valid"])
+        self.assertFalse(outcome["native_editing_capability_complete"])
+
+        for malformed in ("success_true", "mismatched_plan",
+                          "mismatched_apply", "wrong_apply_flag", "no_plan",
+                          "nested_generic"):
+            with self.subTest(malformed=malformed):
+                session = DirectNativePlan(malformed)
+                model = ScriptedModel([
+                    decision("invoke", tool="add_asset_to_timeline",
+                             inputs={"assetName": "owner-original.mp4"})])
+                fail = await NativeCreativeControl(
+                    session, model, host_tool_access=grants, max_turns=1).run(
+                    "Never consider forged native plan evidence a safe preview")
+                self.assertEqual(fail["status"],
+                                 "native_error_requires_state_reconciliation")
+                self.assertEqual(fail["events"][-1]["kind"],
+                                 "native_tool_uncertain_outcome")
+                self.assertFalse(any(x["kind"] == "native_tool_result"
+                                     for x in fail["events"]))
+                self.assertTrue(audit_native_journal(
+                    fail["events"], host_tool_access=grants)[
+                        "journal_chain_structurally_valid"])
+
     async def test_generic_velorn_mcp_omitted_success_is_valid_preview_not_uncertain_write(self):
         from studio_next.native_creative_audit import audit_native_journal
         class NativeMcpPreview(FakeSession):
