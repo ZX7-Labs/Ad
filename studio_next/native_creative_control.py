@@ -13,13 +13,17 @@ import base64
 import hashlib
 import json
 import math
+from itertools import islice
 import os
 from pathlib import Path
 import re
 import time
 from typing import Any
 
+from .providers import LocalModelOutputError
 
+
+_MAX_MODEL_OUTPUT_RECOVERIES = 2  # host protocol budget, never a creative action
 _MAX_ACTION_BYTES = 262_144
 _MAX_RESULT_TEXT = 64_000
 _MAX_IMAGE_BYTES = 4 * 1024 * 1024
@@ -82,6 +86,11 @@ not run that tool. invoke ACTUALLY calls one granted native tool, whether a
 read-only inspection or a model-chosen creative edit. Use real invoke results
 to establish project state; do not invent progress from discover/describe.
 Avoid repeating identical metadata queries without obtaining new information.
+Native parameter types are JSON types: integer/number fields require JSON numbers,
+not quoted digits. A native preview receipt is NOT an applied edit. If the
+host exposes a previewOnly boolean, the model may choose a real commit by
+sending previewOnly:false, but must never mistake a preview for an ACK or
+repeat an uncertain edit.
 When a compact search reports requires_refinement with zero executable matches,
 its bounded candidate_examples are REAL but INSPECTABLE-ONLY host-granted tools:
 choose one candidate's exact tool name with describe to inspect and select its
@@ -290,6 +299,67 @@ def _native_tool_hints(available):
     return hints
 
 
+def _selected_native_input_hints(tool_names, live_tools):
+    """Bounded parameter typing from granted, *currently selected* tools.
+
+    This is not a creative script or permission. A small model needn't guess
+    that width is an integer or that native preview defaults to true; the
+    complete, unchanged source-native schema remains available by describe.
+    """
+    result = []
+    for name in list(tool_names)[:8]:
+        if name not in live_tools:
+            continue
+        tool = live_tools[name]
+        schema = _field(tool, "input_schema", _field(tool, "inputSchema"))
+        if not isinstance(schema, dict) or not isinstance(schema.get("properties"), dict):
+            continue
+        entry = {"tool": name, "input_properties": []}
+        required = schema.get("required")
+        required = set(required) if isinstance(required, list) and all(
+            isinstance(item, str) for item in required) else set()
+        # Avoid materializing an arbitrarily large host-provided schema.
+        # Do not truncate a property ID into a different, nonexistent input.
+        for key, source in islice(schema["properties"].items(), 16):
+            if (not isinstance(key, str) or not 1 <= len(key) <= 160 or
+                    not isinstance(source, dict)):
+                continue
+            type_name = source.get("type")
+            if (not isinstance(type_name, str) or
+                    type_name not in ("string", "integer", "number", "boolean",
+                                      "object", "array", "null")):
+                type_name = "complex_use_describe"
+            prop = {"name": key, "json_type": type_name,
+                    "required": key in required}
+            if isinstance(source.get("description"), str):
+                prop["host_source_description"] = " ".join(
+                    source["description"].split())[:128]
+            # Optional scalar constraints are copied only from the actual
+            # native JSON Schema. They are descriptive, never permission.
+            if type_name in ("integer", "number"):
+                for bound in ("minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum"):
+                    val = source.get(bound)
+                    if type(val) in (int, float) and math.isfinite(val):
+                        prop[bound] = val
+            if type_name == "boolean" and type(source.get("default")) is bool:
+                prop["default"] = source["default"]
+            options = source.get("enum")
+            if (isinstance(options, list) and len(options) <= 8 and
+                    all((isinstance(v, str) and len(v) <= 100) or
+                        type(v) is bool or v is None or
+                        (type(v) in (float, int) and math.isfinite(v))
+                        for v in options)):
+                prop["enum"] = options[:]
+            candidate = {**entry, "input_properties": entry["input_properties"] + [prop]}
+            if len(_wire(result + [candidate]).encode("utf-8")) > 4096:
+                break
+            entry["input_properties"].append(prop)
+        if entry["input_properties"] and len(
+                _wire(result + [entry]).encode("utf-8")) <= 4096:
+            result.append(entry)
+    return result
+
+
 def _model_event_window(events):
     """Loss-aware, bounded model working memory over an *unaltered* journal.
 
@@ -321,6 +391,9 @@ def _model_event_window(events):
         elif kind == "model_finish_rejected":
             item["missing_completion_evidence"] = event["missing_completion_evidence"]
             item["no_native_dispatch"] = True
+        elif kind == "native_tool_preview":
+            item["host_reported_preview_only"] = True
+            item["no_accepted_write_evidence"] = True
         elif kind == "model_action_rejected":
             for field in ("validation_keyword", "schema_location", "no_native_dispatch"):
                 if field in event:
@@ -445,6 +518,8 @@ class NativeCreativeControl:
                 "Machine contracts require an explicit trusted host grant map")
         self._capabilities = None
         self._last_search_result = None
+        self._previous_search_signature = None
+        self._identical_search_repetitions = 0
         self._selectable_tools: list[str] = []
         # On a tied lexical search, show a bounded *inspectable-only*
         # set of actual host grants. A model must explicitly describe
@@ -465,6 +540,9 @@ class NativeCreativeControl:
         self._project_presence = "unknown"
         self._post_write_state_warning: dict | None = None
         self._last_preflight_feedback: dict | None = None
+        self._last_native_preview_feedback: dict | None = None
+        self._last_model_output_feedback: dict | None = None
+        self._model_output_rejections = 0
         self._last_audio: list[tuple[str, bytes]] = []
         self._last_audio_evidence: dict | None = None
         self._verified_exports: set[str] = set()
@@ -789,6 +867,9 @@ class NativeCreativeControl:
                     "compact_tool_catalog": self.catalog_mode == "indexed",
                     "selectable_native_tools": list(self._selectable_tools),
                     "inspectable_native_tools": list(self._inspectable_tied_candidates),
+                    "host_selected_native_input_hints": (
+                        _selected_native_input_hints(self._selectable_tools, self.tools)
+                        if self.catalog_mode == "indexed" else []),
                     # After an acknowledged one-shot machine operation,
                     # reveal a compact term vocabulary grounded only in other
                     # real granted native tool names. The tiny brain chooses
@@ -817,6 +898,8 @@ class NativeCreativeControl:
                     # expose the exact bounded host schema for independent
                     # model correction. No model action is selected here.
                     "last_rejected_native_action_feedback": self._last_preflight_feedback,
+                    "last_native_preview_feedback": self._last_native_preview_feedback,
+                    "last_rejected_model_output_feedback": self._last_model_output_feedback,
                     # Evidence-based progress facts persist beyond the 8-event
                     # sliding window. No operation or creative step is chosen
                     # by the controller on the model's behalf.
@@ -835,12 +918,48 @@ class NativeCreativeControl:
                     context["host_declared_tool_hints"] = tool_hints
                     show_tool_hints = False
                 model_started = time.monotonic_ns()
+                inference_had_media = bool(self._last_images or self._last_audio)
                 try:
                     decision = self._decision(await self._infer(context))
+                except LocalModelOutputError as exc:
+                    # Exact observed CPU trial: Qwen emitted duplicate JSON
+                    # fields on turn 9. Reject entirely, no decoded partial
+                    # command, and give the REAL model at most two fresh turns
+                    # to choose a NEW valid action. Never replay a write.
+                    failed_ms = round((time.monotonic_ns() - model_started) / 1_000_000, 3)
+                    self._model_wall_ms_total += failed_ms
+                    if (not inference_had_media and
+                            self._model_output_rejections < _MAX_MODEL_OUTPUT_RECOVERIES and
+                            turn + 1 < self.max_turns):
+                        self._model_output_rejections += 1
+                        remaining = _MAX_MODEL_OUTPUT_RECOVERIES - self._model_output_rejections
+                        self._last_model_output_feedback = {
+                            "previous_model_json_rejected": True,
+                            "reason_code": exc.code,
+                            "return_one_unambiguous_json_object": True,
+                            "no_native_dispatch": True,
+                            "remaining_model_output_corrections": remaining,
+                        }
+                        self._append({"kind": "model_protocol_response_rejected",
+                                      "turn": turn,
+                                      "measured_model_wall_ms": failed_ms,
+                                      "reason_code": exc.code,
+                                      "no_native_dispatch": True,
+                                      "remaining_model_output_corrections": remaining,
+                                      "creative_quality_independently_approved": False})
+                        continue
+                    # Inference with unsaved visual/audio evidence or exhausted
+                    # correction budget is terminal; no media are invented,
+                    # no native mutation retried, and no quality is certified.
+                    self._append({"kind": "model_decision_failed", "turn": turn,
+                                  "measured_model_wall_ms": failed_ms,
+                                  "error_type": type(exc).__name__,
+                                  "no_automatic_retry": True,
+                                  "creative_quality_independently_approved": False})
+                    raise
                 except BaseException as exc:
-                    # A model failure is neither a finished film nor exhausted
-                    # budget. Persist a terminal fact without exposing model
-                    # prompts, output or secrets from the exception message.
+                    # Transport, native, schema and unexpected model failures
+                    # remain terminal. No automatic retry after uncertain work.
                     failed_ms = round((time.monotonic_ns() - model_started) / 1_000_000, 3)
                     self._model_wall_ms_total += failed_ms
                     self._append({"kind": "model_decision_failed", "turn": turn,
@@ -849,6 +968,7 @@ class NativeCreativeControl:
                                   "no_automatic_retry": True,
                                   "creative_quality_independently_approved": False})
                     raise
+                self._last_model_output_feedback = None
                 model_ms = round((time.monotonic_ns() - model_started) / 1_000_000, 3)
                 self._model_wall_ms_total += model_ms
                 # This is *not* independent token accounting. Native and
@@ -872,6 +992,12 @@ class NativeCreativeControl:
                 # project-state observation available to the small model.
                 # A new successful native call replaces this text below.
                 action, args = decision["action"], decision["arguments"]
+                if action != "search":
+                    # Only consecutive duplicate metadata searches are
+                    # redundant. Describing a schema, inspecting real state,
+                    # or taking any other model action ends this streak.
+                    self._previous_search_signature = None
+                    self._identical_search_repetitions = 0
                 if action == "finish":
                     missing = self._missing_completion_evidence()
                     if missing:
@@ -895,8 +1021,24 @@ class NativeCreativeControl:
                     if self._capabilities is None:
                         raise NativeCreativeControlError(
                             "Search requires explicitly attested host tool grants")
+                    # Search never calls a native editor operation. Mark
+                    # repeated identical metadata queries explicitly so a
+                    # small model need not infer that from eight journal
+                    # events. Do NOT choose or invoke a tool on its behalf.
+                    signature = (args["query"], args.get("limit", 6),
+                                 self._capabilities.revision)
+                    if signature == self._previous_search_signature:
+                        self._identical_search_repetitions += 1
+                    else:
+                        self._identical_search_repetitions = 0
+                    self._previous_search_signature = signature
                     self._last_search_result = self._capabilities.search(
                         args["query"], limit=args.get("limit", 6))
+                    if self._identical_search_repetitions:
+                        self._last_search_result["same_metadata_query_without_new_evidence"] = True
+                        self._last_search_result["identical_query_repeat_count"] = min(
+                            self._identical_search_repetitions, 100)
+                        self._last_search_result["no_native_edit_or_inspection_performed"] = True
                     # Only tool identities from actual discovery enter the
                     # model-facing result. Host grant map is authoritative.
                     discovered = [
@@ -1158,10 +1300,52 @@ class NativeCreativeControl:
                                        if isinstance(host_response, dict) else None)
                         preview = (host_result.get("previewOnly")
                                    if isinstance(host_result, dict) else None)
-                        if success is False:
-                            if preview is True:
-                                # A proposed native plan is useful model feedback,
-                                # but never grants credit for any applied edit.
+                        # Two pinned source-backed read-only preview receipts:
+                        # (a) legacy specialized project tools return
+                        #     success:false + result.previewOnly:true;
+                        # (b) generic Velorn runRendererActionTool omits
+                        #     success entirely on preview, but binds BOTH
+                        #     wrapper and nested result to the native action.
+                        # Never infer no-write from an uncorrelated single
+                        # "previewOnly" flag or a contradictory success:true.
+                        wrapper_preview = (
+                            isinstance(host_response, dict) and
+                            host_response.get("previewOnly") is True and
+                            host_response.get("action") == native_name and
+                            isinstance(host_result, dict) and
+                            host_result.get("action") == native_name)
+                        acknowledged_preview = (
+                            preview is True and (
+                                (success is False and (
+                                    not isinstance(host_response, dict) or
+                                    host_response.get("previewOnly", True) is True
+                                )) or (success is None and wrapper_preview)))
+                        if success is False or acknowledged_preview:
+                            if acknowledged_preview:
+                                # Actual pinned editor defaults to a preview
+                                # rather than a mutation. This is NOT a model
+                                # choice to commit: expose the declared native
+                                # field/description so the small brain can
+                                # independently decide whether to apply it.
+                                properties = validators[native_name].schema.get(
+                                    "properties", {})
+                                option = properties.get("previewOnly") if isinstance(
+                                    properties, dict) else None
+                                self._last_native_preview_feedback = {
+                                    "tool": native_name,
+                                    "host_reported_preview_only": True,
+                                    "no_native_write_acknowledged": True,
+                                    "creative_action_still_model_chosen": True,
+                                }
+                                if (isinstance(option, dict) and
+                                        option.get("type") == "boolean"):
+                                    self._last_native_preview_feedback[
+                                        "native_declared_preview_control"] = {
+                                            "field": "previewOnly",
+                                            "type": "boolean",
+                                            "description": str(option.get(
+                                                "description", ""))[:256],
+                                        }
                                 self._last_native_texts = texts
                                 self._last_images, self._last_hashes = [], []
                                 self._last_audio, self._last_audio_evidence = [], None
@@ -1206,6 +1390,11 @@ class NativeCreativeControl:
                                 "no_automatic_retry": True})
                             outcome = "native_error_requires_state_reconciliation"
                             break
+                    if (self.host_tool_access is not None and
+                            self.host_tool_access.get(native_name) == "write"):
+                        # Only the native application's explicit success ACK
+                        # clears the pending preview. No host-selected edit.
+                        self._last_native_preview_feedback = None
                     hashes = _source_bound_images(texts, images)
                     audio_evidence = _source_bound_audio(texts, audio)
                     new_export_sha = None

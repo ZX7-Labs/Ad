@@ -2154,5 +2154,372 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
                 fresh_trial_project_open_effects(root)
 
 
+    async def test_real_model_invalid_json_gets_bounded_fresh_decision_without_native_retry(self):
+        from studio_next.providers import LocalModelOutputError
+        from studio_next.native_creative_audit import audit_native_journal
+        class RejectOnce(ScriptedModel):
+            def decide(self, context):
+                self.observed.append(context)
+                if len(self.observed) == 1:
+                    raise LocalModelOutputError("duplicate_json_field")
+                return next(self.actions)
+        session = FakeSession()
+        grants = {item.name: ("write" if item.name == "update_text_clip" else "read")
+                  for item in session.tools}
+        model = RejectOnce([
+            decision("invoke", tool="get_timeline", inputs={}),
+            decision("finish", summary="Read-only creative inspection; no finished edit")])
+        result = await NativeCreativeControl(session, model, max_turns=3,
+            host_tool_access=grants).run("Inspect original editable project")
+        self.assertEqual(result["status"], "model_finished_unverified")
+        self.assertEqual(session.calls, [("get_timeline", {})])
+        events = result["events"]
+        rejected = [event for event in events
+                    if event["kind"] == "model_protocol_response_rejected"]
+        self.assertEqual(len(rejected), 1)
+        self.assertEqual(rejected[0]["reason_code"], "duplicate_json_field")
+        self.assertEqual(rejected[0]["remaining_model_output_corrections"], 1)
+        self.assertTrue(rejected[0]["no_native_dispatch"])
+        self.assertEqual(model.observed[1]["last_rejected_model_output_feedback"][
+            "reason_code"], "duplicate_json_field")
+        self.assertIsNone(model.observed[2]["last_rejected_model_output_feedback"])
+        self.assertTrue(audit_native_journal(events, host_tool_access=grants)[
+            "journal_chain_structurally_valid"])
+        self.assertFalse(result["native_editing_capability_complete"])
+
+    async def test_malformed_model_after_acknowledged_write_does_not_repeat_write(self):
+        from studio_next.providers import LocalModelOutputError
+        from studio_next.native_creative_audit import audit_native_journal
+        class Recovering(ScriptedModel):
+            def decide(self, context):
+                self.observed.append(context)
+                answer = next(self.actions)
+                if isinstance(answer, Exception):
+                    raise answer
+                return answer
+        session = FakeSession()
+        grants = {item.name: ("write" if item.name == "update_text_clip" else "read")
+                  for item in session.tools}
+        model = Recovering([
+            decision("invoke", tool="update_text_clip",
+                     inputs={"clipId": "author", "text": "Model's single edit"}),
+            LocalModelOutputError("invalid_json"),
+            decision("finish", summary="Only technical native result observed")])
+        result = await NativeCreativeControl(
+            session, model, max_turns=3, host_tool_access=grants).run(
+                "Author editable title without retrying edits")
+        self.assertEqual([name for name, _ in session.calls], ["update_text_clip"])
+        self.assertEqual(sum(event["kind"] == "native_tool_submitted"
+                             for event in result["events"]), 1)
+        self.assertEqual(sum(event["kind"] == "model_protocol_response_rejected"
+                             for event in result["events"]), 1)
+        self.assertTrue(audit_native_journal(
+            result["events"], host_tool_access=grants)["journal_chain_structurally_valid"])
+
+    async def test_invalid_model_json_recovery_budget_fails_closed_with_audited_terminal(self):
+        from studio_next.providers import LocalModelOutputError
+        from studio_next.native_creative_audit import (
+            audit_native_journal, read_native_journal, NativeJournalError)
+        class BadModel(ScriptedModel):
+            def decide(self, context):
+                self.observed.append(context)
+                raise LocalModelOutputError("duplicate_json_field")
+        session = FakeSession()
+        grants = {item.name: ("write" if item.name == "update_text_clip" else "read")
+                  for item in session.tools}
+        with tempfile.TemporaryDirectory() as root:
+            receipt = Path(root) / "fresh-audit.jsonl"
+            model = BadModel([])
+            with self.assertRaises(LocalModelOutputError):
+                await NativeCreativeControl(session, model, max_turns=5,
+                    host_tool_access=grants, receipt_path=receipt).run(
+                    "Creative model must never silently repair malformed output")
+            self.assertEqual(len(model.observed), 3)
+            self.assertEqual(session.calls, [])
+            events = read_native_journal(receipt)
+            self.assertEqual([e["kind"] for e in events][1:], [
+                "model_protocol_response_rejected",
+                "model_protocol_response_rejected",
+                "model_decision_failed"])
+            self.assertTrue(audit_native_journal(
+                events, host_tool_access=grants)["journal_chain_structurally_valid"])
+            for change in ({"reason_code": "invented"},
+                           {"no_native_dispatch": False},
+                           {"remaining_model_output_corrections": 8}):
+                corrupted = json.loads(json.dumps(events))
+                corrupted[1].update(change)
+                with self.subTest(change=change), self.assertRaises(NativeJournalError):
+                    audit_native_journal(corrupted, host_tool_access=grants)
+
+    async def test_non_protocol_model_failure_is_terminal_and_no_model_retry(self):
+        class NonProtocolFailure(ScriptedModel):
+            def decide(self, context):
+                self.observed.append(context)
+                raise OSError("Model server died; not a generated JSON error")
+        session = FakeSession()
+        model = NonProtocolFailure([])
+        with self.assertRaisesRegex(OSError, "Model server died"):
+            await NativeCreativeControl(session, model, max_turns=5).run(
+                "A network error cannot be edited into a model action")
+        self.assertEqual(len(model.observed), 1)
+        self.assertEqual(session.calls, [])
+
+
+    async def test_native_preview_requires_independent_model_commit_and_exposes_exact_host_field(self):
+        from studio_next.native_creative_audit import audit_native_journal
+        class ProjectPreview(FakeSession):
+            def __init__(self):
+                super().__init__()
+                self.tools.append(SimpleNamespace(
+                    name="create_project",
+                    description="Native project creation (preview by default)",
+                    input_schema={"type": "object", "properties": {
+                        "name": {"type": "string"},
+                        "previewOnly": {"type": "boolean", "description":
+                            "When true, returns a plan without writing. Defaults to true."}}}))
+            async def call_tool(self, name, arguments):
+                if name != "create_project":
+                    return await super().call_tool(name, arguments)
+                self.calls.append((name, dict(arguments)))
+                is_preview = arguments.get("previewOnly", True)
+                return SimpleNamespace(is_error=False, content=[
+                    SimpleNamespace(type="text", text=json.dumps({
+                        "success": not is_preview,
+                        "result": {"previewOnly": is_preview, "name": arguments["name"]}}))])
+        session = ProjectPreview()
+        grants = {tool.name: ("write" if tool.name in (
+            "update_text_clip", "create_project") else "read")
+                  for tool in session.tools}
+        model = ScriptedModel([
+            decision("invoke", tool="create_project", inputs={
+                "name": "Model-owned original", "previewOnly": True}),
+            decision("invoke", tool="create_project", inputs={
+                "name": "Model-owned original", "previewOnly": False}),
+            decision("finish", summary="Actual native creation acknowledged; no art approval")])
+        result = await NativeCreativeControl(session, model, max_turns=3,
+            host_tool_access=grants,
+            required_evidence=("native_write_acknowledged",)).run(
+                "Choose whether to create an editable native project")
+        self.assertEqual(result["status"], "model_finished_unverified")
+        self.assertEqual([args["previewOnly"] for name,args in session.calls
+                          if name == "create_project"], [True, False])
+        receipt = model.observed[1]["last_native_preview_feedback"]
+        self.assertEqual(receipt["tool"], "create_project")
+        self.assertTrue(receipt["host_reported_preview_only"])
+        self.assertTrue(receipt["no_native_write_acknowledged"])
+        self.assertEqual(receipt["native_declared_preview_control"]["field"], "previewOnly")
+        self.assertIn("Defaults to true",
+                      receipt["native_declared_preview_control"]["description"])
+        self.assertIsNone(model.observed[2]["last_native_preview_feedback"])
+        self.assertEqual(sum(e["kind"] == "native_tool_preview"
+                             for e in result["events"]), 1)
+        self.assertEqual(sum(e["kind"] == "native_tool_result" and
+                             e.get("tool") == "create_project"
+                             for e in result["events"]), 1)
+        self.assertTrue(audit_native_journal(
+            result["events"], host_tool_access=grants,
+            expected_required_evidence=["native_write_acknowledged"])[
+                "journal_chain_structurally_valid"])
+        self.assertFalse(result["native_editing_capability_complete"])
+
+
+
+    async def test_indexed_model_receives_selected_native_parameter_types_not_every_tool(self):
+        from studio_next.native_creative_control import _selected_native_input_hints
+        session = FakeSession()
+        grants = {item.name: ("write" if item.name == "update_text_clip" else "read")
+                  for item in session.tools}
+        model = ScriptedModel([
+            decision("search", query="edit text", limit=3),
+            decision("finish", summary="Only a capability inspection, no artistic proof")])
+        result = await NativeCreativeControl(
+            session, model, max_turns=2, catalog_mode="indexed",
+            host_tool_access=grants).run("Inspect the real native editor contract")
+        self.assertEqual(result["status"], "model_finished_unverified")
+        self.assertEqual(model.observed[0]["host_selected_native_input_hints"], [])
+        hints = model.observed[1]["host_selected_native_input_hints"]
+        selected = set(model.observed[1]["selectable_native_tools"])
+        self.assertTrue(hints)
+        self.assertTrue(all(item["tool"] in selected for item in hints))
+        names = {item["tool"] for item in hints}
+        self.assertIn("update_text_clip", names)
+        fields = {p["name"]: p["json_type"] for item in hints
+                  if item["tool"] == "update_text_clip"
+                  for p in item["input_properties"]}
+        self.assertEqual(fields["clipId"], "string")
+        self.assertEqual(fields["text"], "string")
+        self.assertLessEqual(len(json.dumps(hints, ensure_ascii=False).encode()), 4096)
+        self.assertEqual(session.calls, [])
+        # Only host-sourced granted selections; hallucinated names cannot
+        # mint additional schema entries, regardless of model strength.
+        self.assertEqual(_selected_native_input_hints(
+            ["not_installed"], {"update_text_clip": session.tools[1]}), [])
+
+    async def test_repeated_identical_capability_search_exposes_no_new_evidence_without_dispatch(self):
+        from studio_next.native_creative_audit import audit_native_journal
+        session = FakeSession()
+        grants = {tool.name: ("write" if tool.name == "update_text_clip" else "read")
+                  for tool in session.tools}
+        model = ScriptedModel([
+            decision("search", query="edit text", limit=3),
+            decision("search", query="edit text", limit=3),
+            decision("describe", tool="update_text_clip"),
+            decision("finish", summary="Only metadata reviewed; no native project edited"),
+        ])
+        outcome = await NativeCreativeControl(
+            session, model, max_turns=4, catalog_mode="indexed",
+            host_tool_access=grants).run("Inspect native capabilities")
+        self.assertEqual(outcome["status"], "model_finished_unverified")
+        self.assertFalse(model.observed[1]["last_capability_search_result"].get(
+            "same_metadata_query_without_new_evidence", False))
+        repeated = model.observed[2]["last_capability_search_result"]
+        self.assertTrue(repeated["same_metadata_query_without_new_evidence"])
+        self.assertEqual(repeated["identical_query_repeat_count"], 1)
+        self.assertTrue(repeated["no_native_edit_or_inspection_performed"])
+        self.assertEqual(session.calls, [])
+        self.assertEqual(sum(ev["kind"] == "capability_searched"
+                             for ev in outcome["events"]), 2)
+        self.assertTrue(audit_native_journal(
+            outcome["events"], host_tool_access=grants)["journal_chain_structurally_valid"])
+
+    async def test_intervening_model_describe_ends_identical_metadata_search_streak(self):
+        session = FakeSession()
+        grants = {tool.name: ("write" if tool.name == "update_text_clip" else "read")
+                  for tool in session.tools}
+        model = ScriptedModel([
+            decision("search", query="edit text", limit=3),
+            decision("describe", tool="update_text_clip"),
+            decision("search", query="edit text", limit=3),
+            decision("finish", summary="No native tool was invoked"),
+        ])
+        result = await NativeCreativeControl(
+            session, model, max_turns=4, catalog_mode="indexed",
+            host_tool_access=grants).run("Inspect native operation contracts")
+        self.assertFalse(model.observed[3]["last_capability_search_result"].get(
+            "same_metadata_query_without_new_evidence", False))
+        self.assertEqual(session.calls, [])
+        self.assertFalse(result["native_editing_capability_complete"])
+
+    async def test_host_hints_preserve_exact_property_names_and_source_scalar_limits(self):
+        from studio_next.native_creative_control import _selected_native_input_hints
+        native = SimpleNamespace(input_schema={
+            "type": "object", "properties": {
+                "width": {"type": "integer", "minimum": 16, "maximum": 8192},
+                "previewOnly": {"type": "boolean", "default": True},
+                "codec": {"type": "string", "enum": ["h264", "vp9"]},
+                "too_long_" + "x" * 200: {"type": "string"},
+                "untrusted_number": {"type": "number", "minimum": float("nan")},
+            }})
+        result = _selected_native_input_hints(["native_project"], {
+            "native_project": native})
+        fields = {p["name"]: p for p in result[0]["input_properties"]}
+        self.assertEqual(fields["width"]["minimum"], 16)
+        self.assertEqual(fields["width"]["maximum"], 8192)
+        self.assertEqual(fields["previewOnly"]["default"], True)
+        self.assertEqual(fields["codec"]["enum"], ["h264", "vp9"])
+        self.assertNotIn("minimum", fields["untrusted_number"])
+        self.assertFalse(any(n.startswith("too_long_") for n in fields))
+        self.assertLessEqual(len(json.dumps(
+            result, ensure_ascii=False, sort_keys=True,
+            separators=(",", ":")).encode("utf-8")), 4096)
+
+    async def test_native_parameter_hint_budget_never_dumps_full_schema(self):
+        from studio_next.native_creative_control import _selected_native_input_hints
+        many = SimpleNamespace(input_schema={
+            "type": "object", "properties": {
+                f"parameter_{i}": {"type": "string",
+                                   "description": "Host source " + "x" * 1000}
+                for i in range(180)}})
+        hints = _selected_native_input_hints(["large_tool"], {"large_tool": many})
+        self.assertLessEqual(len(json.dumps(
+            hints, ensure_ascii=False, sort_keys=True,
+            separators=(",", ":")).encode("utf-8")), 4096)
+        self.assertLessEqual(len(hints[0]["input_properties"]), 16)
+        self.assertNotIn("x" * 200, json.dumps(hints))
+
+
+
+    async def test_generic_velorn_mcp_omitted_success_is_valid_preview_not_uncertain_write(self):
+        from studio_next.native_creative_audit import audit_native_journal
+        class NativeMcpPreview(FakeSession):
+            def __init__(self, variant):
+                super().__init__()
+                self.variant = variant
+                self.tools.append(SimpleNamespace(name="split_clip",
+                    description="Razor edit, preview by default",
+                    input_schema={"type": "object", "properties": {
+                        "clipId": {"type": "string"},
+                        "timeSeconds": {"type": "number"},
+                        "previewOnly": {"type": "boolean", "description":
+                            "When true, returns a plan without changing timeline."}}}))
+            async def call_tool(self, name, arguments):
+                self.calls.append((name, dict(arguments)))
+                self.assert_only_preview(name, arguments)
+                data = {"previewOnly": True, "action": "split_clip",
+                        "result": {"previewOnly": True, "action": "split_clip",
+                                   "message": "Native preview only",
+                                   "targets": [{"id": "source"}]},
+                        "suggestedApplyCall": {"tool": "split_clip",
+                            "arguments": {**arguments, "previewOnly": False}}}
+                if self.variant == "outer_action_mismatch":
+                    data["action"] = "delete_clips"
+                if self.variant == "inner_action_mismatch":
+                    data["result"]["action"] = "delete_clips"
+                if self.variant == "contradictory_success":
+                    data["success"] = True
+                if self.variant == "missing_outer_preview":
+                    data.pop("previewOnly")
+                if self.variant == "wrong_inner_preview":
+                    data["result"]["previewOnly"] = False
+                return SimpleNamespace(is_error=False,
+                    content=[SimpleNamespace(type="text", text=json.dumps(data))])
+            @staticmethod
+            def assert_only_preview(name, arguments):
+                if name != "split_clip" or arguments.get("previewOnly") is not True:
+                    raise AssertionError("Model preview must never execute suggestedApplyCall")
+        grants = {tool.name: ("write" if tool.name in (
+            "split_clip", "update_text_clip") else "read")
+                  for tool in FakeSession().tools}
+        grants["split_clip"] = "write"
+        args = {"clipId": "source", "timeSeconds": 3, "previewOnly": True}
+        good = NativeMcpPreview("valid")
+        model = ScriptedModel([
+            decision("invoke", tool="split_clip", inputs=args),
+            decision("finish", summary="Preview, not a completed edit")])
+        output = await NativeCreativeControl(
+            good, model, max_turns=2, host_tool_access=grants).run(
+                "Inspect cutting a source clip without applying it")
+        self.assertEqual(output["status"], "model_finished_unverified")
+        self.assertEqual(good.calls, [("split_clip", args)])
+        self.assertEqual(sum(e["kind"] == "native_tool_preview"
+                             for e in output["events"]), 1)
+        self.assertFalse(any(e["kind"] == "native_tool_result"
+                              for e in output["events"]))
+        self.assertTrue(model.observed[1]["last_native_preview_feedback"][
+            "no_native_write_acknowledged"])
+        self.assertTrue(audit_native_journal(
+            output["events"], host_tool_access=grants)["journal_chain_structurally_valid"])
+        for variant in ("outer_action_mismatch", "inner_action_mismatch",
+                        "contradictory_success", "missing_outer_preview",
+                        "wrong_inner_preview"):
+            with self.subTest(variant=variant):
+                session = NativeMcpPreview(variant)
+                model = ScriptedModel([
+                    decision("invoke", tool="split_clip", inputs=args)])
+                result = await NativeCreativeControl(
+                    session, model, max_turns=1, host_tool_access=grants).run(
+                    "Do not trust ambiguous native preview receipts")
+                self.assertEqual(result["status"],
+                                 "native_error_requires_state_reconciliation")
+                self.assertEqual(session.calls, [("split_clip", args)])
+                self.assertEqual(result["events"][-1]["kind"],
+                                 "native_tool_uncertain_outcome")
+                self.assertFalse(result["native_editing_capability_complete"])
+                self.assertTrue(audit_native_journal(
+                    result["events"], host_tool_access=grants)[
+                        "journal_chain_structurally_valid"])
+
+
+
 if __name__ == "__main__":
     unittest.main()

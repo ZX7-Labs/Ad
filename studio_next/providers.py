@@ -17,6 +17,23 @@ from .local_model_http import urlopen
 from typing import Any
 
 
+class LocalModelOutputError(ValueError):
+    """Only model-authored content failed strict decoding; no native action.
+
+    Server envelope/transport errors and controller/schema failures deliberately
+    keep their original exception types and remain terminal.
+    """
+
+    def __init__(self, code: str):
+        if code not in ("duplicate_json_field", "invalid_json", "truncated_response",
+                        "empty_response", "non_object_json"):
+            raise ValueError("Unknown model output failure classification")
+        self.code = code
+        message = ("Duplicate local model JSON field" if code == "duplicate_json_field"
+                   else "Invalid model-authored response: " + code)
+        super().__init__(message)
+
+
 def _model_json(raw):
     """Reject ambiguous or non-finite model data before any tool admission."""
     def unique(pairs):
@@ -180,13 +197,22 @@ class LocalCreativeModel:
             self.last_call_usage = reported or None
         choice=decoded["choices"][0]
         if choice.get("finish_reason")=="length":
-            raise ValueError("Local model's structured answer was truncated")
+            raise LocalModelOutputError("truncated_response")
         body=choice["message"].get("content")
         if not isinstance(body,str) or not body.strip():
-            raise ValueError("Local model returned no JSON")
-        parsed=_model_json(body.strip())
+            raise LocalModelOutputError("empty_response")
+        try:
+            parsed=_model_json(body.strip())
+        except ValueError as exc:
+            code = ("duplicate_json_field" if
+                    str(exc).startswith("Duplicate local model JSON field: ")
+                    else "invalid_json")
+            # Do not leak the model's possibly private key/value in logs.
+            # The original parser error can include a model-authored key
+            # that contains owner-private data. Suppress exception chaining.
+            raise LocalModelOutputError(code) from None
         if not isinstance(parsed,dict):
-            raise ValueError("Local model returned a non-object JSON value")
+            raise LocalModelOutputError("non_object_json")
         return parsed
 
     def decide(self,context):

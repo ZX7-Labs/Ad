@@ -163,6 +163,8 @@ def audit_native_journal(events, *, host_tool_access, expected_required_evidence
     # Distinguish source-backed, non-invokable tied examples from
     # executable search matches; no journal claim creates host authority.
     latest_inspectable_tied_candidates = []
+    model_protocol_rejections = 0
+    last_model_protocol_rejection_turn = -1
     finished = False
     terminal = None
 
@@ -290,6 +292,27 @@ def audit_native_journal(events, *, host_tool_access, expected_required_evidence
                     event.get("no_model_selected_mutation") is not True or
                     event.get("no_automatic_write_retry") is not True):
                 raise NativeJournalError("Untrusted inconsistent post-write state claim")
+            continue
+        if kind == "model_protocol_response_rejected":
+            # A malformed actual model JSON object is not a selected tool
+            # action. Exactly two bounded text-only correction opportunities,
+            # no native dispatch, no invented project state or write evidence.
+            model_protocol_rejections += 1
+            duration = event.get("measured_model_wall_ms")
+            turn = event.get("turn")
+            if (pending is not None or model_protocol_rejections > 2 or
+                    type(turn) is not int or turn <= last_model_protocol_rejection_turn or
+                    type(duration) not in (int, float) or
+                    not math.isfinite(duration) or duration < 0 or
+                    event.get("reason_code") not in (
+                        "duplicate_json_field", "invalid_json", "truncated_response",
+                        "empty_response", "non_object_json") or
+                    event.get("no_native_dispatch") is not True or
+                    event.get("remaining_model_output_corrections") != (
+                        2 - model_protocol_rejections) or
+                    event.get("creative_quality_independently_approved") is not False):
+                raise NativeJournalError("Unsafe or fabricated model-output recovery record")
+            last_model_protocol_rejection_turn = turn
             continue
         if kind == "model_decision_failed":
             duration = event.get("measured_model_wall_ms")
