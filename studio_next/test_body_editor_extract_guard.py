@@ -39,8 +39,9 @@ class FakeNative:
         self.calls.append((name, copy.deepcopy(arguments)))
         if name == "get_timeline":
             data = {"clips": copy.deepcopy(self.clips), "clipCount": len(self.clips),
+                    "fps": getattr(self, "fps", 24), "trackCount": 1,
                     "clipLimitApplied": self.truncated,
-                    "tracks": [{"id": "v1", "locked": False}],
+                    "tracks": [{"id": "v1", "locked": getattr(self, "locked", False)}],
                     "transitions": self.transitions}
         elif name == "extract_range":
             if arguments.get("previewOnly") is not True:
@@ -114,6 +115,22 @@ class NativeExtractLossGuardTests(unittest.TestCase):
             with self.subTest(state=state), self.assertRaises(EditorAccessError):
                 self.check(native)
             self.assertEqual([name for name, _ in native.calls], ["get_timeline"])
+
+    def test_stale_native_preview_must_match_independent_frame_boundary_plan(self):
+        native = FakeNative()
+        native.boundaries["splitAtStart"] = []
+        with self.assertRaisesRegex(EditorAccessError, "disagree"):
+            self.check(native)
+        self.assertEqual([name for name, _ in native.calls],
+                         ["get_timeline", "extract_range"])
+
+    def test_locked_tracks_and_invalid_frame_rate_cannot_authorize_extract(self):
+        for state in ("invalid_fps", "locked_track"):
+            native = FakeNative()
+            native.fps = 0 if state == "invalid_fps" else 24
+            native.locked = state == "locked_track"
+            with self.subTest(state=state), self.assertRaises(EditorAccessError):
+                self.check(native)
 
     def test_boundary_missing_or_warned_plans_fail_closed(self):
         for alteration in ("bad_id", "warning", "transition", "scoped"):
