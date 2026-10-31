@@ -306,7 +306,10 @@ class CapabilityFabric:
                     *result["host_granted_action_prefixes"], prefix]
                 candidate["terms_are_search_hints_not_execution_grants"] = True
                 candidate["action_prefixes_may_be_incomplete"] = True
-                if len(_wire(candidate).encode("utf-8")) <= 900:
+                # Reserve headroom for ordinary JSON serializers that add
+                # whitespace and the terminal truncation flag. The public
+                # overview remains <=900 bytes even without compact encoding.
+                if len(json.dumps(candidate, ensure_ascii=False).encode("utf-8")) <= 860:
                     result["host_granted_action_prefixes"].append(prefix)
             result["action_prefixes_may_be_incomplete"] = (
                 len(result["host_granted_action_prefixes"]) < len(prefixes))
