@@ -1795,26 +1795,35 @@ class NativeCreativeControl:
                                        if isinstance(host_response, dict) else None)
                         preview = (host_result.get("previewOnly")
                                    if isinstance(host_result, dict) else None)
-                        # Two pinned source-backed read-only preview receipts:
-                        # (a) legacy specialized project tools return
-                        #     success:false + result.previewOnly:true;
-                        # (b) generic Velorn runRendererActionTool omits
-                        #     success entirely on preview, but binds BOTH
-                        #     wrapper and nested result to the native action.
-                        # Never infer no-write from an uncorrelated single
-                        # "previewOnly" flag or a contradictory success:true.
+                        # Pinned source exposes THREE distinct preview
+                        # receipts: (a) specialized legacy nested false-ACK,
+                        # (b) generic runRendererActionTool nested result, and
+                        # (c) direct addAssetToTimeline/related plan with NO
+                        # nested result or success. The real 4B run
+                        # #41212032675 reached a legitimate read-only
+                        # add_asset_to_timeline preview but previously stopped
+                        # with uncertain-write despite zero editor mutation.
+                        # Do not infer no-write from uncorrelated flags or
+                        # from model text; require the exact source-attested
+                        # native tool/schema/input and direct plan structure.
                         wrapper_preview = (
                             isinstance(host_response, dict) and
                             host_response.get("previewOnly") is True and
                             host_response.get("action") == native_name and
                             isinstance(host_result, dict) and
                             host_result.get("action") == native_name)
+                        from .native_state_evidence import (
+                            pinned_direct_native_plan_preview)
+                        direct_plan_preview = pinned_direct_native_plan_preview(
+                            native_name, args["inputs"],
+                            validators[native_name].schema, host_response)
                         acknowledged_preview = (
-                            preview is True and (
+                            (preview is True and (
                                 (success is False and (
                                     not isinstance(host_response, dict) or
                                     host_response.get("previewOnly", True) is True
-                                )) or (success is None and wrapper_preview)))
+                                )) or (success is None and wrapper_preview))) or
+                            direct_plan_preview)
                         if success is False or acknowledged_preview:
                             if acknowledged_preview:
                                 # Actual pinned editor defaults to a preview
