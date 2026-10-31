@@ -1328,6 +1328,75 @@ class NativeCreativeControl:
                                 "validation_keyword"],
                             "no_native_dispatch": True})
                         continue
+                # Model-authored native clip/track IDs are references, not
+                # strings to be guessed. Source: pinned Velorn get_timeline
+                # (clipLimitApplied, clips, tracks) and exact native schemas.
+                # Trial #41183669887 proposed duplicate_clip on absent IDs
+                # and failed inside the stateful app. A trusted source READ
+                # prevents this particular uncertain WRITE without selecting
+                # an edit or making up a valid object.
+                from .native_timeline_identity import (
+                    needs_native_timeline_identity,
+                    assess_native_timeline_references)
+                if (self.host_tool_access is not None and
+                        self.host_tool_access.get(native_name) == "write" and
+                        self.host_tool_access.get("get_timeline") == "read" and
+                        "get_timeline" in validators and
+                        validators["get_timeline"].is_valid(
+                            {"includeClips": True,
+                             "includeTransitions": False, "limit": 1000}) and
+                        needs_native_timeline_identity(
+                            args["inputs"], validators[native_name].schema)):
+                    try:
+                        timeline_reply = await self.session.call_tool(
+                            "get_timeline", {"includeClips": True,
+                                             "includeTransitions": False,
+                                             "limit": 1000})
+                        if _field(timeline_reply, "is_error",
+                                  _field(timeline_reply, "isError", False)):
+                            raise NativeCreativeControlError(
+                                "Native timeline reference inventory read failed")
+                        timeline_texts, timeline_images, timeline_audio = (
+                            _native_content(timeline_reply))
+                        if (len(timeline_texts) != 1 or timeline_images or
+                                timeline_audio):
+                            raise NativeCreativeControlError(
+                                "Native timeline identity requires one text receipt")
+                        timeline = _strict_receipt(
+                            timeline_texts, "native timeline identity inventory")
+                    except Exception as exc:
+                        self._last_preflight_feedback = {
+                            "tool": native_name,
+                            "validation_keyword": "native_timeline_identity_unverified",
+                            "no_native_dispatch": True}
+                        self._append({
+                            "kind": "host_native_timeline_inventory_read_error",
+                            "turn": turn, "tool": "get_timeline",
+                            "error_type": type(exc).__name__,
+                            "host_attested_read_only": True,
+                            "no_native_dispatch": True})
+                        continue
+                    self._append({
+                        "kind": "host_native_timeline_inventory_observed",
+                        "turn": turn, "tool": "get_timeline",
+                        "text_sha256": hashlib.sha256(
+                            timeline_texts[0].encode()).hexdigest(),
+                        "host_attested_read_only": True,
+                        "no_native_dispatch": True})
+                    unknown_native_object = assess_native_timeline_references(
+                        args["inputs"], validators[native_name].schema, timeline)
+                    if unknown_native_object is not None:
+                        self._last_preflight_feedback = {
+                            "tool": native_name, **unknown_native_object}
+                        self._append({
+                            "kind": "model_action_rejected", "turn": turn,
+                            **timing, "tool": native_name,
+                            "inputs_sha256": hashlib.sha256(
+                                _wire(args["inputs"]).encode()).hexdigest(),
+                            "validation_keyword": unknown_native_object[
+                                "validation_keyword"],
+                            "no_native_dispatch": True})
+                        continue
                 self._last_preflight_feedback = None
                 self._append({"kind": "native_tool_submitted", "turn": turn,
                               **timing,
