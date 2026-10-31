@@ -356,23 +356,28 @@ def audit_native_journal(events, *, host_tool_access, expected_required_evidence
                 raise NativeJournalError("Untrusted or fabricated initial machine affordance")
             continue
         if kind in ("host_native_asset_inventory_observed",
-                    "host_native_asset_inventory_read_error"):
-            # A source-pinned asset inventory is an independent native READ,
-            # never a model-selected asset, a granted write, or evidence that
-            # an external filename exists in the editor's project catalog.
-            if (pending is not None or event.get("tool") != "get_assets" or
-                    host_tool_access.get("get_assets") != "read" or
+                    "host_native_asset_inventory_read_error",
+                    "host_native_timeline_inventory_observed",
+                    "host_native_timeline_inventory_read_error"):
+            # Evidence-only source object inventory obtained via a granted
+            # native READ. It does not authorize a mutating operation or
+            # certify an asset, clip or track referenced by model text.
+            expected_tool = ("get_assets" if "asset" in kind else "get_timeline")
+            observed = kind.endswith("_observed")
+            if (pending is not None or
+                    event.get("tool") != expected_tool or
+                    host_tool_access.get(expected_tool) != "read" or
                     event.get("host_attested_read_only") is not True or
                     event.get("no_native_dispatch") is not True):
-                raise NativeJournalError("Native asset identity read lacks host custody")
-            if kind == "host_native_asset_inventory_observed":
+                raise NativeJournalError("Native object inventory read lacks host custody")
+            if observed:
                 if (not _sha(event.get("text_sha256")) or
                         event.get("error_type") is not None):
-                    raise NativeJournalError("Native asset inventory lacks receipt digest")
+                    raise NativeJournalError("Native inventory lacks receipt digest")
             elif (not isinstance(event.get("error_type"), str) or
                   not 1 <= len(event["error_type"]) <= 128 or
                   event.get("text_sha256") is not None):
-                raise NativeJournalError("Failed native asset inventory was misreported")
+                raise NativeJournalError("Failed native inventory was misreported")
             continue
         if kind == "capability_searched":
             tools = event.get("result_tool_names")
