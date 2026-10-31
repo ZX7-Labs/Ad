@@ -62,13 +62,19 @@ def _finite_real(value) -> bool:
 
 def verify_original_footage_on_native_timeline(
         projects_root: Path, project_paths: list[Path],
-        caller_source_assets: list[dict]) -> dict:
+        caller_source_assets: list[dict],
+        host_verified_export_windows: list[dict] | None = None) -> dict:
     """Produce independently checkable technical provenance, never QA approval.
 
     Require both the host-owned original video SHA and the *copied* project
     asset to be byte-identical; source provenance alone could be forged.
     The native project must reference that exact copied asset through a
     real clip on a timeline; synthetic shapes/text are insufficient.
+
+    If the trusted runner supplies source-bound physical export windows, each
+    candidate clip must intersect one of those output intervals. A caller may
+    NOT populate these windows from unverified model text. With no windows,
+    report native-timeline custody only, not visible export-frame certainty.
     """
     root = Path(projects_root).resolve(strict=True)
     if not root.is_dir() or not isinstance(project_paths, list) or not isinstance(
@@ -91,6 +97,24 @@ def verify_original_footage_on_native_timeline(
         if _sha256(source) != expected:
             raise ValueError("Original source bytes changed after host hash")
         sources[str(source)] = expected
+    # A non-None empty list deliberately proves no delivered export.
+    # This is a host/runner input, never extracted from mutable project JSON.
+    if host_verified_export_windows is not None:
+        if (not isinstance(host_verified_export_windows, list) or
+                len(host_verified_export_windows) > 64):
+            raise ValueError("Host export windows must be a bounded list")
+        checked_windows = []
+        for interval in host_verified_export_windows:
+            if (not isinstance(interval, dict) or
+                    set(interval) != {"start_seconds", "end_seconds"} or
+                    not _finite_real(interval["start_seconds"]) or
+                    not _finite_real(interval["end_seconds"]) or
+                    not 0 <= interval["start_seconds"] < interval["end_seconds"]):
+                raise ValueError("Invalid independently verified export interval")
+            checked_windows.append((
+                interval["start_seconds"], interval["end_seconds"]))
+    else:
+        checked_windows = None
     accepted = []
     for path in project_paths:
         project = Path(path).resolve(strict=True)
@@ -139,6 +163,21 @@ def verify_original_footage_on_native_timeline(
             # Native store persists boolean flags. On malformed saved JSON
             # pinned JavaScript fallback `!== false` can treat nonbooleans
             # as visible; independent proof requires actual boolean state.
+            # Pinned native export default range is [0, max(project
+            # timeline.duration, every saved clip start + duration)] in
+            # electron/mcpServer.js:resolveExportDeliveryPlan. A clip after
+            # the displayed timeline duration therefore extends a FULL export.
+            # Never infer actual custom export range from this metadata alone.
+            full_export_end = active_duration
+            for entry in timeline["clips"]:
+                if (isinstance(entry, dict) and
+                        _finite_real(entry.get("startTime")) and
+                        _finite_real(entry.get("duration"))):
+                    end = entry["startTime"] + entry["duration"]
+                    if math.isfinite(end):
+                        full_export_end = max(full_export_end, end)
+            effective_windows = (checked_windows if checked_windows is not None
+                                 else [(0, full_export_end)])
             visible_video_tracks = {
                 track["id"] for track in tracks
                 if isinstance(track, dict) and
@@ -153,10 +192,10 @@ def verify_original_footage_on_native_timeline(
                         _finite_real(clip.get("startTime")) and
                         _finite_real(clip.get("duration")) and
                         0 < clip["duration"] <= 1_000_000 and
-                        # A valid copied video entirely outside the active
-                        # timeline cannot appear in the delivered picture.
-                        clip["startTime"] < active_duration and
-                        clip["startTime"] + clip["duration"] > 0):
+                        math.isfinite(clip["startTime"] + clip["duration"]) and
+                        any(clip["startTime"] < finish and
+                            clip["startTime"] + clip["duration"] > begin
+                            for begin, finish in effective_windows)):
                     placed.add(clip["assetId"])
         if not found_active:
             raise ValueError("Active native timeline was not saved")
