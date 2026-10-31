@@ -1451,7 +1451,15 @@ class NativeCreativeControl:
                         type(self._latest_native_state_facts.get(
                             "current_timeline_clip_count")) is int and
                         self._latest_native_state_facts[
-                            "current_timeline_clip_count"] == 0):
+                            "current_timeline_clip_count"] == 0 and
+                        # A native get_project snapshot may lag an ACKed
+                        # model-authored content write. It cannot veto a
+                        # potentially valid export; the actual editor retains
+                        # all export-readiness checks and refusal authority.
+                        not any(
+                            event.get("kind") == "native_tool_result" and
+                            event.get("tool") in self.host_content_revision_tools
+                            for event in self.events)):
                     self._last_preflight_feedback = {
                         "tool": native_name,
                         "validation_keyword": "native_export_no_timeline_clips",
