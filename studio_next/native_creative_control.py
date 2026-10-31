@@ -1399,6 +1399,51 @@ class NativeCreativeControl:
                             "validation_keyword": missing_asset[
                                 "validation_keyword"],
                             "no_native_dispatch": True})
+                        # A genuinely EMPTY, independently read project
+                        # asset inventory is a machine fact. Use the existing
+                        # generic trusted-effect graph to advertise *actual*
+                        # host-granted possible producers, never to select or
+                        # invoke a creative operation. In physical 2B trial
+                        # #41186113669 the model spent 40 turns repeatedly
+                        # trying placement/markers and never discovered import.
+                        if (self._capabilities is not None and
+                                self._project_presence == "present" and
+                                missing_asset["validation_keyword"] ==
+                                    "native_asset_not_imported" and
+                                missing_asset.get("available_native_asset_count") == 0):
+                            opportunities = self._capabilities.affordance_frontier(
+                                trusted_facts={
+                                    "project_open": True,
+                                    "project_asset_available": False,
+                                }, namespace="native", limit=4)
+                            selectable = []
+                            for item in opportunities["matches"]:
+                                identity = self._capabilities.resolve(
+                                    item["id"],
+                                    revision=self._capabilities.revision)
+                                if (identity["access"] == "write" and
+                                        identity["native_name"] not in
+                                        self._host_once_after_acknowledged_write):
+                                    selectable.append({
+                                        **item, "tool": identity["native_name"]})
+                            if selectable:
+                                self._last_search_result = {
+                                    **opportunities,
+                                    "matches": selectable,
+                                    "origin": "host_attested_missing_native_asset",
+                                }
+                                self._selectable_tools = [
+                                    item["tool"] for item in selectable]
+                                self._inspectable_tied_candidates = []
+                                self._append({
+                                    "kind": "host_native_asset_capability_frontier",
+                                    "turn": turn,
+                                    "catalog_revision": self._capabilities.revision,
+                                    "result_tool_names": self._selectable_tools[:],
+                                    "trusted_machine_fact": "project_asset_available",
+                                    "host_observed_value": False,
+                                    "native_project_asset_count": 0,
+                                    "no_native_dispatch": True})
                         continue
                 # Model-authored native clip/track IDs are references, not
                 # strings to be guessed. Source: pinned Velorn get_timeline
