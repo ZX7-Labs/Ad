@@ -112,6 +112,16 @@ def verify_original_footage_on_native_timeline(
         if _sha256(source) != expected:
             raise ValueError("Original source bytes changed after host hash")
         sources[str(source)] = expected
+    # A delivered render cannot be attributed to one of several saved
+    # projects merely because a matching clip exists SOMEWHERE in the trial.
+    # The runner presently supplies independently verified MP4 time windows,
+    # but not an immutable per-project export-identity receipt. In this scope,
+    # accept a single unambiguous project or withhold delivered-source proof.
+    # Multi-project projects remain valid native workspaces; they require a
+    # separate exact active-project/export binding for final certification.
+    if host_verified_export_windows is not None and len(project_paths) > 1:
+        raise ValueError(
+            "Verified export source identity is ambiguous across native projects")
     # A non-None empty list deliberately proves no delivered export.
     # This is a host/runner input, never extracted from mutable project JSON.
     if host_verified_export_windows is not None:
