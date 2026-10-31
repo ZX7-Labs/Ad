@@ -326,6 +326,33 @@ class LocalEditorClientTests(unittest.TestCase):
         self.assertTrue(self.requests[-2]["params"]["arguments"]["previewOnly"])
         self.assertFalse(self.requests[-1]["params"]["arguments"]["previewOnly"])
 
+    def test_native_razor_preview_is_not_a_write_or_a_lossy_split(self):
+        # Pinned upstream condition is previewOnly !== false. A preview,
+        # even of a keyframed/effects clip, must not require full write
+        # preflight and must not be recast as a mutation by the BODY.
+        client = LocalEditorClient(self.endpoint, allowed_tools={
+            "split_clip": "write"})
+        for args in ({"clipId": "art-clip", "timeSeconds": 2,
+                      "previewOnly": True},
+                     {"clipId": "art-clip", "timeSeconds": 2},
+                     {"clipId": "art-clip", "timeSeconds": 2,
+                      "previewOnly": "false"}):
+            with self.subTest(args=args):
+                before = len(self.requests)
+                client.call("split_clip", args, allowed_access={"write"})
+                self.assertEqual(len(self.requests), before + 1)
+                self.assertEqual(self.requests[-1]["params"], {
+                    "name": "split_clip", "arguments": args})
+        self.assertEqual([item["params"]["name"] for item in self.requests],
+                         ["split_clip"] * 3)
+        # Literal false is the only committed native razor; without read
+        # inspection rights the BODY refuses it before any native call.
+        with self.assertRaisesRegex(EditorAccessError, "host-granted read"):
+            client.call("split_clip", {
+                "clipId": "art-clip", "timeSeconds": 2,
+                "previewOnly": False}, allowed_access={"write"})
+        self.assertEqual(len(self.requests), 3)
+
     def test_split_without_granted_read_inspection_has_no_native_write(self):
         client = LocalEditorClient(self.endpoint, allowed_tools={"split_clip": "write"})
         with self.assertRaisesRegex(EditorAccessError, "host-granted read"):
