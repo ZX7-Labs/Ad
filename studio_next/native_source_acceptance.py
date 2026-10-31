@@ -21,6 +21,17 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _require_unique_native_ids(items: list, label: str) -> None:
+    """Refuse ambiguous IDs rather than infer how an editor resolves duplicates."""
+    ids = []
+    for item in items:
+        if not isinstance(item, dict) or not isinstance(item.get("id"), str) or not item["id"]:
+            raise ValueError(f"Native {label} identity is missing or ambiguous")
+        ids.append(item["id"])
+    if len(ids) != len(set(ids)):
+        raise ValueError(f"Native {label} identity is ambiguous")
+
+
 def verify_original_footage_on_native_timeline(
         projects_root: Path, project_paths: list[Path],
         caller_source_assets: list[dict]) -> dict:
@@ -66,6 +77,10 @@ def verify_original_footage_on_native_timeline(
         timelines = data.get("timelines")
         if not isinstance(timelines, list):
             raise ValueError("Native project timeline inventory is invalid")
+        # Conflicting native object identities can make the editor resolve an
+        # entirely different asset or timeline from the one this proof saw.
+        _require_unique_native_ids(data["assets"], "asset")
+        _require_unique_native_ids(timelines, "timeline")
         # The editor exports the ACTIVE timeline. A source imported into a
         # dormant timeline, or a disabled/muted picture lane, is not proof
         # that the delivered movie actually used original video footage.
@@ -83,15 +98,17 @@ def verify_original_footage_on_native_timeline(
             tracks = timeline.get("tracks")
             if not isinstance(tracks, list):
                 raise ValueError("Native active track inventory is missing")
+            _require_unique_native_ids(tracks, "active track")
+            _require_unique_native_ids(timeline["clips"], "active clip")
             visible_video_tracks = {
                 track["id"] for track in tracks
                 if isinstance(track, dict) and
                 isinstance(track.get("id"), str) and
-                track.get("type") == "video" and track.get("visible") is not False}
+                track.get("type") == "video" and track.get("visible", True) is True}
             for clip in timeline["clips"]:
                 if (isinstance(clip, dict) and
                         clip.get("type") == "video" and
-                        clip.get("enabled") is not False and
+                        clip.get("enabled", True) is True and
                         clip.get("trackId") in visible_video_tracks and
                         isinstance(clip.get("assetId"), str) and
                         type(clip.get("duration")) in (int, float) and
