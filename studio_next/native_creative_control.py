@@ -986,6 +986,12 @@ class NativeCreativeControl:
                 if self._native_state_refresh_due:
                     self._native_state_refresh_due = False
                     self._host_source_frontier = None
+                    # A new native state invalidates an earlier empty-asset
+                    # search result; never replay stale availability as fact.
+                    if (isinstance(self._last_search_result, dict) and
+                            self._last_search_result.get("origin") ==
+                                "host_attested_empty_native_project"):
+                        self._last_search_result = None
                     self._latest_native_state_facts = None
                     if (self.host_tool_access is not None and
                             self.host_tool_access.get("get_project") == "read" and
