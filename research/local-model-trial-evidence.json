@@ -460,6 +460,41 @@
       "failure": "Two project observations remained absent after one acknowledged create. Model then searched asset and timeline operations but failed before any asset import, clips, export or physical observations. Actual artifact contains one empty saved native project.",
       "independent_native_state_measurement": "Separate real editor MCP trial 41160859730 measured initial absent 11.86ms and project present after 471.33ms. Prior bounded two-read grace was 200ms.",
       "next_experiment": "1.5-second read-only state reconciliation, then repeat neural editing trial without a scripted fallback."
+    },
+    {
+      "body_commit": "24e6a3ae223f0fc2e536a1d6761b6cd5a501fca4",
+      "workflow_run": 41163313259,
+      "artifact_id": 13027914654,
+      "artifact_zip_sha256": "a4e9229ae93ddf9e80eb76a364c7c5e3296881dc162a1cef702a2caa412f645b",
+      "model": "unsloth/Qwen3.5-2B-GGUF",
+      "quantization": "Q4_K_M",
+      "cpu_only": true,
+      "actual_inference_turns": 15,
+      "model_selected_actions": {
+        "search": 9,
+        "invoke": 5,
+        "describe": 1
+      },
+      "actual_native_project_creates_acknowledged": 1,
+      "post_create_get_project_presence": [
+        "absent",
+        "present"
+      ],
+      "post_create_read_only_grace_seconds": 1.5,
+      "native_project_files_created": 1,
+      "native_project_timeline_clips": 0,
+      "verified_exports": 0,
+      "physically_observed_frames": 0,
+      "model_server_process_peak_rss_bytes": 3488976896,
+      "model_memory_scope": "VmHWM exact llama-server process only; excludes Electron, OS and cgroup",
+      "model_status": "native_error_requires_state_reconciliation",
+      "technical_trial_completed": false,
+      "artistic_quality_approved": false,
+      "native_video_field_complete": false,
+      "independently_confirmed_improvement": "A model-selected native project write was accepted. The actual host's second read returned project present, unlike previous absent/absent failure under 200ms. One physical project.comfystudio exists. This is not proof of correct later editing.",
+      "failure": "The model made nine metadata searches. After independent project state became present, seven consecutive broad searches (timeline/add/clip) yielded no invokable matches because relevant host-granted tools tied in the safety-aware lexical retrieval. The model never imported provided original footage and eventually invoked add_asset_to_timeline using a nonexistent asset ID/name; actual native editor returned a terminal error. Zero clips, MP4s, or physical media observations.",
+      "next_experiment": "Source-backed action prefixes PR114 and two-phase inspectable-but-not-executable search candidates PR115; preserve no automatic native mutation/replay and exact host grants. Also check project-bound replacement preconditions PR113. Rerun genuine independent local model before claiming creative acceptance.",
+      "evidence_source": "Downloaded and inspected actual Actions archive ZIP, evidence.json, inference-transcript.jsonl, native-journal.jsonl, project.comfystudio; SHA256 is GitHub Actions artifact reported digest. Full-stack success and professional quality explicitly not claimed."
     }
   ]
 }
