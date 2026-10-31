@@ -85,13 +85,28 @@ class NativeExtractLossGuardTests(unittest.TestCase):
                 self.assertTrue(all(args.get("previewOnly", True)
                                     for name, args in native.calls if name == "extract_range"))
 
-    def test_missing_or_truncated_full_snapshot_never_authorizes_mutation(self):
-        for state in ("missing_effects", "missing_keyframes", "unknown", "truncated"):
+    def test_undefined_optional_creative_fields_are_omitted_by_pinned_native_json(self):
+        # Velorn safeClone(undefined) stays undefined; JSON.stringify drops that
+        # optional key rather than writing null. Ordinary clips remain editable.
+        for state in ("missing_effects", "missing_keyframes", "both"):
             native = FakeNative()
-            if state == "missing_effects":
+            if state in ("missing_effects", "both"):
                 native.clips[0].pop("effects")
-            elif state == "missing_keyframes":
+            if state in ("missing_keyframes", "both"):
                 native.clips[0].pop("keyframes")
+            with self.subTest(state=state):
+                self.assertEqual(self.check(native)["preflighted_source_boundary_ids"],
+                                 ["a", "a"])
+                self.assertEqual([name for name, _ in native.calls],
+                                 ["get_timeline", "extract_range"])
+
+    def test_incomplete_or_truncated_required_native_state_never_authorizes_mutation(self):
+        for state in ("missing_type", "missing_time", "unknown", "truncated"):
+            native = FakeNative()
+            if state == "missing_type":
+                native.clips[0].pop("type")
+            elif state == "missing_time":
+                native.clips[0].pop("duration")
             elif state == "unknown":
                 native.clips[0]["futureCreativeState"] = []
             else:
