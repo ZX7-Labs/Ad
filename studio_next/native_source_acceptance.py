@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from pathlib import Path
 
 
@@ -19,6 +20,28 @@ def _sha256(path: Path) -> str:
         for block in iter(lambda: file.read(1024 * 1024), b""):
             digest.update(block)
     return digest.hexdigest()
+
+
+def _require_unique_native_ids(items: list, label: str) -> None:
+    """Refuse ambiguous IDs rather than infer how an editor resolves duplicates."""
+    ids = []
+    for item in items:
+        if not isinstance(item, dict) or not isinstance(item.get("id"), str) or not item["id"]:
+            raise ValueError(f"Native {label} identity is missing or ambiguous")
+        ids.append(item["id"])
+    if len(ids) != len(set(ids)):
+        raise ValueError(f"Native {label} identity is ambiguous")
+
+
+def _finite_real(value) -> bool:
+    # Native timeline clock fields must be finite numeric values. Python's
+    # bool is not a time position; huge integers must not overflow isfinite.
+    if type(value) not in (int, float):
+        return False
+    try:
+        return math.isfinite(value)
+    except OverflowError:
+        return False
 
 
 def verify_original_footage_on_native_timeline(
@@ -66,6 +89,10 @@ def verify_original_footage_on_native_timeline(
         timelines = data.get("timelines")
         if not isinstance(timelines, list):
             raise ValueError("Native project timeline inventory is invalid")
+        # Resolve native identity ambiguity before using any asset/timeline
+        # reference to certify footage custody.
+        _require_unique_native_ids(data["assets"], "asset")
+        _require_unique_native_ids(timelines, "timeline")
         # The editor exports the ACTIVE timeline. A source imported into a
         # dormant timeline, or a disabled/muted picture lane, is not proof
         # that the delivered movie actually used original video footage.
@@ -80,22 +107,35 @@ def verify_original_footage_on_native_timeline(
             if timeline.get("id") != current_timeline_id:
                 continue
             found_active = True
+            active_duration = timeline.get("duration")
+            if not _finite_real(active_duration) or active_duration <= 0:
+                raise ValueError("Active native timeline has no finite positive duration")
             tracks = timeline.get("tracks")
             if not isinstance(tracks, list):
                 raise ValueError("Native active track inventory is missing")
+            _require_unique_native_ids(tracks, "active track")
+            _require_unique_native_ids(timeline["clips"], "active clip")
+            # Native store persists boolean flags. On malformed saved JSON
+            # pinned JavaScript fallback `!== false` can treat nonbooleans
+            # as visible; independent proof requires actual boolean state.
             visible_video_tracks = {
                 track["id"] for track in tracks
                 if isinstance(track, dict) and
                 isinstance(track.get("id"), str) and
-                track.get("type") == "video" and track.get("visible") is not False}
+                track.get("type") == "video" and track.get("visible", True) is True}
             for clip in timeline["clips"]:
                 if (isinstance(clip, dict) and
                         clip.get("type") == "video" and
-                        clip.get("enabled") is not False and
+                        clip.get("enabled", True) is True and
                         clip.get("trackId") in visible_video_tracks and
                         isinstance(clip.get("assetId"), str) and
-                        type(clip.get("duration")) in (int, float) and
-                        0 < clip["duration"] <= 1_000_000):
+                        _finite_real(clip.get("startTime")) and
+                        _finite_real(clip.get("duration")) and
+                        0 < clip["duration"] <= 1_000_000 and
+                        # A valid copied video entirely outside the active
+                        # timeline cannot appear in the delivered picture.
+                        clip["startTime"] < active_duration and
+                        clip["startTime"] + clip["duration"] > 0):
                     placed.add(clip["assetId"])
         if not found_active:
             raise ValueError("Active native timeline was not saved")
