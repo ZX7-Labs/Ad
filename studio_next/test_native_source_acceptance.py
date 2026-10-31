@@ -1,4 +1,5 @@
 """Prove real licensed source footage rather than a synthetic empty edit."""
+import copy
 import hashlib
 import json
 import os
@@ -45,6 +46,7 @@ class PhysicalNativeSourceAcceptanceTests(unittest.TestCase):
                 "startTime": 0, "duration": 4.0}]}],
         }
         self.save()
+        self._original_project = copy.deepcopy(self.project)
 
     def save(self):
         self.saved.write_text(json.dumps(self.project), encoding="utf-8")
@@ -137,6 +139,49 @@ class PhysicalNativeSourceAcceptanceTests(unittest.TestCase):
             verify_original_footage_on_native_timeline(
                 self.projects, [self.saved],
                 [{"path": str(self.src), "sha256": "x" * 64}])
+
+    def test_ambiguous_native_asset_timeline_track_and_clip_ids_are_not_proof(self):
+        # An editor may resolve duplicate IDs differently from the acceptance
+        # verifier. Reject every ambiguity instead of selecting a favorable one.
+        for category in ("asset", "timeline", "track", "clip"):
+            with self.subTest(category=category):
+                project = copy.deepcopy(self.project)
+                timeline = project["timelines"][0]
+                if category == "asset":
+                    project["assets"].append({
+                        "id": project["assets"][0]["id"],
+                        "type": "video", "settings": {}})
+                elif category == "timeline":
+                    project["timelines"].append({
+                        "id": timeline["id"], "tracks": [], "clips": []})
+                elif category == "track":
+                    timeline["tracks"].append({
+                        "id": timeline["tracks"][0]["id"],
+                        "type": "video", "visible": False})
+                else:
+                    timeline["clips"].append({
+                        "id": timeline["clips"][0]["id"], "type": "text",
+                        "startTime": 0, "duration": 4.0})
+                self.project = project
+                self.save()
+                with self.assertRaisesRegex(ValueError, "ambiguous"):
+                    self.verify()
+
+    def test_nonboolean_visibility_and_enabled_values_are_not_visible_proof(self):
+        # JSON 0, empty string and null are falsey to JavaScript, but were
+        # previously counted as visible because they are not Python False.
+        for field in ("track", "clip"):
+            for falsey_value in (0, "", None, []):
+                with self.subTest(field=field, value=falsey_value):
+                    self.project = copy.deepcopy(self._original_project)
+                    timeline = self.project["timelines"][0]
+                    if field == "track":
+                        timeline["tracks"][0]["visible"] = falsey_value
+                    else:
+                        timeline["clips"][0]["enabled"] = falsey_value
+                    self.save()
+                    self.assertFalse(
+                        self.verify()["actual_original_video_used_on_native_timeline"])
 
     def test_project_path_escape_and_corrupt_native_project_refused(self):
         outside = self.root / "project.comfystudio"
