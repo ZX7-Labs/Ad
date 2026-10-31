@@ -2265,5 +2265,64 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(session.calls, [])
 
 
+    async def test_native_preview_requires_independent_model_commit_and_exposes_exact_host_field(self):
+        from studio_next.native_creative_audit import audit_native_journal
+        class ProjectPreview(FakeSession):
+            def __init__(self):
+                super().__init__()
+                self.tools.append(SimpleNamespace(
+                    name="create_project",
+                    description="Native project creation (preview by default)",
+                    input_schema={"type": "object", "properties": {
+                        "name": {"type": "string"},
+                        "previewOnly": {"type": "boolean", "description":
+                            "When true, returns a plan without writing. Defaults to true."}}}))
+            async def call_tool(self, name, arguments):
+                if name != "create_project":
+                    return await super().call_tool(name, arguments)
+                self.calls.append((name, dict(arguments)))
+                is_preview = arguments.get("previewOnly", True)
+                return SimpleNamespace(is_error=False, content=[
+                    SimpleNamespace(type="text", text=json.dumps({
+                        "success": not is_preview,
+                        "result": {"previewOnly": is_preview, "name": arguments["name"]}}))])
+        session = ProjectPreview()
+        grants = {tool.name: ("write" if tool.name in (
+            "update_text_clip", "create_project") else "read")
+                  for tool in session.tools}
+        model = ScriptedModel([
+            decision("invoke", tool="create_project", inputs={
+                "name": "Model-owned original", "previewOnly": True}),
+            decision("invoke", tool="create_project", inputs={
+                "name": "Model-owned original", "previewOnly": False}),
+            decision("finish", summary="Actual native creation acknowledged; no art approval")])
+        result = await NativeCreativeControl(session, model, max_turns=3,
+            host_tool_access=grants,
+            required_evidence=("native_write_acknowledged",)).run(
+                "Choose whether to create an editable native project")
+        self.assertEqual(result["status"], "model_finished_unverified")
+        self.assertEqual([args["previewOnly"] for name,args in session.calls
+                          if name == "create_project"], [True, False])
+        receipt = model.observed[1]["last_native_preview_feedback"]
+        self.assertEqual(receipt["tool"], "create_project")
+        self.assertTrue(receipt["host_reported_preview_only"])
+        self.assertTrue(receipt["no_native_write_acknowledged"])
+        self.assertEqual(receipt["native_declared_preview_control"]["field"], "previewOnly")
+        self.assertIn("Defaults to true",
+                      receipt["native_declared_preview_control"]["description"])
+        self.assertIsNone(model.observed[2]["last_native_preview_feedback"])
+        self.assertEqual(sum(e["kind"] == "native_tool_preview"
+                             for e in result["events"]), 1)
+        self.assertEqual(sum(e["kind"] == "native_tool_result" and
+                             e.get("tool") == "create_project"
+                             for e in result["events"]), 1)
+        self.assertTrue(audit_native_journal(
+            result["events"], host_tool_access=grants,
+            expected_required_evidence=["native_write_acknowledged"])[
+                "journal_chain_structurally_valid"])
+        self.assertFalse(result["native_editing_capability_complete"])
+
+
+
 if __name__ == "__main__":
     unittest.main()
