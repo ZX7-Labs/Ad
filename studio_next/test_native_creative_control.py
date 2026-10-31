@@ -2400,6 +2400,29 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(session.calls, [])
         self.assertFalse(result["native_editing_capability_complete"])
 
+    async def test_host_hints_preserve_exact_property_names_and_source_scalar_limits(self):
+        from studio_next.native_creative_control import _selected_native_input_hints
+        native = SimpleNamespace(input_schema={
+            "type": "object", "properties": {
+                "width": {"type": "integer", "minimum": 16, "maximum": 8192},
+                "previewOnly": {"type": "boolean", "default": True},
+                "codec": {"type": "string", "enum": ["h264", "vp9"]},
+                "too_long_" + "x" * 200: {"type": "string"},
+                "untrusted_number": {"type": "number", "minimum": float("nan")},
+            }})
+        result = _selected_native_input_hints(["native_project"], {
+            "native_project": native})
+        fields = {p["name"]: p for p in result[0]["input_properties"]}
+        self.assertEqual(fields["width"]["minimum"], 16)
+        self.assertEqual(fields["width"]["maximum"], 8192)
+        self.assertEqual(fields["previewOnly"]["default"], True)
+        self.assertEqual(fields["codec"]["enum"], ["h264", "vp9"])
+        self.assertNotIn("minimum", fields["untrusted_number"])
+        self.assertFalse(any(n.startswith("too_long_") for n in fields))
+        self.assertLessEqual(len(json.dumps(
+            result, ensure_ascii=False, sort_keys=True,
+            separators=(",", ":")).encode("utf-8")), 4096)
+
     async def test_native_parameter_hint_budget_never_dumps_full_schema(self):
         from studio_next.native_creative_control import _selected_native_input_hints
         many = SimpleNamespace(input_schema={
