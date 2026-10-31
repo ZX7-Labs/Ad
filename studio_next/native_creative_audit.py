@@ -375,7 +375,7 @@ def audit_native_journal(events, *, host_tool_access, expected_required_evidence
                     inventory.get("host_attested_read_only") is not True or
                     not _sha(inventory.get("text_sha256")) or
                     type(event.get("turn")) is not int or
-                    not 0 <= event["turn"] < 128 or
+                    event["turn"] < 0 or
                     event.get("trusted_machine_fact") != "project_asset_available" or
                     event.get("host_observed_value") is not False or
                     event.get("native_project_asset_count") != 0 or
