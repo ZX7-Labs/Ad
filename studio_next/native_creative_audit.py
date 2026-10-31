@@ -363,14 +363,14 @@ def audit_native_journal(events, *, host_tool_access, expected_required_evidence
             # native READ. It does not authorize a mutating operation or
             # certify an asset, clip or track referenced by model text.
             expected_tool = ("get_assets" if "asset" in kind else "get_timeline")
-            observed = kind.endswith("_observed")
+            inventory_observed = kind.endswith("_observed")
             if (pending is not None or
                     event.get("tool") != expected_tool or
                     host_tool_access.get(expected_tool) != "read" or
                     event.get("host_attested_read_only") is not True or
                     event.get("no_native_dispatch") is not True):
                 raise NativeJournalError("Native object inventory read lacks host custody")
-            if observed:
+            if inventory_observed:
                 if (not _sha(event.get("text_sha256")) or
                         event.get("error_type") is not None):
                     raise NativeJournalError("Native inventory lacks receipt digest")
