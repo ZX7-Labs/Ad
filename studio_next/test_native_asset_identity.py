@@ -1,4 +1,5 @@
 """Source-evidence regression for native media identity; never a creative preset."""
+import copy
 import json
 import unittest
 from types import SimpleNamespace
@@ -6,6 +7,7 @@ from types import SimpleNamespace
 from studio_next.native_asset_identity import (
     assess_native_asset_selection, requires_native_asset_inventory)
 from studio_next.native_creative_control import NativeCreativeControl
+from studio_next.native_creative_audit import audit_native_journal, NativeJournalError
 from studio_next.test_native_creative_control import (
     FakeSession, ScriptedModel, decision)
 
@@ -143,6 +145,19 @@ class NativeAssetIdentityControlTests(unittest.IsolatedAsyncioTestCase):
             "validation_keyword"], "native_asset_not_imported")
         self.assertFalse(any(e["kind"] == "native_tool_submitted"
                              for e in result["events"]))
+        grants = {tool.name: ("write" if tool.name in {
+                  "add_asset_to_timeline", "update_text_clip"} else "read")
+                  for tool in session.tools}
+        proven = audit_native_journal(
+            result["events"], host_tool_access=grants)
+        self.assertTrue(proven["journal_chain_structurally_valid"])
+        forged = copy.deepcopy(result["events"])
+        for event in forged:
+            if event.get("kind") == "host_native_asset_inventory_observed":
+                event["host_attested_read_only"] = False
+                break
+        with self.assertRaises(NativeJournalError):
+            audit_native_journal(forged, host_tool_access=grants)
 
     async def test_true_native_project_id_preserves_model_creative_control(self):
         session, model, result = await self.trial(
