@@ -319,9 +319,13 @@ def _source_attested_native_admission(tool_name: str, admission: dict) -> dict:
     inner = nested.get("color") if isinstance(nested, dict) else None
     if (not isinstance(fields, dict) or
             not isinstance(outer, dict) or outer.get("type") != "string" or
+            not isinstance(outer.get("description"), str) or
+            "#RRGGBB" not in outer["description"] or
             not isinstance(marker_group, dict) or marker_group.get("type") != "array" or
             not isinstance(items, dict) or items.get("type") != "object" or
             not isinstance(inner, dict) or inner.get("type") != "string" or
+            not isinstance(inner.get("description"), str) or
+            "#RRGGBB" not in inner["description"] or
             "pattern" in outer or "pattern" in inner):
         # Unreviewed future pinned engine schema must not inherit these
         # constraints by assumption. Reject this adapter configuration.
