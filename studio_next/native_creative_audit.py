@@ -160,6 +160,9 @@ def audit_native_journal(events, *, host_tool_access, expected_required_evidence
     post_observation_write = False
     writes = []
     observed_then_written = []
+    # Distinguish source-backed, non-invokable tied examples from
+    # executable search matches; no journal claim creates host authority.
+    latest_inspectable_tied_candidates = []
     finished = False
     terminal = None
 
@@ -304,6 +307,15 @@ def audit_native_journal(events, *, host_tool_access, expected_required_evidence
         if kind in ("discovered", "native_tool_schema"):
             if pending is not None:
                 raise NativeJournalError("Tool catalog interleaved with unfinished native operation")
+            if kind == "native_tool_schema":
+                tied = event.get("selected_from_noninvokable_search_tie")
+                if tied not in (None, False, True) or type(tied) not in (type(None), bool):
+                    raise NativeJournalError("Malformed ambiguous candidate inspection claim")
+                if tied is True:
+                    if event.get("tool") not in latest_inspectable_tied_candidates:
+                        raise NativeJournalError(
+                            "Native schema was not chosen from a host-granted tied candidate")
+                    latest_inspectable_tied_candidates = []
             continue
         if kind == "host_capability_frontier":
             tools = event.get("result_tool_names")
@@ -322,14 +334,20 @@ def audit_native_journal(events, *, host_tool_access, expected_required_evidence
             continue
         if kind == "capability_searched":
             tools = event.get("result_tool_names")
+            inspected = event.get("inspectable_candidate_tool_names", [])
             if (pending is not None or
                     not _sha(event.get("query_sha256")) or
                     not _sha(event.get("catalog_revision")) or
                     event.get("no_native_dispatch") is not True or
                     not isinstance(tools, list) or len(tools) > 8 or
                     any(not isinstance(tool, str) or tool not in host_tool_access
-                        for tool in tools) or len(set(tools)) != len(tools)):
+                        for tool in tools) or len(set(tools)) != len(tools) or
+                    not isinstance(inspected, list) or len(inspected) > 6 or
+                    any(not isinstance(tool, str) or tool not in host_tool_access
+                        for tool in inspected) or len(set(inspected)) != len(inspected) or
+                    (inspected and (tools or set(inspected).intersection(tools)))):
                 raise NativeJournalError("Search fabricated an ungranted native capability")
+            latest_inspectable_tied_candidates = inspected[:]
             continue
         if kind == "model_finish_rejected":
             # This is a model-selected finish REFUSED by the owner host: no
@@ -419,6 +437,7 @@ def audit_native_journal(events, *, host_tool_access, expected_required_evidence
                 new_sha = event.get("independently_verified_export_sha256")
                 seen_sha = event.get("observed_export_sha256")
                 if access == "write":
+                    latest_inspectable_tied_candidates = []
                     # This auditor reads a bounded journal, not the raw host
                     # connection. Demand the control loop's explicit app-level
                     # acknowledgment and tie its receipt hash to the recorded
