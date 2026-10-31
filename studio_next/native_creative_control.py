@@ -1263,6 +1263,71 @@ class NativeCreativeControl:
                                       "schema_location": ",".join(failures)[:512],
                                       "no_native_dispatch": True})
                         continue
+                # The pinned native editor distinguishes owner-supplied raw
+                # media paths from assets actually imported into this project's
+                # catalog. Real Qwen3.5-2B trial #41182789249 fabricated a
+                # plausible assetId and received an uncertain WRITE error.
+                # Observe real project object IDs via a granted READ before
+                # submitting an asset-placement write. No imported asset, no
+                # invented ID, no hidden automatic import or creative plan.
+                from .native_asset_identity import (
+                    requires_native_asset_inventory, assess_native_asset_selection)
+                if (requires_native_asset_inventory(native_name) and
+                        self.host_tool_access is not None and
+                        self.host_tool_access.get("get_assets") == "read" and
+                        "get_assets" in validators and
+                        validators["get_assets"].is_valid({"limit": 1000})):
+                    try:
+                        raw_assets = await self.session.call_tool(
+                            "get_assets", {"limit": 1000})
+                        if _field(raw_assets, "is_error",
+                                  _field(raw_assets, "isError", False)):
+                            raise NativeCreativeControlError(
+                                "Native project asset inventory read returned an error")
+                        inventory_texts, inventory_images, inventory_audio = (
+                            _native_content(raw_assets))
+                        if (len(inventory_texts) != 1 or
+                                inventory_images or inventory_audio):
+                            raise NativeCreativeControlError(
+                                "Native project asset inventory must be a single bounded receipt")
+                        inventory = _strict_receipt(
+                            inventory_texts, "native project asset inventory")
+                    except Exception as exc:
+                        # Only the granted READ call and its parsing are
+                        # recoverable. A WRITE has not been submitted.
+                        self._last_preflight_feedback = {
+                            "tool": native_name,
+                            "validation_keyword": "native_asset_inventory_unverified",
+                            "no_native_dispatch": True,
+                            "source_asset_paths_are_not_project_asset_ids": True}
+                        self._append({
+                            "kind": "host_native_asset_inventory_read_error",
+                            "turn": turn, "tool": "get_assets",
+                            "error_type": type(exc).__name__,
+                            "host_attested_read_only": True,
+                            "no_native_dispatch": True})
+                        continue
+                    self._append({
+                        "kind": "host_native_asset_inventory_observed",
+                        "turn": turn, "tool": "get_assets",
+                        "text_sha256": hashlib.sha256(
+                            inventory_texts[0].encode()).hexdigest(),
+                        "host_attested_read_only": True,
+                        "no_native_dispatch": True})
+                    missing_asset = assess_native_asset_selection(
+                        native_name, args["inputs"], inventory)
+                    if missing_asset is not None:
+                        self._last_preflight_feedback = {
+                            "tool": native_name, **missing_asset}
+                        self._append({
+                            "kind": "model_action_rejected", "turn": turn,
+                            **timing, "tool": native_name,
+                            "inputs_sha256": hashlib.sha256(
+                                _wire(args["inputs"]).encode()).hexdigest(),
+                            "validation_keyword": missing_asset[
+                                "validation_keyword"],
+                            "no_native_dispatch": True})
+                        continue
                 self._last_preflight_feedback = None
                 self._append({"kind": "native_tool_submitted", "turn": turn,
                               **timing,
