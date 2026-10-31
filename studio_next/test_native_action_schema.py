@@ -86,5 +86,24 @@ class NativeActionSchemaTests(unittest.TestCase):
                 self.assertFalse(validator.is_valid({
                     "action": "search", "arguments": bad, "reason": "Model search"}))
 
+    def test_tied_candidates_are_describable_but_never_directly_invokable(self):
+        import jsonschema
+        schema = native_action_schema([], compact_catalog=True,
+            selected_tools=["executable"], inspectable_tools=["tied_alpha", "tied_beta"])
+        validator = jsonschema.Draft202012Validator(schema)
+        for name in ("executable", "tied_alpha", "tied_beta"):
+            validator.validate({"action": "describe", "arguments": {"tool": name}, "reason": "Inspect"})
+            self.assertEqual(validator.is_valid({"action": "invoke", "arguments": {
+                "tool": name, "inputs": {}}, "reason": "Execute"}), name == "executable")
+        cleared = jsonschema.Draft202012Validator(native_action_schema([], compact_catalog=True))
+        for action in ("describe", "invoke"):
+            args = {"tool": "tied_alpha"}
+            if action == "invoke":
+                args["inputs"] = {}
+            self.assertFalse(cleared.is_valid({"action": action, "arguments": args, "reason": "Stale"}))
+        for names in (["same", "same"], [""], [1], ["x" * 161], [str(i) for i in range(7)]):
+            with self.subTest(names=names), self.assertRaisesRegex(ValueError, "Inspectable"):
+                native_action_schema([], compact_catalog=True, inspectable_tools=names)
+
 
 if __name__ == '__main__': unittest.main()
