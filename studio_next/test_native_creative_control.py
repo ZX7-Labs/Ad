@@ -1924,5 +1924,90 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
                          write["text_sha256"][0])
 
 
+    async def test_ambiguous_host_search_examples_can_be_described_then_selected(self):
+        """Real tied tool matches are inspectable but not invokable by default."""
+        from studio_next.native_creative_audit import audit_native_journal
+        session = FakeSession()
+        session.tools = [
+            SimpleNamespace(name=name, description="Edit native project content",
+                            input_schema={"type": "object", "properties": {
+                                "text": {"type": "string"}}, "required": ["text"]})
+            for name in ("edit_alpha", "edit_beta")]
+        grants = {item.name: "write" for item in session.tools}
+        model = ScriptedModel([
+            decision("search", query="edit", limit=1),
+            decision("describe", tool="edit_beta"),
+            decision("invoke", tool="edit_beta", inputs={"text": "Owner chose this tool"}),
+            decision("finish", summary="Source-backed model selection, not creative quality"),
+        ])
+        result = await NativeCreativeControl(
+            session, model, host_tool_access=grants,
+            catalog_mode="indexed", max_turns=4).run("Inspect native tools and select")
+        self.assertEqual(result["status"], "model_finished_unverified")
+        self.assertEqual(session.calls, [
+            ("edit_beta", {"text": "Owner chose this tool"})])
+        ambiguous = model.observed[1]["last_capability_search_result"]
+        self.assertTrue(ambiguous["requires_refinement"])
+        self.assertEqual(ambiguous["matches"], [])
+        self.assertEqual({c["tool"] for c in ambiguous["candidate_examples"]},
+                         {"edit_alpha", "edit_beta"})
+        self.assertTrue(all(c["describe_to_select"] is True
+                            for c in ambiguous["candidate_examples"]))
+        self.assertEqual(model.observed[1]["selectable_native_tools"], [])
+        self.assertEqual(model.observed[2]["selectable_native_tools"], ["edit_beta"])
+        evidence = audit_native_journal(result["events"], host_tool_access=grants)
+        self.assertEqual(evidence["recorded_native_write_result_count"], 1)
+        self.assertFalse(evidence["video_editing_capability_complete"])
+        tied = next(e for e in result["events"]
+                    if e["kind"] == "capability_searched")
+        schema = next(e for e in result["events"]
+                      if e["kind"] == "native_tool_schema")
+        self.assertEqual(tied["inspectable_candidate_tool_names"],
+                         ["edit_alpha", "edit_beta"])
+        self.assertTrue(schema["selected_from_noninvokable_search_tie"])
+        forged = [dict(e) for e in result["events"]]
+        forged[tied["sequence"]]["inspectable_candidate_tool_names"] = [
+            "edit_alpha", "secret_not_granted"]
+        with self.assertRaises(NativeJournalError):
+            audit_native_journal(forged, host_tool_access=grants)
+        forged = [dict(e) for e in result["events"]]
+        forged[schema["sequence"]]["tool"] = "not_from_current_tie"
+        with self.assertRaises(NativeJournalError):
+            audit_native_journal(forged, host_tool_access=grants)
+
+    async def test_tied_examples_cannot_write_before_schema_selection_or_survive_new_search(self):
+        session = FakeSession()
+        session.tools = [
+            SimpleNamespace(name=name, description="Edit native project content",
+                            input_schema={"type": "object", "properties": {}})
+            for name in ("edit_alpha", "edit_beta")]
+        grants = {item.name: "write" for item in session.tools}
+        bad_flows = (
+            [
+                decision("search", query="edit", limit=1),
+                decision("invoke", tool="edit_beta", inputs={}),
+            ],
+            [
+                decision("search", query="edit", limit=1),
+                decision("search", query="missing_ungranted_tool"),
+                decision("describe", tool="edit_beta"),
+            ],
+            [
+                decision("search", query="edit", limit=1),
+                decision("describe", tool="not_authorized"),
+            ],
+        )
+        for actions in bad_flows:
+            with self.subTest(sequence=[a["action"] for a in actions]):
+                fresh = FakeSession()
+                fresh.tools = session.tools
+                with self.assertRaises(NativeCreativeControlError):
+                    await NativeCreativeControl(
+                        fresh, ScriptedModel(actions),
+                        host_tool_access=grants, catalog_mode="indexed",
+                        max_turns=len(actions)).run("Do not guess native tool rights")
+                self.assertEqual(fresh.calls, [])
+
+
 if __name__ == "__main__":
     unittest.main()
