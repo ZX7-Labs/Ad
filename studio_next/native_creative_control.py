@@ -972,6 +972,12 @@ class NativeCreativeControl:
                 # project-state observation available to the small model.
                 # A new successful native call replaces this text below.
                 action, args = decision["action"], decision["arguments"]
+                if action != "search":
+                    # Only consecutive duplicate metadata searches are
+                    # redundant. Describing a schema, inspecting real state,
+                    # or taking any other model action ends this streak.
+                    self._previous_search_signature = None
+                    self._identical_search_repetitions = 0
                 if action == "finish":
                     missing = self._missing_completion_evidence()
                     if missing:
