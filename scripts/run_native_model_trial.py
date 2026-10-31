@@ -292,11 +292,18 @@ async def trial(args, lock, artifacts, command):
                     required_evidence=completion_evidence,
                     host_content_revision_tools=host_content_revision_tools).run(brief),
                     timeout=2400)
-                except Exception:
-                    preserve_native_trial_failure_audit(
-                        artifacts, host_tool_access=host,
-                        expected_required_evidence=completion_evidence,
-                        host_content_revision_tools=host_content_revision_tools)
+                except Exception as trial_error:
+                    # A disk-full/write failure while preserving a diagnostic
+                    # must never mask the actual editor/model failure.
+                    try:
+                        preserve_native_trial_failure_audit(
+                            artifacts, host_tool_access=host,
+                            expected_required_evidence=completion_evidence,
+                            host_content_revision_tools=host_content_revision_tools)
+                    except Exception as audit_error:
+                        trial_error.add_note(
+                            "Partial native audit preservation failed: " +
+                            type(audit_error).__name__)
                     # An incomplete or timed-out run is *still a failure*.
                     # Never let an audited prefix masquerade as a movie.
                     raise
