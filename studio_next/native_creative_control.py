@@ -468,6 +468,7 @@ class NativeCreativeControl:
         self._project_presence = "unknown"
         self._post_write_state_warning: dict | None = None
         self._last_preflight_feedback: dict | None = None
+        self._last_native_preview_feedback: dict | None = None
         self._last_model_output_feedback: dict | None = None
         self._model_output_rejections = 0
         self._last_audio: list[tuple[str, bytes]] = []
@@ -822,6 +823,7 @@ class NativeCreativeControl:
                     # expose the exact bounded host schema for independent
                     # model correction. No model action is selected here.
                     "last_rejected_native_action_feedback": self._last_preflight_feedback,
+                    "last_native_preview_feedback": self._last_native_preview_feedback,
                     "last_rejected_model_output_feedback": self._last_model_output_feedback,
                     # Evidence-based progress facts persist beyond the 8-event
                     # sliding window. No operation or creative step is chosen
@@ -1203,8 +1205,30 @@ class NativeCreativeControl:
                                    if isinstance(host_result, dict) else None)
                         if success is False:
                             if preview is True:
-                                # A proposed native plan is useful model feedback,
-                                # but never grants credit for any applied edit.
+                                # Actual pinned editor defaults to a preview
+                                # rather than a mutation. This is NOT a model
+                                # choice to commit: expose the declared native
+                                # field/description so the small brain can
+                                # independently decide whether to apply it.
+                                properties = validators[native_name].schema.get(
+                                    "properties", {})
+                                option = properties.get("previewOnly") if isinstance(
+                                    properties, dict) else None
+                                self._last_native_preview_feedback = {
+                                    "tool": native_name,
+                                    "host_reported_preview_only": True,
+                                    "no_native_write_acknowledged": True,
+                                    "creative_action_still_model_chosen": True,
+                                }
+                                if (isinstance(option, dict) and
+                                        option.get("type") == "boolean"):
+                                    self._last_native_preview_feedback[
+                                        "native_declared_preview_control"] = {
+                                            "field": "previewOnly",
+                                            "type": "boolean",
+                                            "description": str(option.get(
+                                                "description", ""))[:256],
+                                        }
                                 self._last_native_texts = texts
                                 self._last_images, self._last_hashes = [], []
                                 self._last_audio, self._last_audio_evidence = [], None
@@ -1249,6 +1273,11 @@ class NativeCreativeControl:
                                 "no_automatic_retry": True})
                             outcome = "native_error_requires_state_reconciliation"
                             break
+                    if (self.host_tool_access is not None and
+                            self.host_tool_access.get(native_name) == "write"):
+                        # Only the native application's explicit success ACK
+                        # clears the pending preview. No host-selected edit.
+                        self._last_native_preview_feedback = None
                     hashes = _source_bound_images(texts, images)
                     audio_evidence = _source_bound_audio(texts, audio)
                     new_export_sha = None
