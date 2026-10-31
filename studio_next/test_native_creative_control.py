@@ -2533,10 +2533,12 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
                 "markers": {"type": "array", "items": {"type": "object",
                     "properties": {"timeSeconds": {"type": "number"},
                                    "label": {"type": "string"},
-                                   "color": {"type": "string"}}}},
+                                   "color": {"type": "string",
+                                             "description": "Optional hex #RRGGBB marker color."}}}},
                 "timeSeconds": {"type": "number"},
                 "label": {"type": "string"},
-                "color": {"type": "string"},
+                "color": {"type": "string",
+                          "description": "Default marker color as hex #RRGGBB. Defaults to yellow."},
                 "previewOnly": {"type": "boolean"},
             }}
         session = FakeSession()
@@ -2597,6 +2599,11 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(NativeCreativeControlError,
                                     "source/schema mismatch"):
             _source_attested_native_admission("add_timeline_markers", unreviewed)
+        foreign_engine = deepcopy(marker_schema)
+        foreign_engine["properties"]["color"]["description"] = "Named CSS colors supported."
+        with self.assertRaisesRegex(NativeCreativeControlError,
+                                    "source/schema mismatch"):
+            _source_attested_native_admission("add_timeline_markers", foreign_engine)
         self.assertEqual(_source_attested_native_admission(
             "other_tool", {"type": "object"}), {"type": "object"})
 
