@@ -919,6 +919,8 @@ class NativeCreativeControl:
                     self._inspectable_tied_candidates = []
                     inspected = []
                     if self._last_search_result.get("requires_refinement") is True:
+                        visible_candidates = []
+                        exhausted_examples = []
                         for candidate in self._last_search_result.get("candidate_examples", []):
                             if not isinstance(candidate, dict):
                                 continue
@@ -926,11 +928,20 @@ class NativeCreativeControl:
                                 candidate["id"], revision=self._capabilities.revision)
                             tool_name = record["native_name"]
                             if self._host_write_already_acknowledged(tool_name):
+                                exhausted_examples.append(tool_name)
                                 continue
                             if tool_name in self.tools and tool_name not in inspected:
                                 inspected.append(tool_name)
                                 candidate["tool"] = tool_name
                                 candidate["describe_to_select"] = True
+                                visible_candidates.append(candidate)
+                        # Model must never see an expired once-only native
+                        # write as a fresh descriptive frontier.
+                        self._last_search_result["candidate_examples"] = visible_candidates[:6]
+                        if exhausted_examples:
+                            self._last_search_result[
+                                "already_acknowledged_host_once_tools"] = exhausted_examples[:8]
+                            self._last_search_result["host_requires_new_capability_query"] = True
                     self._inspectable_tied_candidates = inspected[:6]
                     self._append({"kind": "capability_searched", "turn": turn, **timing,
                                   "query_sha256": hashlib.sha256(
