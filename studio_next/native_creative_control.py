@@ -1432,6 +1432,80 @@ class NativeCreativeControl:
                                       "schema_location": ",".join(failures)[:512],
                                       "no_native_dispatch": True})
                         continue
+                # Pinned Velorn src/services/mcpActions.js refuses
+                # asSequence:true on an ordinary video file BEFORE importing.
+                # In the physical Qwen run #41206138597 this avoidable
+                # source-known input mismatch stopped all creative editing.
+                # Reject only extensions that cannot be numbered image frames;
+                # never rewrite the model's chosen source, flag or edit.
+                if native_name == "import_asset_from_path":
+                    source = (args["inputs"].get("path") or
+                              args["inputs"].get("filePath") or
+                              args["inputs"].get("sourcePath"))
+                    if (args["inputs"].get("asSequence") is True and
+                            isinstance(source, str) and
+                            Path(source.strip()).suffix.lower() in {
+                                ".mp4", ".mov", ".mkv", ".webm",
+                                ".avi", ".m4v", ".mpeg", ".mpg"}):
+                        self._last_preflight_feedback = {
+                            "tool": native_name,
+                            "validation_keyword":
+                                "native_sequence_requires_image_frames",
+                            "source_attested_format":
+                                "Pinned editor asSequence:true requires a numbered "
+                                "image-frame sequence, not a video file; normal "
+                                "video imports may omit asSequence or use false",
+                            "no_native_dispatch": True,
+                        }
+                        self._append({
+                            "kind": "model_action_rejected", "turn": turn,
+                            **timing, "tool": native_name,
+                            "inputs_sha256": hashlib.sha256(
+                                _wire(args["inputs"]).encode()).hexdigest(),
+                            "validation_keyword":
+                                "native_sequence_requires_image_frames",
+                            "no_native_dispatch": True,
+                        })
+                        continue
+                # Velorn b3c02ad electron/mcpServer.js checkExportReadiness
+                # refuses an export with no enabled visual media. A trusted
+                # native project READ showing zero timeline clips proves the
+                # necessary visual-content condition cannot yet be met. Block
+                # the known-invalid model proposal *before* its editor RPC,
+                # where an application error would otherwise be mistaken for
+                # an uncertain write. Zero is an observed machine fact, not
+                # an editorial instruction; an unknown/stale read never
+                # manufactures a success or edits content.
+                if (native_name == "export_timeline" and
+                        self.host_tool_access is not None and
+                        self.host_tool_access.get("get_project") == "read" and
+                        self._project_presence == "present" and
+                        isinstance(self._latest_native_state_facts, dict) and
+                        self._latest_native_state_facts.get(
+                            "source") == "host_authorized_native_get_project" and
+                        type(self._latest_native_state_facts.get(
+                            "current_timeline_clip_count")) is int and
+                        self._latest_native_state_facts[
+                            "current_timeline_clip_count"] == 0):
+                    self._last_preflight_feedback = {
+                        "tool": native_name,
+                        "validation_keyword": "native_export_no_timeline_clips",
+                        "source_attested_blocker":
+                            "Pinned editor requires at least one enabled visual "
+                            "media clip before export; last native read had zero clips",
+                        "current_timeline_clip_count": 0,
+                        "native_snapshot_may_lag": True,
+                        "no_native_dispatch": True,
+                    }
+                    self._append({
+                        "kind": "model_action_rejected", "turn": turn,
+                        **timing, "tool": native_name,
+                        "inputs_sha256": hashlib.sha256(
+                            _wire(args["inputs"]).encode()).hexdigest(),
+                        "validation_keyword": "native_export_no_timeline_clips",
+                        "no_native_dispatch": True,
+                    })
+                    continue
                 # The pinned native editor distinguishes owner-supplied raw
                 # media paths from assets actually imported into this project's
                 # catalog. Real Qwen3.5-2B trial #41182789249 fabricated a
