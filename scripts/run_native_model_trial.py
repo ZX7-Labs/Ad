@@ -168,12 +168,28 @@ class RecordedModel:
         return self.infer(context, images)
 
 
+def fresh_trial_project_open_effects(projects_root):
+    """Host-attested possibilities for a NEW empty native-editor trial.
+
+    An open_project call requires an existing native project, which this
+    isolated test root cannot contain before the first creation. It remains
+    host-granted for later legitimate choices; it must not be advertised as an
+    *initial* way to establish project_open without actual existing source.
+    This is a trial-scoped machine fact, NOT a creative operation plan.
+    """
+    root = Path(projects_root)
+    if not root.is_dir() or any(root.iterdir()):
+        raise ValueError("Native trial requires a new empty project directory")
+    return {"create_project": ["project_open"]}
+
+
 async def trial(args, lock, artifacts, command):
     from mcp import ClientSession, StdioServerParameters
     from mcp.client.stdio import stdio_client
     projects, staging, outputs = (artifacts / name for name in ('projects', 'staging', 'outputs'))
     for root in (projects, staging, outputs):
         root.mkdir()
+    initial_project_effects = fresh_trial_project_open_effects(projects)
     # Raw, neutral media available to the model; no timeline or artwork authored.
     source_assets = []
     for index, colors in enumerate((('0x102030', '0x607080'), ('0x302010', '0x807060'))):
@@ -254,10 +270,7 @@ async def trial(args, lock, artifacts, command):
                         "save_project": ["project_open"],
                         "export_timeline": ["project_open"],
                     },
-                    host_possible_effects={
-                        "create_project": ["project_open"],
-                        "open_project": ["project_open"],
-                    },
+                    host_possible_effects=initial_project_effects,
                     # The bounded trial authors one project. A second neural
                     # create request after an acknowledged write may destroy
                     # continuity or create an unrelated empty project. Other
