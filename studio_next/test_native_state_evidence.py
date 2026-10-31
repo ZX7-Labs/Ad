@@ -483,6 +483,68 @@ class NativeLoopObservationTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(any(e["kind"] == "native_tool_reported_error"
                             for e in denied["events"]))
 
+    async def test_model_must_independently_apply_real_transition_preview(self):
+        # The pinned native editor returns a proposed transition plan when
+        # previewOnly is omitted. No change is made until the model separately
+        # chooses and sends previewOnly:false. A valid read-only preview must
+        # not produce the prior uncertain-WRITE stop condition.
+        class DirectTransitionSession(FakeSession):
+            def __init__(self):
+                super().__init__()
+                self.tools.append(SimpleNamespace(
+                    name="add_transition", description="Add native transition",
+                    input_schema={"type": "object", "properties": {
+                        "clipAId": {"type": "string"},
+                        "clipBId": {"type": "string"},
+                        "previewOnly": {"type": "boolean"}}}))
+            async def call_tool(self, name, arguments):
+                if name == "add_transition":
+                    self.calls.append((name, dict(arguments)))
+                    if arguments.get("previewOnly") is False:
+                        body = {"success": True, "action": name,
+                                "plan": {"kind": "between"},
+                                "result": {"success": True, "action": name}}
+                    else:
+                        body = {"previewOnly": True, "action": name,
+                                "plan": {"kind": "between",
+                                         "clipA": {"id": "clip-a"},
+                                         "clipB": {"id": "clip-b"}},
+                                "suggestedApplyCall": {"tool": name,
+                                    "arguments": {**arguments, "previewOnly": False}}}
+                    return SimpleNamespace(is_error=False, content=[
+                        SimpleNamespace(type="text", text=json.dumps(body))])
+                return await super().call_tool(name, arguments)
+        editor = DirectTransitionSession()
+        inputs = {"clipAId": "clip-a", "clipBId": "clip-b"}
+        model = ScriptedModel([
+            decision("invoke", tool="add_transition", inputs=inputs),
+            decision("invoke", tool="add_transition",
+                     inputs={**inputs, "previewOnly": False}),
+            decision("finish", summary="Native editor transition applied"),
+        ])
+        grants = {t.name: ("write" if t.name in (
+            "add_transition", "update_text_clip") else "read")
+            for t in editor.tools}
+        result = await NativeCreativeControl(
+            editor, model, host_tool_access=grants,
+            host_content_revision_tools=("add_transition",),
+            max_turns=3).run("Original model-authored transition on actual clips")
+        self.assertEqual(result["status"], "model_finished_unverified")
+        self.assertEqual([v.get("previewOnly") for tool, v in editor.calls
+                          if tool == "add_transition"], [None, False])
+        self.assertEqual(sum(e.get("kind") == "native_tool_preview"
+                             for e in result["events"]), 1)
+        self.assertEqual(sum(e.get("kind") == "native_tool_result" and
+                             e.get("tool") == "add_transition"
+                             for e in result["events"]), 1)
+        self.assertEqual(model.observed[1]["last_native_preview_feedback"][
+            "native_declared_preview_control"]["field"], "previewOnly")
+        self.assertTrue(audit_native_journal(
+            result["events"], host_tool_access=grants,
+            host_content_revision_tools=("add_transition",))[
+                "journal_chain_structurally_valid"])
+        self.assertFalse(result["native_editing_capability_complete"])
+
     async def test_preview_error_does_not_become_uncertain_creative_write(self):
         session = ActualNativeObservationSession(preview_error=True)
         model = ScriptedModel([
