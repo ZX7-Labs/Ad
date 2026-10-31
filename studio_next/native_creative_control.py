@@ -82,6 +82,11 @@ not run that tool. invoke ACTUALLY calls one granted native tool, whether a
 read-only inspection or a model-chosen creative edit. Use real invoke results
 to establish project state; do not invent progress from discover/describe.
 Avoid repeating identical metadata queries without obtaining new information.
+When a compact search reports requires_refinement with zero executable matches,
+its bounded candidate_examples are REAL but INSPECTABLE-ONLY host-granted tools:
+choose one candidate's exact tool name with describe to inspect and select its
+native schema, then independently decide whether to invoke it. Never invoke
+an uninspected tied candidate; the host rejects it before any native write.
 A host-scoped write with an acknowledged successful application may become
 unavailable for the rest of this session. When search says a tool was already
 applied, independently search for other installed operations. Do not assume
