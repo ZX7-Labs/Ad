@@ -129,6 +129,8 @@ class SourcePreviewContracts(unittest.TestCase):
                 for field, changed in (
                     ("success", True), ("previewOnly", "true"),
                     ("result", {"success": True}), ("plan", {}),
+                    ("plan", {"action": name}),
+                    ("plan", {"previewOnly": True}),
                     ("plan", {"action": "host_tool_not_installed"}),
                     ("plan", {"previewOnly": False}),
                     ("suggestedApplyCall", {"tool": name, "arguments": {
