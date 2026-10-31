@@ -444,6 +444,9 @@ def preserve_native_trial_failure_audit(
             host_tool_access=host_tool_access,
             expected_required_evidence=expected_required_evidence,
             host_content_revision_tools=host_content_revision_tools)
+        if (not isinstance(checked, dict) or
+                checked.get("journal_chain_structurally_valid") is not True):
+            raise ValueError("Partial native journal auditor did not verify its chain")
     except Exception as exc:
         result = {
             "partial_journal_present": True,
