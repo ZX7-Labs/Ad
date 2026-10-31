@@ -16,6 +16,7 @@ import json
 
 _SOURCE_REVIEWED_NONMUTATING_PREVIEWS = frozenset({
     "add_asset_to_timeline", "add_assets_to_timeline", "add_solid_color",
+    "add_adjustment_clip",
 })
 
 
