@@ -367,7 +367,10 @@ def audit_native_journal(events, *, host_tool_access, expected_required_evidence
                     host_tool_access.get("get_assets") != "read" or
                     state.get("kind") not in
                     ("host_project_bootstrap_observation",
-                     "host_native_state_progress_observation") or
+                     "host_native_state_progress_observation",
+                     "host_project_post_write_observation") or
+                    (state.get("kind") == "host_project_post_write_observation" and
+                     state.get("project_presence") != "present") or
                     (state.get("kind") == "host_project_bootstrap_observation" and
                      state.get("project_presence") != "present") or
                     inventory.get("kind") != "host_native_asset_inventory_observed" or
