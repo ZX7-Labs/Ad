@@ -191,6 +191,13 @@ async def trial(args, lock, artifacts, command):
     for root in (projects, staging, outputs):
         root.mkdir()
     initial_project_effects = fresh_trial_project_open_effects(projects)
+    # Pinned Velorn src/services/mcpActions.js
+    # handleImportAssetFromPath applies useAssetsStore.addAsset only after a
+    # real previewOnly:false import. This HOST fact says that import *may*
+    # create a project asset; it does not choose imports, clips or edits.
+    # Actual asset presence remains gated by live get_assets reads.
+    initial_project_effects["import_asset_from_path"] = [
+        "project_asset_available"]
     # Raw, neutral media available to the model; no timeline or artwork authored.
     source_assets = []
     for index, colors in enumerate((('0x102030', '0x607080'), ('0x302010', '0x807060'))):
@@ -319,6 +326,16 @@ async def trial(args, lock, artifacts, command):
             observed_sources.add(event['observed_export_sha256'])
     native_projects = [path for path in projects.glob('*/project.comfystudio')
         if any(timeline.get('clips') for timeline in json.loads(path.read_text()).get('timelines', []))]
+    # A project, animated synthetic background, or typography alone is not
+    # proof that the creative model edited the ORIGINAL caller-supplied videos.
+    # The pinned editor stores sourcePath and project-owned copied media after
+    # a real import_asset_from_path. Verify those physical bytes, then require
+    # a saved timeline clip to reference the actual imported asset identity.
+    # No source is imported on the model's behalf, no edit is scripted.
+    from studio_next.native_source_acceptance import (
+        verify_original_footage_on_native_timeline)
+    original_footage = verify_original_footage_on_native_timeline(
+        projects, native_projects, source_assets)
     def decoded_frames(path):
         raw = subprocess.check_output(['ffmpeg', '-v', 'error', '-i', str(path),
             '-map', '0:v:0', '-f', 'framemd5', '-'], timeout=60).decode()
@@ -327,12 +344,18 @@ async def trial(args, lock, artifacts, command):
         for before in observed_sources for after in revised_exports if before in movies and after in movies)
     passed = (outcome['status'] == 'model_finished_unverified' and actual_images > 0
               and revisions > 0 and last_save > last_revision and bool(native_projects)
+              and original_footage['actual_original_video_used_on_native_timeline']
               and bool(revised_exports) and changed_pixels)
     return {'technical_trial_completed': passed, 'model_status': outcome['status'],
             'image_inputs_actually_sent': actual_images, 'content_mutations_after_observation': revisions,
             'decoded_frame_sequence_changed': changed_pixels,
             'verified_exports_after_final_revision': revised_exports,
-            'saved_native_projects': [str(path.relative_to(artifacts)) for path in native_projects], 'audit': audit,
+            'saved_native_projects': [str(path.relative_to(artifacts)) for path in native_projects],
+            'original_source_footage_on_native_timeline_verified':
+                original_footage['actual_original_video_used_on_native_timeline'],
+            'native_original_source_clip_proof':
+                original_footage['verified_native_source_clip_proof'],
+            'audit': audit,
             'acceptance_note': 'Source-chain and model-operation evidence only, not artistic acceptance'}
 
 
