@@ -1763,6 +1763,42 @@ class NativeCreativeControl:
                             "no_accepted_write_evidence": True,
                         })
                         continue
+                    # Pinned Velorn addTransition looks up both clip IDs and
+                    # explicitly returns this exact missing-source error
+                    # *before* its only performAction call. Real 2B trial
+                    # #41219493015 chose invented clip IDs and stopped as an
+                    # uncertain native write despite no mutation opportunity.
+                    # Treat only this source-pinned error as a recoverable
+                    # refusal. The MODEL still selects an actual observation
+                    # or a different edit. Never retry an unknown write.
+                    from .native_state_evidence import (
+                        pinned_transition_missing_clips_prewrite_error)
+                    if (self.host_tool_access is not None and
+                            self.host_tool_access.get(native_name) == "write" and
+                            pinned_transition_missing_clips_prewrite_error(
+                                native_name, result)):
+                        self._last_preflight_feedback = {
+                            "tool": native_name,
+                            "validation_keyword":
+                                "native_transition_clip_identity_absent",
+                            "source_attested_format":
+                                "Both transition clip IDs must exist on "
+                                "the active timeline; no transition was added",
+                            "native_get_timeline_may_supply_actual_ids":
+                                self.host_tool_access.get("get_timeline") == "read",
+                            "no_successful_native_observation": True,
+                            "no_native_write_acknowledged": True,
+                        }
+                        self._append({
+                            "kind": "native_source_pretransition_reported_error",
+                            "turn": turn, "tool": native_name,
+                            "measured_native_mcp_wall_ms": native_ms,
+                            "error_sha256": digest,
+                            "error_text_exceeded_evidence_budget": out_of_budget,
+                            "host_source_proved_no_transition_attempt": True,
+                            "no_accepted_write_evidence": True,
+                        })
+                        continue
                     # A reported write error (or an operation of unknown
                     # access) does not prove that a mutation never happened.
                     # Stop and reconcile the actual native saved state.
