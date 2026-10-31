@@ -489,7 +489,8 @@ def audit_native_journal(events, *, host_tool_access, expected_required_evidence
                 exceeded = event.get("error_text_exceeded_evidence_budget")
                 if (access != "write" or
                         tool not in {"add_asset_to_timeline",
-                                     "add_assets_to_timeline", "add_solid_color"} or
+                                     "add_assets_to_timeline", "add_solid_color",
+                                     "add_adjustment_clip"} or
                         event.get("host_source_proved_readonly_preview") is not True or
                         event.get("no_accepted_write_evidence") is not True or
                         type(exceeded) is not bool or
