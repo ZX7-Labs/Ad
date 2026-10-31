@@ -2154,5 +2154,116 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
                 fresh_trial_project_open_effects(root)
 
 
+    async def test_real_model_invalid_json_gets_bounded_fresh_decision_without_native_retry(self):
+        from studio_next.providers import LocalModelOutputError
+        from studio_next.native_creative_audit import audit_native_journal
+        class RejectOnce(ScriptedModel):
+            def decide(self, context):
+                self.observed.append(context)
+                if len(self.observed) == 1:
+                    raise LocalModelOutputError("duplicate_json_field")
+                return next(self.actions)
+        session = FakeSession()
+        grants = {item.name: ("write" if item.name == "update_text_clip" else "read")
+                  for item in session.tools}
+        model = RejectOnce([
+            decision("invoke", tool="get_timeline", inputs={}),
+            decision("finish", summary="Read-only creative inspection; no finished edit")])
+        result = await NativeCreativeControl(session, model, max_turns=3,
+            host_tool_access=grants).run("Inspect original editable project")
+        self.assertEqual(result["status"], "model_finished_unverified")
+        self.assertEqual(session.calls, [("get_timeline", {})])
+        events = result["events"]
+        rejected = [event for event in events
+                    if event["kind"] == "model_protocol_response_rejected"]
+        self.assertEqual(len(rejected), 1)
+        self.assertEqual(rejected[0]["reason_code"], "duplicate_json_field")
+        self.assertEqual(rejected[0]["remaining_model_output_corrections"], 1)
+        self.assertTrue(rejected[0]["no_native_dispatch"])
+        self.assertEqual(model.observed[1]["last_rejected_model_output_feedback"][
+            "reason_code"], "duplicate_json_field")
+        self.assertIsNone(model.observed[2]["last_rejected_model_output_feedback"])
+        self.assertTrue(audit_native_journal(events, host_tool_access=grants)[
+            "journal_chain_structurally_valid"])
+        self.assertFalse(result["native_editing_capability_complete"])
+
+    async def test_malformed_model_after_acknowledged_write_does_not_repeat_write(self):
+        from studio_next.providers import LocalModelOutputError
+        from studio_next.native_creative_audit import audit_native_journal
+        class Recovering(ScriptedModel):
+            def decide(self, context):
+                self.observed.append(context)
+                answer = next(self.actions)
+                if isinstance(answer, Exception):
+                    raise answer
+                return answer
+        session = FakeSession()
+        grants = {item.name: ("write" if item.name == "update_text_clip" else "read")
+                  for item in session.tools}
+        model = Recovering([
+            decision("invoke", tool="update_text_clip",
+                     inputs={"clipId": "author", "text": "Model's single edit"}),
+            LocalModelOutputError("invalid_json"),
+            decision("finish", summary="Only technical native result observed")])
+        result = await NativeCreativeControl(
+            session, model, max_turns=3, host_tool_access=grants).run(
+                "Author editable title without retrying edits")
+        self.assertEqual([name for name, _ in session.calls], ["update_text_clip"])
+        self.assertEqual(sum(event["kind"] == "native_tool_submitted"
+                             for event in result["events"]), 1)
+        self.assertEqual(sum(event["kind"] == "model_protocol_response_rejected"
+                             for event in result["events"]), 1)
+        self.assertTrue(audit_native_journal(
+            result["events"], host_tool_access=grants)["journal_chain_structurally_valid"])
+
+    async def test_invalid_model_json_recovery_budget_fails_closed_with_audited_terminal(self):
+        from studio_next.providers import LocalModelOutputError
+        from studio_next.native_creative_audit import (
+            audit_native_journal, read_native_journal, NativeJournalError)
+        class BadModel(ScriptedModel):
+            def decide(self, context):
+                self.observed.append(context)
+                raise LocalModelOutputError("duplicate_json_field")
+        session = FakeSession()
+        grants = {item.name: ("write" if item.name == "update_text_clip" else "read")
+                  for item in session.tools}
+        with tempfile.TemporaryDirectory() as root:
+            receipt = Path(root) / "fresh-audit.jsonl"
+            model = BadModel([])
+            with self.assertRaises(LocalModelOutputError):
+                await NativeCreativeControl(session, model, max_turns=5,
+                    host_tool_access=grants, receipt_path=receipt).run(
+                    "Creative model must never silently repair malformed output")
+            self.assertEqual(len(model.observed), 3)
+            self.assertEqual(session.calls, [])
+            events = read_native_journal(receipt)
+            self.assertEqual([e["kind"] for e in events][1:], [
+                "model_protocol_response_rejected",
+                "model_protocol_response_rejected",
+                "model_decision_failed"])
+            self.assertTrue(audit_native_journal(
+                events, host_tool_access=grants)["journal_chain_structurally_valid"])
+            for change in ({"reason_code": "invented"},
+                           {"no_native_dispatch": False},
+                           {"remaining_model_output_corrections": 8}):
+                corrupted = json.loads(json.dumps(events))
+                corrupted[1].update(change)
+                with self.subTest(change=change), self.assertRaises(NativeJournalError):
+                    audit_native_journal(corrupted, host_tool_access=grants)
+
+    async def test_non_protocol_model_failure_is_terminal_and_no_model_retry(self):
+        class NonProtocolFailure(ScriptedModel):
+            def decide(self, context):
+                self.observed.append(context)
+                raise OSError("Model server died; not a generated JSON error")
+        session = FakeSession()
+        model = NonProtocolFailure([])
+        with self.assertRaisesRegex(OSError, "Model server died"):
+            await NativeCreativeControl(session, model, max_turns=5).run(
+                "A network error cannot be edited into a model action")
+        self.assertEqual(len(model.observed), 1)
+        self.assertEqual(session.calls, [])
+
+
 if __name__ == "__main__":
     unittest.main()
