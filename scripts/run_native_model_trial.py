@@ -191,6 +191,13 @@ async def trial(args, lock, artifacts, command):
     for root in (projects, staging, outputs):
         root.mkdir()
     initial_project_effects = fresh_trial_project_open_effects(projects)
+    # Pinned Velorn src/services/mcpActions.js
+    # handleImportAssetFromPath applies useAssetsStore.addAsset only after a
+    # real previewOnly:false import. This HOST fact says that import *may*
+    # create a project asset; it does not choose imports, clips or edits.
+    # Actual asset presence remains gated by live get_assets reads.
+    initial_project_effects["import_asset_from_path"] = [
+        "project_asset_available"]
     # Raw, neutral media available to the model; no timeline or artwork authored.
     source_assets = []
     for index, colors in enumerate((('0x102030', '0x607080'), ('0x302010', '0x807060'))):
