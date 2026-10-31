@@ -16,8 +16,16 @@ from pathlib import Path
 import re
 import stat
 
+from .native_state_evidence import _PINNED_NO_IMAGE_SEQUENCE_ERROR
+
 
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
+# Exact source-pinned no-write error normalized as the controller serializes
+# MCP text observations. Arbitrary tool failures cannot impersonate it.
+_PINNED_NO_SEQUENCE_ERROR_DIGEST = hashlib.sha256(json.dumps(
+    [_PINNED_NO_IMAGE_SEQUENCE_ERROR], sort_keys=True,
+    ensure_ascii=False, allow_nan=False, separators=(",", ":")
+).encode("utf-8")).hexdigest()
 _OBSERVERS = frozenset({
     "zx7_observe_verified_export_frame",
     "zx7_observe_verified_export_samples",
@@ -524,7 +532,8 @@ def audit_native_journal(events, *, host_tool_access, expected_required_evidence
         if kind in ("native_tool_result", "native_tool_preview",
                     "native_tool_reported_error", "native_tool_uncertain_outcome",
                     "native_observation_rejected", "native_read_tool_reported_error",
-                    "native_source_preview_reported_error"):
+                    "native_source_preview_reported_error",
+                    "native_source_preimport_reported_error"):
             if pending is None or (event.get("turn"), event.get("tool")) != pending[:2]:
                 raise NativeJournalError("Native outcome does not match a submitted call")
             turn, tool, access = pending
@@ -559,6 +568,19 @@ def audit_native_journal(events, *, host_tool_access, expected_required_evidence
                         ((digest is None) != exceeded) or
                         (digest is not None and not _sha(digest))):
                     raise NativeJournalError("Native preview failure was misrepresented")
+                continue
+            if kind == "native_source_preimport_reported_error":
+                # Pinned Velorn forced-sequence detection happens BEFORE
+                # importAsset, addAsset, and project save. This failure has
+                # no completed native write and can be corrected by the model.
+                if (access != "write" or tool != "import_asset_from_path" or
+                        event.get("error_sha256") !=
+                            _PINNED_NO_SEQUENCE_ERROR_DIGEST or
+                        event.get("error_text_exceeded_evidence_budget") is not False or
+                        event.get("host_source_proved_no_import_attempt") is not True or
+                        event.get("no_accepted_write_evidence") is not True):
+                    raise NativeJournalError(
+                        "Native import error lacks source-attested no-write proof")
                 continue
             if kind == "native_read_tool_reported_error":
                 # This branch is only valid for a host-attested READ. Failed
