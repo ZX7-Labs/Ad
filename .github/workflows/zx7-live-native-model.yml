@@ -119,7 +119,10 @@ jobs:
           test "$(stat -c '%u:%a' "$helper")" = "0:4755"
       - name: Run identified CPU model with real native editor and source-bound observations
         env:
-          MODEL_VARIANT: ${{ inputs.model_variant || 'qwen3.5-2b' }}
+          # A separately opted-in internal PR can compare the pinned 4B
+          # CPU model without editing code or involving a hosted AI API.
+          # No title marker: preserve the existing explicit dispatch choice.
+          MODEL_VARIANT: ${{ github.event_name == 'pull_request' && contains(github.event.pull_request.title, '[native-model-4b]') && 'qwen3.5-4b' || inputs.model_variant || 'qwen3.5-2b' }}
         run: |
           # Exact source-pinned model choices only; no arbitrary user-supplied
           # paths, shell code, hosted inference, or unverifiable weights.
@@ -144,7 +147,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: zx7-live-native-model-${{ inputs.model_variant || 'qwen3.5-2b' }}-${{ github.sha }}
+          name: zx7-live-native-model-${{ github.event_name == 'pull_request' && contains(github.event.pull_request.title, '[native-model-4b]') && 'qwen3.5-4b' || inputs.model_variant || 'qwen3.5-2b' }}-${{ github.sha }}
           path: output/live-native-model/
           if-no-files-found: warn
           retention-days: 14
