@@ -47,13 +47,18 @@ def read_complete_timeline(client, *, allowed_access):
             type(timeline.get("clipCount")) is not int or
             timeline["clipCount"] != len(timeline["clips"])):
         raise EditorAccessError("Loss-aware edit requires complete untruncated clip snapshot")
+    # In pinned Velorn sanitizeClip, safeClone(undefined) returns undefined.
+    # JSON serialization then omits unused effects/keyframes properties.
+    # Absence of those OPTIONAL fields on the source-sanitized full clip is
+    # therefore an authentic empty state, not an unparsed summary. Unknown
+    # properties and incomplete clip inventories remain fail-closed.
     ids = set()
     for clip in timeline["clips"]:
         if (not isinstance(clip, dict) or
                 not isinstance(clip.get("id"), str) or not clip["id"] or
                 clip["id"] in ids or
                 not _SNAPSHOT_KEYS.issuperset(clip) or
-                any(field not in clip for field in ("effects", "keyframes", "type")) or
+                "type" not in clip or
                 type(clip.get("startTime")) not in (float, int) or
                 type(clip.get("duration")) not in (float, int) or
                 not math.isfinite(clip["startTime"]) or
