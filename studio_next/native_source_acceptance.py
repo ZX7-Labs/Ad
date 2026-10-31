@@ -60,6 +60,21 @@ def _finite_real(value) -> bool:
         return False
 
 
+def _static_native_video_visibility(clip: dict) -> bool:
+    """Reject a source video invisible from its own saved transform.
+
+    Pinned Velorn src/services/exporter.js computes video base opacity as
+    transform.opacity/100, default 100. Zero is transparent. This is a
+    conservative proof rule: animated opacity and occlusion by other tracks
+    still require rendered-frame inspection.
+    """
+    transform = clip.get("transform", {})
+    if not isinstance(transform, dict):
+        return False
+    opacity = transform.get("opacity", 100)
+    return _finite_real(opacity) and opacity > 0
+
+
 def verify_original_footage_on_native_timeline(
         projects_root: Path, project_paths: list[Path],
         caller_source_assets: list[dict],
@@ -189,6 +204,7 @@ def verify_original_footage_on_native_timeline(
                 if (isinstance(clip, dict) and
                         clip.get("type") == "video" and
                         clip.get("enabled", True) is True and
+                        _static_native_video_visibility(clip) and
                         clip.get("trackId") in visible_video_tracks and
                         isinstance(clip.get("assetId"), str) and
                         _finite_real(clip.get("startTime")) and
