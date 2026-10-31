@@ -72,10 +72,20 @@ async def exercise(options):
         assert data.get("success") is not False or (arguments or {}).get("previewOnly") is True, (name, data)
         return data
 
-    async def wait(session, predicate, seconds=20):
+    async def wait(session, predicate, seconds=20, *, read_observations=None):
         deadline = time.monotonic() + seconds
         while time.monotonic() < deadline:
             state = await call(session, "get_project")
+            if read_observations is not None:
+                # Actual native reads only. No model/synthetic state, no
+                # project name/path/media contents in diagnostic output.
+                read_observations.append({
+                    "at_monotonic": time.monotonic(),
+                    "has_project": (
+                        isinstance(state.get("mcp"), dict) and
+                        state["mcp"].get("hasProject") is True),
+                    "project_identity_present": isinstance(state.get("project"), dict),
+                })
             if predicate(state):
                 return state
             await asyncio.sleep(.15)
@@ -92,8 +102,29 @@ async def exercise(options):
                 assert tool.input_schema == native[tool.name]["inputSchema"]
         assert (await session.call_tool("queue_prompt_generation_batch", {})).is_error
         assert (await session.call_tool("create_project", {"name": "Bad", "width": "wrong"})).is_error
-        await call(session, "create_project", {"name": "MCP native edit", "width": 320, "height": 180, "fps": 24, "previewOnly": False})
-        state = await wait(session, lambda state: (state.get("project") or {}).get("name") == "MCP native edit")
+        created = await call(session, "create_project", {"name": "MCP native edit", "width": 320, "height": 180, "fps": 24, "previewOnly": False})
+        # Measure the real gap between an application ACK and independently
+        # observable native project state. The existing test uses 20s
+        # bounded read-only convergence; one immediate read (as in the real
+        # 2B neural trial) is not proof that the project state is current.
+        assert created.get("success") is True, "Missing native application-level project ACK"
+        ack_at = time.monotonic()
+        observed_reads = []
+        state = await wait(
+            session, lambda state: (state.get("project") or {}).get("name") == "MCP native edit",
+            read_observations=observed_reads)
+        print("ACTUAL_NATIVE_PROJECT_READ_CONVERGENCE " + json.dumps({
+            "source": "pinned complete Velorn Electron via real MCP session",
+            "application_success_acknowledged": True,
+            "reads_until_native_project_visible": len(observed_reads),
+            "initial_snapshot_present": observed_reads[0]["project_identity_present"],
+            "initial_snapshot_has_project": observed_reads[0]["has_project"],
+            "first_read_elapsed_ms": round((observed_reads[0]["at_monotonic"] - ack_at) * 1000, 2),
+            "converged_read_elapsed_ms": round((observed_reads[-1]["at_monotonic"] - ack_at) * 1000, 2),
+            "read_only_observation": True,
+            "automated_project_write_retries": 0,
+            "human_or_artistic_quality_approved": False,
+        }, sort_keys=True), flush=True)
         project = Path(state["project"]["path"])
         assert (await session.call_tool("import_asset_from_path", {"path": "/etc/passwd", "previewOnly": False})).is_error
         for name, count in (("source.mp4", 1), ("tone.wav", 2)):
