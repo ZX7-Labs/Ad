@@ -92,6 +92,31 @@ class ProviderTests(unittest.TestCase):
             answer('{"approved":false,"issues":[{"location":"/scene1","reason":"weak","repair":"stronger hook"}]}'))):
             v=c.review({"plan":{"creative_intent":"draft"}})
         self.assertFalse(v["approved"])
+    def test_model_body_decode_failures_are_typed_but_server_envelopes_are_not(self):
+        from studio_next.providers import LocalModelOutputError
+        model = LocalCreativeModel(LocalModelSettings())
+        with patch("studio_next.providers.urlopen", return_value=FakeReply(
+            answer('{"title":"first","title":"second"}'))):
+            with self.assertRaises(LocalModelOutputError) as exc:
+                model.decide({"brief": "Never silently choose between duplicate fields"})
+        self.assertEqual(exc.exception.code, "duplicate_json_field")
+        self.assertNotIn("first", str(exc.exception))
+        for body, expected in (("not JSON", "invalid_json"),
+                               ('{"incomplete":', "invalid_json"),
+                               ('["list"]', "non_object_json"),
+                               ("", "empty_response")):
+            with self.subTest(body=body), patch(
+                "studio_next.providers.urlopen", return_value=FakeReply(answer(body))
+            ), self.assertRaises(LocalModelOutputError) as caught:
+                model.decide({})
+            self.assertEqual(caught.exception.code, expected)
+        # A broken transport/server envelope is not model-authored content
+        # and must not turn into an automatically re-asked creative decision.
+        with patch("studio_next.providers.urlopen", return_value=FakeReply(
+            {"choices": [], "choices_extra": []})):
+            with self.assertRaises(IndexError):
+                model.decide({})
+
     def test_truncated_output_is_error(self):
         c=LocalCreativeModel(LocalModelSettings())
         with patch("studio_next.providers.urlopen",return_value=FakeReply(
