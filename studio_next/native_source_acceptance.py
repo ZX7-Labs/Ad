@@ -66,17 +66,39 @@ def verify_original_footage_on_native_timeline(
         timelines = data.get("timelines")
         if not isinstance(timelines, list):
             raise ValueError("Native project timeline inventory is invalid")
+        # The editor exports the ACTIVE timeline. A source imported into a
+        # dormant timeline, or a disabled/muted picture lane, is not proof
+        # that the delivered movie actually used original video footage.
+        current_timeline_id = data.get("currentTimelineId")
+        if not isinstance(current_timeline_id, str) or not current_timeline_id:
+            raise ValueError("Saved native project has no active timeline identity")
         placed = set()
+        found_active = False
         for timeline in timelines:
             if not isinstance(timeline, dict) or not isinstance(timeline.get("clips"), list):
                 raise ValueError("Native timeline clips malformed")
+            if timeline.get("id") != current_timeline_id:
+                continue
+            found_active = True
+            tracks = timeline.get("tracks")
+            if not isinstance(tracks, list):
+                raise ValueError("Native active track inventory is missing")
+            visible_video_tracks = {
+                track["id"] for track in tracks
+                if isinstance(track, dict) and
+                isinstance(track.get("id"), str) and
+                track.get("type") == "video" and track.get("visible") is not False}
             for clip in timeline["clips"]:
                 if (isinstance(clip, dict) and
                         clip.get("type") == "video" and
+                        clip.get("enabled") is not False and
+                        clip.get("trackId") in visible_video_tracks and
                         isinstance(clip.get("assetId"), str) and
                         type(clip.get("duration")) in (int, float) and
                         0 < clip["duration"] <= 1_000_000):
                     placed.add(clip["assetId"])
+        if not found_active:
+            raise ValueError("Active native timeline was not saved")
         for asset in data["assets"]:
             if not isinstance(asset, dict) or asset.get("type") != "video":
                 continue
