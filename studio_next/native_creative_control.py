@@ -1753,6 +1753,39 @@ class NativeCreativeControl:
                             "no_accepted_write_evidence": True,
                         })
                         continue
+                    # Actual Qwen 2B run #41219493015 invented two clip
+                    # IDs in an empty timeline. Pinned electron/mcpServer.js
+                    # addTransition validates both IDs and returns this exact
+                    # error BEFORE performAction; unlike arbitrary write
+                    # errors, this has source-attested no-write semantics.
+                    # Permit only the real model to select a corrected action.
+                    from .native_state_evidence import (
+                        pinned_unknown_between_transition_clips)
+                    if (self.host_tool_access is not None and
+                            self.host_tool_access.get(native_name) == "write" and
+                            pinned_unknown_between_transition_clips(
+                                native_name, args["inputs"], result)):
+                        self._last_preflight_feedback = {
+                            "tool": native_name,
+                            "validation_keyword":
+                                "native_between_transition_clip_not_found",
+                            "source_attested_format":
+                                "Pinned native editor found no matching two "
+                                "active-timeline clip IDs. Inspect the real "
+                                "timeline before choosing any transition.",
+                            "no_successful_native_observation": True,
+                            "no_native_write_acknowledged": True,
+                        }
+                        self._append({
+                            "kind": "native_source_pretransition_reported_error",
+                            "turn": turn, "tool": native_name,
+                            "measured_native_mcp_wall_ms": native_ms,
+                            "error_sha256": digest,
+                            "error_text_exceeded_evidence_budget": out_of_budget,
+                            "host_source_proved_no_transition_mutation": True,
+                            "no_accepted_write_evidence": True,
+                        })
+                        continue
                     # A reported write error (or an operation of unknown
                     # access) does not prove that a mutation never happened.
                     # Stop and reconcile the actual native saved state.
