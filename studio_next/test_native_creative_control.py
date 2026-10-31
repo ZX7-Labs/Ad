@@ -10,6 +10,7 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 import tempfile
+import time
 import unittest
 
 from studio_next.native_creative_control import (
@@ -1781,15 +1782,23 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
                                 "name": {"type": "string"}, "previewOnly": {"type": "boolean"}}}),
         ]
         reads = 0
+        created_at = None
+        read_times = []
         async def native(name, args):
-            nonlocal reads
+            nonlocal reads, created_at
             session.calls.append((name, args))
             if name == "get_project":
                 reads += 1
-                present = reads >= 3  # bootstrap absent, first post-write stale
+                read_times.append(time.monotonic())
+                # Clock-driven delayed state (not a fixed call-count oracle).
+                # The independent full GUI/editor run #41160859730 measured
+                # its first real native project visibility at ~471ms.
+                present = created_at is not None and (
+                    read_times[-1] - created_at >= 0.45)
                 payload = {"mcp": {"hasProject": present},
                            "project": {"id": "real-after-snapshot-lag"} if present else None}
             else:
+                created_at = time.monotonic()
                 payload = {"success": True, "result": {"previewOnly": False}}
             return SimpleNamespace(is_error=False, content=[
                 SimpleNamespace(type="text", text=json.dumps(payload))])
@@ -1816,6 +1825,8 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
                        "host_project_post_write_observation"]
         self.assertEqual([(e["read_attempt"], e["project_presence"])
                           for e in inspections], [(1, "absent"), (2, "present")])
+        self.assertGreaterEqual(read_times[-1] - created_at, 1.0)
+        self.assertEqual(reads, 3)  # one bootstrap + two bounded post-write READs
         self.assertTrue(audit_native_journal(
             result["events"], host_tool_access=grants)["journal_chain_structurally_valid"])
 

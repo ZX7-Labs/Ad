@@ -1245,10 +1245,15 @@ class NativeCreativeControl:
                     self._post_write_state_warning = None
                     for read_attempt in (1, 2):
                         if read_attempt == 2:
-                            # Bounded grace period for Electron/renderer -> MCP
-                            # snapshot propagation, not a creative scheduling
-                            # policy. No unattended retry of any native WRITE.
-                            await asyncio.sleep(0.2)
+                            # Physical pinned Velorn/Electron/MCP CI
+                            # #41160859730 observed a successful native
+                            # create ACK, an 11.86ms absent first snapshot,
+                            # and visibility only after 471.33ms / four reads.
+                            # A 200ms second read was empirically too early.
+                            # This bounded 1.5s grace is an engineering
+                            # budget, NOT a claimed upstream debounce or
+                            # maximum latency. Never retry a native WRITE.
+                            await asyncio.sleep(1.5)
                         try:
                             refreshed = await self.session.call_tool("get_project", {})
                         except Exception as exc:
