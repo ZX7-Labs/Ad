@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from pathlib import Path
 
 
@@ -100,6 +101,9 @@ def verify_original_footage_on_native_timeline(
                 raise ValueError("Native active track inventory is missing")
             _require_unique_native_ids(tracks, "active track")
             _require_unique_native_ids(timeline["clips"], "active clip")
+            # Editor stores visibility/enabled as booleans. In malformed JSON
+            # the upstream JS `!== false` fallback considers even null visible;
+            # proof is intentionally stricter than playback coercion.
             visible_video_tracks = {
                 track["id"] for track in tracks
                 if isinstance(track, dict) and
@@ -111,7 +115,11 @@ def verify_original_footage_on_native_timeline(
                         clip.get("enabled", True) is True and
                         clip.get("trackId") in visible_video_tracks and
                         isinstance(clip.get("assetId"), str) and
+                        type(clip.get("startTime")) in (int, float) and
+                        math.isfinite(clip["startTime"]) and
+                        clip["startTime"] >= 0 and
                         type(clip.get("duration")) in (int, float) and
+                        math.isfinite(clip["duration"]) and
                         0 < clip["duration"] <= 1_000_000):
                     placed.add(clip["assetId"])
         if not found_active:
