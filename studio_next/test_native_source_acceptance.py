@@ -36,9 +36,13 @@ class PhysicalNativeSourceAcceptanceTests(unittest.TestCase):
                         "type": "video", "absolutePath": str(self.copy),
                         "settings": {"sourcePath": str(self.src),
                                      "importedViaMcp": True}}],
-            "timelines": [{"id": "native-timeline-1", "clips": [{
+            "currentTimelineId": "native-timeline-1",
+            "timelines": [{"id": "native-timeline-1",
+                           "tracks": [{"id": "video-1", "type": "video",
+                                       "visible": True}], "clips": [{
                 "id": "native-clip-88", "assetId": "native-asset-12",
-                "type": "video", "startTime": 0, "duration": 4.0}]}],
+                "type": "video", "trackId": "video-1",
+                "startTime": 0, "duration": 4.0}]}],
         }
         self.save()
 
@@ -66,6 +70,29 @@ class PhysicalNativeSourceAcceptanceTests(unittest.TestCase):
         self.project["timelines"][0]["clips"] = [{
             "id": "text-clip", "type": "text", "assetId": "native-asset-12",
             "startTime": 0, "duration": 4.0}]
+        self.save()
+        self.assertFalse(self.verify()["actual_original_video_used_on_native_timeline"])
+
+    def test_dormant_timeline_is_not_the_current_delivered_movie(self):
+        self.project["timelines"][0]["id"] = "unused-timeline"
+        self.project["timelines"].append({
+            "id": "native-timeline-1",
+            "tracks": [{"id": "video-1", "type": "video", "visible": True}],
+            "clips": []})
+        self.save()
+        self.assertFalse(self.verify()["actual_original_video_used_on_native_timeline"])
+
+    def test_disabled_clip_or_hidden_track_does_not_prove_visible_source(self):
+        current = self.project["timelines"][0]
+        current["clips"][0]["enabled"] = False
+        self.save()
+        self.assertFalse(self.verify()["actual_original_video_used_on_native_timeline"])
+        current["clips"][0]["enabled"] = True
+        current["tracks"][0]["visible"] = False
+        self.save()
+        self.assertFalse(self.verify()["actual_original_video_used_on_native_timeline"])
+        current["tracks"][0]["visible"] = True
+        current["clips"][0]["trackId"] = "invented-video-track"
         self.save()
         self.assertFalse(self.verify()["actual_original_video_used_on_native_timeline"])
 
