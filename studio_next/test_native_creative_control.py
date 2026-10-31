@@ -1577,6 +1577,48 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result["native_editing_capability_complete"])
 
 
+    async def test_real_trial_replacement_and_batch_clip_edits_require_native_open_project(self):
+        """Second real 2B trial selected a replacement while host saw no project."""
+        from studio_next.native_creative_audit import audit_native_journal
+        for tool_name in ("replace_clip_with_asset", "add_assets_to_timeline"):
+            with self.subTest(native_tool=tool_name):
+                session = FakeSession()
+                session.tools += [
+                    SimpleNamespace(name="get_project",
+                                    description="Observe actual native project state",
+                                    input_schema={"type": "object", "properties": {}}),
+                    SimpleNamespace(name=tool_name,
+                                    description="Edit timeline only in real native project",
+                                    input_schema={"type": "object", "properties": {}}),
+                ]
+                session.custom_response = SimpleNamespace(is_error=False, content=[
+                    SimpleNamespace(type="text", text=json.dumps({
+                        "project": None, "mcp": {"hasProject": False}}))])
+                grants = {item.name: ("read" if item.name in (
+                    "get_project", "get_timeline", "zx7_verify_native_export",
+                    "zx7_observe_verified_export_frame") else "write")
+                    for item in session.tools}
+                model = ScriptedModel([
+                    decision("search", query=tool_name),
+                    decision("invoke", tool=tool_name, inputs={}),
+                    decision("finish", summary="No unverified native mutation"),
+                ])
+                result = await NativeCreativeControl(
+                    session, model, catalog_mode="indexed", max_turns=3,
+                    host_tool_access=grants,
+                    host_preconditions={tool_name: ["project_open"]}).run(
+                        "Choose editable video operations without guessing editor state")
+                self.assertEqual(session.calls, [("get_project", {})])
+                rejected = [event for event in result["events"]
+                            if event["kind"] == "model_action_rejected"]
+                self.assertEqual(len(rejected), 1)
+                self.assertEqual(rejected[0]["validation_keyword"], "host_precondition")
+                self.assertEqual(rejected[0]["schema_location"], "project_open")
+                self.assertTrue(rejected[0]["no_native_dispatch"])
+                self.assertTrue(audit_native_journal(
+                    result["events"], host_tool_access=grants)
+                    ["journal_chain_structurally_valid"])
+
     async def test_ambiguous_application_write_receipts_cannot_mint_completion_proof(self):
         """A successful MCP transport is not proof the editor applied an edit."""
         from studio_next.native_creative_audit import audit_native_journal
