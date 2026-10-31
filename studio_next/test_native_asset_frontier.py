@@ -151,6 +151,36 @@ class ActualHostAssetProducerFrontierTests(unittest.IsolatedAsyncioTestCase):
             result["events"], host_tool_access=access)[
                 "journal_chain_structurally_valid"])
 
+    async def test_forced_image_sequence_on_video_is_rejected_without_native_import(self):
+        editor = HostObservedEmptyAssetSession()
+        source_path = "/trusted/owner/staging/original.mp4"
+        model = ScriptedModel([
+            decision("search", query="import_asset_from_path"),
+            decision("invoke", tool="import_asset_from_path", inputs={
+                "path": source_path, "asSequence": True}),
+            decision("invoke", tool="import_asset_from_path", inputs={
+                "path": source_path, "asSequence": False, "previewOnly": False}),
+        ])
+        # The exact fixture schema must advertise asSequence for this test;
+        # the production editor does, and the trial failure proved it can be
+        # chosen by a genuine local neural model.
+        entry = next(tool for tool in editor.tools
+                     if tool.name == "import_asset_from_path")
+        entry.input_schema["properties"]["asSequence"] = {"type": "boolean"}
+        access = self.grants(editor)
+        outcome = await NativeCreativeControl(
+            editor, model, max_turns=3, catalog_mode="indexed",
+            host_tool_access=access).run("Edit an original imported video")
+        self.assertEqual(outcome["status"], "turn_budget_exhausted")
+        self.assertEqual(model.observed[2]["last_rejected_native_action_feedback"][
+            "validation_keyword"], "native_sequence_requires_image_frames")
+        self.assertEqual([args for name, args in editor.calls
+                          if name == "import_asset_from_path"], [{
+            "path": source_path, "asSequence": False, "previewOnly": False}])
+        self.assertTrue(audit_native_journal(
+            outcome["events"], host_tool_access=access)[
+                "journal_chain_structurally_valid"])
+
     async def test_empty_native_export_rejected_before_stateful_rpc(self):
         # Actual Qwen run #41204331429 terminated after attempting to export
         # a zero-clip project. The pinned Velorn source has an explicit
