@@ -2382,6 +2382,24 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(audit_native_journal(
             outcome["events"], host_tool_access=grants)["journal_chain_structurally_valid"])
 
+    async def test_intervening_model_describe_ends_identical_metadata_search_streak(self):
+        session = FakeSession()
+        grants = {tool.name: ("write" if tool.name == "update_text_clip" else "read")
+                  for tool in session.tools}
+        model = ScriptedModel([
+            decision("search", query="edit text", limit=3),
+            decision("describe", tool="update_text_clip"),
+            decision("search", query="edit text", limit=3),
+            decision("finish", summary="No native tool was invoked"),
+        ])
+        result = await NativeCreativeControl(
+            session, model, max_turns=4, catalog_mode="indexed",
+            host_tool_access=grants).run("Inspect native operation contracts")
+        self.assertFalse(model.observed[3]["last_capability_search_result"].get(
+            "same_metadata_query_without_new_evidence", False))
+        self.assertEqual(session.calls, [])
+        self.assertFalse(result["native_editing_capability_complete"])
+
     async def test_native_parameter_hint_budget_never_dumps_full_schema(self):
         from studio_next.native_creative_control import _selected_native_input_hints
         many = SimpleNamespace(input_schema={
