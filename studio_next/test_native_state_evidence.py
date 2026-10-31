@@ -94,11 +94,12 @@ class SourcePreviewContracts(unittest.TestCase):
 
 
 class ActualNativeObservationSession(FakeSession):
-    def __init__(self, *, preview_error=False, state_error=False):
+    def __init__(self, *, preview_error=False, state_error=False, nested_failure=False):
         super().__init__()
         self.created = False
         self.preview_error = preview_error
         self.state_error = state_error
+        self.nested_failure = nested_failure
         self.tools.extend((
             SimpleNamespace(name="get_project",
                             description="Host native project read",
@@ -133,6 +134,11 @@ class ActualNativeObservationSession(FakeSession):
             return SimpleNamespace(is_error=True, content=[
                 SimpleNamespace(type="text",
                                 text="Editor source asset not imported")])
+        if name == "add_asset_to_timeline" and self.nested_failure:
+            return SimpleNamespace(is_error=False, content=[
+                SimpleNamespace(type="text", text=json.dumps({
+                    "success": True, "action": name,
+                    "result": {"success": False, "error": "Renderer rejected write"}}))])
         return SimpleNamespace(is_error=False, content=[
             SimpleNamespace(type="text", text=json.dumps(
                 {"success": True, "native_tool": name,
@@ -212,6 +218,25 @@ class NativeLoopObservationTests(unittest.IsolatedAsyncioTestCase):
                          "native_error_requires_state_reconciliation")
         self.assertTrue(any(e["kind"] == "native_tool_reported_error"
                             for e in result["events"]))
+
+    async def test_outer_success_inner_renderer_failure_cannot_mint_write_proof(self):
+        session = ActualNativeObservationSession(nested_failure=True)
+        model = ScriptedModel([decision("invoke",
+            tool="add_asset_to_timeline", inputs={
+                "assetId": "model-selected", "previewOnly": False})])
+        grants = self.grants(session)
+        result = await NativeCreativeControl(
+            session, model, host_tool_access=grants,
+            max_turns=1).run("Attempt native write")
+        self.assertEqual(result["status"],
+                         "native_error_requires_state_reconciliation")
+        self.assertTrue(any(e["kind"] == "native_tool_uncertain_outcome"
+                            for e in result["events"]))
+        self.assertFalse(any(e["kind"] == "native_tool_result"
+                             for e in result["events"]))
+        self.assertTrue(audit_native_journal(result["events"],
+                                             host_tool_access=grants)[
+                                             "journal_chain_structurally_valid"])
 
     async def test_bad_post_write_native_state_cannot_claim_fake_progress(self):
         session = ActualNativeObservationSession(state_error=True)
