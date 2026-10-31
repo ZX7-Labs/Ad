@@ -1859,13 +1859,27 @@ class NativeCreativeControl:
                         direct_plan_preview = pinned_direct_native_plan_preview(
                             native_name, args["inputs"],
                             validators[native_name].schema, host_response)
+                        # A model-specified previewOnly:false is an
+                        # explicit committing intent. A contradictory legacy
+                        # preview-looking receipt MUST NOT permit replay or
+                        # mint a safe readonly result. Likewise, a tool whose
+                        # granted native schema lacks a boolean preview control
+                        # cannot turn arbitrary nested "previewOnly" data into
+                        # permission to continue past a failed write.
+                        preview_field = validators[native_name].schema.get(
+                            "properties", {}).get("previewOnly")
+                        native_preview_input_admissible = (
+                            isinstance(preview_field, dict) and
+                            preview_field.get("type") == "boolean" and
+                            args["inputs"].get("previewOnly") is not False)
                         acknowledged_preview = (
-                            (preview is True and (
-                                (success is False and (
-                                    not isinstance(host_response, dict) or
-                                    host_response.get("previewOnly", True) is True
-                                )) or (success is None and wrapper_preview))) or
-                            direct_plan_preview)
+                            native_preview_input_admissible and (
+                                (preview is True and (
+                                    (success is False and
+                                     host_response.get("previewOnly", True)
+                                     is not False) or
+                                    (success is None and wrapper_preview))) or
+                                direct_plan_preview))
                         if success is False or acknowledged_preview:
                             if acknowledged_preview:
                                 # Actual pinned editor defaults to a preview
