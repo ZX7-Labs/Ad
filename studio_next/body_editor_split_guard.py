@@ -26,6 +26,9 @@ _PLAIN_FIELDS = frozenset({
     "frameSampling", "color", "type", "enabled",
     "compositeLowerLayers", "url", "thumbnail", "metadata",
     "transform", "labelColor", "gainDb", "fadeIn", "fadeOut",
+    # Real pinned inspect_clip summaries include these; unknown fields remain
+    # forbidden. These known fields are validated for authored state below.
+    "text", "lockMode", "syncLock",
 })
 _NONLOSSY_SOURCE_TYPES = frozenset({"video", "audio"})
 
@@ -69,6 +72,12 @@ def _unsafe_features(clip: dict) -> list[str]:
     reasons = []
     if clip.get("type") not in _NONLOSSY_SOURCE_TYPES:
         reasons.append("non-source clip type")
+    if clip.get("text") not in (None, ""):
+        reasons.append("authored clip text")
+    if clip.get("lockMode") not in (None, "", False):
+        reasons.append("clip lock mode")
+    if clip.get("syncLock") not in (None, False, [], {}):
+        reasons.append("clip synchronization state")
     extra = set(clip) - _PLAIN_FIELDS
     if extra:
         reasons.append("unknown or enhanced fields: " + ", ".join(sorted(extra)[:15]))
@@ -86,7 +95,7 @@ def _unsafe_features(clip: dict) -> list[str]:
             not isinstance(metadata, dict) or
             set(metadata) - {"addedByMcp", "addedAt", "sourceTool"}):
         reasons.append("unreviewed clip metadata")
-    if "transform" in clip and not isinstance(clip["transform"], dict):
+    if "transform" in clip and clip["transform"] is not None and not isinstance(clip["transform"], dict):
         reasons.append("uninspectable transform")
     return reasons
 
@@ -124,7 +133,7 @@ def preflight_non_destructive_native_split(client, arguments: dict, *,
                     else timeline_data.get("timeline"))
         if (not isinstance(timeline, dict) or
                 not isinstance(timeline.get("clips"), list) or
-                timeline.get("clipLimitApplied") is not None):
+                timeline.get("clipLimitApplied") is not False):
             raise EditorAccessError("Native split requires a complete untruncated timeline")
         clips = timeline["clips"]
         if not all(isinstance(c, dict) and isinstance(c.get("id"), str) and

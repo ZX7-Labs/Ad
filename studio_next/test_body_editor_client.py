@@ -190,9 +190,18 @@ class LocalEditorClientTests(unittest.TestCase):
         def reply(request):
             name = request["params"]["name"]
             if name == "get_timeline":
-                data = {"timeline": {"clips": [{
-                    "id": clip["id"], "startTime": 0, "duration": 12}],
-                    "clipLimitApplied": None}}
+                data = {"timeline": {
+                    "clips": [{
+                        "id": clip["id"], "name": "original", "assetId": "src",
+                        "trackId": clip["trackId"], "type": clip["type"],
+                        "startTime": clip["startTime"], "duration": clip["duration"],
+                        "speed": clip["speed"], "transform": clip["transform"],
+                        "effects": [], "keyframes": clip.get("keyframes", {}),
+                        "metadata": {}, "trackMatte": "none",
+                    }],
+                    "clipCount": 1, "clipLimitApplied": False,
+                    "tracks": [{"id": "video-1", "locked": False}],
+                    "transitions": []}}
             elif name == "inspect_clip":
                 data = {"clip": clip}
             elif name == "split_clip":
@@ -216,8 +225,113 @@ class LocalEditorClientTests(unittest.TestCase):
             "clipId": "clip-artist", "timeSeconds": 6,
             "previewOnly": False}, allowed_access={"read", "write"})
         self.assertEqual(json.loads(successful["content"][0]["text"])["success"], True)
-        self.assertEqual([r["params"]["name"] for r in self.requests[-2:]],
-                         ["inspect_clip", "split_clip"])
+        self.assertEqual([r["params"]["name"] for r in self.requests[-3:]],
+                         ["inspect_clip", "get_timeline", "split_clip"])
+
+    def test_split_hidden_effect_in_native_summary_is_caught_by_complete_snapshot(self):
+        # Pinned Velorn inspect_clip returns a compact summary WITHOUT
+        # effects/keyframes. The full get_timeline clip has their real state.
+        full_clip = {
+            "id": "full-a", "name": "source", "type": "video",
+            "assetId": "source", "trackId": "v1",
+            "startTime": 0, "duration": 10, "trimStart": 0,
+            "trimEnd": 10, "sourceDuration": 10, "speed": 1,
+            "enabled": True, "labelColor": "", "trackMatte": "none",
+            "lockMode": None, "syncLock": None,
+            "transform": {"opacity": 100},
+            "effects": [{"id": "protected-blur"}], "keyframes": {},
+            "textProperties": None, "shapeProperties": None,
+            "titleAnimation": None, "metadata": {"addedByMcp": True},
+            "captionScope": None, "overlayKind": None, "text": "",
+        }
+        def reply(request):
+            name = request["params"]["name"]
+            if name == "inspect_clip":
+                # Exact risk: native summary is not full editable state.
+                value = {"clip": {key: full_clip[key] for key in (
+                    "id", "trackId", "type", "assetId", "startTime",
+                    "duration", "trimStart", "speed", "transform")}}
+            elif name == "get_timeline":
+                value = {"clips": [full_clip], "clipCount": 1,
+                         "clipLimitApplied": False, "tracks": [{"id": "v1"}],
+                         "transitions": []}
+            elif name == "split_clip":
+                raise AssertionError("Effects-bearing clip must never be razored")
+            else:
+                raise AssertionError("Unexpected native operation")
+            return {"jsonrpc": "2.0", "id": request["id"],
+                    "result": {"content": [{"type": "text",
+                                            "text": json.dumps(value)}]}}
+        self.reply = reply
+        client = LocalEditorClient(self.endpoint, allowed_tools={
+            "inspect_clip": "read", "get_timeline": "read", "split_clip": "write"})
+        with self.assertRaisesRegex(EditorAccessError, "discard editable clip state"):
+            client.call("split_clip", {"clipId": "full-a",
+                        "timeSeconds": 3, "previewOnly": False},
+                        allowed_access={"read", "write"})
+        self.assertEqual([r["params"]["name"] for r in self.requests],
+                         ["inspect_clip", "get_timeline"])
+
+    def test_native_extract_full_state_protection_rejects_hidden_effects_and_then_allows_plain(self):
+        # This exercises the actual shared RPC client interception, not only a
+        # direct call of the guard. The summary is purposely never consulted:
+        # native get_timeline is the sole source of editable effects/keyframes.
+        full_clip = {
+            "id": "native-a", "name": "source", "type": "video",
+            "assetId": "source", "trackId": "video-1",
+            "startTime": 0, "duration": 12, "trimStart": 0, "trimEnd": 12,
+            "sourceDuration": 12, "speed": 1, "enabled": True,
+            "labelColor": "", "trackMatte": "none", "lockMode": None,
+            "syncLock": None, "transform": {"opacity": 100},
+            "effects": [{"id": "preserve-this-effect"}],
+            "textProperties": None, "shapeProperties": None,
+            "titleAnimation": None, "keyframes": {},
+            "metadata": {"addedByMcp": True}, "captionScope": None,
+            "overlayKind": None, "text": "",
+        }
+        def reply(request):
+            name = request["params"]["name"]
+            arguments = request["params"]["arguments"]
+            if name == "get_timeline":
+                result = {"clips": [full_clip], "clipCount": 1,
+                          "fps": 24, "trackCount": 1,
+                          "clipLimitApplied": False,
+                          "tracks": [{"id": "video-1", "locked": False}],
+                          "transitions": []}
+            elif name == "extract_range" and arguments.get("previewOnly") is True:
+                # Exact upstream mcpServer.runRendererActionTool response.
+                result = {"previewOnly": True, "action": "extract_range",
+                          "result": {"previewOnly": True, "action": "extract_range",
+                                     "warnings": [],
+                                     "plan": {
+                                         "splitAtStart": [{"id": "native-a"}],
+                                         "splitAtEnd": [{"id": "native-a"}]}},
+                          "suggestedApplyCall": {
+                              "tool": "extract_range",
+                              "arguments": {**arguments, "previewOnly": False}}}
+            elif name == "extract_range" and arguments.get("previewOnly") is False:
+                result = {"success": True, "message": "native edit confirmed"}
+            else:
+                raise AssertionError("Unexpected native editor operation")
+            return {"jsonrpc": "2.0", "id": request["id"],
+                    "result": {"content": [
+                        {"type": "text", "text": json.dumps(result)}]}}
+        self.reply = reply
+        client = LocalEditorClient(self.endpoint, allowed_tools={
+            "get_timeline": "read", "extract_range": "write"})
+        arguments = {"startSeconds": 3, "endSeconds": 7, "previewOnly": False}
+        with self.assertRaisesRegex(EditorAccessError, "discard editable clip state"):
+            client.call("extract_range", arguments, allowed_access={"read", "write"})
+        self.assertEqual([r["params"]["name"] for r in self.requests],
+                         ["get_timeline", "extract_range"])
+        self.assertTrue(self.requests[-1]["params"]["arguments"]["previewOnly"])
+        full_clip["effects"] = []
+        success = client.call("extract_range", arguments, allowed_access={"read", "write"})
+        self.assertEqual(json.loads(success["content"][0]["text"])["success"], True)
+        self.assertEqual([r["params"]["name"] for r in self.requests[-3:]],
+                         ["get_timeline", "extract_range", "extract_range"])
+        self.assertTrue(self.requests[-2]["params"]["arguments"]["previewOnly"])
+        self.assertFalse(self.requests[-1]["params"]["arguments"]["previewOnly"])
 
     def test_split_without_granted_read_inspection_has_no_native_write(self):
         client = LocalEditorClient(self.endpoint, allowed_tools={"split_clip": "write"})
