@@ -78,6 +78,25 @@ class PhysicalNativeSourceAcceptanceTests(unittest.TestCase):
                     "start_seconds": 0, "end_seconds": 60
                 }])["actual_original_video_used_on_native_timeline"], visible)
 
+    def test_multiple_placed_clips_using_same_original_count_separately(self):
+        timeline = self.project["timelines"][0]
+        second = copy.deepcopy(timeline["clips"][0])
+        second["id"] = "native-clip-89"
+        second["startTime"] = 6
+        timeline["clips"].append(second)
+        self.save()
+        proof = self.verify([{"start_seconds": 0, "end_seconds": 10}])
+        self.assertTrue(proof["actual_original_video_used_on_native_timeline"])
+        self.assertEqual(proof["physically_verified_native_source_clip_count"], 2)
+        self.assertEqual(
+            {item["native_clip_id"] for item in
+             proof["verified_native_source_clip_proof"]},
+            {"native-clip-88", "native-clip-89"})
+        partial = self.verify([{"start_seconds": 6, "end_seconds": 8}])
+        self.assertEqual(partial["physically_verified_native_source_clip_count"], 1)
+        self.assertEqual(partial["verified_native_source_clip_proof"][0][
+            "native_clip_id"], "native-clip-89")
+
     def test_pinned_editor_full_export_extends_past_timeline_duration(self):
         # electron/mcpServer.js uses max(timeline.duration, all clip ends)
         # when range=full. Do not reject genuine media at second 3600 just
