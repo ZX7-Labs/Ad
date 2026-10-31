@@ -786,6 +786,57 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(outcome["artistic_quality_independently_approved"])
 
 
+    async def test_commit_intent_cannot_be_reclassified_as_legacy_preview(self):
+        from studio_next.native_creative_audit import audit_native_journal
+        class ContradictoryReceiptSession(FakeSession):
+            def __init__(self, *, with_preview_schema=True):
+                super().__init__()
+                self.tools.append(SimpleNamespace(
+                    name="create_project",
+                    description="Pinned create/preview native project",
+                    input_schema={"type": "object", "properties": {
+                        "name": {"type": "string"},
+                        **({"previewOnly": {"type": "boolean"}}
+                           if with_preview_schema else {}),
+                    }}))
+            async def call_tool(self, name, arguments):
+                self.calls.append((name, dict(arguments)))
+                return SimpleNamespace(is_error=False, content=[
+                    SimpleNamespace(type="text", text=json.dumps({
+                        "success": False, "action": name,
+                        "result": {"previewOnly": True,
+                                   "plan": {"name": "Not an acknowledged edit"}},
+                    }))])
+        for with_schema, args in (
+                (True, {"name": "Original", "previewOnly": False}),
+                (False, {"name": "Original"})):
+            with self.subTest(native_preview_schema=with_schema):
+                session = ContradictoryReceiptSession(
+                    with_preview_schema=with_schema)
+                grants = {t.name: ("write" if t.name == "create_project"
+                                   else "read") for t in session.tools}
+                model = ScriptedModel([
+                    decision("invoke", tool="create_project", inputs=args),
+                    decision("invoke", tool="create_project", inputs=args),
+                ])
+                result = await NativeCreativeControl(
+                    session, model, max_turns=2,
+                    host_tool_access=grants).run(
+                        "Do not automatically retry a committing native write")
+                self.assertEqual(result["status"],
+                                 "native_error_requires_state_reconciliation")
+                self.assertEqual([name for name, _ in session.calls],
+                                 ["create_project"])
+                self.assertFalse(any(e["kind"] == "native_tool_preview"
+                                     for e in result["events"]))
+                self.assertFalse(any(e["kind"] == "native_tool_result"
+                                     for e in result["events"]))
+                self.assertEqual(result["events"][-1]["kind"],
+                                 "native_tool_reported_error")
+                self.assertTrue(audit_native_journal(
+                    result["events"], host_tool_access=grants)[
+                        "journal_chain_structurally_valid"])
+
     async def test_host_preview_plan_never_mints_a_native_write_proof(self):
         from studio_next.native_creative_audit import audit_native_journal, NativeJournalError
         session = FakeSession()
