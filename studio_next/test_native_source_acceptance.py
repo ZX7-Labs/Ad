@@ -246,6 +246,37 @@ class PhysicalNativeSourceAcceptanceTests(unittest.TestCase):
                 self.assertFalse(
                     self.verify()["actual_original_video_used_on_native_timeline"])
 
+    def test_hardlinked_original_is_not_an_independent_project_owned_copy(self):
+        # Equal digest and an in-root path are insufficient when the native
+        # project media inode is literally the owner's original video.
+        self.copy.unlink()
+        try:
+            os.link(self.src, self.copy)
+        except OSError as exc:
+            self.skipTest(f"Filesystem cannot create a hardlink fixture: {exc}")
+        self.assertTrue(os.path.samefile(self.src, self.copy))
+        self.assertFalse(
+            self.verify()["actual_original_video_used_on_native_timeline"])
+
+    def test_duplicate_json_fields_cannot_choose_favorable_provenance(self):
+        # Upstream JSON.stringify does not emit duplicates. A manually forged
+        # native receipt with duplicate project fields is ambiguous.
+        text = self.saved.read_text(encoding="utf-8")
+        anchor = '"currentTimelineId": "native-timeline-1"'
+        self.assertIn(anchor, text)
+        self.saved.write_text(
+            text.replace(anchor, anchor + ', ' + anchor, 1),
+            encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "duplicate JSON"):
+            self.verify()
+
+    def test_oversize_project_is_refused_before_json_decode(self):
+        # Sparse on-disk fixture avoids allocating an enormous Python string.
+        with self.saved.open("wb") as target:
+            target.truncate(32 * 1024 * 1024 + 1)
+        with self.assertRaisesRegex(ValueError, "size limit"):
+            self.verify()
+
     def test_project_path_escape_and_corrupt_native_project_refused(self):
         outside = self.root / "project.comfystudio"
         outside.write_text(json.dumps(self.project))
