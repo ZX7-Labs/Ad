@@ -117,7 +117,6 @@ def verify_original_footage_on_native_timeline(
                         isinstance(clip.get("assetId"), str) and
                         type(clip.get("startTime")) in (int, float) and
                         math.isfinite(clip["startTime"]) and
-                        clip["startTime"] >= 0 and
                         type(clip.get("duration")) in (int, float) and
                         math.isfinite(clip["duration"]) and
                         0 < clip["duration"] <= 1_000_000):
