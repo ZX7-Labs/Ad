@@ -2324,5 +2324,52 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
 
 
 
+    async def test_indexed_model_receives_selected_native_parameter_types_not_every_tool(self):
+        from studio_next.native_creative_control import _selected_native_input_hints
+        session = FakeSession()
+        grants = {item.name: ("write" if item.name == "update_text_clip" else "read")
+                  for item in session.tools}
+        model = ScriptedModel([
+            decision("search", query="edit text", limit=3),
+            decision("finish", summary="Only a capability inspection, no artistic proof")])
+        result = await NativeCreativeControl(
+            session, model, max_turns=2, catalog_mode="indexed",
+            host_tool_access=grants).run("Inspect the real native editor contract")
+        self.assertEqual(result["status"], "model_finished_unverified")
+        self.assertEqual(model.observed[0]["host_selected_native_input_hints"], [])
+        hints = model.observed[1]["host_selected_native_input_hints"]
+        selected = set(model.observed[1]["selectable_native_tools"])
+        self.assertTrue(hints)
+        self.assertTrue(all(item["tool"] in selected for item in hints))
+        names = {item["tool"] for item in hints}
+        self.assertIn("update_text_clip", names)
+        fields = {p["name"]: p["json_type"] for item in hints
+                  if item["tool"] == "update_text_clip"
+                  for p in item["input_properties"]}
+        self.assertEqual(fields["clipId"], "string")
+        self.assertEqual(fields["text"], "string")
+        self.assertLessEqual(len(json.dumps(hints, ensure_ascii=False).encode()), 4096)
+        self.assertEqual(session.calls, [])
+        # Only host-sourced granted selections; hallucinated names cannot
+        # mint additional schema entries, regardless of model strength.
+        self.assertEqual(_selected_native_input_hints(
+            ["not_installed"], {"update_text_clip": session.tools[1]}), [])
+
+    async def test_native_parameter_hint_budget_never_dumps_full_schema(self):
+        from studio_next.native_creative_control import _selected_native_input_hints
+        many = SimpleNamespace(input_schema={
+            "type": "object", "properties": {
+                f"parameter_{i}": {"type": "string",
+                                   "description": "Host source " + "x" * 1000}
+                for i in range(180)}})
+        hints = _selected_native_input_hints(["large_tool"], {"large_tool": many})
+        self.assertLessEqual(len(json.dumps(
+            hints, ensure_ascii=False, sort_keys=True,
+            separators=(",", ":")).encode("utf-8")), 4096)
+        self.assertLessEqual(len(hints[0]["input_properties"]), 16)
+        self.assertNotIn("x" * 200, json.dumps(hints))
+
+
+
 if __name__ == "__main__":
     unittest.main()
