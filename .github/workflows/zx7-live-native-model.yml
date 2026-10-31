@@ -16,7 +16,7 @@ on:
       - ".github/workflows/zx7-live-native-model.yml"
       - "engines/velorn/local-model-trial-4b.candidate.json"
   push:
-    branches: [main]
+    branches: [main, "trial/source-attested-creative-cycle-2b-20261031"]
     paths:
       - ".github/workflows/zx7-live-native-model.yml"
       - "scripts/run_native_model_trial.py"
