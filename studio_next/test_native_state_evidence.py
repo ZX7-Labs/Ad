@@ -129,11 +129,11 @@ class SourcePreviewContracts(unittest.TestCase):
                 for field, changed in (
                     ("success", True), ("previewOnly", "true"),
                     ("result", {"success": True}), ("plan", {}),
-                    ("plan", {"action": "delete_clips"}),
+                    ("plan", {"action": "host_tool_not_installed"}),
                     ("plan", {"previewOnly": False}),
                     ("suggestedApplyCall", {"tool": name, "arguments": {
                         "previewOnly": True}}),
-                    ("suggestedApplyCall", {"tool": "delete_clips",
+                    ("suggestedApplyCall", {"tool": "host_tool_not_installed",
                                             "arguments": {"previewOnly": False}}),
                 ):
                     forged = copy.deepcopy(receipt)
