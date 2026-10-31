@@ -8,6 +8,7 @@ import argparse
 import asyncio
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import shutil
@@ -304,6 +305,10 @@ async def trial(args, lock, artifacts, command):
         if 'decision' in record}
     observed_sources, revisions, last_revision, last_save, revised_exports = set(), 0, -1, -1, []
     exported_after_revision = set()
+    # Only actual native export ACKs can bind a model-requested timeline
+    # range to a physically verified resulting movie. Untrusted model text
+    # alone is never a delivery/custody attestation.
+    export_inputs_by_path = {}
     for index, event in enumerate(outcome['events']):
         if event.get('kind') != 'native_tool_result':
             continue
@@ -314,10 +319,16 @@ async def trial(args, lock, artifacts, command):
             last_revision = index
             revised_exports = []
             exported_after_revision = set()
+            export_inputs_by_path = {}
         if last_revision >= 0 and event.get('tool') == 'export_timeline':
-            output_path = decisions[event['turn']]['arguments']['inputs'].get('outputPath')
-            if isinstance(output_path, str):
-                exported_after_revision.add(Path(output_path).resolve())
+            selected = decisions[event['turn']]['arguments']['inputs']
+            output_path = selected.get('outputPath')
+            if isinstance(output_path, str) and output_path:
+                resolved = Path(output_path).resolve()
+                # Exact trial output root, not a model-authored arbitrary path.
+                if resolved.is_relative_to(outputs.resolve()):
+                    exported_after_revision.add(resolved)
+                    export_inputs_by_path[resolved] = selected
         verified = event.get('independently_verified_export_sha256')
         if (last_revision >= 0 and verified and verified not in observed_sources
                 and movies.get(verified, set()) & exported_after_revision):
@@ -334,8 +345,42 @@ async def trial(args, lock, artifacts, command):
     # No source is imported on the model's behalf, no edit is scripted.
     from studio_next.native_source_acceptance import (
         verify_original_footage_on_native_timeline)
+    # Pinned Velorn resolves full export to max(saved duration, clip ends),
+    # and custom exports from model-authored startSeconds/endSeconds. Saved
+    # timeline.duration therefore CANNOT by itself prove what part of the
+    # source entered the actual MP4. Bind intervals to physically checked
+    # SHA-256, a real acknowledged export path, and its decoded VIDEO stream
+    # duration. Nothing is inferred from an unverified model claim.
+    host_verified_export_windows = []
+    for movie_digest in sorted(set(revised_exports)):
+        for movie in sorted(movies.get(movie_digest, set()) & exported_after_revision):
+            inputs = export_inputs_by_path.get(movie)
+            if not isinstance(inputs, dict) or sha(movie) != movie_digest:
+                continue
+            start = inputs.get('startSeconds', 0)
+            # Do not silently coerce an invalid model string, NaN or bool
+            # into a plausible time origin; the editor remains the judge of
+            # all valid native actions.
+            if type(start) not in (int, float) or not math.isfinite(start) or start < 0:
+                continue
+            raw_duration = subprocess.check_output([
+                'ffprobe', '-v', 'error', '-select_streams', 'v:0',
+                '-show_entries', 'stream=duration',
+                '-of', 'default=noprint_wrappers=1:nokey=1',
+                str(movie)], timeout=30).decode('utf-8').strip()
+            try:
+                duration = float(raw_duration)
+            except ValueError:
+                continue
+            if not math.isfinite(duration) or duration <= 0:
+                continue
+            if not math.isfinite(start + duration):
+                continue
+            host_verified_export_windows.append({
+                'start_seconds': start, 'end_seconds': start + duration})
     original_footage = verify_original_footage_on_native_timeline(
-        projects, native_projects, source_assets)
+        projects, native_projects, source_assets,
+        host_verified_export_windows=host_verified_export_windows)
     def decoded_frames(path):
         raw = subprocess.check_output(['ffmpeg', '-v', 'error', '-i', str(path),
             '-map', '0:v:0', '-f', 'framemd5', '-'], timeout=60).decode()
@@ -355,6 +400,8 @@ async def trial(args, lock, artifacts, command):
                 original_footage['actual_original_video_used_on_native_timeline'],
             'native_original_source_clip_proof':
                 original_footage['verified_native_source_clip_proof'],
+            'host_bound_verified_export_time_windows':
+                host_verified_export_windows,
             'audit': audit,
             'acceptance_note': 'Source-chain and model-operation evidence only, not artistic acceptance'}
 
