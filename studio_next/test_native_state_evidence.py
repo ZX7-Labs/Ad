@@ -6,6 +6,7 @@ from an independently granted Velorn get_project read, not model text.
 """
 import copy
 import json
+from pathlib import Path
 import unittest
 from types import SimpleNamespace
 
@@ -48,6 +49,32 @@ class SourcePreviewContracts(unittest.TestCase):
             "add_asset_to_timeline", {}, {"type": "object", "properties": {}}))
         self.assertFalse(source_reviewed_preview_is_readonly(
             "add_asset_to_timeline", {"previewOnly": 1}, schema))
+
+    def test_pinned_native_editor_source_guarantees_preview_never_performs_action(self):
+        # This safety exception may NOT silently survive a third-party editor
+        # update that changes preview behavior. Inspect the actual vendored
+        # pinned source, not a hypothetical mocked helper.
+        source = (Path(__file__).resolve().parents[1] /
+                  "third_party/velorn/electron/mcpServer.js")
+        text = source.read_text(encoding="utf-8")
+        functions = {
+            "add_asset_to_timeline": ("addAssetToTimeline", "replaceClipWithAsset"),
+            "add_assets_to_timeline": ("addAssetsToTimeline", "addAdjustmentClip"),
+            "add_solid_color": ("addSolidColor", "addAssetsToTimeline"),
+        }
+        for name, (start, end) in functions.items():
+            with self.subTest(name=name):
+                definition = "async " + start + "("
+                left = text.index(definition)
+                right = text.index("async " + end + "(", left + len(definition))
+                function = text[left:right]
+                planning_failure = function.index("if (plan.error) return errorResult(plan.error)")
+                preview_guard = function.index("if (args.previewOnly !== false) {")
+                native_mutation = function.index("await this.performAction({")
+                self.assertLess(planning_failure, preview_guard)
+                self.assertLess(preview_guard, native_mutation)
+                self.assertIn("return textResult({", function[preview_guard:native_mutation])
+                self.assertIn("previewOnly: true", function[preview_guard:native_mutation])
 
     def test_native_project_counts_require_consistent_project_and_safe_integers(self):
         expected = pinned_snapshot_summary(native_snapshot(clips=0, assets=0))
