@@ -144,7 +144,9 @@ def verify_original_footage_on_native_timeline(
         current_timeline_id = data.get("currentTimelineId")
         if not isinstance(current_timeline_id, str) or not current_timeline_id:
             raise ValueError("Saved native project has no active timeline identity")
-        placed = set()
+        # The same imported asset may legitimately occur in several distinct
+        # native clips. An asset count is not a clip count.
+        placed = {}
         found_active = False
         for timeline in timelines:
             if not isinstance(timeline, dict) or not isinstance(timeline.get("clips"), list):
@@ -196,7 +198,7 @@ def verify_original_footage_on_native_timeline(
                         any(clip["startTime"] < finish and
                             clip["startTime"] + clip["duration"] > begin
                             for begin, finish in effective_windows)):
-                    placed.add(clip["assetId"])
+                    placed.setdefault(clip["assetId"], []).append(clip["id"])
         if not found_active:
             raise ValueError("Active native timeline was not saved")
         for asset in data["assets"]:
@@ -240,15 +242,17 @@ def verify_original_footage_on_native_timeline(
                     continue
                 if _sha256(owned) != owner_hash:
                     continue
-                accepted.append({
-                    # Preserve only an owner-root-relative reference in
-                    # published CI artifacts; never disclose local absolute
-                    # media/project paths in technical provenance reports.
-                    "relative_native_project_file": str(project.relative_to(root)),
-                    "native_asset_id": asset_id,
-                    "source_sha256": owner_hash,
-                    "project_owned_copy_sha256": owner_hash,
-                })
+                for native_clip_id in placed[asset_id]:
+                    accepted.append({
+                        # Preserve only an owner-root-relative reference in
+                        # published CI artifacts; never disclose local absolute
+                        # media/project paths in technical provenance reports.
+                        "relative_native_project_file": str(project.relative_to(root)),
+                        "native_asset_id": asset_id,
+                        "native_clip_id": native_clip_id,
+                        "source_sha256": owner_hash,
+                        "project_owned_copy_sha256": owner_hash,
+                    })
                 break
     return {
         "actual_original_video_used_on_native_timeline": bool(accepted),
