@@ -12,7 +12,8 @@ from types import SimpleNamespace
 
 from studio_next.native_state_evidence import (
     pinned_snapshot_summary, source_reviewed_preview_is_readonly,
-    contradictory_nested_write_receipt)
+    contradictory_nested_write_receipt, _PINNED_NO_IMAGE_SEQUENCE_ERROR,
+    pinned_forced_image_sequence_absent_error)
 from studio_next.native_creative_audit import audit_native_journal, NativeJournalError
 from studio_next.native_creative_control import NativeCreativeControl
 from studio_next.test_native_creative_control import (
@@ -77,6 +78,50 @@ class SourcePreviewContracts(unittest.TestCase):
                 self.assertLess(preview_guard, native_mutation)
                 self.assertIn("return textResult({", function[preview_guard:native_mutation])
                 self.assertIn("previewOnly: true", function[preview_guard:native_mutation])
+
+    def test_exact_source_image_sequence_failure_is_nonmutating(self):
+        source = Path(__file__).resolve().parents[1] / "third_party/velorn"
+        renderer_source = (source / "src/services/mcpActions.js").read_text(
+            encoding="utf-8")
+        native_server = (source / "electron/mcpServer.js").read_text(
+            encoding="utf-8")
+        method_start = renderer_source.index(
+            "async function handleImportAssetFromPath(")
+        method_end = renderer_source.index(
+            "async function handleRelinkAsset(", method_start)
+        method = renderer_source[method_start:method_end]
+        # Must verify *real pinned source* rather than trusting the local
+        # safety exception's description. A future editor change fails tests.
+        literal = _PINNED_NO_IMAGE_SEQUENCE_ERROR.removeprefix(
+            "import_asset_from_path failed: ")
+        self.assertIn("throw new Error('" + literal + "')", method)
+        self.assertLess(
+            method.index("throw new Error('" + literal + "')"),
+            method.index("const imported = "))
+        self.assertIn(
+            "return errorResult(`${suggestedTool} failed: ${error?.message || String(error)}`)",
+            native_server)
+        self.assertIn(
+            "this.runRendererActionTool('import_asset_from_path', args",
+            native_server)
+
+    def test_only_exact_error_content_is_recoverable(self):
+        value = _PINNED_NO_IMAGE_SEQUENCE_ERROR
+        def reply(*messages, error=True):
+            return SimpleNamespace(is_error=error, content=[
+                SimpleNamespace(type="text", text=m) for m in messages])
+        self.assertTrue(pinned_forced_image_sequence_absent_error(
+            "import_asset_from_path", reply(value)))
+        for name, candidate in (
+            ("export_timeline", reply(value)),
+            ("import_asset_from_path", reply(value, value)),
+            ("import_asset_from_path", reply(value, error=False)),
+            ("import_asset_from_path", reply("Error: " + value)),
+            ("import_asset_from_path", reply("import_asset_from_path failed: disk full")),
+        ):
+            with self.subTest(tool=name):
+                self.assertFalse(pinned_forced_image_sequence_absent_error(
+                    name, candidate))
 
     def test_nested_native_renderer_ack_requires_explicit_boolean_truth(self):
         for invalid in (
