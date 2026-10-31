@@ -14,7 +14,9 @@ from studio_next.native_state_evidence import (
     pinned_snapshot_summary, source_reviewed_preview_is_readonly,
     pinned_direct_native_plan_preview, contradictory_nested_write_receipt,
     _PINNED_NO_IMAGE_SEQUENCE_ERROR,
-    pinned_forced_image_sequence_absent_error)
+    pinned_forced_image_sequence_absent_error,
+    _PINNED_UNKNOWN_BETWEEN_TRANSITION_CLIPS,
+    pinned_unknown_between_transition_clips)
 from studio_next.native_creative_audit import audit_native_journal, NativeJournalError
 from studio_next.native_creative_control import NativeCreativeControl
 from studio_next.test_native_creative_control import (
@@ -168,6 +170,44 @@ class SourcePreviewContracts(unittest.TestCase):
                 self.assertFalse(pinned_forced_image_sequence_absent_error(
                     name, candidate))
 
+    def test_exact_transition_target_failure_is_nonmutating_and_source_pinned(self):
+        source = Path(__file__).resolve().parents[1] / (
+            "third_party/velorn/electron/mcpServer.js")
+        body = source.read_text(encoding="utf-8")
+        start = body.index("  async addTransition(")
+        end = body.index("  async updateTransition(", start)
+        method = body[start:end]
+        exact = "return errorResult('" + (
+            _PINNED_UNKNOWN_BETWEEN_TRANSITION_CLIPS) + "')"
+        self.assertIn(exact, method)
+        self.assertLess(method.index(exact), method.index("await this.performAction({"))
+        self.assertIn("if (!clipA || !clipB)", method)
+        ids = {"clipAId": "invented-id-A", "clipBId": "invented-id-B"}
+        def reply(text, *, is_error=True, extra=False):
+            messages = [SimpleNamespace(type="text", text=text)]
+            if extra:
+                messages.append(SimpleNamespace(type="text", text="also failed"))
+            return SimpleNamespace(is_error=is_error, content=messages)
+        exact_error = reply(_PINNED_UNKNOWN_BETWEEN_TRANSITION_CLIPS)
+        self.assertTrue(pinned_unknown_between_transition_clips(
+            "add_transition", ids, exact_error))
+        for tool, inputs, output in (
+            ("delete_clips", ids, exact_error),
+            ("add_transition", {"clipAId": "A"}, exact_error),
+            ("add_transition", ids, reply(
+                "add_transition failed: " +
+                _PINNED_UNKNOWN_BETWEEN_TRANSITION_CLIPS)),
+            ("add_transition", ids, reply(
+                _PINNED_UNKNOWN_BETWEEN_TRANSITION_CLIPS, is_error=False)),
+            ("add_transition", ids, reply(
+                _PINNED_UNKNOWN_BETWEEN_TRANSITION_CLIPS, extra=True)),
+            ("add_transition", ids, reply("Disk I/O failed after native write")),
+        ):
+            with self.subTest(tool=tool, inputs=inputs,
+                              message=output.content[0].text):
+                self.assertFalse(pinned_unknown_between_transition_clips(
+                    tool, inputs, output))
+
     def test_nested_native_renderer_ack_requires_explicit_boolean_truth(self):
         for invalid in (
             {"success": False}, {"success": 0}, {"success": "yes"},
@@ -319,6 +359,64 @@ class NativeLoopObservationTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(audit_native_journal(
             result["events"], host_tool_access=grants)[
             "journal_chain_structurally_valid"])
+
+    async def test_exact_no_clip_transition_error_allows_model_reinspection_only(self):
+        class UnplacedNativeTransition(FakeSession):
+            def __init__(self, *, custom_error=None):
+                super().__init__()
+                self.custom_error = custom_error
+                self.tools.append(SimpleNamespace(
+                    name="add_transition",
+                    description="Add native transition to matching clips",
+                    input_schema={"type": "object", "properties": {
+                        "clipAId": {"type": "string"},
+                        "clipBId": {"type": "string"},
+                        "previewOnly": {"type": "boolean"}}}))
+            async def call_tool(self, name, arguments):
+                if name != "add_transition":
+                    return await super().call_tool(name, arguments)
+                self.calls.append((name, arguments))
+                message = self.custom_error or (
+                    _PINNED_UNKNOWN_BETWEEN_TRANSITION_CLIPS)
+                return SimpleNamespace(is_error=True, content=[
+                    SimpleNamespace(type="text", text=message)])
+        choices = [
+            decision("invoke", tool="add_transition", inputs={
+                "clipAId": "fictional-A", "clipBId": "fictional-B",
+                "previewOnly": False}),
+            decision("finish", summary="No native clips exist; no edit complete"),
+        ]
+        session = UnplacedNativeTransition()
+        grants = self.grants(session)
+        result = await NativeCreativeControl(
+            session, ScriptedModel(choices), host_tool_access=grants,
+            max_turns=2).run("Real edit requires real source clips")
+        self.assertEqual(result["status"], "model_finished_unverified")
+        self.assertEqual(session.calls[0][0], "add_transition")
+        self.assertFalse(any(e["kind"] == "native_tool_result"
+                             for e in result["events"]))
+        accepted = [e for e in result["events"] if e["kind"] ==
+                    "native_source_pretransition_reported_error"]
+        self.assertEqual(len(accepted), 1)
+        self.assertTrue(accepted[0]["no_accepted_write_evidence"])
+        self.assertTrue(audit_native_journal(
+            result["events"], host_tool_access=grants)[
+                "journal_chain_structurally_valid"])
+        forged = copy.deepcopy(result["events"])
+        next(e for e in forged if e.get("kind") ==
+             "native_source_pretransition_reported_error")["error_sha256"] = "0" * 64
+        with self.assertRaises(NativeJournalError):
+            audit_native_journal(forged, host_tool_access=grants)
+        # No source proof for unrelated disk errors or malformed native IDs.
+        failing = UnplacedNativeTransition(custom_error="Could not write clip")
+        denied = await NativeCreativeControl(
+            failing, ScriptedModel(choices[:1]),
+            host_tool_access=self.grants(failing), max_turns=1).run(
+            "Never turn generic write errors into no-mutation receipts")
+        self.assertEqual(denied["status"],
+                         "native_error_requires_state_reconciliation")
+        self.assertTrue(any(e["kind"] == "native_tool_reported_error"
+                            for e in denied["events"]))
 
     async def test_preview_error_does_not_become_uncertain_creative_write(self):
         session = ActualNativeObservationSession(preview_error=True)

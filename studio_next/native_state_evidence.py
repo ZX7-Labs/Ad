@@ -53,6 +53,40 @@ def pinned_forced_image_sequence_absent_error(name, native_reply):
     return (field(part, "type") == "text" and
             field(part, "text") == _PINNED_NO_IMAGE_SEQUENCE_ERROR)
 
+
+# Pinned Velorn electron/mcpServer.js:addTransition resolves both clip IDs
+# against its active timeline and returns this error BEFORE performAction.
+# This exact rejection is not an attempted timeline mutation.
+_PINNED_UNKNOWN_BETWEEN_TRANSITION_CLIPS = (
+    "Both clipAId and clipBId must refer to clips on the active timeline."
+)
+
+
+def pinned_unknown_between_transition_clips(name, inputs, native_reply):
+    """Only the exact pre-dispatch error for a model-chosen between transition.
+
+    A missing target does not make the model's guessed clip IDs valid. Return
+    only a bounded fact so the creative model must independently re-inspect
+    the native timeline and decide its next action. No hidden write/retry.
+    """
+    if name != "add_transition" or not isinstance(inputs, dict):
+        return False
+    if any(not isinstance(inputs.get(k), str) or not inputs[k].strip()
+           for k in ("clipAId", "clipBId")):
+        return False
+    def field(value, key, default=None):
+        return value.get(key, default) if isinstance(value, dict) else (
+            getattr(value, key, default))
+    if field(native_reply, "is_error", field(native_reply, "isError")) is not True:
+        return False
+    content = field(native_reply, "content")
+    if not isinstance(content, (list, tuple)) or len(content) != 1:
+        return False
+    return (field(content[0], "type") == "text" and
+            field(content[0], "text") == _PINNED_UNKNOWN_BETWEEN_TRANSITION_CLIPS)
+
+
+
 def source_reviewed_preview_is_readonly(name, inputs, native_schema):
     """Only a pinned source-guaranteed preview, never a failed native WRITE."""
     if name not in _SOURCE_REVIEWED_NONMUTATING_PREVIEWS:
