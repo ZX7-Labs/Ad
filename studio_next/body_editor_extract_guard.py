@@ -158,9 +158,23 @@ def preflight_non_destructive_native_extract(client, arguments, *, allowed_acces
     preview = _native_json(client.call(
         "extract_range", {**arguments, "previewOnly": True},
         allowed_access=allowed_access), "extract_range preview")
-    plan = preview.get("plan")
+    # Exact pinned Velorn mcpServer.runRendererActionTool envelope:
+    # {previewOnly: true, action: "extract_range", result:
+    #   {previewOnly: true, action: "extract_range", plan, warnings},
+    #  suggestedApplyCall: {tool, arguments}}.
+    # The nested native result, not the MCP wrapper, owns the actual plan.
+    # Do not follow the suggestedApplyCall: only the original caller can
+    # authorize and dispatch a write after completing this preflight.
+    native_preview = preview.get("result")
+    plan = (native_preview.get("plan")
+            if isinstance(native_preview, dict) else None)
     if (preview.get("previewOnly") is not True or
-            preview.get("warnings") not in ([], None) or
+            preview.get("action") != "extract_range" or
+            preview.get("success") not in (None, False) or
+            not isinstance(native_preview, dict) or
+            native_preview.get("previewOnly") is not True or
+            native_preview.get("action") != "extract_range" or
+            native_preview.get("warnings") != [] or
             not isinstance(plan, dict) or
             not isinstance(plan.get("splitAtStart"), list) or
             not isinstance(plan.get("splitAtEnd"), list)):
