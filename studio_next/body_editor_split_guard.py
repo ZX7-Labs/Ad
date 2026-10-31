@@ -124,7 +124,7 @@ def preflight_non_destructive_native_split(client, arguments: dict, *,
                     else timeline_data.get("timeline"))
         if (not isinstance(timeline, dict) or
                 not isinstance(timeline.get("clips"), list) or
-                timeline.get("clipLimitApplied") is not None):
+                timeline.get("clipLimitApplied") is not False):
             raise EditorAccessError("Native split requires a complete untruncated timeline")
         clips = timeline["clips"]
         if not all(isinstance(c, dict) and isinstance(c.get("id"), str) and
