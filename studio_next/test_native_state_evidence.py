@@ -80,10 +80,9 @@ class ActualNativeObservationSession(FakeSession):
                             description="Create original native project",
                             input_schema={"type": "object", "properties": {
                                 "name": {"type": "string"}}}),
-            SimpleNamespace(name="add_timeline_markers",
-                            description="Native markers (not image editing)",
-                            input_schema={"type": "object", "properties": {
-                                "markers": {"type": "array"}}}),
+            SimpleNamespace(name="save_project",
+                            description="Save native project metadata",
+                            input_schema={"type": "object", "properties": {}}),
             SimpleNamespace(name="add_asset_to_timeline",
                             description="Preview or place source asset",
                             input_schema={"type": "object", "properties": {
@@ -118,12 +117,11 @@ class NativeLoopObservationTests(unittest.IsolatedAsyncioTestCase):
         return {item.name: ("read" if item.name.startswith("get_") or
                 item.name.startswith("zx7_") else "write") for item in session.tools}
 
-    async def test_true_empty_native_timeline_survives_noncreative_marker_write(self):
+    async def test_true_empty_native_timeline_survives_noncreative_project_save(self):
         session = ActualNativeObservationSession()
         model = ScriptedModel([
             decision("invoke", tool="create_project", inputs={"name": "Creative source"}),
-            decision("invoke", tool="add_timeline_markers",
-                     inputs={"markers": [{"label": "Progress"}]}),
+            decision("invoke", tool="save_project", inputs={}),
             decision("finish", summary="No original footage and no final export"),
         ])
         grants = self.grants(session)
@@ -141,7 +139,7 @@ class NativeLoopObservationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(model.observed[2]["last_native_result_texts"][0] and
                          json.loads(model.observed[2][
                              "last_native_result_texts"][0])["native_tool"],
-                         "add_timeline_markers")
+                         "save_project")
         self.assertTrue(audit_native_journal(result["events"],
                                              host_tool_access=grants)[
                                              "journal_chain_structurally_valid"])
