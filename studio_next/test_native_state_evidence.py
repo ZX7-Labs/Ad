@@ -99,6 +99,71 @@ class SourcePreviewContracts(unittest.TestCase):
                         self.assertFalse(pinned_direct_native_plan_preview(
                             tool, {}, schema, forged))
 
+    def test_native_transition_and_clip_edit_plans_are_readonly_source_shapes(self):
+        schema = {"type": "object", "properties": {
+            "previewOnly": {"type": "boolean"}}}
+        # Actual pinned addTransition/updateTransition/removeTransitions and
+        # moveClips/trimClips plans contain semantic fields, not an inner
+        # {action, previewOnly}. These MUST be read-only previews by default.
+        for name in ("add_transition", "update_transition",
+                     "remove_transitions", "move_clips", "trim_clips"):
+            with self.subTest(tool=name):
+                receipt = {
+                    "previewOnly": True, "action": name,
+                    "plan": {"kind": "native-source-plan"},
+                    "suggestedApplyCall": {
+                        "tool": name, "arguments": {"previewOnly": False}},
+                }
+                self.assertTrue(source_reviewed_preview_is_readonly(
+                    name, {}, schema))
+                self.assertTrue(pinned_direct_native_plan_preview(
+                    name, {}, schema, receipt))
+                self.assertFalse(pinned_direct_native_plan_preview(
+                    name, {"previewOnly": False}, schema, receipt))
+                self.assertFalse(pinned_direct_native_plan_preview(
+                    name, {}, {"type": "object", "properties": {}}, receipt))
+                for field, changed in (
+                    ("success", True), ("previewOnly", "true"),
+                    ("result", {"success": True}), ("plan", {}),
+                    ("plan", {"action": "delete_clips"}),
+                    ("plan", {"previewOnly": False}),
+                    ("suggestedApplyCall", {"tool": name, "arguments": {
+                        "previewOnly": True}}),
+                    ("suggestedApplyCall", {"tool": "delete_clips",
+                                            "arguments": {"previewOnly": False}}),
+                ):
+                    forged = copy.deepcopy(receipt)
+                    forged[field] = changed
+                    with self.subTest(tool=name, field=field):
+                        self.assertFalse(pinned_direct_native_plan_preview(
+                            name, {}, schema, forged))
+
+    def test_real_pinned_transition_clip_preview_plan_precedes_mutation(self):
+        source = (Path(__file__).resolve().parents[1] /
+                  "third_party/velorn/electron/mcpServer.js")
+        text = source.read_text(encoding="utf-8")
+        methods = {
+            "add_transition": ("addTransition", "updateTransition"),
+            "update_transition": ("updateTransition", "removeTransitions"),
+            "remove_transitions": ("removeTransitions", "moveClips"),
+            "move_clips": ("moveClips", "trimClips"),
+            "trim_clips": ("trimClips", "addTextClip"),
+        }
+        for tool, (first, last) in methods.items():
+            with self.subTest(tool=tool):
+                begin = text.index("async " + first + "(")
+                end = text.index("async " + last + "(", begin)
+                fn = text[begin:end]
+                preview = fn.index("if (args.previewOnly !== false)")
+                applied = fn.index("await this.performAction({")
+                self.assertLess(preview, applied)
+                block = fn[preview:applied]
+                self.assertIn("return textResult({", block)
+                self.assertIn("previewOnly: true", block)
+                self.assertIn("action: '" + tool + "'", block)
+                self.assertIn("suggestedApplyCall:", block)
+                self.assertIn("previewOnly: false", block)
+
     def test_pinned_native_editor_source_guarantees_preview_never_performs_action(self):
         # This safety exception may NOT silently survive a third-party editor
         # update that changes preview behavior. Inspect the actual vendored
@@ -417,6 +482,68 @@ class NativeLoopObservationTests(unittest.IsolatedAsyncioTestCase):
                          "native_error_requires_state_reconciliation")
         self.assertTrue(any(e["kind"] == "native_tool_reported_error"
                             for e in denied["events"]))
+
+    async def test_model_must_independently_apply_real_transition_preview(self):
+        # The pinned native editor returns a proposed transition plan when
+        # previewOnly is omitted. No change is made until the model separately
+        # chooses and sends previewOnly:false. A valid read-only preview must
+        # not produce the prior uncertain-WRITE stop condition.
+        class DirectTransitionSession(FakeSession):
+            def __init__(self):
+                super().__init__()
+                self.tools.append(SimpleNamespace(
+                    name="add_transition", description="Add native transition",
+                    input_schema={"type": "object", "properties": {
+                        "clipAId": {"type": "string"},
+                        "clipBId": {"type": "string"},
+                        "previewOnly": {"type": "boolean"}}}))
+            async def call_tool(self, name, arguments):
+                if name == "add_transition":
+                    self.calls.append((name, dict(arguments)))
+                    if arguments.get("previewOnly") is False:
+                        body = {"success": True, "action": name,
+                                "plan": {"kind": "between"},
+                                "result": {"success": True, "action": name}}
+                    else:
+                        body = {"previewOnly": True, "action": name,
+                                "plan": {"kind": "between",
+                                         "clipA": {"id": "clip-a"},
+                                         "clipB": {"id": "clip-b"}},
+                                "suggestedApplyCall": {"tool": name,
+                                    "arguments": {**arguments, "previewOnly": False}}}
+                    return SimpleNamespace(is_error=False, content=[
+                        SimpleNamespace(type="text", text=json.dumps(body))])
+                return await super().call_tool(name, arguments)
+        editor = DirectTransitionSession()
+        inputs = {"clipAId": "clip-a", "clipBId": "clip-b"}
+        model = ScriptedModel([
+            decision("invoke", tool="add_transition", inputs=inputs),
+            decision("invoke", tool="add_transition",
+                     inputs={**inputs, "previewOnly": False}),
+            decision("finish", summary="Native editor transition applied"),
+        ])
+        grants = {t.name: ("write" if t.name in (
+            "add_transition", "update_text_clip") else "read")
+            for t in editor.tools}
+        result = await NativeCreativeControl(
+            editor, model, host_tool_access=grants,
+            host_content_revision_tools=("add_transition",),
+            max_turns=3).run("Original model-authored transition on actual clips")
+        self.assertEqual(result["status"], "model_finished_unverified")
+        self.assertEqual([v.get("previewOnly") for tool, v in editor.calls
+                          if tool == "add_transition"], [None, False])
+        self.assertEqual(sum(e.get("kind") == "native_tool_preview"
+                             for e in result["events"]), 1)
+        self.assertEqual(sum(e.get("kind") == "native_tool_result" and
+                             e.get("tool") == "add_transition"
+                             for e in result["events"]), 1)
+        self.assertEqual(model.observed[1]["last_native_preview_feedback"][
+            "native_declared_preview_control"]["field"], "previewOnly")
+        self.assertTrue(audit_native_journal(
+            result["events"], host_tool_access=grants,
+            host_content_revision_tools=("add_transition",))[
+                "journal_chain_structurally_valid"])
+        self.assertFalse(result["native_editing_capability_complete"])
 
     async def test_preview_error_does_not_become_uncertain_creative_write(self):
         session = ActualNativeObservationSession(preview_error=True)
