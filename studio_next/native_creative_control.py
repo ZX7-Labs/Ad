@@ -299,6 +299,43 @@ def _native_tool_hints(available):
     return hints
 
 
+def _source_attested_native_admission(tool_name: str, admission: dict) -> dict:
+    """Add only proven pinned-editor constraints to a PRIVATE schema copy.
+
+    Source: Velorn b3c02ad src/services/mcpActions.js
+    normalizeClipLabelColor + handleAddTimelineMarkers, and
+    electron/mcpServer.js add_timeline_markers inputSchema. The published
+    schema describes #RRGGBB but does not enforce its lexical shape. This
+    correction is pre-dispatch ONLY; never mutate the real MCP schema, choose
+    an edit, normalize a model value or retry an uncertain write.
+    """
+    if tool_name != "add_timeline_markers":
+        return admission
+    fields = admission.get("properties") if isinstance(admission, dict) else None
+    outer = fields.get("color") if isinstance(fields, dict) else None
+    marker_group = fields.get("markers") if isinstance(fields, dict) else None
+    items = marker_group.get("items") if isinstance(marker_group, dict) else None
+    nested = items.get("properties") if isinstance(items, dict) else None
+    inner = nested.get("color") if isinstance(nested, dict) else None
+    if (not isinstance(fields, dict) or
+            not isinstance(outer, dict) or outer.get("type") != "string" or
+            not isinstance(marker_group, dict) or marker_group.get("type") != "array" or
+            not isinstance(items, dict) or items.get("type") != "object" or
+            not isinstance(inner, dict) or inner.get("type") != "string" or
+            "pattern" in outer or "pattern" in inner):
+        # Unreviewed future pinned engine schema must not inherit these
+        # constraints by assumption. Reject this adapter configuration.
+        raise NativeCreativeControlError(
+            "Native marker source/schema mismatch; pinned editor review required")
+    # The underlying editor permits an empty/omitted color (host default),
+    # or a trimmed # followed by exactly 6 hex digits. Never add '#'
+    # automatically: an ambiguous/invalid model value is not an edit.
+    pattern = r"^[ \\t]*(?:#[0-9a-fA-F]{6})?[ \\t]*$"
+    outer["pattern"] = pattern
+    inner["pattern"] = pattern
+    return admission
+
+
 def _selected_native_input_hints(tool_names, live_tools):
     """Bounded parameter typing from granted, *currently selected* tools.
 
@@ -756,6 +793,7 @@ class NativeCreativeControl:
                     "additionalProperties" not in admission and
                     "patternProperties" not in admission):
                 admission["additionalProperties"] = False
+            admission = _source_attested_native_admission(native_name, admission)
             cls = jsonschema.validators.validator_for(admission)
             cls.check_schema(admission)
             validators[native_name] = cls(admission)
@@ -1172,6 +1210,11 @@ class NativeCreativeControl:
                     }
                     if len(_wire(schema).encode("utf-8")) <= 8192:
                         self._last_preflight_feedback["actual_host_input_schema"] = schema
+                    if (native_name == "add_timeline_markers" and
+                            invalid.validator == "pattern"):
+                        self._last_preflight_feedback["source_attested_format"] = (
+                            "Optional marker color is empty or #RRGGBB; "
+                            "published native input schema omits this lexical check")
                     else:
                         self._last_preflight_feedback["request_schema_with_describe"] = True
                     self._append({"kind": "model_action_rejected", "turn": turn,
