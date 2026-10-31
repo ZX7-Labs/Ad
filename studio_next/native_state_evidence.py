@@ -53,6 +53,33 @@ def pinned_forced_image_sequence_absent_error(name, native_reply):
     return (field(part, "type") == "text" and
             field(part, "text") == _PINNED_NO_IMAGE_SEQUENCE_ERROR)
 
+
+# Pinned electron/mcpServer.js:addTransition returns this exact error
+# BEFORE the preview branch and performAction when at least one of its
+# between-clip IDs is not present on the active native timeline. Unlike a
+# generic reported error, no state-changing bridge could have been called.
+_PINNED_TRANSITION_CLIPS_ABSENT_ERROR = (
+    "Both clipAId and clipBId must refer to clips on the active timeline."
+)
+
+
+def pinned_transition_missing_clips_prewrite_error(name, native_reply):
+    """Recognize one exact native pre-mutation failure, not arbitrary text."""
+    if name != "add_transition":
+        return False
+    def field(value, key, default=None):
+        return value.get(key, default) if isinstance(value, dict) else (
+            getattr(value, key, default))
+    if field(native_reply, "is_error", field(native_reply, "isError")) is not True:
+        return False
+    content = field(native_reply, "content")
+    if not isinstance(content, (list, tuple)) or len(content) != 1:
+        return False
+    part = content[0]
+    return (field(part, "type") == "text" and
+            field(part, "text") == _PINNED_TRANSITION_CLIPS_ABSENT_ERROR)
+
+
 def source_reviewed_preview_is_readonly(name, inputs, native_schema):
     """Only a pinned source-guaranteed preview, never a failed native WRITE."""
     if name not in _SOURCE_REVIEWED_NONMUTATING_PREVIEWS:
