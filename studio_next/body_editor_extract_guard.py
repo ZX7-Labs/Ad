@@ -98,6 +98,44 @@ def assert_plain_source_in_full_timeline(client, clip_id, *, allowed_access,
     return clip
 
 
+def _expected_boundary_ids(timeline, start_seconds, end_seconds):
+    """Recompute the pinned editor's frame-snapped range boundary selection.
+
+    If actual preview and independently inspected project disagree, never
+    dispatch the write; debounced native state may not have converged.
+    """
+    fps = timeline.get("fps")
+    if type(fps) not in (int, float) or not math.isfinite(fps) or fps <= 0:
+        raise EditorAccessError("Native extract requires verified timeline frame rate")
+    half_frame = 0.5 / fps
+    start = math.floor(start_seconds * fps + 0.5) / fps
+    end = math.floor(end_seconds * fps + 0.5) / fps
+    if end - start < 1.0 / fps - 1e-10:
+        raise EditorAccessError("Native extract range does not cover a full frame")
+    tracks = timeline["tracks"]
+    if (type(timeline.get("trackCount")) is not int or
+            timeline["trackCount"] != len(tracks) or
+            any(not isinstance(t, dict) or not isinstance(t.get("id"), str)
+                or not t["id"] or t.get("locked") is True for t in tracks) or
+            len({t["id"] for t in tracks}) != len(tracks)):
+        raise EditorAccessError("Native extract requires complete unlocked track inventory")
+    active = {t["id"] for t in tracks}
+    boundaries = {"splitAtStart": [], "splitAtEnd": []}
+    for clip in timeline["clips"]:
+        if clip.get("trackId") not in active:
+            raise EditorAccessError("Native extract has a clip outside inspected tracks")
+        left, right = clip["startTime"], clip["startTime"] + clip["duration"]
+        if right <= start + half_frame:
+            continue
+        if clip.get("syncLock") not in (None, False, [], {}):
+            raise EditorAccessError("Native extract has synchronization-locked clip")
+        if left < start - half_frame and right > start + half_frame:
+            boundaries["splitAtStart"].append(clip["id"])
+        if left < end - half_frame and right > end + half_frame:
+            boundaries["splitAtEnd"].append(clip["id"])
+    return boundaries
+
+
 def preflight_non_destructive_native_extract(client, arguments, *, allowed_access):
     if not isinstance(arguments, dict):
         raise EditorAccessError("Native extract requires object arguments")
@@ -127,12 +165,19 @@ def preflight_non_destructive_native_extract(client, arguments, *, allowed_acces
             not isinstance(plan.get("splitAtStart"), list) or
             not isinstance(plan.get("splitAtEnd"), list)):
         raise EditorAccessError("Native extract preview is incomplete or warns of side effects")
+    expected = _expected_boundary_ids(
+        timeline, arguments["startSeconds"], arguments["endSeconds"])
     checked = []
     for key in ("splitAtStart", "splitAtEnd"):
+        candidate_ids = []
         for item in plan[key]:
             if not isinstance(item, dict) or not isinstance(item.get("id"), str):
                 raise EditorAccessError("Native extract preview has invalid split target")
-            identity = item["id"]
+            candidate_ids.append(item["id"])
+        if sorted(candidate_ids) != sorted(expected[key]):
+            raise EditorAccessError(
+                "Native extract preview and observed source timeline disagree on " + key)
+        for identity in candidate_ids:
             assert_plain_source_in_full_timeline(
                 client, identity, allowed_access=allowed_access, timeline=timeline)
             checked.append(identity)
