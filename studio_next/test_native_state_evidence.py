@@ -99,6 +99,71 @@ class SourcePreviewContracts(unittest.TestCase):
                         self.assertFalse(pinned_direct_native_plan_preview(
                             tool, {}, schema, forged))
 
+    def test_native_transition_and_clip_edit_plans_are_readonly_source_shapes(self):
+        schema = {"type": "object", "properties": {
+            "previewOnly": {"type": "boolean"}}}
+        # Actual pinned addTransition/updateTransition/removeTransitions and
+        # moveClips/trimClips plans contain semantic fields, not an inner
+        # {action, previewOnly}. These MUST be read-only previews by default.
+        for name in ("add_transition", "update_transition",
+                     "remove_transitions", "move_clips", "trim_clips"):
+            with self.subTest(tool=name):
+                receipt = {
+                    "previewOnly": True, "action": name,
+                    "plan": {"kind": "native-source-plan"},
+                    "suggestedApplyCall": {
+                        "tool": name, "arguments": {"previewOnly": False}},
+                }
+                self.assertTrue(source_reviewed_preview_is_readonly(
+                    name, {}, schema))
+                self.assertTrue(pinned_direct_native_plan_preview(
+                    name, {}, schema, receipt))
+                self.assertFalse(pinned_direct_native_plan_preview(
+                    name, {"previewOnly": False}, schema, receipt))
+                self.assertFalse(pinned_direct_native_plan_preview(
+                    name, {}, {"type": "object", "properties": {}}, receipt))
+                for field, changed in (
+                    ("success", True), ("previewOnly", "true"),
+                    ("result", {"success": True}), ("plan", {}),
+                    ("plan", {"action": "delete_clips"}),
+                    ("plan", {"previewOnly": False}),
+                    ("suggestedApplyCall", {"tool": name, "arguments": {
+                        "previewOnly": True}}),
+                    ("suggestedApplyCall", {"tool": "delete_clips",
+                                            "arguments": {"previewOnly": False}}),
+                ):
+                    forged = copy.deepcopy(receipt)
+                    forged[field] = changed
+                    with self.subTest(tool=name, field=field):
+                        self.assertFalse(pinned_direct_native_plan_preview(
+                            name, {}, schema, forged))
+
+    def test_real_pinned_transition_clip_preview_plan_precedes_mutation(self):
+        source = (Path(__file__).resolve().parents[1] /
+                  "third_party/velorn/electron/mcpServer.js")
+        text = source.read_text(encoding="utf-8")
+        methods = {
+            "add_transition": ("addTransition", "updateTransition"),
+            "update_transition": ("updateTransition", "removeTransitions"),
+            "remove_transitions": ("removeTransitions", "moveClips"),
+            "move_clips": ("moveClips", "trimClips"),
+            "trim_clips": ("trimClips", "addTextClip"),
+        }
+        for tool, (first, last) in methods.items():
+            with self.subTest(tool=tool):
+                begin = text.index("async " + first + "(")
+                end = text.index("async " + last + "(", begin)
+                fn = text[begin:end]
+                preview = fn.index("if (args.previewOnly !== false)")
+                applied = fn.index("await this.performAction({")
+                self.assertLess(preview, applied)
+                block = fn[preview:applied]
+                self.assertIn("return textResult({", block)
+                self.assertIn("previewOnly: true", block)
+                self.assertIn("action: '" + tool + "'", block)
+                self.assertIn("suggestedApplyCall:", block)
+                self.assertIn("previewOnly: false", block)
+
     def test_pinned_native_editor_source_guarantees_preview_never_performs_action(self):
         # This safety exception may NOT silently survive a third-party editor
         # update that changes preview behavior. Inspect the actual vendored
