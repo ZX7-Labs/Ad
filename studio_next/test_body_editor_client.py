@@ -190,9 +190,18 @@ class LocalEditorClientTests(unittest.TestCase):
         def reply(request):
             name = request["params"]["name"]
             if name == "get_timeline":
-                data = {"timeline": {"clips": [{
-                    "id": clip["id"], "startTime": 0, "duration": 12}],
-                    "clipLimitApplied": None}}
+                data = {"timeline": {
+                    "clips": [{
+                        "id": clip["id"], "name": "original", "assetId": "src",
+                        "trackId": clip["trackId"], "type": clip["type"],
+                        "startTime": clip["startTime"], "duration": clip["duration"],
+                        "speed": clip["speed"], "transform": clip["transform"],
+                        "effects": [], "keyframes": clip.get("keyframes", {}),
+                        "metadata": {}, "trackMatte": "none",
+                    }],
+                    "clipCount": 1, "clipLimitApplied": False,
+                    "tracks": [{"id": "video-1", "locked": False}],
+                    "transitions": []}}
             elif name == "inspect_clip":
                 data = {"clip": clip}
             elif name == "split_clip":
@@ -216,8 +225,8 @@ class LocalEditorClientTests(unittest.TestCase):
             "clipId": "clip-artist", "timeSeconds": 6,
             "previewOnly": False}, allowed_access={"read", "write"})
         self.assertEqual(json.loads(successful["content"][0]["text"])["success"], True)
-        self.assertEqual([r["params"]["name"] for r in self.requests[-2:]],
-                         ["inspect_clip", "split_clip"])
+        self.assertEqual([r["params"]["name"] for r in self.requests[-3:]],
+                         ["inspect_clip", "get_timeline", "split_clip"])
 
     def test_split_without_granted_read_inspection_has_no_native_write(self):
         client = LocalEditorClient(self.endpoint, allowed_tools={"split_clip": "write"})
