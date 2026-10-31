@@ -71,8 +71,8 @@ class CapabilityFabricTests(unittest.TestCase):
              two], {"add_asset_to_timeline": "write",
                     "add_timeline_markers": "write"})})
         self.assertNotEqual(fabric.revision, updated.revision)
-        self.assertNotEqual(fabric.search("timeline clip add")["matches"],
-                            updated.search("timeline clip add")["matches"])
+        self.assertNotEqual(fabric.search("timeline clip add", limit=1),
+                            updated.search("timeline clip add", limit=1))
 
     def test_optional_search_facets_are_actual_host_granted_not_a_tool_manual(self):
         granted = [tool("create_project"), tool("get_timeline"),
