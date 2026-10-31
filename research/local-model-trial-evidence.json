@@ -432,6 +432,34 @@
       "failure": "Despite successful real model-chosen project creation and source-attested reads, the 2B model repeatedly searched and invoked create_project again, including after actual project_open=true. A redundant final create reported a native error. The artifact contains two editable but empty saved project files, no imported assets, clips or exported movie.",
       "next_safety_fix": "A trial-scoped host rule refuses subsequent acknowledged create_project writes before native dispatch, while enabling the model to independently search further available tools. Distinguish real application status from transport success. This does not claim working autonomous editing.",
       "evidence_source": "Independently inspected GitHub Actions artifact ZIP: evidence.json, inference-transcript.jsonl, native-journal.jsonl, two project.comfystudio. ZIP SHA256 is from Actions upload log. All outcomes are technical trial evidence, not artistic acceptance."
+    },
+    {
+      "body_commit": "f38a9e2c5b4d1bb92f492c2d0f0da1de57334036",
+      "workflow_run": 41160412292,
+      "artifact_id": 13027345941,
+      "artifact_zip_sha256": "96d8adfc4dbecd37dfc73421336ce37cdb666b017c7680eb772100017d857caa",
+      "model": "unsloth/Qwen3.5-2B-GGUF",
+      "quantization": "Q4_K_M",
+      "cpu_only": true,
+      "actual_inference_turns": 10,
+      "model_selected_actions": {
+        "search": 5,
+        "invoke": 5
+      },
+      "acknowledged_native_writes": 1,
+      "native_project_files_created": 1,
+      "native_project_asset_count": 0,
+      "native_project_clip_count": 0,
+      "verified_exports": 0,
+      "physically_observed_frames": 0,
+      "model_server_process_peak_rss_bytes": 3138560000,
+      "model_memory_scope": "VmHWM of llama-server process only",
+      "model_status": "native_error_requires_state_reconciliation",
+      "technical_trial_completed": false,
+      "artistic_quality_approved": false,
+      "failure": "Two project observations remained absent after one acknowledged create. Model then searched asset and timeline operations but failed before any asset import, clips, export or physical observations. Actual artifact contains one empty saved native project.",
+      "independent_native_state_measurement": "Separate real editor MCP trial 41160859730 measured initial absent 11.86ms and project present after 471.33ms. Prior bounded two-read grace was 200ms.",
+      "next_experiment": "1.5-second read-only state reconciliation, then repeat neural editing trial without a scripted fallback."
     }
   ]
 }
