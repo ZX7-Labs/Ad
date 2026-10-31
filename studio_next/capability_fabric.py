@@ -280,6 +280,39 @@ class CapabilityFabric:
             result["host_granted_search_terms"] = [
                 word for word, _ in sorted(
                     terms.items(), key=lambda item: (-item[1], item[0]))[:16]]
+            # Measured Qwen3.5-2B trial #41160412292 exposed a concrete
+            # information-loss problem: the top-16 frequent tokens included
+            # "asset"/"add" but omitted "import", although the connected
+            # host actually granted import_asset_from_path. The model searched
+            # "asset" and guessed an edit without importing source footage.
+            # Preserve the distinct FIRST token of real native operation
+            # names as a second, separately bounded navigation vocabulary.
+            # These are NOT suggested actions, permissions, executable IDs,
+            # scripted workflow steps, or tokens from untrusted descriptions.
+            prefixes = set()
+            for record in self._records.values():
+                name = re.sub(r"(?<=[a-z])(?=[A-Z])", "_",
+                              record["native_name"])
+                prefix = name.split("_", 1)[0].casefold()
+                if (3 <= len(prefix) <= 24 and
+                        prefix.isalnum() and prefix in _tokens(name)):
+                    prefixes.add(prefix)
+            result["host_granted_action_prefixes"] = []
+            for prefix in sorted(prefixes):
+                if len(result["host_granted_action_prefixes"]) >= 32:
+                    break
+                candidate = dict(result)
+                candidate["host_granted_action_prefixes"] = [
+                    *result["host_granted_action_prefixes"], prefix]
+                candidate["terms_are_search_hints_not_execution_grants"] = True
+                candidate["action_prefixes_may_be_incomplete"] = True
+                # Reserve headroom for ordinary JSON serializers that add
+                # whitespace and the terminal truncation flag. The public
+                # overview remains <=900 bytes even without compact encoding.
+                if len(json.dumps(candidate).encode("utf-8")) <= 860:
+                    result["host_granted_action_prefixes"].append(prefix)
+            result["action_prefixes_may_be_incomplete"] = (
+                len(result["host_granted_action_prefixes"]) < len(prefixes))
             result["terms_are_search_hints_not_execution_grants"] = True
         return result
 

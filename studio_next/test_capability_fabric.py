@@ -1,5 +1,6 @@
 """Adversarial tests of domain-independent discovery; no neural creativity claims."""
 import json
+from pathlib import Path
 from types import SimpleNamespace
 import unittest
 
@@ -51,6 +52,10 @@ class CapabilityFabricTests(unittest.TestCase):
         self.assertIn("timeline", terms)
         self.assertIn("asset", terms)
         self.assertIn("project", terms)
+        self.assertIn("import", expanded["host_granted_action_prefixes"])
+        self.assertIn("create", expanded["host_granted_action_prefixes"])
+        self.assertNotIn("secret", expanded["host_granted_action_prefixes"])
+        self.assertFalse(expanded["action_prefixes_may_be_incomplete"])
         self.assertNotIn("secret", terms)
         self.assertNotIn("erase", terms)
         self.assertLessEqual(len(terms), 16)
@@ -64,6 +69,55 @@ class CapabilityFabricTests(unittest.TestCase):
         with self.assertRaises(CapabilityContractError):
             fabric.resolve("native/secret_destructive_erase_entire_archive",
                            revision=fabric.revision)
+
+    def test_real_authorized_editor_exposes_rare_import_without_creative_templates(self):
+        # The exact model artifact #41160412292 saw the 16 most frequent
+        # host tokens but not the rare 'import' action; it picked add instead.
+        # Read the actual authorized Velorn profile, never names invented by
+        # this model or untrusted tool descriptions.
+        path = (Path(__file__).resolve().parents[1] /
+                "engines" / "velorn" / "editor.example.json")
+        grants = json.loads(path.read_text())["allowed_tools"]
+        granted = [tool(name, "untrusted: no name-derived secrets")
+                   for name in grants]
+        fabric = CapabilityFabric({"native": (granted, grants)})
+        expanded = fabric.overview(include_search_facets=True)
+        self.assertNotIn("import", expanded["host_granted_search_terms"])
+        self.assertIn("import", expanded["host_granted_action_prefixes"])
+        self.assertIn("save", expanded["host_granted_action_prefixes"])
+        self.assertIn("get", expanded["host_granted_action_prefixes"])
+        self.assertFalse(expanded["action_prefixes_may_be_incomplete"])
+        self.assertLessEqual(len(json.dumps(expanded).encode("utf-8")), 900)
+        self.assertEqual(fabric.overview().get("host_granted_action_prefixes"),
+                         None)
+        self.assertEqual(fabric.search("import_asset_from_path")["matches"][0]["id"],
+                         "native/import_asset_from_path")
+
+    def test_host_action_facets_are_budgeted_and_cannot_reveal_ungranted_names(self):
+        candidates = [tool("action"+str(i)+"_"+"x"*24)
+                      for i in range(72)]
+        grants = {x.name: "write" for x in candidates}
+        hidden = tool("secret_ungranted_wipe_everything")
+        fabric = CapabilityFabric({"native": (candidates+[hidden], grants)})
+        overview = fabric.overview(include_search_facets=True)
+        self.assertLessEqual(len(json.dumps(overview).encode("utf-8")), 900)
+        self.assertNotIn("secret", json.dumps(overview))
+        self.assertLessEqual(len(overview["host_granted_action_prefixes"]), 32)
+        self.assertTrue(overview["action_prefixes_may_be_incomplete"])
+        self.assertEqual(overview["host_granted_action_prefixes"],
+                         fabric.overview(include_search_facets=True)
+                         ["host_granted_action_prefixes"])
+
+    def test_unicode_tool_names_do_not_expand_escaped_host_overview_budget(self):
+        # Default JSON escaping can turn one Unicode letter into six bytes.
+        # No amount of invented model text grants extra output or tool rights.
+        items = [tool("関数" + chr(0x4e00 + i) + "_表示") for i in range(35)]
+        fabric = CapabilityFabric({"native": (
+            items, {item.name: "read" for item in items})})
+        overview = fabric.overview(include_search_facets=True)
+        self.assertLessEqual(len(json.dumps(overview).encode("utf-8")), 900)
+        self.assertEqual(fabric.overview().get("host_granted_action_prefixes"),
+                         None)
 
     def test_only_actual_installed_and_host_granted_apis_can_be_exposed(self):
         f = CapabilityFabric({
