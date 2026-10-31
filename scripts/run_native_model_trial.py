@@ -262,7 +262,8 @@ async def trial(args, lock, artifacts, command):
         async with stdio_client(StdioServerParameters(command='node', args=params, cwd=ROOT), errlog=log) as (read, write):
             async with ClientSession(read, write, read_timeout_seconds=180) as session:
                 await session.initialize()
-                outcome = await asyncio.wait_for(NativeCreativeControl(session, model, max_turns=48,
+                try:
+                    outcome = await asyncio.wait_for(NativeCreativeControl(session, model, max_turns=48,
                     receipt_path=artifacts / 'native-journal.jsonl',
                     host_tool_access=host, catalog_mode="indexed",
                     host_preconditions={
@@ -291,6 +292,21 @@ async def trial(args, lock, artifacts, command):
                     required_evidence=completion_evidence,
                     host_content_revision_tools=host_content_revision_tools).run(brief),
                     timeout=2400)
+                except Exception as trial_error:
+                    # A disk-full/write failure while preserving a diagnostic
+                    # must never mask the actual editor/model failure.
+                    try:
+                        preserve_native_trial_failure_audit(
+                            artifacts, host_tool_access=host,
+                            expected_required_evidence=completion_evidence,
+                            host_content_revision_tools=host_content_revision_tools)
+                    except Exception as audit_error:
+                        trial_error.add_note(
+                            "Partial native audit preservation failed: " +
+                            type(audit_error).__name__)
+                    # An incomplete or timed-out run is *still a failure*.
+                    # Never let an audited prefix masquerade as a movie.
+                    raise
     audit = audit_native_journal(
         read_native_journal(artifacts / 'native-journal.jsonl'),
         host_tool_access=host, expected_required_evidence=completion_evidence,
@@ -404,6 +420,54 @@ async def trial(args, lock, artifacts, command):
                 host_verified_export_windows,
             'audit': audit,
             'acceptance_note': 'Source-chain and model-operation evidence only, not artistic acceptance'}
+
+
+
+def preserve_native_trial_failure_audit(
+        artifacts, *, host_tool_access, expected_required_evidence,
+        host_content_revision_tools):
+    """Preserve independently checked *partial* journal on trial failure.
+
+    A 40-minute CPU model budget may cancel an inference after valid previous
+    editor calls. Failure must retain an independently verifiable journal and
+    explicit NOT-complete metadata, never manufacture a finish, export or
+    creative approval. No native command is replayed.
+    """
+    artifacts = Path(artifacts)
+    ledger_path = artifacts / "native-journal.jsonl"
+    if not ledger_path.is_file():
+        return {"partial_journal_present": False,
+                "partial_journal_structurally_verified": False}
+    try:
+        checked = audit_native_journal(
+            read_native_journal(ledger_path),
+            host_tool_access=host_tool_access,
+            expected_required_evidence=expected_required_evidence,
+            host_content_revision_tools=host_content_revision_tools)
+        if (not isinstance(checked, dict) or
+                checked.get("journal_chain_structurally_valid") is not True):
+            raise ValueError("Partial native journal auditor did not verify its chain")
+    except Exception as exc:
+        result = {
+            "partial_journal_present": True,
+            "partial_journal_structurally_verified": False,
+            "partial_journal_audit_error_type": type(exc).__name__,
+            "technical_trial_completed": False,
+        }
+        (artifacts / "journal-audit-partial.json").write_text(
+            json.dumps(result, indent=2))
+        return result
+    result = {
+        **checked,
+        "partial_journal_present": True,
+        "partial_journal_structurally_verified": True,
+        "technical_trial_completed": False,
+        "artistic_quality_approved": False,
+        "incomplete_trial_no_native_write_replay": True,
+    }
+    (artifacts / "journal-audit-partial.json").write_text(
+        json.dumps(result, indent=2))
+    return result
 
 
 def main():
