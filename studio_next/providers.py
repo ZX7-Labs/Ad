@@ -208,7 +208,9 @@ class LocalCreativeModel:
                     str(exc).startswith("Duplicate local model JSON field: ")
                     else "invalid_json")
             # Do not leak the model's possibly private key/value in logs.
-            raise LocalModelOutputError(code) from exc
+            # The original parser error can include a model-authored key
+            # that contains owner-private data. Suppress exception chaining.
+            raise LocalModelOutputError(code) from None
         if not isinstance(parsed,dict):
             raise LocalModelOutputError("non_object_json")
         return parsed
