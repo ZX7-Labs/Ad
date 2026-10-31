@@ -299,6 +299,47 @@ def _native_tool_hints(available):
     return hints
 
 
+def _source_attested_native_admission(tool_name: str, admission: dict) -> dict:
+    """Add only proven pinned-editor constraints to a PRIVATE schema copy.
+
+    Source: Velorn b3c02ad src/services/mcpActions.js
+    normalizeClipLabelColor + handleAddTimelineMarkers, and
+    electron/mcpServer.js add_timeline_markers inputSchema. The published
+    schema describes #RRGGBB but does not enforce its lexical shape. This
+    correction is pre-dispatch ONLY; never mutate the real MCP schema, choose
+    an edit, normalize a model value or retry an uncertain write.
+    """
+    if tool_name != "add_timeline_markers":
+        return admission
+    fields = admission.get("properties") if isinstance(admission, dict) else None
+    outer = fields.get("color") if isinstance(fields, dict) else None
+    marker_group = fields.get("markers") if isinstance(fields, dict) else None
+    items = marker_group.get("items") if isinstance(marker_group, dict) else None
+    nested = items.get("properties") if isinstance(items, dict) else None
+    inner = nested.get("color") if isinstance(nested, dict) else None
+    if (not isinstance(fields, dict) or
+            not isinstance(outer, dict) or outer.get("type") != "string" or
+            not isinstance(outer.get("description"), str) or
+            "#RRGGBB" not in outer["description"] or
+            not isinstance(marker_group, dict) or marker_group.get("type") != "array" or
+            not isinstance(items, dict) or items.get("type") != "object" or
+            not isinstance(inner, dict) or inner.get("type") != "string" or
+            not isinstance(inner.get("description"), str) or
+            "#RRGGBB" not in inner["description"] or
+            "pattern" in outer or "pattern" in inner):
+        # Unreviewed future pinned engine schema must not inherit these
+        # constraints by assumption. Reject this adapter configuration.
+        raise NativeCreativeControlError(
+            "Native marker source/schema mismatch; pinned editor review required")
+    # The underlying editor permits an empty/omitted color (host default),
+    # or a trimmed # followed by exactly 6 hex digits. Never add '#'
+    # automatically: an ambiguous/invalid model value is not an edit.
+    pattern = r"^\s*(?:#[0-9a-fA-F]{6})?\s*$"
+    outer["pattern"] = pattern
+    inner["pattern"] = pattern
+    return admission
+
+
 def _selected_native_input_hints(tool_names, live_tools):
     """Bounded parameter typing from granted, *currently selected* tools.
 
@@ -756,6 +797,7 @@ class NativeCreativeControl:
                     "additionalProperties" not in admission and
                     "patternProperties" not in admission):
                 admission["additionalProperties"] = False
+            admission = _source_attested_native_admission(native_name, admission)
             cls = jsonschema.validators.validator_for(admission)
             cls.check_schema(admission)
             validators[native_name] = cls(admission)
@@ -1172,6 +1214,11 @@ class NativeCreativeControl:
                     }
                     if len(_wire(schema).encode("utf-8")) <= 8192:
                         self._last_preflight_feedback["actual_host_input_schema"] = schema
+                    if (native_name == "add_timeline_markers" and
+                            invalid.validator == "pattern"):
+                        self._last_preflight_feedback["source_attested_format"] = (
+                            "Optional marker color is empty or #RRGGBB; "
+                            "published native input schema omits this lexical check")
                     else:
                         self._last_preflight_feedback["request_schema_with_describe"] = True
                     self._append({"kind": "model_action_rejected", "turn": turn,
@@ -1215,6 +1262,71 @@ class NativeCreativeControl:
                                       "validation_keyword": "host_precondition",
                                       "schema_location": ",".join(failures)[:512],
                                       "no_native_dispatch": True})
+                        continue
+                # The pinned native editor distinguishes owner-supplied raw
+                # media paths from assets actually imported into this project's
+                # catalog. Real Qwen3.5-2B trial #41182789249 fabricated a
+                # plausible assetId and received an uncertain WRITE error.
+                # Observe real project object IDs via a granted READ before
+                # submitting an asset-placement write. No imported asset, no
+                # invented ID, no hidden automatic import or creative plan.
+                from .native_asset_identity import (
+                    requires_native_asset_inventory, assess_native_asset_selection)
+                if (requires_native_asset_inventory(native_name) and
+                        self.host_tool_access is not None and
+                        self.host_tool_access.get("get_assets") == "read" and
+                        "get_assets" in validators and
+                        validators["get_assets"].is_valid({"limit": 1000})):
+                    try:
+                        raw_assets = await self.session.call_tool(
+                            "get_assets", {"limit": 1000})
+                        if _field(raw_assets, "is_error",
+                                  _field(raw_assets, "isError", False)):
+                            raise NativeCreativeControlError(
+                                "Native project asset inventory read returned an error")
+                        inventory_texts, inventory_images, inventory_audio = (
+                            _native_content(raw_assets))
+                        if (len(inventory_texts) != 1 or
+                                inventory_images or inventory_audio):
+                            raise NativeCreativeControlError(
+                                "Native project asset inventory must be a single bounded receipt")
+                        inventory = _strict_receipt(
+                            inventory_texts, "native project asset inventory")
+                    except Exception as exc:
+                        # Only the granted READ call and its parsing are
+                        # recoverable. A WRITE has not been submitted.
+                        self._last_preflight_feedback = {
+                            "tool": native_name,
+                            "validation_keyword": "native_asset_inventory_unverified",
+                            "no_native_dispatch": True,
+                            "source_asset_paths_are_not_project_asset_ids": True}
+                        self._append({
+                            "kind": "host_native_asset_inventory_read_error",
+                            "turn": turn, "tool": "get_assets",
+                            "error_type": type(exc).__name__,
+                            "host_attested_read_only": True,
+                            "no_native_dispatch": True})
+                        continue
+                    self._append({
+                        "kind": "host_native_asset_inventory_observed",
+                        "turn": turn, "tool": "get_assets",
+                        "text_sha256": hashlib.sha256(
+                            inventory_texts[0].encode()).hexdigest(),
+                        "host_attested_read_only": True,
+                        "no_native_dispatch": True})
+                    missing_asset = assess_native_asset_selection(
+                        native_name, args["inputs"], inventory)
+                    if missing_asset is not None:
+                        self._last_preflight_feedback = {
+                            "tool": native_name, **missing_asset}
+                        self._append({
+                            "kind": "model_action_rejected", "turn": turn,
+                            **timing, "tool": native_name,
+                            "inputs_sha256": hashlib.sha256(
+                                _wire(args["inputs"]).encode()).hexdigest(),
+                            "validation_keyword": missing_asset[
+                                "validation_keyword"],
+                            "no_native_dispatch": True})
                         continue
                 self._last_preflight_feedback = None
                 self._append({"kind": "native_tool_submitted", "turn": turn,
