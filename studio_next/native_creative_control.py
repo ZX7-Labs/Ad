@@ -1634,7 +1634,17 @@ class NativeCreativeControl:
                                 "no_automatic_retry": True})
                             outcome = "native_error_requires_state_reconciliation"
                             break
-                        if (success is not True or
+                        # The pinned Velorn MCP wrapper sometimes emits
+                        # success:true around a renderer result. A nested
+                        # success:false (or explicit nested error) contradicts
+                        # the wrapper; it is not application write proof.
+                        # Never silently accept a failed inner mutation merely
+                        # because the outer MCP tool returned a success field.
+                        nested_failure = (
+                            isinstance(host_result, dict) and
+                            (host_result.get("success") is False or
+                             host_result.get("error") not in (None, "", False)))
+                        if (success is not True or nested_failure or
                                 (isinstance(host_result, dict) and
                                  "previewOnly" in host_result and preview is not False)):
                             # No application-level acknowledgment, or the host
