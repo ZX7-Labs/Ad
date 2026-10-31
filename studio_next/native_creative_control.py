@@ -617,7 +617,8 @@ class NativeCreativeControl:
                 not validators["get_assets"].is_valid({"limit": 1000}) or
                 not self.events or self.events[-1].get("kind") not in
                 ("host_project_bootstrap_observation",
-                 "host_native_state_progress_observation")):
+                 "host_native_state_progress_observation",
+                 "host_project_post_write_observation")):
             self._host_source_frontier = None
             return
         candidates = self._capabilities.affordance_frontier(
@@ -2051,6 +2052,12 @@ class NativeCreativeControl:
                                 "must_inspect_native_project": True}
                             break
                         if observation == "present":
+                            # The dedicated project-create reconciliation path
+                            # suppresses normal post-write sensing. Read the
+                            # native asset inventory here, before the next
+                            # neural decision, with no automatic model write.
+                            await self._offer_source_attested_empty_asset_frontier(
+                                validators, turn=turn)
                             break
                         if read_attempt == 2:
                             # An ACK plus two absent observations is
