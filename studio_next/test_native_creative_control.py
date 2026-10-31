@@ -1926,7 +1926,7 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_ambiguous_host_search_examples_can_be_described_then_selected(self):
         """Real tied tool matches are inspectable but not invokable by default."""
-        from studio_next.native_creative_audit import audit_native_journal
+        from studio_next.native_creative_audit import audit_native_journal, NativeJournalError
         session = FakeSession()
         session.tools = [
             SimpleNamespace(name=name, description="Edit native project content",
