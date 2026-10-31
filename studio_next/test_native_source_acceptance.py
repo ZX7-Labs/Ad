@@ -117,6 +117,13 @@ class PhysicalNativeSourceAcceptanceTests(unittest.TestCase):
         self.save()
         self.assertFalse(self.verify()["actual_original_video_used_on_native_timeline"])
 
+    def test_untrusted_project_metadata_cannot_select_extra_host_paths(self):
+        self.project["assets"][0]["settings"]["sourcePath"] = (
+            "/not-owner-provided/unrelated-private-file.mp4")
+        self.save()
+        result = self.verify()
+        self.assertFalse(result["actual_original_video_used_on_native_timeline"])
+
     def test_changed_original_hash_fails_closed(self):
         self.src.write_bytes(b"changed-after-attestation")
         with self.assertRaisesRegex(ValueError, "changed"):
