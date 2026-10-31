@@ -14,7 +14,9 @@ from studio_next.native_state_evidence import (
     pinned_snapshot_summary, source_reviewed_preview_is_readonly,
     pinned_direct_native_plan_preview, contradictory_nested_write_receipt,
     _PINNED_NO_IMAGE_SEQUENCE_ERROR,
-    pinned_forced_image_sequence_absent_error)
+    pinned_forced_image_sequence_absent_error,
+    pinned_transition_missing_clips_prewrite_error,
+    _PINNED_TRANSITION_CLIPS_ABSENT_ERROR)
 from studio_next.native_creative_audit import audit_native_journal, NativeJournalError
 from studio_next.native_creative_control import NativeCreativeControl
 from studio_next.test_native_creative_control import (
@@ -149,6 +151,35 @@ class SourcePreviewContracts(unittest.TestCase):
         self.assertIn(
             "this.runRendererActionTool('import_asset_from_path', args",
             native_server)
+
+    def test_transition_missing_clips_error_is_exact_source_proven_no_write(self):
+        source = (Path(__file__).resolve().parents[1] /
+                  "third_party/velorn/electron/mcpServer.js")
+        text = source.read_text(encoding="utf-8")
+        first = text.index("async addTransition(")
+        last = text.index("async updateTransition(", first)
+        method = text[first:last]
+        source_error = _PINNED_TRANSITION_CLIPS_ABSENT_ERROR
+        self.assertIn("return errorResult('" + source_error + "')", method)
+        self.assertLess(method.index("return errorResult('" + source_error + "')"),
+                        method.index("await this.performAction({"))
+        self.assertIn("case 'add_transition':", text)
+        self.assertIn("return this.addTransition(snapshot, args)", text)
+        def result(messages, error=True):
+            return SimpleNamespace(is_error=error, content=[
+                SimpleNamespace(type="text", text=message) for message in messages])
+        exact = result([source_error])
+        self.assertTrue(pinned_transition_missing_clips_prewrite_error(
+            "add_transition", exact))
+        for bad in (
+            ("export_timeline", exact),
+            ("add_transition", result([source_error], error=False)),
+            ("add_transition", result([source_error, source_error])),
+            ("add_transition", result(["Error: " + source_error])),
+            ("add_transition", result(["Could not add transition"])),
+        ):
+            with self.subTest(case=bad[0], receipt=str(bad[1].content)[:90]):
+                self.assertFalse(pinned_transition_missing_clips_prewrite_error(*bad))
 
     def test_only_exact_error_content_is_recoverable(self):
         value = _PINNED_NO_IMAGE_SEQUENCE_ERROR
