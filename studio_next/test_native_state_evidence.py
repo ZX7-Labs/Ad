@@ -12,7 +12,8 @@ from types import SimpleNamespace
 
 from studio_next.native_state_evidence import (
     pinned_snapshot_summary, source_reviewed_preview_is_readonly,
-    contradictory_nested_write_receipt, _PINNED_NO_IMAGE_SEQUENCE_ERROR,
+    pinned_direct_native_plan_preview, contradictory_nested_write_receipt,
+    _PINNED_NO_IMAGE_SEQUENCE_ERROR,
     pinned_forced_image_sequence_absent_error)
 from studio_next.native_creative_audit import audit_native_journal, NativeJournalError
 from studio_next.native_creative_control import NativeCreativeControl
@@ -51,6 +52,50 @@ class SourcePreviewContracts(unittest.TestCase):
             "add_asset_to_timeline", {}, {"type": "object", "properties": {}}))
         self.assertFalse(source_reviewed_preview_is_readonly(
             "add_asset_to_timeline", {"previewOnly": 1}, schema))
+
+    def test_direct_pinned_plan_preview_requires_full_source_attestation(self):
+        import copy
+        schema = {"type": "object", "properties": {
+            "previewOnly": {"type": "boolean"}}}
+        for tool in ("add_asset_to_timeline", "add_assets_to_timeline",
+                     "add_solid_color", "add_adjustment_clip"):
+            with self.subTest(tool=tool):
+                receipt = {
+                    "previewOnly": True, "action": tool,
+                    "plan": {"previewOnly": True, "action": tool},
+                    "suggestedApplyCall": {
+                        "tool": tool, "arguments": {"previewOnly": False}},
+                }
+                self.assertTrue(pinned_direct_native_plan_preview(
+                    tool, {}, schema, receipt))
+                self.assertTrue(pinned_direct_native_plan_preview(
+                    tool, {"previewOnly": True}, schema, receipt))
+                self.assertFalse(pinned_direct_native_plan_preview(
+                    tool, {"previewOnly": False}, schema, receipt))
+                self.assertFalse(pinned_direct_native_plan_preview(
+                    tool, {}, {"type": "object", "properties": {}}, receipt))
+                self.assertFalse(pinned_direct_native_plan_preview(
+                    "delete_clips", {}, schema, receipt))
+                mutations = (
+                    ("success", True), ("success", False),
+                    ("result", {"action": tool, "previewOnly": True}),
+                    ("previewOnly", False), ("previewOnly", "true"),
+                    ("action", "delete_clips"), ("plan", {}),
+                    ("plan", {"action": tool, "previewOnly": False}),
+                    ("plan", {"action": "delete_clips", "previewOnly": True}),
+                    ("suggestedApplyCall", None),
+                    ("suggestedApplyCall", {
+                        "tool": "delete_clips", "arguments": {"previewOnly": False}}),
+                    ("suggestedApplyCall", {
+                        "tool": tool, "arguments": {"previewOnly": True}}),
+                    ("error", "maybe wrote"),
+                )
+                for field, altered in mutations:
+                    with self.subTest(field=field, altered=repr(altered)):
+                        forged = copy.deepcopy(receipt)
+                        forged[field] = altered
+                        self.assertFalse(pinned_direct_native_plan_preview(
+                            tool, {}, schema, forged))
 
     def test_pinned_native_editor_source_guarantees_preview_never_performs_action(self):
         # This safety exception may NOT silently survive a third-party editor
