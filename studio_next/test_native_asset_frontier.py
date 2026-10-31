@@ -94,6 +94,63 @@ class ActualHostAssetProducerFrontierTests(unittest.IsolatedAsyncioTestCase):
             audit_native_journal(forged, host_tool_access=access)
         self.assertFalse(result["native_editing_capability_complete"])
 
+    async def test_real_empty_project_suggests_discoverable_producer_before_bad_placement(self):
+        # The physical Qwen run #41204331429 never attempted placement, so
+        # post-rejection hints alone cannot help that failure mode. A trusted
+        # post-save project READ with 0 assets/0 clips can inform the model
+        # without making any producer executable before explicit search.
+        editor = HostObservedEmptyAssetSession()
+        editor.tools.append(SimpleNamespace(
+            name="save_project",
+            description="Save existing project state; no media added",
+            input_schema={"type": "object", "properties": {}}))
+        model = ScriptedModel([
+            decision("search", query="save_project"),
+            decision("invoke", tool="save_project", inputs={}),
+            decision("search", query="import_asset_from_path"),
+        ])
+        access = self.grants(editor)
+        result = await NativeCreativeControl(
+            editor, model, max_turns=3, catalog_mode="indexed",
+            host_tool_access=access,
+            host_possible_effects={
+                "import_asset_from_path": ["project_asset_available"],
+            }).run("Choose how to edit the owner's original video")
+        self.assertEqual(result["status"], "turn_budget_exhausted")
+        fact = model.observed[2]["host_observed_potential_asset_producers"]
+        self.assertEqual(fact["tool_names_for_search_only"],
+                         ["import_asset_from_path"])
+        self.assertTrue(fact["host_did_not_choose_or_execute_an_edit"])
+        self.assertEqual(fact["observed_native_asset_count"], 0)
+        self.assertNotIn("import_asset_from_path",
+                         model.observed[2]["selectable_native_tools"])
+        self.assertNotIn("import_asset_from_path",
+                         [name for name, _ in editor.calls])
+        self.assertTrue(audit_native_journal(
+            result["events"], host_tool_access=access)[
+                "journal_chain_structurally_valid"])
+
+    async def test_empty_state_hint_does_not_invent_a_producer_or_grant(self):
+        editor = HostObservedEmptyAssetSession()
+        editor.tools.append(SimpleNamespace(
+            name="save_project", description="Save project",
+            input_schema={"type": "object", "properties": {}}))
+        model = ScriptedModel([
+            decision("search", query="save_project"),
+            decision("invoke", tool="save_project", inputs={}),
+            decision("search", query="timeline"),
+        ])
+        access = self.grants(editor)
+        result = await NativeCreativeControl(
+            editor, model, max_turns=3, catalog_mode="indexed",
+            host_tool_access=access, host_possible_effects={}).run(
+                "Original video and native editing")
+        self.assertNotIn("host_observed_potential_asset_producers",
+                         model.observed[2])
+        self.assertTrue(audit_native_journal(
+            result["events"], host_tool_access=access)[
+                "journal_chain_structurally_valid"])
+
     async def test_no_host_producer_effect_means_no_fake_remediation_tool(self):
         editor = HostObservedEmptyAssetSession()
         model = ScriptedModel([
