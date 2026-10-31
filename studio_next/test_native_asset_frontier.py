@@ -10,6 +10,7 @@ import unittest
 from types import SimpleNamespace
 
 from studio_next.native_creative_control import NativeCreativeControl
+from studio_next.native_state_evidence import _PINNED_NO_IMAGE_SEQUENCE_ERROR
 from studio_next.native_creative_audit import audit_native_journal, NativeJournalError
 from studio_next.test_native_creative_control import ScriptedModel, decision
 from studio_next.test_native_asset_identity import LiveCatalogSession
@@ -185,8 +186,20 @@ class ActualHostAssetProducerFrontierTests(unittest.IsolatedAsyncioTestCase):
             audit_native_journal(forged, host_tool_access=access)
         self.assertFalse(result["native_editing_capability_complete"])
 
-    async def test_forced_image_sequence_on_video_is_rejected_without_native_import(self):
-        editor = HostObservedEmptyAssetSession()
+    async def test_forced_image_sequence_error_can_be_corrected_without_replay(self):
+        # No pathname/extension is interpreted by the BODY. Only the exact
+        # actual source-pinned editor error proves no import happened.
+        class SourceAttestedSequenceSession(HostObservedEmptyAssetSession):
+            async def call_tool(self, name, arguments):
+                if (name == "import_asset_from_path" and
+                        arguments.get("asSequence") is True):
+                    self.calls.append((name, arguments))
+                    return SimpleNamespace(is_error=True, content=[
+                        SimpleNamespace(
+                            type="text",
+                            text=_PINNED_NO_IMAGE_SEQUENCE_ERROR)])
+                return await super().call_tool(name, arguments)
+        editor = SourceAttestedSequenceSession()
         source_path = "/trusted/owner/staging/original.mp4"
         model = ScriptedModel([
             decision("search", query="import_asset_from_path"),
@@ -195,22 +208,88 @@ class ActualHostAssetProducerFrontierTests(unittest.IsolatedAsyncioTestCase):
             decision("invoke", tool="import_asset_from_path", inputs={
                 "path": source_path, "asSequence": False, "previewOnly": False}),
         ])
-        # The exact fixture schema must advertise asSequence for this test;
-        # the production editor does, and the trial failure proved it can be
-        # chosen by a genuine local neural model.
         entry = next(tool for tool in editor.tools
                      if tool.name == "import_asset_from_path")
         entry.input_schema["properties"]["asSequence"] = {"type": "boolean"}
         access = self.grants(editor)
         outcome = await NativeCreativeControl(
             editor, model, max_turns=3, catalog_mode="indexed",
-            host_tool_access=access).run("Edit an original imported video")
+            host_tool_access=access).run("Edit original target footage")
         self.assertEqual(outcome["status"], "turn_budget_exhausted")
         self.assertEqual(model.observed[2]["last_rejected_native_action_feedback"][
             "validation_keyword"], "native_sequence_requires_image_frames")
+        imports = [args for name, args in editor.calls
+                   if name == "import_asset_from_path"]
+        self.assertEqual(imports, [
+            {"path": source_path, "asSequence": True},
+            {"path": source_path, "asSequence": False,
+             "previewOnly": False},
+        ])
+        events = [x for x in outcome["events"] if x["kind"] ==
+                  "native_source_preimport_reported_error"]
+        self.assertEqual(len(events), 1)
+        self.assertTrue(events[0]["host_source_proved_no_import_attempt"])
+        self.assertTrue(audit_native_journal(
+            outcome["events"], host_tool_access=access)[
+                "journal_chain_structurally_valid"])
+        forged = copy.deepcopy(outcome["events"])
+        next(x for x in forged if x["kind"] ==
+             "native_source_preimport_reported_error")["error_sha256"] = "0" * 64
+        with self.assertRaises(NativeJournalError):
+            audit_native_journal(forged, host_tool_access=access)
+
+    async def test_import_with_video_like_directory_name_is_not_preemptively_blocked(self):
+        editor = HostObservedEmptyAssetSession()
+        entry = next(t for t in editor.tools
+                     if t.name == "import_asset_from_path")
+        entry.input_schema["properties"]["asSequence"] = {"type": "boolean"}
+        model = ScriptedModel([
+            decision("search", query="import_asset_from_path"),
+            decision("invoke", tool="import_asset_from_path", inputs={
+                # Could be a directory of numbered image frames, not an MP4.
+                "path": "/source/archive.mkv",
+                "asSequence": True, "previewOnly": False}),
+        ])
+        access = self.grants(editor)
+        outcome = await NativeCreativeControl(
+            editor, model, max_turns=2, catalog_mode="indexed",
+            host_tool_access=access).run("Import original numbered image sequence")
         self.assertEqual([args for name, args in editor.calls
                           if name == "import_asset_from_path"], [{
-            "path": source_path, "asSequence": False, "previewOnly": False}])
+            "path": "/source/archive.mkv", "asSequence": True,
+            "previewOnly": False}])
+        self.assertFalse(any(x["kind"] ==
+                             "native_source_preimport_reported_error"
+                             for x in outcome["events"]))
+
+    async def test_other_native_import_errors_remain_uncertain_writes(self):
+        class OtherErrorSession(HostObservedEmptyAssetSession):
+            async def call_tool(self, name, arguments):
+                if name == "import_asset_from_path":
+                    self.calls.append((name, arguments))
+                    return SimpleNamespace(is_error=True, content=[
+                        SimpleNamespace(
+                            type="text",
+                            text="import_asset_from_path failed: Disk full")])
+                return await super().call_tool(name, arguments)
+        editor = OtherErrorSession()
+        entry = next(t for t in editor.tools
+                     if t.name == "import_asset_from_path")
+        entry.input_schema["properties"]["asSequence"] = {"type": "boolean"}
+        model = ScriptedModel([
+            decision("search", query="import_asset_from_path"),
+            decision("invoke", tool="import_asset_from_path", inputs={
+                "path": "/source/footage.mp4",
+                "asSequence": True, "previewOnly": False}),
+        ])
+        access = self.grants(editor)
+        outcome = await NativeCreativeControl(
+            editor, model, max_turns=2, catalog_mode="indexed",
+            host_tool_access=access).run("Import footage")
+        self.assertEqual(outcome["status"],
+                         "native_error_requires_state_reconciliation")
+        self.assertTrue(any(x["kind"] == "native_tool_reported_error"
+                            for x in outcome["events"]))
         self.assertTrue(audit_native_journal(
             outcome["events"], host_tool_access=access)[
                 "journal_chain_structurally_valid"])
