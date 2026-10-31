@@ -80,3 +80,15 @@ def pinned_snapshot_summary(snapshot):
         "snapshot_may_lag_app_state": True,
         "creative_content_or_export_quality_approved": False,
     }
+
+
+def contradictory_nested_write_receipt(value):
+    """A native MCP wrapper's success:true is insufficient if its result fails.
+
+    Pinned Velorn's runRendererActionTool can derive a wrapper boolean from
+    result.success !== false; ambiguous nonboolean child fields are not
+    independent proof that the actual renderer changed the project.
+    """
+    return (isinstance(value, dict) and
+            (("success" in value and value["success"] is not True) or
+             value.get("error") not in (None, "", False)))
