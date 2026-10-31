@@ -119,6 +119,37 @@ class ExternalOperatorTests(unittest.TestCase):
                 self.assertEqual(item["kind"], kind)
                 self.assertEqual((model.session_dir / item["file"]).read_bytes(), data)
 
+    def test_changed_observation_cannot_authorize_a_native_decision(self):
+        model = self.model()
+        image = b"\\x89PNG\\r\\n\\x1a\\n" + b"pixels" * 12
+        result = {}
+
+        def work():
+            try:
+                result["decision"] = model.decide_with_images(
+                    {"source_sha256": hashlib.sha256(image).hexdigest()},
+                    [("image/png", image)])
+            except Exception as exc:
+                result["error"] = exc
+
+        thread = threading.Thread(target=work)
+        thread.start()
+        request_path = model.session_dir / "request-0001.json"
+        for _ in range(190):
+            if request_path.exists():
+                break
+            time.sleep(0.01)
+        self.assertTrue(request_path.exists())
+        request = json.loads(request_path.read_bytes())
+        media_path = model.session_dir / request["media"][0]["file"]
+        media_path.write_bytes(b"\\x89PNG\\r\\n\\x1a\\n" + b"CHANGED" * 12)
+        self.answer(model, 1, {"action": "search",
+            "arguments": {"query": "editor"}, "reason": "untrusted observation"})
+        thread.join(3)
+        self.assertFalse(thread.is_alive())
+        self.assertIsInstance(result.get("error"), ExternalOperatorError)
+        self.assertNotIn("decision", result)
+
     def test_wrong_media_or_duplicate_reply_never_enters_editor(self):
         model = self.model()
         with self.assertRaises(ExternalOperatorError):
