@@ -17,6 +17,15 @@ import json
 _SOURCE_REVIEWED_NONMUTATING_PREVIEWS = frozenset({
     "add_asset_to_timeline", "add_assets_to_timeline", "add_solid_color",
     "add_adjustment_clip",
+    # Source-pinned direct preview handlers have an independent application
+    # plan, not the asset plan's nested {action, previewOnly} shape.
+    "add_transition", "update_transition", "remove_transitions",
+    "move_clips", "trim_clips",
+})
+
+_DIRECT_STRUCTURED_EDITOR_PLANS = frozenset({
+    "add_transition", "update_transition", "remove_transitions",
+    "move_clips", "trim_clips",
 })
 
 
@@ -107,10 +116,12 @@ def pinned_direct_native_plan_preview(name, inputs, native_schema, receipt):
     """Recognize only an actual pinned Velorn read-only direct plan receipt.
 
     electron/mcpServer.js:addAssetToTimeline/addAssetsToTimeline/addSolidColor/
-    addAdjustmentClip return a *top-level* {previewOnly, action, plan,
-    suggestedApplyCall}, not a generic nested `result` wrapper. The four
-    handlers return this object BEFORE performAction when previewOnly !==
-    false. This only classifies source-proven, host-selected READ-only
+    addAdjustmentClip and five transition/clip-edit handlers return
+    *top-level* {previewOnly, action, plan, suggestedApplyCall} BEFORE
+    performAction when previewOnly !== false. Native asset placement plans
+    include an inner action/previewOnly; transition/move/trim plans instead
+    contain semantic edit details and must not be forced into an unrelated
+    asset schema. This only classifies source-proven, host-selected READ-only
     previews; it never executes the proposed apply action or grants a write.
     The complete receipt was parsed with duplicate-key rejection upstream.
     """
@@ -127,10 +138,21 @@ def pinned_direct_native_plan_preview(name, inputs, native_schema, receipt):
         return False
     plan = receipt.get("plan")
     apply = receipt.get("suggestedApplyCall")
+    if name in _DIRECT_STRUCTURED_EDITOR_PLANS:
+        # Source plan is a typed description of the proposed transition or
+        # clip move; unlike the asset plan it has no action/previewOnly keys.
+        # A contradictory embedded action/previewOnly is rejected, not
+        # interpreted as a harmless ordinary preview.
+        plan_ok = (isinstance(plan, dict) and bool(plan) and
+                   plan.get("action", name) == name and
+                   plan.get("previewOnly", True) is True)
+    else:
+        plan_ok = (isinstance(plan, dict) and
+                   plan.get("action") == name and
+                   plan.get("previewOnly") is True)
     return (
-        isinstance(plan, dict) and plan.get("action") == name and
-        plan.get("previewOnly") is True and
-        isinstance(apply, dict) and apply.get("tool") == name and
+        plan_ok and isinstance(apply, dict) and
+        apply.get("tool") == name and
         isinstance(apply.get("arguments"), dict) and
         apply["arguments"].get("previewOnly") is False
     )
