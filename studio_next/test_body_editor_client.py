@@ -299,9 +299,16 @@ class LocalEditorClientTests(unittest.TestCase):
                           "tracks": [{"id": "video-1", "locked": False}],
                           "transitions": []}
             elif name == "extract_range" and arguments.get("previewOnly") is True:
-                result = {"previewOnly": True, "warnings": [],
-                          "plan": {"splitAtStart": [{"id": "native-a"}],
-                                   "splitAtEnd": [{"id": "native-a"}]}}
+                # Exact upstream mcpServer.runRendererActionTool response.
+                result = {"previewOnly": True, "action": "extract_range",
+                          "result": {"previewOnly": True, "action": "extract_range",
+                                     "warnings": [],
+                                     "plan": {
+                                         "splitAtStart": [{"id": "native-a"}],
+                                         "splitAtEnd": [{"id": "native-a"}]}},
+                          "suggestedApplyCall": {
+                              "tool": "extract_range",
+                              "arguments": {**arguments, "previewOnly": False}}}
             elif name == "extract_range" and arguments.get("previewOnly") is False:
                 result = {"success": True, "message": "native edit confirmed"}
             else:
