@@ -326,7 +326,7 @@ class LocalEditorClientTests(unittest.TestCase):
         self.assertTrue(self.requests[-2]["params"]["arguments"]["previewOnly"])
         self.assertFalse(self.requests[-1]["params"]["arguments"]["previewOnly"])
 
-    def test_native_razor_preview_is_not_a_write_or_a_lossy_split(self):
+    def test_source_attested_razor_preview_bypasses_only_lossy_write_preflight(self):
         # Pinned upstream condition is previewOnly !== false. A preview,
         # even of a keyframed/effects clip, must not require full write
         # preflight and must not be recast as a mutation by the BODY.
