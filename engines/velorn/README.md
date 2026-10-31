@@ -301,9 +301,12 @@ This is a **local-only, explicitly authorized operator mailbox**, not a cloned
 ChatGPT session or an alternative creative engine. It reuses the above editor,
 the exact native tool schemas and grants, and the existing
 `NativeCreativeControl` decision loop. It changes **only the inference seat**.
-Use it on a trusted machine where the separate operator can read/write its
-private session directory; do not put the mailbox, receipts, source media or
-credentials in GitHub, chat messages, or a network-shared directory.
+Use it only with **disposable, isolated projects/staging/outputs roots** in
+an owner-reviewed host config (never production projects). The separate operator
+must be authorized to read/write its private session directory on the **same
+machine/filesystem**; ChatGPT on another device cannot access that directory
+by default. Never put the mailbox, receipts, source media or credentials in
+GitHub, chat messages or a network-shared directory.
 
 ```sh
 umask 077
