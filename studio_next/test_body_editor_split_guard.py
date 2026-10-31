@@ -35,7 +35,7 @@ class NativeReadClient:
             payload = {"clips": [
                 {"id": c["id"], "type": c["type"],
                  "startTime": c["startTime"], "duration": c["duration"]}
-                for c in self.clips], "clipLimitApplied": None}
+                for c in self.clips], "clipLimitApplied": False}
             value = {**payload, "timeline": "Artist timeline"} if self.direct else {"timeline": payload}
         elif name == "inspect_clip":
             found = next(c for c in self.clips if c["id"] == arguments["clipId"])
