@@ -1024,6 +1024,54 @@ class NativeCreativeControl:
                         event.get("kind") == "native_tool_result"
                         for event in self.events),
                 }
+                # A physically observed zero-asset, zero-clip project is a
+                # factual missing input state, not an instruction to produce
+                # any particular scene or footage. After a genuine native
+                # get_project READ, expose the host-declared *possible*
+                # producer tool identities for model-directed discovery.
+                # The 2B trial #41204331429 repeatedly authored markers on
+                # an empty timeline without once searching for import. This
+                # does not make producers invokable, perform a read/write, or
+                # grant permission: the model must still SEARCH and INVOKE a
+                # source-schema/host-granted operation independently.
+                if (self._capabilities is not None and
+                        self.host_tool_access is not None and
+                        self._project_presence == "present" and
+                        isinstance(self._latest_native_state_facts, dict) and
+                        type(self._latest_native_state_facts.get(
+                            "native_project_asset_count")) is int and
+                        self._latest_native_state_facts[
+                            "native_project_asset_count"] == 0 and
+                        type(self._latest_native_state_facts.get(
+                            "current_timeline_clip_count")) is int and
+                        self._latest_native_state_facts[
+                            "current_timeline_clip_count"] == 0):
+                    possibilities = self._capabilities.affordance_frontier(
+                        trusted_facts={
+                            "project_open": True,
+                            "project_asset_available": False,
+                        }, namespace="native", limit=4)
+                    producer_names = []
+                    for candidate in possibilities["matches"]:
+                        identity = self._capabilities.resolve(
+                            candidate["id"],
+                            revision=self._capabilities.revision)
+                        name = identity["native_name"]
+                        if (identity["access"] == "write" and
+                                self.host_tool_access.get(name) == "write" and
+                                name in self.tools and
+                                not self._host_write_already_acknowledged(name)):
+                            producer_names.append(name)
+                    if producer_names:
+                        context["host_observed_potential_asset_producers"] = {
+                            "source": "host_authorized_native_get_project",
+                            "observed_native_asset_count": 0,
+                            "observed_current_timeline_clip_count": 0,
+                            "catalog_revision": self._capabilities.revision,
+                            "tool_names_for_search_only": producer_names,
+                            "native_snapshot_may_lag": True,
+                            "host_did_not_choose_or_execute_an_edit": True,
+                        }
                 # A small local brain should not have to infer what 60+
                 # native operation names mean. Offer genuine, bounded host
                 # descriptions only initially/after explicit discovery. This
