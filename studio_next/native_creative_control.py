@@ -1483,6 +1483,8 @@ class NativeCreativeControl:
                     digest, out_of_budget = _bounded_error_digest(result)
                     if (self.host_tool_access is not None and
                             self.host_tool_access[native_name] == "read"):
+                        if native_name == "get_project":
+                            self._latest_native_state_facts = None
                         # The explicit host-owned grant proves this call is
                         # read-only, not a write whose outcome is uncertain.
                         # Record bounded, private evidence and let the MODEL
@@ -1712,6 +1714,22 @@ class NativeCreativeControl:
                 self._project_presence = (
                     _native_project_presence_from_text(texts)
                     if native_name == "get_project" else "unknown")
+                if (native_name == "get_project" and
+                        self.host_tool_access is not None and
+                        self.host_tool_access.get(native_name) == "read"):
+                    # A newer actual model-selected native project READ
+                    # supersedes any cached post-write counter snapshot.
+                    # Never let an earlier empty-timeline count contradict
+                    # a newer independently observed project state.
+                    from .native_state_evidence import pinned_snapshot_summary
+                    try:
+                        native_project_receipt = _strict_receipt(
+                            texts, "direct native project state")
+                    except NativeCreativeControlError:
+                        self._latest_native_state_facts = None
+                    else:
+                        self._latest_native_state_facts = pinned_snapshot_summary(
+                            native_project_receipt)
                 if native_name == "get_project" and self._project_presence != "unknown":
                     # A newer independent native inspection supersedes the
                     # post-write inconsistency; preserve the historical
