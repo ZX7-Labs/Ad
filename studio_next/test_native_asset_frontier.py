@@ -69,7 +69,7 @@ class ActualHostAssetProducerFrontierTests(unittest.IsolatedAsyncioTestCase):
             host_possible_effects={
                 "import_asset_from_path": ["project_asset_available"],
             }).run("Edit genuinely imported owner-licensed video")
-        self.assertEqual(result["status"], "max_turns_exhausted")
+        self.assertEqual(result["status"], "turn_budget_exhausted")
         self.assertIn("import_asset_from_path",
                       model.observed[2]["selectable_native_tools"])
         self.assertEqual(model.observed[2]["last_capability_search_result"]["origin"],
