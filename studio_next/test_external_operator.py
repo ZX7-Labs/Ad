@@ -121,7 +121,7 @@ class ExternalOperatorTests(unittest.TestCase):
 
     def test_changed_observation_cannot_authorize_a_native_decision(self):
         model = self.model()
-        image = b"\\x89PNG\\r\\n\\x1a\\n" + b"pixels" * 12
+        image = b"\x89PNG\r\n\x1a\n" + b"pixels" * 12
         result = {}
 
         def work():
@@ -142,7 +142,7 @@ class ExternalOperatorTests(unittest.TestCase):
         self.assertTrue(request_path.exists())
         request = json.loads(request_path.read_bytes())
         media_path = model.session_dir / request["media"][0]["file"]
-        media_path.write_bytes(b"\\x89PNG\\r\\n\\x1a\\n" + b"CHANGED" * 12)
+        media_path.write_bytes(b"\x89PNG\r\n\x1a\n" + b"CHANGED" * 12)
         self.answer(model, 1, {"action": "search",
             "arguments": {"query": "editor"}, "reason": "untrusted observation"})
         thread.join(3)
