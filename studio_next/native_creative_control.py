@@ -19,7 +19,10 @@ import re
 import time
 from typing import Any
 
+from .providers import LocalModelOutputError
 
+
+_MAX_MODEL_OUTPUT_RECOVERIES = 2  # host protocol budget, never a creative action
 _MAX_ACTION_BYTES = 262_144
 _MAX_RESULT_TEXT = 64_000
 _MAX_IMAGE_BYTES = 4 * 1024 * 1024
@@ -465,6 +468,8 @@ class NativeCreativeControl:
         self._project_presence = "unknown"
         self._post_write_state_warning: dict | None = None
         self._last_preflight_feedback: dict | None = None
+        self._last_model_output_feedback: dict | None = None
+        self._model_output_rejections = 0
         self._last_audio: list[tuple[str, bytes]] = []
         self._last_audio_evidence: dict | None = None
         self._verified_exports: set[str] = set()
@@ -817,6 +822,7 @@ class NativeCreativeControl:
                     # expose the exact bounded host schema for independent
                     # model correction. No model action is selected here.
                     "last_rejected_native_action_feedback": self._last_preflight_feedback,
+                    "last_rejected_model_output_feedback": self._last_model_output_feedback,
                     # Evidence-based progress facts persist beyond the 8-event
                     # sliding window. No operation or creative step is chosen
                     # by the controller on the model's behalf.
@@ -835,12 +841,48 @@ class NativeCreativeControl:
                     context["host_declared_tool_hints"] = tool_hints
                     show_tool_hints = False
                 model_started = time.monotonic_ns()
+                inference_had_media = bool(self._last_images or self._last_audio)
                 try:
                     decision = self._decision(await self._infer(context))
+                except LocalModelOutputError as exc:
+                    # Exact observed CPU trial: Qwen emitted duplicate JSON
+                    # fields on turn 9. Reject entirely, no decoded partial
+                    # command, and give the REAL model at most two fresh turns
+                    # to choose a NEW valid action. Never replay a write.
+                    failed_ms = round((time.monotonic_ns() - model_started) / 1_000_000, 3)
+                    self._model_wall_ms_total += failed_ms
+                    if (not inference_had_media and
+                            self._model_output_rejections < _MAX_MODEL_OUTPUT_RECOVERIES and
+                            turn + 1 < self.max_turns):
+                        self._model_output_rejections += 1
+                        remaining = _MAX_MODEL_OUTPUT_RECOVERIES - self._model_output_rejections
+                        self._last_model_output_feedback = {
+                            "previous_model_json_rejected": True,
+                            "reason_code": exc.code,
+                            "return_one_unambiguous_json_object": True,
+                            "no_native_dispatch": True,
+                            "remaining_model_output_corrections": remaining,
+                        }
+                        self._append({"kind": "model_protocol_response_rejected",
+                                      "turn": turn,
+                                      "measured_model_wall_ms": failed_ms,
+                                      "reason_code": exc.code,
+                                      "no_native_dispatch": True,
+                                      "remaining_model_output_corrections": remaining,
+                                      "creative_quality_independently_approved": False})
+                        continue
+                    # Inference with unsaved visual/audio evidence or exhausted
+                    # correction budget is terminal; no media are invented,
+                    # no native mutation retried, and no quality is certified.
+                    self._append({"kind": "model_decision_failed", "turn": turn,
+                                  "measured_model_wall_ms": failed_ms,
+                                  "error_type": type(exc).__name__,
+                                  "no_automatic_retry": True,
+                                  "creative_quality_independently_approved": False})
+                    raise
                 except BaseException as exc:
-                    # A model failure is neither a finished film nor exhausted
-                    # budget. Persist a terminal fact without exposing model
-                    # prompts, output or secrets from the exception message.
+                    # Transport, native, schema and unexpected model failures
+                    # remain terminal. No automatic retry after uncertain work.
                     failed_ms = round((time.monotonic_ns() - model_started) / 1_000_000, 3)
                     self._model_wall_ms_total += failed_ms
                     self._append({"kind": "model_decision_failed", "turn": turn,
@@ -849,6 +891,7 @@ class NativeCreativeControl:
                                   "no_automatic_retry": True,
                                   "creative_quality_independently_approved": False})
                     raise
+                self._last_model_output_feedback = None
                 model_ms = round((time.monotonic_ns() - model_started) / 1_000_000, 3)
                 self._model_wall_ms_total += model_ms
                 # This is *not* independent token accounting. Native and
