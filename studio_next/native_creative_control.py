@@ -1423,7 +1423,7 @@ class NativeCreativeControl:
                                     revision=self._capabilities.revision)
                                 if (identity["access"] == "write" and
                                         identity["native_name"] not in
-                                        self._host_once_after_acknowledged_write):
+                                        self._host_once_after_ack):
                                     selectable.append({
                                         **item, "tool": identity["native_name"]})
                             if selectable:
