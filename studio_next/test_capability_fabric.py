@@ -108,6 +108,17 @@ class CapabilityFabricTests(unittest.TestCase):
                          fabric.overview(include_search_facets=True)
                          ["host_granted_action_prefixes"])
 
+    def test_unicode_tool_names_do_not_expand_escaped_host_overview_budget(self):
+        # Default JSON escaping can turn one Unicode letter into six bytes.
+        # No amount of invented model text grants extra output or tool rights.
+        items = [tool("関数" + chr(0x4e00 + i) + "_表示") for i in range(35)]
+        fabric = CapabilityFabric({"native": (
+            items, {item.name: "read" for item in items})})
+        overview = fabric.overview(include_search_facets=True)
+        self.assertLessEqual(len(json.dumps(overview).encode("utf-8")), 900)
+        self.assertEqual(fabric.overview().get("host_granted_action_prefixes"),
+                         None)
+
     def test_only_actual_installed_and_host_granted_apis_can_be_exposed(self):
         f = CapabilityFabric({
             "video": ([tool("open_project", "Open real native project"),
