@@ -1451,7 +1451,17 @@ class NativeCreativeControl:
                         type(self._latest_native_state_facts.get(
                             "current_timeline_clip_count")) is int and
                         self._latest_native_state_facts[
-                            "current_timeline_clip_count"] == 0):
+                            "current_timeline_clip_count"] == 0 and
+                        # A fresh observed zero-clip snapshot can still lag
+                        # an ACKNOWLEDGED native content write. Once a model-
+                        # selected, host-granted content revision has applied,
+                        # only the editor may establish true export readiness.
+                        # The host may refuse an invalid render, but a stale
+                        # zero count must not veto a genuine new native clip.
+                        not any(
+                            event.get("kind") == "native_tool_result" and
+                            event.get("tool") in self.host_content_revision_tools
+                            for event in self.events)):
                     self._last_preflight_feedback = {
                         "tool": native_name,
                         "validation_keyword": "native_export_no_timeline_clips",
