@@ -1803,6 +1803,11 @@ class NativeCreativeControl:
                         self.host_tool_access.get("get_project") == "read" and
                         "get_project" in validators and
                         validators["get_project"].is_valid({})):
+                    # Native create/open reconciliation already provides
+                    # a host-authorized project READ, so reuse that evidence
+                    # rather than fetching a redundant fourth snapshot.
+                    # Other creative writes still use one post-write monitor.
+                    self._native_state_refresh_due = False
                     self._post_write_state_warning = None
                     for read_attempt in (1, 2):
                         if read_attempt == 2:
@@ -1869,6 +1874,20 @@ class NativeCreativeControl:
                             break
                         observation = _native_project_presence_from_text(state_texts)
                         self._project_presence = observation
+                        # Reuse the SAME independently witnessed read for
+                        # compact asset/clip counts. Some older/specialized
+                        # hosts supply only project presence; their missing
+                        # counter fields stay unknown and never erase valid
+                        # presence observations or fabricate empty scenes.
+                        from .native_state_evidence import pinned_snapshot_summary
+                        try:
+                            reconciled_data = _strict_receipt(
+                                state_texts, "native project reconciliation facts")
+                        except NativeCreativeControlError:
+                            self._latest_native_state_facts = None
+                        else:
+                            self._latest_native_state_facts = pinned_snapshot_summary(
+                                reconciled_data)
                         self._last_native_texts = state_texts
                         self._append({"kind": "host_project_post_write_observation",
                                       "tool": "get_project",
