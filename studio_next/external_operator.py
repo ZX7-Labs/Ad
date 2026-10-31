@@ -211,6 +211,16 @@ class ExternalOperatorModel:
             response["request_sha256"] != request_hash or
             not isinstance(response["decision"], dict)):
             raise ExternalOperatorError("Stale or invalid operator response binding")
+        # The operator must have examined exactly the source-bound media the
+        # controller supplied. If a file changed while the turn was outside
+        # the process, never permit its resulting native decision to execute.
+        for item in manifest:
+            observed = _read_private(self.session_dir / item["file"],
+                                     _MAX_MEDIA_BYTES)
+            if (len(observed) != item["bytes"] or
+                    hashlib.sha256(observed).hexdigest() != item["sha256"]):
+                raise ExternalOperatorError(
+                    "Operator evidence changed during the external model turn")
         return response["decision"]
 
 
