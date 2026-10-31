@@ -370,6 +370,47 @@ class ActualHostAssetProducerFrontierTests(unittest.IsolatedAsyncioTestCase):
             outcome["events"], host_tool_access=access)[
                 "journal_chain_structurally_valid"])
 
+    async def test_post_visual_write_lagging_zero_clip_read_is_not_export_veto(self):
+        # Native editor reads can lag an acknowledged write. A zero-clip
+        # snapshot is grounds to reject *known* empty export only until a
+        # genuine model-chosen, host-confirmed visual content revision. After
+        # that, the editor must decide actual readiness, never stale BODY data.
+        editor = HostObservedEmptyAssetSession()
+        editor.tools.extend([
+            SimpleNamespace(name="add_text_clip",
+                            description="Commit model-authored native text clip",
+                            input_schema={"type": "object", "properties": {
+                                "text": {"type": "string"}}}),
+            SimpleNamespace(name="export_timeline",
+                            description="Render the actual native timeline",
+                            input_schema={"type": "object", "properties": {}}),
+        ])
+        model = ScriptedModel([
+            decision("invoke", tool="add_text_clip", inputs={"text": "Actual scene"}),
+            decision("invoke", tool="export_timeline", inputs={}),
+            decision("finish", summary="Only native tool ACKs, not a verified movie"),
+        ])
+        grants = self.grants(editor)
+        outcome = await NativeCreativeControl(
+            editor, model, host_tool_access=grants, max_turns=3,
+            host_content_revision_tools=("add_text_clip",)
+        ).run("Author original text footage and export in the native editor")
+        self.assertEqual(outcome["status"], "model_finished_unverified")
+        self.assertEqual(model.observed[1][
+            "latest_host_attested_native_project_progress"][
+                "current_timeline_clip_count"], 0)
+        self.assertIn("export_timeline", [tool for tool, _ in editor.calls])
+        self.assertFalse(any(e.get("validation_keyword") ==
+                             "native_export_no_timeline_clips"
+                             for e in outcome["events"]))
+        self.assertEqual(sum(e.get("kind") == "native_tool_result" and
+                             e.get("tool") == "export_timeline"
+                             for e in outcome["events"]), 1)
+        self.assertTrue(audit_native_journal(
+            outcome["events"], host_tool_access=grants,
+            host_content_revision_tools=("add_text_clip",))[
+                "journal_chain_structurally_valid"])
+
     async def test_no_host_producer_effect_means_no_fake_remediation_tool(self):
         editor = HostObservedEmptyAssetSession()
         model = ScriptedModel([
