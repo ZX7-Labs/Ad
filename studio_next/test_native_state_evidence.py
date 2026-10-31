@@ -11,7 +11,8 @@ import unittest
 from types import SimpleNamespace
 
 from studio_next.native_state_evidence import (
-    pinned_snapshot_summary, source_reviewed_preview_is_readonly)
+    pinned_snapshot_summary, source_reviewed_preview_is_readonly,
+    contradictory_nested_write_receipt)
 from studio_next.native_creative_audit import audit_native_journal, NativeJournalError
 from studio_next.native_creative_control import NativeCreativeControl
 from studio_next.test_native_creative_control import (
@@ -75,6 +76,18 @@ class SourcePreviewContracts(unittest.TestCase):
                 self.assertLess(preview_guard, native_mutation)
                 self.assertIn("return textResult({", function[preview_guard:native_mutation])
                 self.assertIn("previewOnly: true", function[preview_guard:native_mutation])
+
+    def test_nested_native_renderer_ack_requires_explicit_boolean_truth(self):
+        for invalid in (
+            {"success": False}, {"success": 0}, {"success": "yes"},
+            {"success": None}, {"success": True, "error": "failure"},
+        ):
+            with self.subTest(invalid=invalid):
+                self.assertTrue(contradictory_nested_write_receipt(invalid))
+        for valid in (None, {}, {"success": True},
+                      {"success": True, "error": None}):
+            with self.subTest(valid=valid):
+                self.assertFalse(contradictory_nested_write_receipt(valid))
 
     def test_native_project_counts_require_consistent_project_and_safe_integers(self):
         expected = pinned_snapshot_summary(native_snapshot(clips=0, assets=0))
