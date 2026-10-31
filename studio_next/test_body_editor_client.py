@@ -336,7 +336,11 @@ class LocalEditorClientTests(unittest.TestCase):
                       "previewOnly": True},
                      {"clipId": "art-clip", "timeSeconds": 2},
                      {"clipId": "art-clip", "timeSeconds": 2,
-                      "previewOnly": "false"}):
+                      "previewOnly": "false"},
+                     {"clipId": "art-clip", "timeSeconds": 2,
+                      "previewOnly": 0},
+                     {"clipId": "art-clip", "timeSeconds": 2,
+                      "previewOnly": None}):
             with self.subTest(args=args):
                 before = len(self.requests)
                 client.call("split_clip", args, allowed_access={"write"})
@@ -344,14 +348,14 @@ class LocalEditorClientTests(unittest.TestCase):
                 self.assertEqual(self.requests[-1]["params"], {
                     "name": "split_clip", "arguments": args})
         self.assertEqual([item["params"]["name"] for item in self.requests],
-                         ["split_clip"] * 3)
+                         ["split_clip"] * 5)
         # Literal false is the only committed native razor; without read
         # inspection rights the BODY refuses it before any native call.
         with self.assertRaisesRegex(EditorAccessError, "host-granted read"):
             client.call("split_clip", {
                 "clipId": "art-clip", "timeSeconds": 2,
                 "previewOnly": False}, allowed_access={"write"})
-        self.assertEqual(len(self.requests), 3)
+        self.assertEqual(len(self.requests), 5)
 
     def test_split_without_granted_read_inspection_has_no_native_write(self):
         client = LocalEditorClient(self.endpoint, allowed_tools={"split_clip": "write"})
