@@ -13,6 +13,7 @@ from studio_next.native_creative_control import NativeCreativeControl
 from studio_next.native_creative_audit import audit_native_journal, NativeJournalError
 from studio_next.test_native_creative_control import ScriptedModel, decision
 from studio_next.test_native_asset_identity import LiveCatalogSession
+from studio_next.test_native_state_evidence import ActualNativeObservationSession
 
 
 class HostObservedEmptyAssetSession(LiveCatalogSession):
@@ -45,12 +46,102 @@ class HostObservedEmptyAssetSession(LiveCatalogSession):
         return await super().call_tool(name, arguments)
 
 
+class CreateNativeProjectThenObserveEmptyAssets(ActualNativeObservationSession):
+    def __init__(self):
+        super().__init__()
+        self.tools.extend([
+            SimpleNamespace(name="get_assets",
+                            description="Read actual native project assets",
+                            input_schema={"type": "object", "properties": {
+                                "limit": {"type": "integer"}}}),
+            SimpleNamespace(name="import_asset_from_path",
+                            description="Import local source into project-owned media",
+                            input_schema={"type": "object", "properties": {
+                                "path": {"type": "string"},
+                                "previewOnly": {"type": "boolean"}}}),
+        ])
+
+    async def call_tool(self, name, arguments):
+        if name == "get_assets":
+            self.calls.append((name, arguments))
+            return SimpleNamespace(is_error=False, content=[SimpleNamespace(
+                type="text", text=json.dumps({
+                    "count": 0, "limitApplied": False, "assets": []}))])
+        return await super().call_tool(name, arguments)
+
+
 class ActualHostAssetProducerFrontierTests(unittest.IsolatedAsyncioTestCase):
     def grants(self, session):
         return {t.name: ("read" if t.name in {
             "get_project", "get_assets", "get_timeline",
             "zx7_verify_native_export", "zx7_observe_verified_export_frame"}
             else "write") for t in session.tools}
+
+    async def test_import_possibilities_are_visible_before_any_failed_model_write(self):
+        # This is a scripted protocol oracle, not a creative demonstration.
+        editor = HostObservedEmptyAssetSession()
+        model = ScriptedModel([
+            decision("describe", tool="import_asset_from_path"),
+            decision("finish", summary="Import was not made in this protocol test"),
+        ])
+        access = self.grants(editor)
+        result = await NativeCreativeControl(
+            editor, model, max_turns=2, catalog_mode="indexed",
+            host_tool_access=access,
+            host_possible_effects={
+                "import_asset_from_path": ["project_asset_available"],
+            }).run("Inspect original licensed sources")
+        self.assertIn("import_asset_from_path",
+                      model.observed[0]["selectable_native_tools"])
+        self.assertEqual(model.observed[0][
+            "host_attested_source_asset_producers"]["origin"],
+            "host_attested_empty_native_project")
+        self.assertEqual([name for name, _ in editor.calls], [
+            "get_project", "get_assets"])
+        frontier = [x for x in result["events"] if x["kind"] ==
+                    "host_native_empty_asset_frontier"]
+        self.assertEqual(len(frontier), 1)
+        self.assertTrue(audit_native_journal(
+            result["events"], host_tool_access=access)[
+                "journal_chain_structurally_valid"])
+        forgery = copy.deepcopy(result["events"])
+        for item in forgery:
+            if item.get("kind") == "host_native_empty_asset_frontier":
+                item["result_tool_names"] = ["host-not-granted"]
+        with self.assertRaises(NativeJournalError):
+            audit_native_journal(forgery, host_tool_access=access)
+
+    async def test_creating_project_exposes_source_producers_without_placement_error(self):
+        editor = CreateNativeProjectThenObserveEmptyAssets()
+        model = ScriptedModel([
+            decision("invoke", tool="create_project",
+                     inputs={"name": "Source-owned project"}),
+            decision("describe", tool="import_asset_from_path"),
+            decision("finish", summary="No edit performed in protocol test"),
+        ])
+        access = self.grants(editor)
+        result = await NativeCreativeControl(
+            editor, model, max_turns=3, catalog_mode="indexed",
+            host_tool_access=access,
+            host_possible_effects={
+                "create_project": ["project_open"],
+                "import_asset_from_path": ["project_asset_available"],
+            },
+            host_preconditions={
+                "import_asset_from_path": ["project_open"],
+            }).run("Create a real project and discover actual source tools")
+        self.assertEqual(model.observed[0][
+            "native_project_presence_from_last_inspection"], "absent")
+        self.assertEqual(model.observed[1][
+            "native_project_presence_from_last_inspection"], "present")
+        self.assertIn("import_asset_from_path",
+                      model.observed[1]["selectable_native_tools"])
+        self.assertIn("get_assets", [name for name, _ in editor.calls])
+        self.assertFalse(any(x["kind"] == "model_action_rejected"
+                             for x in result["events"]))
+        self.assertTrue(audit_native_journal(
+            result["events"], host_tool_access=access)[
+                "journal_chain_structurally_valid"])
 
     async def test_empty_native_assets_expose_actual_host_producer_not_a_script(self):
         editor = HostObservedEmptyAssetSession()
