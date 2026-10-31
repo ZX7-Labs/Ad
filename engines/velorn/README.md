@@ -294,3 +294,49 @@ native saves and physical rendered pixels remain pending investigation in
 [Issue #72](https://github.com/ZX7-Labs/Zx7-creative-studio-/issues/72).
 
 Native source limitations: audio envelope/EQ and spline-point animation remain partly UI-only; variable video speed does not cover all audio retiming; interchange can lose native styling and rejects editable compounds. MCP checkpoints are memory-only; durable named versions require preserving native files. `export_timeline` has no status tool, so the fixture observes the existing worker log and decodes the output. Use separate title tracks to avoid native overwrite semantics, explicit custom ranges to avoid the default 60-second extent, and `h264_project` for project/custom dimensions. Graphics-only MCP exports are rejected by an older readiness check.
+
+## Temporary independent operator test seat (no hosted model API)
+
+This is a **local-only, explicitly authorized operator mailbox**, not a cloned
+ChatGPT session or an alternative creative engine. It reuses the above editor,
+the exact native tool schemas and grants, and the existing
+`NativeCreativeControl` decision loop. It changes **only the inference seat**.
+Use it only with **disposable, isolated projects/staging/outputs roots** in
+an owner-reviewed host config (never production projects). The separate operator
+must be authorized to read/write its private session directory on the **same
+machine/filesystem**; ChatGPT on another device cannot access that directory
+by default. Never put the mailbox, receipts, source media or credentials in
+GitHub, chat messages or a network-shared directory.
+
+```sh
+umask 077
+mkdir -p /private/zx7-test-operator
+python engines/velorn/native-model-client.py \
+  --source /absolute/path/to/third_party/velorn \
+  --config /private/owner-native-grants.json \
+  --state /private/native-editor-state \
+  --brief-file /private/owner-brief.txt \
+  --receipt /private/new-external-operator.jsonl \
+  --operator-mailbox /private/zx7-test-operator
+```
+
+The startup process prints `ZX7_EXTERNAL_OPERATOR_SESSION`; each turn creates
+`request-NNNN.json` there. A separate operator reads the genuine `context`,
+`system_instructions`, and any hash-identified PNG/WAV files. The operator
+chooses one original `{action,arguments,reason}` JSON decision and saves it as
+a mode-0600 private file. To bind its decision to that *exact* turn:
+
+```sh
+python -m studio_next.external_operator reply \
+  --session-dir /private/zx7-test-operator/operator-SESSION_ID \
+  --turn 1 --decision-file /private/operator-decision.json
+```
+
+No action is automatically guessed, retried or translated. Native safety and
+the independent journal still apply. The mailbox itself cannot authenticate
+that an actual GPT-6, or any model, authored a decision. A separate ChatGPT
+session requires its **own authorized access to the same local filesystem**;
+this project cannot spawn one through a ChatGPT subscription. Remove the
+private mailbox after preserving the separate native audit receipt. A timeout,
+an invalid binding or unavailable physical media is a failed test, not a
+successful or autonomous edit.
