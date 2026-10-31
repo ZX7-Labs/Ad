@@ -583,6 +583,11 @@ class NativeCreativeControl:
         self._last_preflight_feedback: dict | None = None
         self._last_native_preview_feedback: dict | None = None
         self._last_model_output_feedback: dict | None = None
+        # A native state observation after each acknowledged write distinguishes
+        # an actual media/clip revision from markers or project metadata. It
+        # never replaces the last native edit response or authorizes a write.
+        self._native_state_refresh_due = False
+        self._latest_native_state_facts: dict | None = None
         self._model_output_rejections = 0
         self._last_audio: list[tuple[str, bytes]] = []
         self._last_audio_evidence: dict | None = None
@@ -889,6 +894,56 @@ class NativeCreativeControl:
                                   "host_observed_value": False,
                                   "no_native_dispatch": True})
             for turn in range(self.max_turns):
+                # Snapshot-only read after a genuine acknowledged native write.
+                # The previous native result (or verified pixels/WAV) is kept
+                # separately: never overwrite observation evidence with a
+                # second text from a metadata tool.
+                if self._native_state_refresh_due:
+                    self._native_state_refresh_due = False
+                    self._latest_native_state_facts = None
+                    if (self.host_tool_access is not None and
+                            self.host_tool_access.get("get_project") == "read" and
+                            "get_project" in validators and
+                            validators["get_project"].is_valid({})):
+                        try:
+                            snapshot_reply = await self.session.call_tool(
+                                "get_project", {})
+                            if _field(snapshot_reply, "is_error",
+                                      _field(snapshot_reply, "isError", False)):
+                                raise NativeCreativeControlError(
+                                    "Native state summary read reported error")
+                            snapshot_texts, snapshot_images, snapshot_audio = (
+                                _native_content(snapshot_reply))
+                            if (len(snapshot_texts) != 1 or snapshot_images or
+                                    snapshot_audio):
+                                raise NativeCreativeControlError(
+                                    "Native state summary requires one bounded text receipt")
+                            source_data = _strict_receipt(
+                                snapshot_texts, "native post-write state")
+                            from .native_state_evidence import pinned_snapshot_summary
+                            self._latest_native_state_facts = pinned_snapshot_summary(
+                                source_data)
+                            if self._latest_native_state_facts is None:
+                                raise NativeCreativeControlError(
+                                    "Native snapshot facts are contradictory or malformed")
+                        except Exception as exc:
+                            self._latest_native_state_facts = None
+                            self._append({
+                                "kind": "host_native_state_progress_read_error",
+                                "tool": "get_project",
+                                "host_attested_read_only": True,
+                                "error_type": type(exc).__name__,
+                                "no_model_selected_mutation": True})
+                        else:
+                            self._append({
+                                "kind": "host_native_state_progress_observation",
+                                "tool": "get_project",
+                                "host_attested_read_only": True,
+                                "text_sha256": hashlib.sha256(
+                                    snapshot_texts[0].encode()).hexdigest(),
+                                "summary_sha256": hashlib.sha256(_wire(
+                                    self._latest_native_state_facts).encode()).hexdigest(),
+                                "no_model_selected_mutation": True})
                 indexed_actions = ["search"]
                 if self._selectable_tools or self._inspectable_tied_candidates:
                     indexed_actions.append("describe")
@@ -932,6 +987,8 @@ class NativeCreativeControl:
                     "latest_events": _model_event_window(self.events),
                     "last_native_result_texts": self._last_native_texts,
                     "native_project_presence_from_last_inspection": self._project_presence,
+                    "latest_host_attested_native_project_progress": (
+                        self._latest_native_state_facts),
                     # A successful write and a lagging native READ are a
                     # contradiction, never permission to create again.
                     "last_host_project_write_reconciliation": self._post_write_state_warning,
@@ -1439,6 +1496,32 @@ class NativeCreativeControl:
                                       "host_attested_read_only": True,
                                       "no_successful_native_observation": True})
                         continue
+                    # Source-reviewed pinned Velorn preview helpers return
+                    # BEFORE performAction, including invalid-plan errors.
+                    # A preview-only failure therefore has no native mutation,
+                    # unlike the same tool with previewOnly:false. No automatic
+                    # tool selection/retry, no false successful write receipt.
+                    from .native_state_evidence import (
+                        source_reviewed_preview_is_readonly)
+                    if (self.host_tool_access is not None and
+                            self.host_tool_access.get(native_name) == "write" and
+                            source_reviewed_preview_is_readonly(
+                                native_name, args["inputs"],
+                                validators[native_name].schema)):
+                        self._last_preflight_feedback = {
+                            "tool": native_name,
+                            "validation_keyword": "source_reviewed_readonly_preview_error",
+                            "preview_not_an_editor_mutation": True,
+                            "no_successful_native_observation": True}
+                        self._append({
+                            "kind": "native_source_preview_reported_error",
+                            "turn": turn, "tool": native_name,
+                            "measured_native_mcp_wall_ms": native_ms,
+                            "host_source_proved_readonly_preview": True,
+                            "no_accepted_write_evidence": True,
+                            "error_sha256": digest,
+                            "error_text_exceeded_evidence_budget": out_of_budget})
+                        continue
                     # A reported write error (or an operation of unknown
                     # access) does not prove that a mutation never happened.
                     # Stop and reconcile the actual native saved state.
@@ -1653,6 +1736,9 @@ class NativeCreativeControl:
                               "audio_sent_to_model_for_next_decision": bool(audio),
                               "audio_semantically_heard": False,
                               "human_or_artistic_quality_approved": False})
+                if (self.host_tool_access is not None and
+                        self.host_tool_access.get(native_name) == "write"):
+                    self._native_state_refresh_due = True
                 if native_name in self._host_once_after_ack and self.catalog_mode == "indexed":
                     # A one-time host operation has already been acknowledged.
                     # Its old search result is no longer an actionable frontier;
