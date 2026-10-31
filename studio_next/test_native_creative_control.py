@@ -2440,6 +2440,7 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
 
 
     async def test_direct_native_asset_plan_preview_allows_model_chosen_later_apply(self):
+        from studio_next.native_creative_audit import audit_native_journal
         # Reproduce 4B run #41212032675: genuine imported asset exists,
         # model selects an initial add_asset_to_timeline preview without
         # previewOnly:false. The pinned *direct* MCP response is top-level,
