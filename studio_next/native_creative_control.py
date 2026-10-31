@@ -588,6 +588,7 @@ class NativeCreativeControl:
         # never replaces the last native edit response or authorizes a write.
         self._native_state_refresh_due = False
         self._latest_native_state_facts: dict | None = None
+        self._host_source_frontier: dict | None = None
         self._model_output_rejections = 0
         self._last_audio: list[tuple[str, bytes]] = []
         self._last_audio_evidence: dict | None = None
@@ -596,6 +597,87 @@ class NativeCreativeControl:
         self._native_mcp_wall_ms_total = 0.0
         self._started = False
         self._receipt = None
+
+    async def _offer_source_attested_empty_asset_frontier(self, validators, *, turn):
+        """Observe missing project assets before offering real possible producers.
+
+        No tool is invoked for the model. Qwen trial #41204331429 never guessed
+        an asset ID, so the former rejected-write-only discovery never fired.
+        """
+        if self._project_presence != "present" or self._capabilities is None:
+            self._host_source_frontier = None
+            return
+        if (self._latest_native_state_facts is not None and
+                self._latest_native_state_facts.get("native_project_asset_count") != 0):
+            self._host_source_frontier = None
+            return
+        if (self.host_tool_access is None or
+                self.host_tool_access.get("get_assets") != "read" or
+                "get_assets" not in validators or
+                not validators["get_assets"].is_valid({"limit": 1000}) or
+                not self.events or self.events[-1].get("kind") not in
+                ("host_project_bootstrap_observation",
+                 "host_native_state_progress_observation")):
+            self._host_source_frontier = None
+            return
+        candidates = self._capabilities.affordance_frontier(
+            trusted_facts={"project_open": True, "project_asset_available": False},
+            namespace="native", limit=4)
+        selectable = []
+        for item in candidates["matches"]:
+            identity = self._capabilities.resolve(
+                item["id"], revision=self._capabilities.revision)
+            if (identity["access"] == "write" and
+                    identity["native_name"] not in self._host_once_after_ack):
+                selectable.append({**item, "tool": identity["native_name"]})
+        if not selectable:
+            self._host_source_frontier = None
+            return
+        try:
+            reply = await self.session.call_tool("get_assets", {"limit": 1000})
+            if _field(reply, "is_error", _field(reply, "isError", False)):
+                raise NativeCreativeControlError("Native asset inventory read failed")
+            texts, images, audio = _native_content(reply)
+            if len(texts) != 1 or images or audio:
+                raise NativeCreativeControlError("Native asset inventory must be bounded")
+            inventory = _strict_receipt(texts, "native project asset inventory")
+            if (type(inventory.get("count")) is not int or
+                    inventory["count"] < 0 or
+                    type(inventory.get("limitApplied")) is not bool or
+                    not isinstance(inventory.get("assets"), list) or
+                    inventory["count"] < len(inventory["assets"]) or
+                    (not inventory["limitApplied"] and
+                     inventory["count"] != len(inventory["assets"]))):
+                raise NativeCreativeControlError("Malformed native asset inventory")
+        except Exception as exc:
+            self._host_source_frontier = None
+            self._append({"kind": "host_native_asset_inventory_read_error",
+                          "turn": turn, "tool": "get_assets",
+                          "error_type": type(exc).__name__,
+                          "host_attested_read_only": True,
+                          "no_native_dispatch": True})
+            return
+        self._append({"kind": "host_native_asset_inventory_observed",
+                      "turn": turn, "tool": "get_assets",
+                      "text_sha256": hashlib.sha256(texts[0].encode()).hexdigest(),
+                      "host_attested_read_only": True, "no_native_dispatch": True})
+        if inventory["count"] != 0 or inventory["limitApplied"] or inventory["assets"]:
+            self._host_source_frontier = None
+            return
+        self._host_source_frontier = {
+            **candidates, "matches": selectable,
+            "origin": "host_attested_empty_native_project",
+        }
+        self._last_search_result = self._host_source_frontier
+        self._selectable_tools = [item["tool"] for item in selectable]
+        self._inspectable_tied_candidates = []
+        self._append({"kind": "host_native_empty_asset_frontier",
+                      "turn": turn, "catalog_revision": self._capabilities.revision,
+                      "result_tool_names": self._selectable_tools[:],
+                      "trusted_machine_fact": "project_asset_available",
+                      "host_observed_value": False,
+                      "native_project_asset_count": 0,
+                      "no_native_dispatch": True})
 
     def _missing_completion_evidence(self):
         """Use only accepted native results and current-edit export custody.
@@ -893,6 +975,9 @@ class NativeCreativeControl:
                                   "trusted_machine_fact": "project_open",
                                   "host_observed_value": False,
                                   "no_native_dispatch": True})
+            if self._project_presence == "present":
+                await self._offer_source_attested_empty_asset_frontier(
+                    validators, turn=0)
             for turn in range(self.max_turns):
                 # Snapshot-only read after a genuine acknowledged native write.
                 # The previous native result (or verified pixels/WAV) is kept
@@ -900,6 +985,7 @@ class NativeCreativeControl:
                 # second text from a metadata tool.
                 if self._native_state_refresh_due:
                     self._native_state_refresh_due = False
+                    self._host_source_frontier = None
                     self._latest_native_state_facts = None
                     if (self.host_tool_access is not None and
                             self.host_tool_access.get("get_project") == "read" and
@@ -959,6 +1045,9 @@ class NativeCreativeControl:
                                 "summary_sha256": hashlib.sha256(_wire(
                                     self._latest_native_state_facts).encode()).hexdigest(),
                                 "no_model_selected_mutation": True})
+                            if self._project_presence == "present":
+                                await self._offer_source_attested_empty_asset_frontier(
+                                    validators, turn=turn)
                 indexed_actions = ["search"]
                 if self._selectable_tools or self._inspectable_tied_candidates:
                     indexed_actions.append("describe")
@@ -992,6 +1081,7 @@ class NativeCreativeControl:
                             for name in self._host_once_after_ack))
                         if self._capabilities is not None else None),
                     "last_capability_search_result": self._last_search_result,
+                    "host_attested_source_asset_producers": self._host_source_frontier,
                     "completion_does_not_certify_artistic_quality": True,
                     "required_completion_evidence": sorted(self.required_evidence),
                     "missing_completion_evidence": self._missing_completion_evidence(),
