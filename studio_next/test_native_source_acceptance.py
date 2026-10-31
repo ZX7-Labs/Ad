@@ -168,8 +168,9 @@ class PhysicalNativeSourceAcceptanceTests(unittest.TestCase):
                     self.verify()
 
     def test_nonboolean_visibility_and_enabled_values_are_not_visible_proof(self):
-        # JSON 0, empty string and null are falsey to JavaScript, but were
-        # previously counted as visible because they are not Python False.
+        # The upstream JS editor uses `!== false` for fallback display;
+        # this verifier deliberately requires actual booleans to reject
+        # malformed saved project state instead of relying on coercion.
         for field in ("track", "clip"):
             for falsey_value in (0, "", None, []):
                 with self.subTest(field=field, value=falsey_value):
@@ -182,6 +183,30 @@ class PhysicalNativeSourceAcceptanceTests(unittest.TestCase):
                     self.save()
                     self.assertFalse(
                         self.verify()["actual_original_video_used_on_native_timeline"])
+
+    def test_nonfinite_negative_or_missing_source_clip_start_cannot_prove_use(self):
+        for bad_start in (float("nan"), float("inf"), float("-inf"), -1, "0", None):
+            with self.subTest(start=repr(bad_start)):
+                self.project = copy.deepcopy(self._original_project)
+                self.project["timelines"][0]["clips"][0]["startTime"] = bad_start
+                # JSON NaN/Infinity are nonstandard but are sometimes written
+                # by permissive serializers; saved acceptance must fail closed.
+                self.save()
+                self.assertFalse(
+                    self.verify()["actual_original_video_used_on_native_timeline"])
+        self.project = copy.deepcopy(self._original_project)
+        self.project["timelines"][0]["clips"][0].pop("startTime")
+        self.save()
+        self.assertFalse(self.verify()["actual_original_video_used_on_native_timeline"])
+
+    def test_nonfinite_or_non_numeric_source_clip_duration_cannot_prove_use(self):
+        for bad_duration in (float("nan"), float("inf"), float("-inf"), "4", None):
+            with self.subTest(duration=repr(bad_duration)):
+                self.project = copy.deepcopy(self._original_project)
+                self.project["timelines"][0]["clips"][0]["duration"] = bad_duration
+                self.save()
+                self.assertFalse(
+                    self.verify()["actual_original_video_used_on_native_timeline"])
 
     def test_project_path_escape_and_corrupt_native_project_refused(self):
         outside = self.root / "project.comfystudio"
