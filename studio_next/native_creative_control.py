@@ -1642,10 +1642,10 @@ class NativeCreativeControl:
                         # the wrapper; it is not application write proof.
                         # Never silently accept a failed inner mutation merely
                         # because the outer MCP tool returned a success field.
-                        nested_failure = (
-                            isinstance(host_result, dict) and
-                            (host_result.get("success") is False or
-                             host_result.get("error") not in (None, "", False)))
+                        from .native_state_evidence import (
+                            contradictory_nested_write_receipt)
+                        nested_failure = contradictory_nested_write_receipt(
+                            host_result)
                         if (success is not True or nested_failure or
                                 (isinstance(host_result, dict) and
                                  "previewOnly" in host_result and preview is not False)):
