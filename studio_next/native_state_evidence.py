@@ -21,11 +21,21 @@ _SOURCE_REVIEWED_NONMUTATING_PREVIEWS = frozenset({
     # plan, not the asset plan's nested {action, previewOnly} shape.
     "add_transition", "update_transition", "remove_transitions",
     "move_clips", "trim_clips",
+    # The same source-guaranteed preview-before-performAction contract
+    # applies to these native sequence, track and keyframe operations.
+    "update_track", "remove_track", "switch_timeline", "rename_timeline",
+    "duplicate_timeline", "delete_timeline", "delete_clips",
+    "create_timeline", "set_clip_keyframes",
 })
 
 _DIRECT_STRUCTURED_EDITOR_PLANS = frozenset({
     "add_transition", "update_transition", "remove_transitions",
     "move_clips", "trim_clips",
+    # The same source-guaranteed preview-before-performAction contract
+    # applies to these native sequence, track and keyframe operations.
+    "update_track", "remove_track", "switch_timeline", "rename_timeline",
+    "duplicate_timeline", "delete_timeline", "delete_clips",
+    "create_timeline", "set_clip_keyframes",
 })
 
 
