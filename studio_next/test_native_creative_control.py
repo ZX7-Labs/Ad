@@ -1977,5 +1977,51 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
                          write["text_sha256"][0])
 
 
+    async def test_fresh_real_project_trial_does_not_offer_open_nonexistent_project(self):
+        """A failed 2B run attempted open_project on an empty projects root."""
+        from scripts.run_native_model_trial import fresh_trial_project_open_effects
+        from studio_next.native_creative_audit import audit_native_journal
+        with tempfile.TemporaryDirectory() as root:
+            effects = fresh_trial_project_open_effects(root)
+            self.assertEqual(effects, {"create_project": ["project_open"]})
+            session = FakeSession()
+            session.tools += [
+                SimpleNamespace(name="get_project", description="Read project state",
+                                input_schema={"type": "object", "properties": {}}),
+                SimpleNamespace(name="create_project", description="Create native project",
+                                input_schema={"type": "object", "properties": {
+                                    "name": {"type": "string"}}}),
+                SimpleNamespace(name="open_project", description="Open SAVED native project",
+                                input_schema={"type": "object", "properties": {
+                                    "projectPath": {"type": "string"}}}),
+            ]
+            session.custom_response = SimpleNamespace(is_error=False, content=[
+                SimpleNamespace(type="text", text=json.dumps({
+                    "project": None, "mcp": {"hasProject": False}}))])
+            grants = {t.name: ("write" if t.name in (
+                "create_project", "open_project") else "read")
+                for t in session.tools}
+            model = ScriptedModel([
+                decision("finish", summary="No source-backed project created"),
+            ])
+            result = await NativeCreativeControl(
+                session, model, catalog_mode="indexed", host_tool_access=grants,
+                host_possible_effects=effects, max_turns=1).run(
+                    "Choose a safe first native project action")
+            self.assertEqual(session.calls, [("get_project", {})])
+            self.assertEqual(model.observed[0]["selectable_native_tools"],
+                             ["create_project"])
+            self.assertEqual(result["events"][2]["kind"], "host_capability_frontier")
+            self.assertEqual(result["events"][2]["result_tool_names"],
+                             ["create_project"])
+            self.assertTrue(audit_native_journal(
+                result["events"], host_tool_access=grants)
+                ["journal_chain_structurally_valid"])
+            self.assertFalse(result["native_editing_capability_complete"])
+            (Path(root) / "preexisting-owner-project.comfystudio").write_text("{}")
+            with self.assertRaisesRegex(ValueError, "new empty"):
+                fresh_trial_project_open_effects(root)
+
+
 if __name__ == "__main__":
     unittest.main()
