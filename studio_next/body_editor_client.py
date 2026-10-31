@@ -202,11 +202,24 @@ class LocalEditorClient:
         if self._policy is not None and self._policy(tool_name, arguments, access) is not True:
             raise EditorAccessError("Native tool rejected by host policy")
         if tool_name == "split_clip":
-            # Protect every host-granted BODY client route (catalog, CLI and
-            # official MCP), not just the stdio bridge. The pinned upstream
-            # right-hand razor does not preserve general effects/keyframes.
+            # The upstream inspect_clip summary omits effects/keyframes.
+            # Require both the existing per-clip identity inspection and the
+            # complete native get_timeline creative-state snapshot.
             from .body_editor_split_guard import preflight_non_destructive_native_split
-            preflight_non_destructive_native_split(
+            from .body_editor_extract_guard import (
+                assert_plain_source_in_full_timeline, read_complete_timeline,
+            )
+            inspection = preflight_non_destructive_native_split(
+                self, arguments, allowed_access=allowed_access)
+            timeline = read_complete_timeline(self, allowed_access=allowed_access)
+            for clip_id in inspection["preflighted_plain_source_clips"]:
+                assert_plain_source_in_full_timeline(
+                    self, clip_id, allowed_access=allowed_access, timeline=timeline)
+        elif tool_name == "extract_range" and arguments.get("previewOnly") is False:
+            # Extract internally splits at both range boundaries. A native
+            # preview is used to discover actual split targets, not to mutate.
+            from .body_editor_extract_guard import preflight_non_destructive_native_extract
+            preflight_non_destructive_native_extract(
                 self, arguments, allowed_access=allowed_access)
         result = self._rpc("tools/call", {"name": tool_name, "arguments": arguments})
         if (not isinstance(result, dict) or not isinstance(result.get("content"), list)
