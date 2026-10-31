@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from pathlib import Path
 
 
@@ -19,6 +20,17 @@ def _sha256(path: Path) -> str:
         for block in iter(lambda: file.read(1024 * 1024), b""):
             digest.update(block)
     return digest.hexdigest()
+
+
+def _finite_real(value) -> bool:
+    # Native timeline clock fields must be finite numeric values. Python's
+    # bool is not a time position; huge integers must not overflow isfinite.
+    if type(value) not in (int, float):
+        return False
+    try:
+        return math.isfinite(value)
+    except OverflowError:
+        return False
 
 
 def verify_original_footage_on_native_timeline(
@@ -80,6 +92,9 @@ def verify_original_footage_on_native_timeline(
             if timeline.get("id") != current_timeline_id:
                 continue
             found_active = True
+            active_duration = timeline.get("duration")
+            if not _finite_real(active_duration) or active_duration <= 0:
+                raise ValueError("Active native timeline has no finite positive duration")
             tracks = timeline.get("tracks")
             if not isinstance(tracks, list):
                 raise ValueError("Native active track inventory is missing")
@@ -94,8 +109,13 @@ def verify_original_footage_on_native_timeline(
                         clip.get("enabled") is not False and
                         clip.get("trackId") in visible_video_tracks and
                         isinstance(clip.get("assetId"), str) and
-                        type(clip.get("duration")) in (int, float) and
-                        0 < clip["duration"] <= 1_000_000):
+                        _finite_real(clip.get("startTime")) and
+                        _finite_real(clip.get("duration")) and
+                        0 < clip["duration"] <= 1_000_000 and
+                        # A valid copied video entirely outside the active
+                        # timeline cannot appear in the delivered picture.
+                        clip["startTime"] < active_duration and
+                        clip["startTime"] + clip["duration"] > 0):
                     placed.add(clip["assetId"])
         if not found_active:
             raise ValueError("Active native timeline was not saved")
