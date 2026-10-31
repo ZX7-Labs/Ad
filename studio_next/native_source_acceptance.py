@@ -11,7 +11,23 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
+
+
+def _unique_project_json_fields(pairs):
+    """Reject ambiguous persisted identity before any custody verdict.
+
+    Native JSON.stringify never emits duplicate object keys; accepting a
+    manually constructed duplicate-id receipt would create parser-dependent
+    source evidence.
+    """
+    values = {}
+    for key, value in pairs:
+        if key in values:
+            raise ValueError("Native project contains duplicate JSON fields")
+        values[key] = value
+    return values
 
 
 def _sha256(path: Path) -> str:
@@ -83,7 +99,12 @@ def verify_original_footage_on_native_timeline(
             raise ValueError("Native project is outside owned test root")
         # Trial projects and original source manifest are host-created; the
         # model controls only native editor operations, never these files.
-        data = json.loads(project.read_text(encoding="utf-8"))
+        # Guard parser resource consumption; the bounded CPU acceptance trial
+        # never requires a multi-gigabyte saved project.
+        if project.stat().st_size > 32 * 1024 * 1024:
+            raise ValueError("Native project exceeds technical proof size limit")
+        data = json.loads(project.read_text(encoding="utf-8"),
+                          object_pairs_hook=_unique_project_json_fields)
         if not isinstance(data, dict) or not isinstance(data.get("assets"), list):
             raise ValueError("Native project assets are absent or invalid")
         timelines = data.get("timelines")
@@ -171,6 +192,12 @@ def verify_original_footage_on_native_timeline(
                 if (owned == original or
                         not owned.is_relative_to(project.parent) or
                         not owned.is_file()):
+                    continue
+                # A hard link is NOT a project-owned copy: it aliases the
+                # original inode. A later editor overwrite could change the
+                # owner's bytes, even though the path and SHA appear valid.
+                # Native import copies bytes, rather than hard-linking.
+                if os.path.samefile(owned, original):
                     continue
                 if _sha256(owned) != owner_hash:
                     continue
