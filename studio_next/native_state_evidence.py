@@ -154,7 +154,11 @@ def pinned_direct_native_plan_preview(name, inputs, native_schema, receipt):
         # clip move; unlike the asset plan it has no action/previewOnly keys.
         # A contradictory embedded action/previewOnly is rejected, not
         # interpreted as a harmless ordinary preview.
-        plan_ok = (isinstance(plan, dict) and bool(plan) and
+        plan_ok = (isinstance(plan, dict) and
+                   # A dictionary containing only an action/preview flag is
+                   # not the native editor's semantic preview plan and must
+                   # not be accepted as source evidence of no mutation.
+                   bool(set(plan) - {"action", "previewOnly"}) and
                    plan.get("action", name) == name and
                    plan.get("previewOnly", True) is True)
     else:
