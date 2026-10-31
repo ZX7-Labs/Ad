@@ -355,6 +355,33 @@ def audit_native_journal(events, *, host_tool_access, expected_required_evidence
                         for tool in tools) or len(set(tools)) != len(tools)):
                 raise NativeJournalError("Untrusted or fabricated initial machine affordance")
             continue
+        if kind == "host_native_asset_capability_frontier":
+            # This is never a native tool call. The controller saw a real
+            # host-granted get_assets EMPTY catalog and refused a model's
+            # nonexistent asset ID. Advertised possible asset-producing
+            # operations come exclusively from host effect grants, not from
+            # model-authored names or a fixed creative script.
+            tools = event.get("result_tool_names")
+            rejected = events[i - 1] if i >= 1 else {}
+            inventory = events[i - 2] if i >= 2 else {}
+            if (pending is not None or
+                    host_tool_access.get("get_assets") != "read" or
+                    rejected.get("kind") != "model_action_rejected" or
+                    rejected.get("validation_keyword") != "native_asset_not_imported" or
+                    inventory.get("kind") != "host_native_asset_inventory_observed" or
+                    inventory.get("tool") != "get_assets" or
+                    event.get("turn") != rejected.get("turn") or
+                    event.get("trusted_machine_fact") != "project_asset_available" or
+                    event.get("host_observed_value") is not False or
+                    event.get("native_project_asset_count") != 0 or
+                    event.get("no_native_dispatch") is not True or
+                    not _sha(event.get("catalog_revision")) or
+                    not isinstance(tools, list) or not 1 <= len(tools) <= 4 or
+                    any(not isinstance(tool, str) or
+                            host_tool_access.get(tool) != "write" for tool in tools) or
+                    len(tools) != len(set(tools))):
+                raise NativeJournalError("Host asset-effect frontier lacked physical inventory")
+            continue
         if kind in ("host_native_asset_inventory_observed",
                     "host_native_asset_inventory_read_error",
                     "host_native_timeline_inventory_observed",
