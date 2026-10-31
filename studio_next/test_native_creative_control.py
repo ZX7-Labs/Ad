@@ -2521,5 +2521,93 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
 
 
 
+    async def test_pinned_marker_color_constraints_reject_bad_model_args_before_native_rpc(self):
+        # Reproduce actual physical Qwen3.5-2B run #41177861285:
+        # create_project was ACKed, then model passed color="000000"
+        # to add_timeline_markers, causing an uncertain native write error.
+        from studio_next.native_creative_audit import audit_native_journal
+        from studio_next.native_creative_control import _source_attested_native_admission
+        from copy import deepcopy
+        marker_schema = {
+            "type": "object", "properties": {
+                "markers": {"type": "array", "items": {"type": "object",
+                    "properties": {"timeSeconds": {"type": "number"},
+                                   "label": {"type": "string"},
+                                   "color": {"type": "string",
+                                             "description": "Optional hex #RRGGBB marker color."}}}},
+                "timeSeconds": {"type": "number"},
+                "label": {"type": "string"},
+                "color": {"type": "string",
+                          "description": "Default marker color as hex #RRGGBB. Defaults to yellow."},
+                "previewOnly": {"type": "boolean"},
+            }}
+        session = FakeSession()
+        session.tools.append(SimpleNamespace(
+            name="add_timeline_markers",
+            description="Real native app marker operation",
+            input_schema=marker_schema))
+        grants = {tool.name: ("write" if tool.name in
+                  ("update_text_clip", "add_timeline_markers") else "read")
+                  for tool in session.tools}
+        model = ScriptedModel([
+            decision("invoke", tool="add_timeline_markers",
+                     inputs={"timeSeconds": 2.0, "label": "Chosen", "color": "000000"}),
+            decision("invoke", tool="add_timeline_markers",
+                     inputs={"markers": [{"timeSeconds": 2.0, "color": "ffaa33"}]}),
+            decision("invoke", tool="add_timeline_markers",
+                     inputs={"timeSeconds": 2.0, "label": "Chosen",
+                             "color": "#000000"}),
+            decision("finish", summary="One actual host ACK; not an edited film"),
+        ])
+        result = await NativeCreativeControl(
+            session, model, max_turns=4, host_tool_access=grants,
+            required_evidence=("native_write_acknowledged",),
+        ).run("Make an editable film from physical footage")
+        self.assertEqual(result["status"], "model_finished_unverified")
+        self.assertEqual(session.calls, [("add_timeline_markers", {
+            "timeSeconds": 2.0, "label": "Chosen", "color": "#000000"})])
+        rejects = [e for e in result["events"] if e["kind"] == "model_action_rejected"]
+        self.assertEqual(len(rejects), 2)
+        self.assertTrue(all(e["validation_keyword"] == "pattern" and
+                            e["no_native_dispatch"] is True for e in rejects))
+        self.assertEqual(rejects[0]["schema_location"], "properties/color/pattern")
+        self.assertEqual(rejects[1]["schema_location"],
+                         "properties/markers/items/properties/color/pattern")
+        self.assertIn("#RRGGBB", model.observed[1][
+            "last_rejected_native_action_feedback"]["source_attested_format"])
+        self.assertNotIn("pattern", marker_schema["properties"]["color"])
+        self.assertNotIn("pattern", marker_schema["properties"][
+            "markers"]["items"]["properties"]["color"])
+        self.assertTrue(audit_native_journal(
+            result["events"], host_tool_access=grants,
+            expected_required_evidence=("native_write_acknowledged",))[
+                "journal_chain_structurally_valid"])
+        self.assertFalse(result["artistic_quality_independently_approved"])
+
+        checked = _source_attested_native_admission(
+            "add_timeline_markers", deepcopy(marker_schema))
+        import jsonschema
+        validator = jsonschema.Draft202012Validator(checked)
+        for value in ("", "#ff0022", " #fF03aa ", "\t#000000"):
+            with self.subTest(color=value):
+                self.assertTrue(validator.is_valid({"color": value}))
+        for value in ("000000", "#fff", "#1234567", "blue", "tt#abcdef"):
+            with self.subTest(color=value):
+                self.assertFalse(validator.is_valid({"color": value}))
+        unreviewed = deepcopy(marker_schema)
+        unreviewed["properties"]["markers"]["items"]["properties"].pop("color")
+        with self.assertRaisesRegex(NativeCreativeControlError,
+                                    "source/schema mismatch"):
+            _source_attested_native_admission("add_timeline_markers", unreviewed)
+        foreign_engine = deepcopy(marker_schema)
+        foreign_engine["properties"]["color"]["description"] = "Named CSS colors supported."
+        with self.assertRaisesRegex(NativeCreativeControlError,
+                                    "source/schema mismatch"):
+            _source_attested_native_admission("add_timeline_markers", foreign_engine)
+        self.assertEqual(_source_attested_native_admission(
+            "other_tool", {"type": "object"}), {"type": "object"})
+
+
+
 if __name__ == "__main__":
     unittest.main()
