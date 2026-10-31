@@ -309,7 +309,7 @@ class CapabilityFabric:
                 # Reserve headroom for ordinary JSON serializers that add
                 # whitespace and the terminal truncation flag. The public
                 # overview remains <=900 bytes even without compact encoding.
-                if len(json.dumps(candidate, ensure_ascii=False).encode("utf-8")) <= 860:
+                if len(json.dumps(candidate).encode("utf-8")) <= 860:
                     result["host_granted_action_prefixes"].append(prefix)
             result["action_prefixes_may_be_incomplete"] = (
                 len(result["host_granted_action_prefixes"]) < len(prefixes))
