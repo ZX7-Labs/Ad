@@ -188,6 +188,8 @@ class NativeLoopObservationTests(unittest.IsolatedAsyncioTestCase):
         for turn in (1, 2):
             facts = model.observed[turn][
                 "latest_host_attested_native_project_progress"]
+            self.assertEqual(model.observed[turn][
+                "native_project_presence_from_last_inspection"], "present")
             self.assertEqual(facts["native_project_asset_count"], 0)
             self.assertEqual(facts["current_timeline_clip_count"], 0)
         self.assertEqual(model.observed[2]["last_native_result_texts"][0] and
@@ -292,6 +294,8 @@ class NativeLoopObservationTests(unittest.IsolatedAsyncioTestCase):
             host_tool_access=grants, max_turns=2).run("Observe native project")
         self.assertIsNone(model.observed[1][
             "latest_host_attested_native_project_progress"])
+        self.assertEqual(model.observed[1][
+            "native_project_presence_from_last_inspection"], "unknown")
         self.assertTrue(any(e["kind"] == "host_native_state_progress_read_error"
                             for e in result["events"]))
         self.assertTrue(audit_native_journal(
