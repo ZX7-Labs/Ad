@@ -85,6 +85,11 @@ not run that tool. invoke ACTUALLY calls one granted native tool, whether a
 read-only inspection or a model-chosen creative edit. Use real invoke results
 to establish project state; do not invent progress from discover/describe.
 Avoid repeating identical metadata queries without obtaining new information.
+Native parameter types are JSON types: integer/number fields require JSON numbers,
+not quoted digits. A native preview receipt is NOT an applied edit. If the
+host exposes a previewOnly boolean, the model may choose a real commit by
+sending previewOnly:false, but must never mistake a preview for an ACK or
+repeat an uncertain edit.
 When a compact search reports requires_refinement with zero executable matches,
 its bounded candidate_examples are REAL but INSPECTABLE-ONLY host-granted tools:
 choose one candidate's exact tool name with describe to inspect and select its
@@ -366,6 +371,9 @@ def _model_event_window(events):
         elif kind == "model_finish_rejected":
             item["missing_completion_evidence"] = event["missing_completion_evidence"]
             item["no_native_dispatch"] = True
+        elif kind == "native_tool_preview":
+            item["host_reported_preview_only"] = True
+            item["no_accepted_write_evidence"] = True
         elif kind == "model_action_rejected":
             for field in ("validation_keyword", "schema_location", "no_native_dispatch"):
                 if field in event:
