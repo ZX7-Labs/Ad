@@ -343,6 +343,32 @@ class PhysicalNativeSourceAcceptanceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "duplicate JSON"):
             self.verify()
 
+    def test_export_window_is_not_attributable_across_two_saved_projects(self):
+        # A valid original clip in an unrelated project cannot prove the
+        # actually rendered movie from another project contains that clip.
+        sibling = self.projects / "second-project"
+        sibling.mkdir()
+        second = sibling / "project.comfystudio"
+        second.write_text(json.dumps({
+            "currentTimelineId": "other-active-timeline",
+            "assets": [], "timelines": [{
+                "id": "other-active-timeline", "duration": 4.0,
+                "tracks": [], "clips": []
+            }]
+        }), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "ambiguous"):
+            verify_original_footage_on_native_timeline(
+                self.projects, [self.saved, second], self.manifest,
+                host_verified_export_windows=[
+                    {"start_seconds": 0, "end_seconds": 4}])
+        # No delivered movie => still no positive proof, even with multiple
+        # projects. This is not a restriction on normal native editing.
+        for path in (self.saved, second):
+            self.assertFalse(verify_original_footage_on_native_timeline(
+                self.projects, [path], self.manifest,
+                host_verified_export_windows=[])[
+                    "actual_original_video_used_on_native_timeline"])
+
     def test_oversize_project_is_refused_before_json_decode(self):
         # Sparse on-disk fixture avoids allocating an enormous Python string.
         with self.saved.open("wb") as target:
