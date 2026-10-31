@@ -137,6 +137,7 @@ class RecordedModel:
             'schema': native_action_schema(context['actual_granted_native_tools'],
                  compact_catalog=context.get('compact_tool_catalog', False),
                  selected_tools=context.get('selectable_native_tools', []),
+                 inspectable_tools=context.get('inspectable_native_tools', []),
                  allow_finish=not context.get('missing_completion_evidence', []))}}
         record = {'turn': self.turn, 'context': context, 'image_sha256': []}
         for index, (_, raw) in enumerate(images):
