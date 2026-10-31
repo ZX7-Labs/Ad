@@ -2439,5 +2439,87 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
 
 
 
+    async def test_generic_velorn_mcp_omitted_success_is_valid_preview_not_uncertain_write(self):
+        from studio_next.native_creative_audit import audit_native_journal
+        class NativeMcpPreview(FakeSession):
+            def __init__(self, variant):
+                super().__init__()
+                self.variant = variant
+                self.tools.append(SimpleNamespace(name="split_clip",
+                    description="Razor edit, preview by default",
+                    input_schema={"type": "object", "properties": {
+                        "clipId": {"type": "string"},
+                        "timeSeconds": {"type": "number"},
+                        "previewOnly": {"type": "boolean", "description":
+                            "When true, returns a plan without changing timeline."}}}))
+            async def call_tool(self, name, arguments):
+                self.calls.append((name, dict(arguments)))
+                self.assert_only_preview(name, arguments)
+                data = {"previewOnly": True, "action": "split_clip",
+                        "result": {"previewOnly": True, "action": "split_clip",
+                                   "message": "Native preview only",
+                                   "targets": [{"id": "source"}]},
+                        "suggestedApplyCall": {"tool": "split_clip",
+                            "arguments": {**arguments, "previewOnly": False}}}
+                if self.variant == "outer_action_mismatch":
+                    data["action"] = "delete_clips"
+                if self.variant == "inner_action_mismatch":
+                    data["result"]["action"] = "delete_clips"
+                if self.variant == "contradictory_success":
+                    data["success"] = True
+                if self.variant == "missing_outer_preview":
+                    data.pop("previewOnly")
+                if self.variant == "wrong_inner_preview":
+                    data["result"]["previewOnly"] = False
+                return SimpleNamespace(is_error=False,
+                    content=[SimpleNamespace(type="text", text=json.dumps(data))])
+            @staticmethod
+            def assert_only_preview(name, arguments):
+                if name != "split_clip" or arguments.get("previewOnly") is not True:
+                    raise AssertionError("Model preview must never execute suggestedApplyCall")
+        grants = {tool.name: ("write" if tool.name in (
+            "split_clip", "update_text_clip") else "read")
+                  for tool in FakeSession().tools}
+        grants["split_clip"] = "write"
+        args = {"clipId": "source", "timeSeconds": 3, "previewOnly": True}
+        good = NativeMcpPreview("valid")
+        model = ScriptedModel([
+            decision("invoke", tool="split_clip", inputs=args),
+            decision("finish", summary="Preview, not a completed edit")])
+        output = await NativeCreativeControl(
+            good, model, max_turns=2, host_tool_access=grants).run(
+                "Inspect cutting a source clip without applying it")
+        self.assertEqual(output["status"], "model_finished_unverified")
+        self.assertEqual(good.calls, [("split_clip", args)])
+        self.assertEqual(sum(e["kind"] == "native_tool_preview"
+                             for e in output["events"]), 1)
+        self.assertFalse(any(e["kind"] == "native_tool_result"
+                              for e in output["events"]))
+        self.assertTrue(model.observed[1]["last_native_preview_feedback"][
+            "no_native_write_acknowledged"])
+        self.assertTrue(audit_native_journal(
+            output["events"], host_tool_access=grants)["journal_chain_structurally_valid"])
+        for variant in ("outer_action_mismatch", "inner_action_mismatch",
+                        "contradictory_success", "missing_outer_preview",
+                        "wrong_inner_preview"):
+            with self.subTest(variant=variant):
+                session = NativeMcpPreview(variant)
+                model = ScriptedModel([
+                    decision("invoke", tool="split_clip", inputs=args)])
+                result = await NativeCreativeControl(
+                    session, model, max_turns=1, host_tool_access=grants).run(
+                    "Do not trust ambiguous native preview receipts")
+                self.assertEqual(result["status"],
+                                 "native_error_requires_state_reconciliation")
+                self.assertEqual(session.calls, [("split_clip", args)])
+                self.assertEqual(result["events"][-1]["kind"],
+                                 "native_tool_uncertain_outcome")
+                self.assertFalse(result["native_editing_capability_complete"])
+                self.assertTrue(audit_native_journal(
+                    result["events"], host_tool_access=grants)[
+                        "journal_chain_structurally_valid"])
+
+
+
 if __name__ == "__main__":
     unittest.main()
