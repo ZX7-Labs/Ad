@@ -105,8 +105,12 @@ class SourcePreviewContracts(unittest.TestCase):
         # Actual pinned addTransition/updateTransition/removeTransitions and
         # moveClips/trimClips plans contain semantic fields, not an inner
         # {action, previewOnly}. These MUST be read-only previews by default.
-        for name in ("add_transition", "update_transition",
-                     "remove_transitions", "move_clips", "trim_clips"):
+        for name in (
+                "add_transition", "update_transition", "remove_transitions",
+                "move_clips", "trim_clips",
+                "update_track", "remove_track", "switch_timeline",
+                "rename_timeline", "duplicate_timeline", "delete_timeline",
+                "delete_clips", "create_timeline", "set_clip_keyframes"):
             with self.subTest(tool=name):
                 receipt = {
                     "previewOnly": True, "action": name,
@@ -163,6 +167,43 @@ class SourcePreviewContracts(unittest.TestCase):
                 self.assertIn("action: '" + tool + "'", block)
                 self.assertIn("suggestedApplyCall:", block)
                 self.assertIn("previewOnly: false", block)
+
+    def test_other_pinned_video_editor_plans_also_precede_native_mutation(self):
+        # These nine native functions also default to a read-only plan.
+        # Source contracts must fail if a future third-party editor moves
+        # performAction above the preview return, removes the suggested apply,
+        # or changes the previewOnly ABI without a fresh security review.
+        source = (Path(__file__).resolve().parents[1] /
+                  "third_party/velorn/electron/mcpServer.js")
+        text = source.read_text(encoding="utf-8")
+        methods = {
+            "update_track": "updateTrack",
+            "remove_track": "removeTrack",
+            "switch_timeline": "switchTimeline",
+            "rename_timeline": "renameTimeline",
+            "duplicate_timeline": "duplicateTimeline",
+            "delete_timeline": "deleteTimeline",
+            "delete_clips": "deleteClips",
+            "create_timeline": "createTimeline",
+            "set_clip_keyframes": "setClipKeyframes",
+        }
+        for name, method in methods.items():
+            with self.subTest(tool=name):
+                left = text.index("async " + method + "(")
+                right = text.index("\n  async ", left + len(method) + 7)
+                source_method = text[left:right]
+                guard = source_method.index("if (args.previewOnly !== false)")
+                dispatch = source_method.index("await this.performAction({")
+                self.assertLess(guard, dispatch)
+                proposal = source_method[guard:dispatch]
+                self.assertIn("return textResult({", proposal)
+                self.assertIn("previewOnly: true", proposal)
+                self.assertIn("action: '" + name + "'", proposal)
+                self.assertIn("plan,", proposal)
+                self.assertIn("suggestedApplyCall:", proposal)
+                self.assertIn("tool: '" + name + "'", proposal)
+                # The applied arguments may be built ahead of the guard.
+                self.assertIn("previewOnly: false", source_method[:dispatch])
 
     def test_pinned_native_editor_source_guarantees_preview_never_performs_action(self):
         # This safety exception may NOT silently survive a third-party editor
