@@ -46,8 +46,13 @@ class FakeNative:
         elif name == "extract_range":
             if arguments.get("previewOnly") is not True:
                 raise AssertionError("Safety preflight dispatched a real edit")
-            data = {"previewOnly": True, "plan": self.boundaries,
-                    "warnings": self.warnings}
+            data = {
+                "previewOnly": True, "action": "extract_range",
+                "result": {"previewOnly": True, "action": "extract_range",
+                           "plan": self.boundaries, "warnings": self.warnings},
+                "suggestedApplyCall": {"tool": "extract_range",
+                                       "arguments": {**arguments, "previewOnly": False}},
+            }
         else:
             raise AssertionError("Unexpected native operation")
         return {"isError": False, "content": [
@@ -115,6 +120,51 @@ class NativeExtractLossGuardTests(unittest.TestCase):
             with self.subTest(state=state), self.assertRaises(EditorAccessError):
                 self.check(native)
             self.assertEqual([name for name, _ in native.calls], ["get_timeline"])
+
+    def test_actual_pinned_mcp_preview_envelope_is_mandatory(self):
+        # Never mistake the top-level MCP response for the renderer's
+        # nested plan; equally, never auto-execute suggestedApplyCall.
+        class LegacyFlatPreview(FakeNative):
+            def call(self, name, arguments, *, allowed_access):
+                result = super().call(name, arguments, allowed_access=allowed_access)
+                if name == "extract_range":
+                    data = json.loads(result["content"][0]["text"])
+                    flat = data["result"]
+                    result["content"][0]["text"] = json.dumps(flat)
+                return result
+        native = LegacyFlatPreview()
+        with self.assertRaisesRegex(EditorAccessError, "preview is incomplete"):
+            self.check(native)
+        self.assertEqual([name for name, _ in native.calls],
+                         ["get_timeline", "extract_range"])
+
+    def test_nested_preview_cannot_claim_success_or_be_another_operation(self):
+        class AmbiguousPreview(FakeNative):
+            def __init__(self, kind):
+                super().__init__()
+                self.kind = kind
+            def call(self, name, arguments, *, allowed_access):
+                result = super().call(name, arguments, allowed_access=allowed_access)
+                if name == "extract_range":
+                    data = json.loads(result["content"][0]["text"])
+                    if self.kind == "top_claim_success":
+                        data["success"] = True
+                    elif self.kind == "different_outer_tool":
+                        data["action"] = "delete_clips"
+                    elif self.kind == "different_inner_tool":
+                        data["result"]["action"] = "delete_clips"
+                    elif self.kind == "only_outer_preview":
+                        data["result"]["previewOnly"] = False
+                    result["content"][0]["text"] = json.dumps(data)
+                return result
+        for kind in ("top_claim_success", "different_outer_tool",
+                     "different_inner_tool", "only_outer_preview"):
+            with self.subTest(kind=kind):
+                native = AmbiguousPreview(kind)
+                with self.assertRaisesRegex(EditorAccessError, "preview is incomplete"):
+                    self.check(native)
+                self.assertTrue(all(arguments.get("previewOnly") is True
+                        for name, arguments in native.calls if name == "extract_range"))
 
     def test_stale_native_preview_must_match_independent_frame_boundary_plan(self):
         native = FakeNative()
