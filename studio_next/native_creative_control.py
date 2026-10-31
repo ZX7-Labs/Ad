@@ -82,6 +82,10 @@ not run that tool. invoke ACTUALLY calls one granted native tool, whether a
 read-only inspection or a model-chosen creative edit. Use real invoke results
 to establish project state; do not invent progress from discover/describe.
 Avoid repeating identical metadata queries without obtaining new information.
+A host-scoped write with an acknowledged successful application may become
+unavailable for the rest of this session. When search says a tool was already
+applied, independently search for other installed operations. Do not assume
+that a completed project creation is a completed creative edit.
 Respond with a JSON object: {action, arguments, reason}.
 Allowed actions: search:{query, limit?} for live granted operations,
 describe:{tool} for its exact schema, invoke:{tool, inputs} to actually use it,
@@ -374,6 +378,7 @@ class NativeCreativeControl:
                  catalog_mode: str = "full",
                  host_preconditions: dict | None = None,
                  host_possible_effects: dict | None = None,
+                 host_once_after_acknowledged_write: tuple[str, ...] = (),
                  required_evidence: tuple[str, ...] = (),
                  host_content_revision_tools: tuple[str, ...] = ()):
         if type(max_turns) is not int or not 1 <= max_turns <= 128:
@@ -416,6 +421,17 @@ class NativeCreativeControl:
         self.catalog_mode = catalog_mode
         self._host_preconditions = copy.deepcopy(host_preconditions or {})
         self._host_possible_effects = copy.deepcopy(host_possible_effects or {})
+        if (not isinstance(host_once_after_acknowledged_write, (tuple, list)) or
+                len(set(host_once_after_acknowledged_write)) !=
+                len(host_once_after_acknowledged_write) or
+                any(not isinstance(name, str) or not name or
+                    host_tool_access is None or host_tool_access.get(name) != "write"
+                    for name in host_once_after_acknowledged_write)):
+            raise NativeCreativeControlError(
+                "One-write host policy requires distinct explicitly granted write tools")
+        # Trial-only single-project policy. A general creative session may
+        # intentionally create multiple projects; never silently impose this.
+        self._host_once_after_ack = frozenset(host_once_after_acknowledged_write)
         if (not isinstance(self._host_preconditions, dict) or
                 not isinstance(self._host_possible_effects, dict)):
             raise NativeCreativeControlError("Trusted machine contracts must be objects")
@@ -438,6 +454,7 @@ class NativeCreativeControl:
         # Ground project presence only in actual native get_project results,
         # never in model text, metadata discovery, or an earlier session.
         self._project_presence = "unknown"
+        self._post_write_state_warning: dict | None = None
         self._last_preflight_feedback: dict | None = None
         self._last_audio: list[tuple[str, bytes]] = []
         self._last_audio_evidence: dict | None = None
@@ -495,6 +512,12 @@ class NativeCreativeControl:
             os.fsync(self._receipt.fileno())
         self.events.append(event)
 
+    def _host_write_already_acknowledged(self, tool: str) -> bool:
+        """Trusted session policy only; previews and model claims are excluded."""
+        return (tool in self._host_once_after_ack and
+                any(e.get("kind") == "native_tool_result" and
+                    e.get("tool") == tool for e in self.events))
+
     def _decision(self, raw):
         if (not isinstance(raw, dict) or set(raw) != {"action", "arguments", "reason"} or
                 raw.get("action") not in {"discover", "search", "describe", "invoke", "finish"} or
@@ -531,7 +554,8 @@ class NativeCreativeControl:
         elif (set(args) != {"tool", "inputs"} or not isinstance(args["tool"], str)
                 or args["tool"] not in self.tools or not isinstance(args["inputs"], dict) or
                 (self.catalog_mode == "indexed" and
-                 args["tool"] not in self._selectable_tools)):
+                 args["tool"] not in self._selectable_tools and
+                 not self._host_write_already_acknowledged(args["tool"]))):
             raise NativeCreativeControlError(
                 "Model requested ungranted, unsearched tool or invalid inputs")
         return raw
@@ -750,8 +774,15 @@ class NativeCreativeControl:
                         [] if self.catalog_mode == "indexed" else list(self.tools)),
                     "compact_tool_catalog": self.catalog_mode == "indexed",
                     "selectable_native_tools": list(self._selectable_tools),
-                    "capability_overview": (self._capabilities.overview()
-                                            if self._capabilities is not None else None),
+                    # After an acknowledged one-shot machine operation,
+                    # reveal a compact term vocabulary grounded only in other
+                    # real granted native tool names. The tiny brain chooses
+                    # the actual next query and every creative decision.
+                    "capability_overview": (
+                        self._capabilities.overview(include_search_facets=any(
+                            self._host_write_already_acknowledged(name)
+                            for name in self._host_once_after_ack))
+                        if self._capabilities is not None else None),
                     "last_capability_search_result": self._last_search_result,
                     "completion_does_not_certify_artistic_quality": True,
                     "required_completion_evidence": sorted(self.required_evidence),
@@ -763,6 +794,9 @@ class NativeCreativeControl:
                     "latest_events": _model_event_window(self.events),
                     "last_native_result_texts": self._last_native_texts,
                     "native_project_presence_from_last_inspection": self._project_presence,
+                    # A successful write and a lagging native READ are a
+                    # contradiction, never permission to create again.
+                    "last_host_project_write_reconciliation": self._post_write_state_warning,
                     # A schema error is known BEFORE any native RPC. Instead
                     # of burning another costly inference on metadata discovery,
                     # expose the exact bounded host schema for independent
@@ -850,10 +884,25 @@ class NativeCreativeControl:
                         args["query"], limit=args.get("limit", 6))
                     # Only tool identities from actual discovery enter the
                     # model-facing result. Host grant map is authoritative.
-                    self._last_search_result["matches"] = [
+                    discovered = [
                         {**match, "tool": self._capabilities.resolve(
                             match["id"], revision=self._capabilities.revision)["native_name"]}
                         for match in self._last_search_result["matches"]]
+                    exhausted = [match["tool"] for match in discovered
+                                 if self._host_write_already_acknowledged(match["tool"])]
+                    # A bounded installed tool is still host-discoverable, but
+                    # its one-use grant was exhausted after a real ACK. Never
+                    # expose that operation as an actionable model choice.
+                    # The model chooses its own new query; no alternate edit
+                    # or aesthetic recipe is manufactured by the host.
+                    self._last_search_result["matches"] = [
+                        match for match in discovered
+                        if match["tool"] not in exhausted]
+                    if exhausted:
+                        self._last_search_result[
+                            "already_acknowledged_host_once_tools"] = exhausted[:8]
+                        self._last_search_result[
+                            "host_requires_new_capability_query"] = True
                     self._selectable_tools = [
                         match["tool"] for match in self._last_search_result["matches"]]
                     self._append({"kind": "capability_searched", "turn": turn, **timing,
@@ -888,6 +937,28 @@ class NativeCreativeControl:
                 # It may describe the tool and independently revise its
                 # arguments on its next turn. Never retry an actual write.
                 native_name = args["tool"]
+                # A model may repeat create_project after a successful native
+                # write and even a contradictory project-state observation.
+                # The host may expressly mark selected writes as single-use
+                # for this trial. A preview, preflight refusal, or failed write
+                # is NOT an acknowledged mutation and does not exhaust it.
+                # This refuses the duplicate BEFORE the second side effect.
+                if self._host_write_already_acknowledged(native_name):
+                    self._last_preflight_feedback = {
+                        "tool": native_name,
+                        "validation_keyword": "host_single_write",
+                        "native_write_already_acknowledged": True,
+                        "no_native_dispatch": True}
+                    self._selectable_tools = [] if self.catalog_mode == "indexed" else self._selectable_tools
+                    self._last_search_result = None if self.catalog_mode == "indexed" else self._last_search_result
+                    self._append({"kind": "model_action_rejected", "turn": turn,
+                                  **timing, "tool": native_name,
+                                  "inputs_sha256": hashlib.sha256(
+                                      _wire(args["inputs"]).encode()).hexdigest(),
+                                  "validation_keyword": "host_single_write",
+                                  "schema_location": "",
+                                  "no_native_dispatch": True})
+                    continue
                 invalid = next(validators[native_name].iter_errors(args["inputs"]), None)
                 if invalid is not None:
                     schema = validators[native_name].schema
@@ -1005,23 +1076,31 @@ class NativeCreativeControl:
                         raise NativeCreativeControlError("Untrusted tool supplied image evidence")
                     if audio and native_name not in _VERIFIED_AUDIO_TOOLS:
                         raise NativeCreativeControlError("Untrusted tool supplied audio evidence")
-                    # A native tool may report a successful MCP transport
-                    # while its application explicitly supplied only a preview
-                    # plan. Velorn's default previewOnly=True returns
-                    # success=false and result.previewOnly=true. That is NOT
-                    # an acknowledged native mutation, even for a host-granted
-                    # write tool. Never satisfy completion via a preview plan.
+                    # MCP transport success does NOT establish that the native
+                    # application applied a model-chosen write. Actual Velorn
+                    # actions return an explicit JSON boolean success. Require
+                    # that acknowledgment before a write counts as evidence;
+                    # contradictory, missing or malformed receipts leave the
+                    # state uncertain and must not be automatically replayed.
                     if (self.host_tool_access is not None and
-                            self.host_tool_access.get(native_name) == "write" and
-                            len(texts) == 1 and not images and not audio):
+                            self.host_tool_access.get(native_name) == "write"):
                         try:
-                            host_response = _strict_receipt(texts, "native write response")
+                            host_response = (
+                                _strict_receipt(texts, "native write response")
+                                if len(texts) == 1 and not images and not audio
+                                else None)
                         except NativeCreativeControlError:
-                            host_response = {}
-                        if host_response.get("success") is False:
-                            host_result = host_response.get("result")
-                            if (isinstance(host_result, dict) and
-                                    host_result.get("previewOnly") is True):
+                            host_response = None
+                        success = (host_response.get("success")
+                                   if isinstance(host_response, dict) else None)
+                        host_result = (host_response.get("result")
+                                       if isinstance(host_response, dict) else None)
+                        preview = (host_result.get("previewOnly")
+                                   if isinstance(host_result, dict) else None)
+                        if success is False:
+                            if preview is True:
+                                # A proposed native plan is useful model feedback,
+                                # but never grants credit for any applied edit.
                                 self._last_native_texts = texts
                                 self._last_images, self._last_hashes = [], []
                                 self._last_audio, self._last_audio_evidence = [], None
@@ -1036,13 +1115,32 @@ class NativeCreativeControl:
                                     "no_accepted_write_evidence": True,
                                     "human_or_artistic_quality_approved": False})
                                 continue
-                            digest = hashlib.sha256(texts[0].encode()).hexdigest()
                             self._append({
                                 "kind": "native_tool_reported_error", "turn": turn,
                                 "tool": native_name,
                                 "measured_native_mcp_wall_ms": native_ms,
-                                "error_sha256": digest,
+                                "error_sha256": hashlib.sha256(texts[0].encode()).hexdigest(),
                                 "error_text_exceeded_evidence_budget": False,
+                                "must_reconcile_native_state": True,
+                                "no_automatic_retry": True})
+                            outcome = "native_error_requires_state_reconciliation"
+                            break
+                        if (success is not True or
+                                (isinstance(host_result, dict) and
+                                 "previewOnly" in host_result and preview is not False)):
+                            # No application-level acknowledgment, or the host
+                            # contradicted itself by claiming both a successful
+                            # write and a preview. Neither is acceptable proof.
+                            # The write may still have taken effect: stop rather
+                            # than guessing or sending a second mutation.
+                            self._append({
+                                "kind": "native_tool_uncertain_outcome", "turn": turn,
+                                "tool": native_name,
+                                "measured_native_mcp_wall_ms": native_ms,
+                                "response_sha256": hashlib.sha256(
+                                    _wire(texts).encode()).hexdigest(),
+                                "uncertainty_reason":
+                                    "native_write_unconfirmed_by_application",
                                 "must_reconcile_native_state": True,
                                 "no_automatic_retry": True})
                             outcome = "native_error_requires_state_reconciliation"
@@ -1090,6 +1188,11 @@ class NativeCreativeControl:
                 self._project_presence = (
                     _native_project_presence_from_text(texts)
                     if native_name == "get_project" else "unknown")
+                if native_name == "get_project" and self._project_presence != "unknown":
+                    # A newer independent native inspection supersedes the
+                    # post-write inconsistency; preserve the historical
+                    # warning and raw evidence in immutable journal events.
+                    self._post_write_state_warning = None
                 self._last_native_texts = texts
                 self._last_images, self._last_hashes = images, hashes
                 self._last_audio, self._last_audio_evidence = audio, audio_evidence
@@ -1097,6 +1200,21 @@ class NativeCreativeControl:
                               "tool": native_name,
                               "measured_native_mcp_wall_ms": native_ms,
                               "text_sha256": [hashlib.sha256(s.encode()).hexdigest() for s in texts],
+                              # A write result is credited only after the
+                              # native APPLICATION's explicit boolean ACK,
+                              # never an MCP transport success alone. The
+                              # signed-off receipt digest ties this assertion
+                              # to the exact source result stored in the
+                              # journal; no raw response bytes are persisted.
+                              "host_application_write_acknowledged": (
+                                  True if self.host_tool_access is not None and
+                                  self.host_tool_access.get(native_name) == "write"
+                                  else None),
+                              "host_application_write_receipt_sha256": (
+                                  hashlib.sha256(texts[0].encode()).hexdigest()
+                                  if self.host_tool_access is not None and
+                                  self.host_tool_access.get(native_name) == "write"
+                                  else None),
                               "image_sha256": hashes,
                               "audio_sha256": audio_evidence["wav_sha256"] if audio_evidence else None,
                               "independently_verified_export_sha256": new_export_sha,
@@ -1104,12 +1222,19 @@ class NativeCreativeControl:
                               "audio_sent_to_model_for_next_decision": bool(audio),
                               "audio_semantically_heard": False,
                               "human_or_artistic_quality_approved": False})
-                # A successful native create/open response is a WRITE receipt,
-                # not independent evidence that a project is now open. Observe
-                # the actual host state once with the owner's READ grant,
-                # without choosing any creative action for the model. This
-                # prevents stale/unknown project facts from wasting inference
-                # turns or provoking duplicate project creation.
+                if native_name in self._host_once_after_ack and self.catalog_mode == "indexed":
+                    # A one-time host operation has already been acknowledged.
+                    # Its old search result is no longer an actionable frontier;
+                    # the model must independently search for any next tool.
+                    # No creative operation is selected or dispatched here.
+                    self._selectable_tools = []
+                    self._last_search_result = None
+                # A successful project-opening write may precede the editor's
+                # asynchronous project snapshot. Source-evidence from the real
+                # CPU trial showed one actual create ACK followed immediately
+                # by get_project reporting 'absent'. Recheck at most ONCE,
+                # using only the host-authorized native READ. Neither read may
+                # create a project, mutate a timeline or invent success.
                 effects = self._host_possible_effects.get(native_name, ())
                 if (isinstance(effects, (list, tuple)) and
                         "project_open" in effects and
@@ -1117,51 +1242,107 @@ class NativeCreativeControl:
                         self.host_tool_access.get("get_project") == "read" and
                         "get_project" in validators and
                         validators["get_project"].is_valid({})):
-                    try:
-                        refreshed = await self.session.call_tool("get_project", {})
-                    except Exception as exc:
-                        self._append({"kind": "host_project_post_write_error",
-                                      "tool": "get_project",
-                                      "triggered_by_native_tool": native_name,
-                                      "host_attested_read_only": True,
-                                      "no_model_selected_mutation": True,
-                                      "error_type": type(exc).__name__})
-                    else:
-                        if _field(refreshed, "is_error",
-                                  _field(refreshed, "isError", False)):
-                            digest, oversized = _bounded_error_digest(refreshed)
+                    self._post_write_state_warning = None
+                    for read_attempt in (1, 2):
+                        if read_attempt == 2:
+                            # Bounded grace period for Electron/renderer -> MCP
+                            # snapshot propagation, not a creative scheduling
+                            # policy. No unattended retry of any native WRITE.
+                            await asyncio.sleep(0.2)
+                        try:
+                            refreshed = await self.session.call_tool("get_project", {})
+                        except Exception as exc:
+                            self._project_presence = "unknown"
+                            self._post_write_state_warning = {
+                                "read_only_reconciliation_incomplete": True,
+                                "project_state_unknown": True,
+                                "must_inspect_native_project": True}
                             self._append({"kind": "host_project_post_write_error",
                                           "tool": "get_project",
                                           "triggered_by_native_tool": native_name,
+                                          "read_attempt": read_attempt,
+                                          "host_attested_read_only": True,
+                                          "no_model_selected_mutation": True,
+                                          "error_type": type(exc).__name__})
+                            break
+                        if _field(refreshed, "is_error",
+                                  _field(refreshed, "isError", False)):
+                            digest, oversized = _bounded_error_digest(refreshed)
+                            self._project_presence = "unknown"
+                            self._post_write_state_warning = {
+                                "read_only_reconciliation_incomplete": True,
+                                "project_state_unknown": True,
+                                "must_inspect_native_project": True}
+                            self._append({"kind": "host_project_post_write_error",
+                                          "tool": "get_project",
+                                          "triggered_by_native_tool": native_name,
+                                          "read_attempt": read_attempt,
                                           "host_attested_read_only": True,
                                           "no_model_selected_mutation": True,
                                           "error_sha256": digest,
                                           "error_text_exceeded_evidence_budget": oversized})
-                        else:
-                            try:
-                                state_texts, state_images, state_audio = _native_content(refreshed)
-                                if len(state_texts) != 1 or state_images or state_audio:
-                                    raise NativeCreativeControlError(
-                                        "Project state read needs one bounded text receipt only")
-                            except NativeCreativeControlError:
-                                self._append({"kind": "host_project_post_write_error",
-                                              "tool": "get_project",
-                                              "triggered_by_native_tool": native_name,
-                                              "host_attested_read_only": True,
-                                              "no_model_selected_mutation": True,
-                                              "error_type": "InvalidBoundedProjectObservation"})
-                            else:
-                                self._project_presence = _native_project_presence_from_text(state_texts)
-                                self._last_native_texts = state_texts
-                                self._append({"kind": "host_project_post_write_observation",
-                                              "tool": "get_project",
-                                              "triggered_by_native_tool": native_name,
-                                              "host_attested_read_only": True,
-                                              "no_model_selected_mutation": True,
-                                              "project_presence": self._project_presence,
-                                              "text_sha256": [
-                                                  hashlib.sha256(x.encode()).hexdigest()
-                                                  for x in state_texts]})
+                            break
+                        try:
+                            state_texts, state_images, state_audio = _native_content(refreshed)
+                            if len(state_texts) != 1 or state_images or state_audio:
+                                raise NativeCreativeControlError(
+                                    "Project state read needs one bounded text receipt only")
+                        except NativeCreativeControlError:
+                            self._project_presence = "unknown"
+                            self._post_write_state_warning = {
+                                "read_only_reconciliation_incomplete": True,
+                                "project_state_unknown": True,
+                                "must_inspect_native_project": True}
+                            self._append({"kind": "host_project_post_write_error",
+                                          "tool": "get_project",
+                                          "triggered_by_native_tool": native_name,
+                                          "read_attempt": read_attempt,
+                                          "host_attested_read_only": True,
+                                          "no_model_selected_mutation": True,
+                                          "error_type": "InvalidBoundedProjectObservation"})
+                            break
+                        observation = _native_project_presence_from_text(state_texts)
+                        self._project_presence = observation
+                        self._last_native_texts = state_texts
+                        self._append({"kind": "host_project_post_write_observation",
+                                      "tool": "get_project",
+                                      "triggered_by_native_tool": native_name,
+                                      "read_attempt": read_attempt,
+                                      "host_attested_read_only": True,
+                                      "no_model_selected_mutation": True,
+                                      "project_presence": observation,
+                                      "text_sha256": [
+                                          hashlib.sha256(x.encode()).hexdigest()
+                                          for x in state_texts]})
+                        if observation == "unknown":
+                            # Contradictory/partial native fields do NOT mean
+                            # the editor has opened a project. Require a new
+                            # independent inspection instead of hiding the
+                            # inconsistent snapshot from the model.
+                            self._post_write_state_warning = {
+                                "read_only_reconciliation_incomplete": True,
+                                "project_state_unknown": True,
+                                "must_inspect_native_project": True}
+                            break
+                        if observation == "present":
+                            break
+                        if read_attempt == 2:
+                            # An ACK plus two absent observations is
+                            # inconsistent/uncertain, not authorization to
+                            # create another project. Preserve the real reads
+                            # in the journal; make the state unknown.
+                            self._project_presence = "unknown"
+                            self._post_write_state_warning = {
+                                "read_only_reconciliation_incomplete": True,
+                                "project_state_unknown": True,
+                                "must_inspect_native_project": True}
+                            self._append({
+                                "kind": "host_project_post_write_inconsistent",
+                                "triggered_by_native_tool": native_name,
+                                "bounded_read_attempts": 2,
+                                "claimed_project_success_unconfirmed": True,
+                                "no_model_selected_mutation": True,
+                                "no_automatic_write_retry": True})
             return {
                 "status": outcome, "events": self.events.copy(),
                 "measured_model_wall_ms_total": round(self._model_wall_ms_total, 3),

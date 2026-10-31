@@ -256,12 +256,32 @@ class CapabilityFabric:
     def count(self):
         return len(self._records)
 
-    def overview(self):
+    def overview(self, *, include_search_facets=False):
+        """Tiny default, optional bounded host-grounded navigation vocabulary.
+
+        Only actual authorized native operation *names* contribute terms. Tool
+        descriptions are untrusted and excluded; no new tools, permissions,
+        operation suggestions or creative sequence are invented. A specialist
+        brain can independently search any term; facets are not executable.
+        """
+        if type(include_search_facets) is not bool:
+            raise CapabilityContractError("Capability overview facets require a boolean")
         counts = {key: 0 for key in self._namespaces}
         for value in self._records.values():
             counts[value["source"]] += 1
-        return {"revision": self.revision, "operation_count": self.count,
-                "sources": counts, "discovery": "search_then_describe"}
+        result = {"revision": self.revision, "operation_count": self.count,
+                  "sources": counts, "discovery": "search_then_describe"}
+        if include_search_facets:
+            from collections import Counter
+            terms = Counter()
+            for record in self._records.values():
+                terms.update(word for word in _tokens(record["native_name"])
+                             if 3 <= len(word) <= 24)
+            result["host_granted_search_terms"] = [
+                word for word, _ in sorted(
+                    terms.items(), key=lambda item: (-item[1], item[0]))[:16]]
+            result["terms_are_search_hints_not_execution_grants"] = True
+        return result
 
     def search(self, query: str, *, limit: int = 6):
         if (not isinstance(query, str) or not query.strip() or

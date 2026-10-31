@@ -251,6 +251,11 @@ async def trial(args, lock, artifacts, command):
                         "create_project": ["project_open"],
                         "open_project": ["project_open"],
                     },
+                    # The bounded trial authors one project. A second neural
+                    # create request after an acknowledged write may destroy
+                    # continuity or create an unrelated empty project. Other
+                    # creative sessions are not globally subject to this rule.
+                    host_once_after_acknowledged_write=("create_project",),
                     # Technical owner acceptance facts, NOT an editing plan.
                     # Failed model claims cannot end the trial before actual
                     # native activity, source-verified export and visual sensing.
