@@ -2355,6 +2355,33 @@ class NativeCreativeControlTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(_selected_native_input_hints(
             ["not_installed"], {"update_text_clip": session.tools[1]}), [])
 
+    async def test_repeated_identical_capability_search_exposes_no_new_evidence_without_dispatch(self):
+        from studio_next.native_creative_audit import audit_native_journal
+        session = FakeSession()
+        grants = {tool.name: ("write" if tool.name == "update_text_clip" else "read")
+                  for tool in session.tools}
+        model = ScriptedModel([
+            decision("search", query="edit text", limit=3),
+            decision("search", query="edit text", limit=3),
+            decision("describe", tool="update_text_clip"),
+            decision("finish", summary="Only metadata reviewed; no native project edited"),
+        ])
+        outcome = await NativeCreativeControl(
+            session, model, max_turns=4, catalog_mode="indexed",
+            host_tool_access=grants).run("Inspect native capabilities")
+        self.assertEqual(outcome["status"], "model_finished_unverified")
+        self.assertFalse(model.observed[1]["last_capability_search_result"].get(
+            "same_metadata_query_without_new_evidence", False))
+        repeated = model.observed[2]["last_capability_search_result"]
+        self.assertTrue(repeated["same_metadata_query_without_new_evidence"])
+        self.assertEqual(repeated["identical_query_repeat_count"], 1)
+        self.assertTrue(repeated["no_native_edit_or_inspection_performed"])
+        self.assertEqual(session.calls, [])
+        self.assertEqual(sum(ev["kind"] == "capability_searched"
+                             for ev in outcome["events"]), 2)
+        self.assertTrue(audit_native_journal(
+            outcome["events"], host_tool_access=grants)["journal_chain_structurally_valid"])
+
     async def test_native_parameter_hint_budget_never_dumps_full_schema(self):
         from studio_next.native_creative_control import _selected_native_input_hints
         many = SimpleNamespace(input_schema={
