@@ -22,6 +22,7 @@ if str(ROOT) not in sys.path:
 
 from studio_next.native_creative_control import NativeCreativeControl, NATIVE_CREATIVE_SYSTEM
 from studio_next.providers import LocalCreativeModel, LocalModelSettings
+from studio_next.external_operator import ExternalOperatorModel
 from studio_next.native_action_schema import native_action_schema
 
 
@@ -44,10 +45,22 @@ async def main(args):
         params.append("--software-gpu")
     if args.no_sandbox:
         raise ValueError("Do not disable Chromium sandbox in live-model creative sessions")
-    model = LocalCreativeModel(
-        LocalModelSettings(base_url=args.base_url, model_id=args.model_id,
-                           timeout_seconds=args.model_timeout),
-        system_prompt=NATIVE_CREATIVE_SYSTEM)
+    # This optional seat does not call the OpenAI API, fork GPT-6, or inherit
+    # any ChatGPT session memory. A distinct authorized operator controls each
+    # creative decision through private files. Existing MCP host grants stay.
+    if args.operator_mailbox is not None:
+        if args.model_id is not None or args.structured_actions:
+            raise ValueError("External operator mode cannot use local model or structured decoding")
+        model = ExternalOperatorModel(
+            args.operator_mailbox, system_prompt=NATIVE_CREATIVE_SYSTEM,
+            timeout_seconds=args.model_timeout)
+    else:
+        if not args.model_id:
+            raise ValueError("Local model mode requires --model-id")
+        model = LocalCreativeModel(
+            LocalModelSettings(base_url=args.base_url, model_id=args.model_id,
+                               timeout_seconds=args.model_timeout),
+            system_prompt=NATIVE_CREATIVE_SYSTEM)
     brief = args.brief_file.read_text(encoding="utf-8")
     conn = StdioServerParameters(command="node", args=params, cwd=ROOT)
     async with stdio_client(conn) as (read, write):
@@ -63,7 +76,8 @@ async def main(args):
                 receipt_path=args.receipt).run(brief)
     print(json.dumps({
         "status": outcome["status"],
-        "local_model_id_reported": outcome["actual_model_id_reported"],
+        "model_id_reported_not_identity_verified": outcome["actual_model_id_reported"],
+        "interactive_external_operator": args.operator_mailbox is not None,
         "events": len(outcome["events"]),
         "measured_model_wall_ms_total": outcome["measured_model_wall_ms_total"],
         "measured_native_mcp_wall_ms_total": outcome["measured_native_mcp_wall_ms_total"],
@@ -84,7 +98,9 @@ if __name__ == "__main__":
     p.add_argument("--brief-file", type=Path, required=True)
     p.add_argument("--receipt", type=Path, required=True,
                    help="New local private 0600 receipt, never overwritten/replayed")
-    p.add_argument("--model-id", type=str, required=True)
+    p.add_argument("--model-id", type=str)
+    p.add_argument("--operator-mailbox", type=Path,
+                   help="Existing private mode-0700 directory for a separate, explicitly authorized interactive operator; no hosted API")
     p.add_argument("--base-url", default="http://127.0.0.1:8080")
     p.add_argument("--model-timeout", type=int, default=480)
     p.add_argument("--max-turns", type=int, default=32)
