@@ -51,9 +51,10 @@ class PhysicalNativeSourceAcceptanceTests(unittest.TestCase):
     def save(self):
         self.saved.write_text(json.dumps(self.project), encoding="utf-8")
 
-    def verify(self):
+    def verify(self, export_windows=None):
         return verify_original_footage_on_native_timeline(
-            self.projects, [self.saved], self.manifest)
+            self.projects, [self.saved], self.manifest,
+            host_verified_export_windows=export_windows)
 
     def test_original_imported_video_must_have_physical_project_copy_and_clip(self):
         receipt = self.verify()
@@ -63,18 +64,54 @@ class PhysicalNativeSourceAcceptanceTests(unittest.TestCase):
         self.assertEqual(receipt["verified_native_source_clip_proof"][0][
             "source_sha256"], self.manifest[0]["sha256"])
 
-    def test_original_source_clip_must_overlap_active_timeline_duration(self):
-        # Real native projects have a finite active timeline duration. A
-        # project-owned original media copy at hour one is not visible in a
-        # 60-second timeline and must not pass the final-source criterion.
+    def test_original_source_clip_must_overlap_actual_export_window(self):
+        # Pinned renderer may extend a full export beyond timeline.duration;
+        # the *actual verified output interval* is the correct acceptance bound.
+        # A caller-supplied render at [0,60) excludes later original media.
         clip = self.project["timelines"][0]["clips"][0]
         for start, visible in ((60, False), (3600, False), (-10, False),
                                (-2, True), (59, True), (0, True)):
             with self.subTest(start=start):
                 clip["startTime"] = start
                 self.save()
-                self.assertEqual(self.verify()[
-                    "actual_original_video_used_on_native_timeline"], visible)
+                self.assertEqual(self.verify([{
+                    "start_seconds": 0, "end_seconds": 60
+                }])["actual_original_video_used_on_native_timeline"], visible)
+
+    def test_pinned_editor_full_export_extends_past_timeline_duration(self):
+        # electron/mcpServer.js uses max(timeline.duration, all clip ends)
+        # when range=full. Do not reject genuine media at second 3600 just
+        # because the saved project timeline's nominal duration is 60.
+        self.project["timelines"][0]["clips"][0]["startTime"] = 3600
+        self.save()
+        self.assertTrue(self.verify()[
+            "actual_original_video_used_on_native_timeline"])
+        self.assertFalse(self.verify([{
+            "start_seconds": 0, "end_seconds": 60
+        }])["actual_original_video_used_on_native_timeline"])
+        self.assertTrue(self.verify([{
+            "start_seconds": 3600, "end_seconds": 3604
+        }])["actual_original_video_used_on_native_timeline"])
+
+    def test_verified_export_windows_fail_closed_on_invalid_or_unseen_output(self):
+        self.assertFalse(self.verify([])[
+            "actual_original_video_used_on_native_timeline"])
+        for windows in (
+            "all", [{"start_seconds": True, "end_seconds": 60}],
+            [{"start_seconds": 0, "end_seconds": 0}],
+            [{"start_seconds": 60, "end_seconds": 4}],
+            [{"start_seconds": 0, "end_seconds": float("inf")}],
+            [{"start_seconds": 0, "end_seconds": 60, "path": "/private"}],
+        ):
+            with self.subTest(windows=repr(windows)):
+                with self.assertRaisesRegex(ValueError, "export"):
+                    self.verify(windows)
+        self.assertFalse(self.verify([{
+            "start_seconds": 4, "end_seconds": 8
+        }])["actual_original_video_used_on_native_timeline"])
+        self.assertTrue(self.verify([{
+            "start_seconds": 3, "end_seconds": 8
+        }])["actual_original_video_used_on_native_timeline"])
 
     def test_malformed_source_time_and_active_duration_fail_closed(self):
         clip = self.project["timelines"][0]["clips"][0]
