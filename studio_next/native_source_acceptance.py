@@ -33,6 +33,17 @@ def _require_unique_native_ids(items: list, label: str) -> None:
         raise ValueError(f"Native {label} identity is ambiguous")
 
 
+def _finite_real(value) -> bool:
+    # Native timeline clock fields must be finite numeric values. Python's
+    # bool is not a time position; huge integers must not overflow isfinite.
+    if type(value) not in (int, float):
+        return False
+    try:
+        return math.isfinite(value)
+    except OverflowError:
+        return False
+
+
 def verify_original_footage_on_native_timeline(
         projects_root: Path, project_paths: list[Path],
         caller_source_assets: list[dict]) -> dict:
@@ -78,8 +89,8 @@ def verify_original_footage_on_native_timeline(
         timelines = data.get("timelines")
         if not isinstance(timelines, list):
             raise ValueError("Native project timeline inventory is invalid")
-        # Conflicting native object identities can make the editor resolve an
-        # entirely different asset or timeline from the one this proof saw.
+        # Resolve native identity ambiguity before using any asset/timeline
+        # reference to certify footage custody.
         _require_unique_native_ids(data["assets"], "asset")
         _require_unique_native_ids(timelines, "timeline")
         # The editor exports the ACTIVE timeline. A source imported into a
@@ -96,14 +107,17 @@ def verify_original_footage_on_native_timeline(
             if timeline.get("id") != current_timeline_id:
                 continue
             found_active = True
+            active_duration = timeline.get("duration")
+            if not _finite_real(active_duration) or active_duration <= 0:
+                raise ValueError("Active native timeline has no finite positive duration")
             tracks = timeline.get("tracks")
             if not isinstance(tracks, list):
                 raise ValueError("Native active track inventory is missing")
             _require_unique_native_ids(tracks, "active track")
             _require_unique_native_ids(timeline["clips"], "active clip")
-            # Editor stores visibility/enabled as booleans. In malformed JSON
-            # the upstream JS `!== false` fallback considers even null visible;
-            # proof is intentionally stricter than playback coercion.
+            # Native store persists boolean flags. On malformed saved JSON
+            # pinned JavaScript fallback `!== false` can treat nonbooleans
+            # as visible; independent proof requires actual boolean state.
             visible_video_tracks = {
                 track["id"] for track in tracks
                 if isinstance(track, dict) and
@@ -115,11 +129,13 @@ def verify_original_footage_on_native_timeline(
                         clip.get("enabled", True) is True and
                         clip.get("trackId") in visible_video_tracks and
                         isinstance(clip.get("assetId"), str) and
-                        type(clip.get("startTime")) in (int, float) and
-                        math.isfinite(clip["startTime"]) and
-                        type(clip.get("duration")) in (int, float) and
-                        math.isfinite(clip["duration"]) and
-                        0 < clip["duration"] <= 1_000_000):
+                        _finite_real(clip.get("startTime")) and
+                        _finite_real(clip.get("duration")) and
+                        0 < clip["duration"] <= 1_000_000 and
+                        # A valid copied video entirely outside the active
+                        # timeline cannot appear in the delivered picture.
+                        clip["startTime"] < active_duration and
+                        clip["startTime"] + clip["duration"] > 0):
                     placed.add(clip["assetId"])
         if not found_active:
             raise ValueError("Active native timeline was not saved")
