@@ -78,6 +78,23 @@ class PhysicalNativeSourceAcceptanceTests(unittest.TestCase):
                     "start_seconds": 0, "end_seconds": 60
                 }])["actual_original_video_used_on_native_timeline"], visible)
 
+    def test_completely_transparent_native_source_does_not_count_as_visible(self):
+        # Pinned exporter treats transform.opacity as percent, so zero
+        # hides the imported footage even when its track is visible.
+        clip = self.project["timelines"][0]["clips"][0]
+        for value in (0, -1, float("nan"), "0", None):
+            with self.subTest(opacity=repr(value)):
+                clip["transform"] = {"opacity": value}
+                self.save()
+                self.assertFalse(self.verify([{
+                    "start_seconds": 0, "end_seconds": 4
+                }])["actual_original_video_used_on_native_timeline"])
+        clip["transform"] = {"opacity": 55}
+        self.save()
+        self.assertTrue(self.verify([{
+            "start_seconds": 0, "end_seconds": 4
+        }])["actual_original_video_used_on_native_timeline"])
+
     def test_multiple_placed_clips_using_same_original_count_separately(self):
         timeline = self.project["timelines"][0]
         second = copy.deepcopy(timeline["clips"][0])
