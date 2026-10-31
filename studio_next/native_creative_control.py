@@ -1432,6 +1432,45 @@ class NativeCreativeControl:
                                       "schema_location": ",".join(failures)[:512],
                                       "no_native_dispatch": True})
                         continue
+                # Velorn b3c02ad electron/mcpServer.js checkExportReadiness
+                # refuses an export with no enabled visual media. A trusted
+                # native project READ showing zero timeline clips proves the
+                # necessary visual-content condition cannot yet be met. Block
+                # the known-invalid model proposal *before* its editor RPC,
+                # where an application error would otherwise be mistaken for
+                # an uncertain write. Zero is an observed machine fact, not
+                # an editorial instruction; an unknown/stale read never
+                # manufactures a success or edits content.
+                if (native_name == "export_timeline" and
+                        self.host_tool_access is not None and
+                        self.host_tool_access.get("get_project") == "read" and
+                        self._project_presence == "present" and
+                        isinstance(self._latest_native_state_facts, dict) and
+                        self._latest_native_state_facts.get(
+                            "source") == "host_authorized_native_get_project" and
+                        type(self._latest_native_state_facts.get(
+                            "current_timeline_clip_count")) is int and
+                        self._latest_native_state_facts[
+                            "current_timeline_clip_count"] == 0):
+                    self._last_preflight_feedback = {
+                        "tool": native_name,
+                        "validation_keyword": "native_export_no_timeline_clips",
+                        "source_attested_blocker":
+                            "Pinned editor requires at least one enabled visual "
+                            "media clip before export; last native read had zero clips",
+                        "current_timeline_clip_count": 0,
+                        "native_snapshot_may_lag": True,
+                        "no_native_dispatch": True,
+                    }
+                    self._append({
+                        "kind": "model_action_rejected", "turn": turn,
+                        **timing, "tool": native_name,
+                        "inputs_sha256": hashlib.sha256(
+                            _wire(args["inputs"]).encode()).hexdigest(),
+                        "validation_keyword": "native_export_no_timeline_clips",
+                        "no_native_dispatch": True,
+                    })
+                    continue
                 # The pinned native editor distinguishes owner-supplied raw
                 # media paths from assets actually imported into this project's
                 # catalog. Real Qwen3.5-2B trial #41182789249 fabricated a
@@ -1680,6 +1719,39 @@ class NativeCreativeControl:
                             "no_accepted_write_evidence": True,
                             "error_sha256": digest,
                             "error_text_exceeded_evidence_budget": out_of_budget})
+                        continue
+                    # The pinned native importer resolves a forced image
+                    # sequence before copy/addAsset/saveProject. Its exact
+                    # no-sequence error is immutable source text, not a
+                    # model-provided claim and not an uncertain editor WRITE.
+                    # Unlike suffix guessing, this preserves legitimate
+                    # numbered-frame directories with video-like names.
+                    from .native_state_evidence import (
+                        pinned_forced_image_sequence_absent_error)
+                    if (self.host_tool_access is not None and
+                            self.host_tool_access.get(native_name) == "write" and
+                            pinned_forced_image_sequence_absent_error(
+                                native_name, result)):
+                        self._last_preflight_feedback = {
+                            "tool": native_name,
+                            "validation_keyword":
+                                "native_sequence_requires_image_frames",
+                            "source_attested_format":
+                                "Pinned importer found no image sequence; "
+                                "normal video imports may omit asSequence "
+                                "or set it false; no media was imported",
+                            "no_successful_native_observation": True,
+                            "no_native_write_acknowledged": True,
+                        }
+                        self._append({
+                            "kind": "native_source_preimport_reported_error",
+                            "turn": turn, "tool": native_name,
+                            "measured_native_mcp_wall_ms": native_ms,
+                            "error_sha256": digest,
+                            "error_text_exceeded_evidence_budget": out_of_budget,
+                            "host_source_proved_no_import_attempt": True,
+                            "no_accepted_write_evidence": True,
+                        })
                         continue
                     # A reported write error (or an operation of unknown
                     # access) does not prove that a mutation never happened.

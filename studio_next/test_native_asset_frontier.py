@@ -10,6 +10,7 @@ import unittest
 from types import SimpleNamespace
 
 from studio_next.native_creative_control import NativeCreativeControl
+from studio_next.native_state_evidence import _PINNED_NO_IMAGE_SEQUENCE_ERROR
 from studio_next.native_creative_audit import audit_native_journal, NativeJournalError
 from studio_next.test_native_creative_control import ScriptedModel, decision
 from studio_next.test_native_asset_identity import LiveCatalogSession
@@ -184,6 +185,190 @@ class ActualHostAssetProducerFrontierTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(NativeJournalError):
             audit_native_journal(forged, host_tool_access=access)
         self.assertFalse(result["native_editing_capability_complete"])
+
+    async def test_forced_image_sequence_error_can_be_corrected_without_replay(self):
+        # No pathname/extension is interpreted by the BODY. Only the exact
+        # actual source-pinned editor error proves no import happened.
+        class SourceAttestedSequenceSession(HostObservedEmptyAssetSession):
+            async def call_tool(self, name, arguments):
+                if (name == "import_asset_from_path" and
+                        arguments.get("asSequence") is True):
+                    self.calls.append((name, arguments))
+                    return SimpleNamespace(is_error=True, content=[
+                        SimpleNamespace(
+                            type="text",
+                            text=_PINNED_NO_IMAGE_SEQUENCE_ERROR)])
+                return await super().call_tool(name, arguments)
+        editor = SourceAttestedSequenceSession()
+        source_path = "/trusted/owner/staging/original.mp4"
+        model = ScriptedModel([
+            decision("search", query="import_asset_from_path"),
+            decision("invoke", tool="import_asset_from_path", inputs={
+                "path": source_path, "asSequence": True}),
+            decision("invoke", tool="import_asset_from_path", inputs={
+                "path": source_path, "asSequence": False, "previewOnly": False}),
+        ])
+        entry = next(tool for tool in editor.tools
+                     if tool.name == "import_asset_from_path")
+        entry.input_schema["properties"]["asSequence"] = {"type": "boolean"}
+        access = self.grants(editor)
+        outcome = await NativeCreativeControl(
+            editor, model, max_turns=3, catalog_mode="indexed",
+            host_tool_access=access).run("Edit original target footage")
+        self.assertEqual(outcome["status"], "turn_budget_exhausted")
+        self.assertEqual(model.observed[2]["last_rejected_native_action_feedback"][
+            "validation_keyword"], "native_sequence_requires_image_frames")
+        imports = [args for name, args in editor.calls
+                   if name == "import_asset_from_path"]
+        self.assertEqual(imports, [
+            {"path": source_path, "asSequence": True},
+            {"path": source_path, "asSequence": False,
+             "previewOnly": False},
+        ])
+        events = [x for x in outcome["events"] if x["kind"] ==
+                  "native_source_preimport_reported_error"]
+        self.assertEqual(len(events), 1)
+        self.assertTrue(events[0]["host_source_proved_no_import_attempt"])
+        self.assertTrue(audit_native_journal(
+            outcome["events"], host_tool_access=access)[
+                "journal_chain_structurally_valid"])
+        forged = copy.deepcopy(outcome["events"])
+        next(x for x in forged if x["kind"] ==
+             "native_source_preimport_reported_error")["error_sha256"] = "0" * 64
+        with self.assertRaises(NativeJournalError):
+            audit_native_journal(forged, host_tool_access=access)
+
+    async def test_import_with_video_like_directory_name_is_not_preemptively_blocked(self):
+        editor = HostObservedEmptyAssetSession()
+        entry = next(t for t in editor.tools
+                     if t.name == "import_asset_from_path")
+        entry.input_schema["properties"]["asSequence"] = {"type": "boolean"}
+        model = ScriptedModel([
+            decision("search", query="import_asset_from_path"),
+            decision("invoke", tool="import_asset_from_path", inputs={
+                # Could be a directory of numbered image frames, not an MP4.
+                "path": "/source/archive.mkv",
+                "asSequence": True, "previewOnly": False}),
+        ])
+        access = self.grants(editor)
+        outcome = await NativeCreativeControl(
+            editor, model, max_turns=2, catalog_mode="indexed",
+            host_tool_access=access).run("Import original numbered image sequence")
+        self.assertEqual([args for name, args in editor.calls
+                          if name == "import_asset_from_path"], [{
+            "path": "/source/archive.mkv", "asSequence": True,
+            "previewOnly": False}])
+        self.assertFalse(any(x["kind"] ==
+                             "native_source_preimport_reported_error"
+                             for x in outcome["events"]))
+
+    async def test_other_native_import_errors_remain_uncertain_writes(self):
+        class OtherErrorSession(HostObservedEmptyAssetSession):
+            async def call_tool(self, name, arguments):
+                if name == "import_asset_from_path":
+                    self.calls.append((name, arguments))
+                    return SimpleNamespace(is_error=True, content=[
+                        SimpleNamespace(
+                            type="text",
+                            text="import_asset_from_path failed: Disk full")])
+                return await super().call_tool(name, arguments)
+        editor = OtherErrorSession()
+        entry = next(t for t in editor.tools
+                     if t.name == "import_asset_from_path")
+        entry.input_schema["properties"]["asSequence"] = {"type": "boolean"}
+        model = ScriptedModel([
+            decision("search", query="import_asset_from_path"),
+            decision("invoke", tool="import_asset_from_path", inputs={
+                "path": "/source/footage.mp4",
+                "asSequence": True, "previewOnly": False}),
+        ])
+        access = self.grants(editor)
+        outcome = await NativeCreativeControl(
+            editor, model, max_turns=2, catalog_mode="indexed",
+            host_tool_access=access).run("Import footage")
+        self.assertEqual(outcome["status"],
+                         "native_error_requires_state_reconciliation")
+        self.assertTrue(any(x["kind"] == "native_tool_reported_error"
+                            for x in outcome["events"]))
+        self.assertTrue(audit_native_journal(
+            outcome["events"], host_tool_access=access)[
+                "journal_chain_structurally_valid"])
+
+    async def test_empty_native_export_rejected_before_stateful_rpc(self):
+        # Actual Qwen run #41204331429 terminated after attempting to export
+        # a zero-clip project. The pinned Velorn source has an explicit
+        # checkExportReadiness no-visual-clip blocker before performAction.
+        editor = HostObservedEmptyAssetSession()
+        editor.tools.extend([
+            SimpleNamespace(name="save_project", description="Save project",
+                            input_schema={"type": "object", "properties": {}}),
+            SimpleNamespace(name="export_timeline",
+                            description="Render current visual timeline",
+                            input_schema={"type": "object", "properties": {}}),
+        ])
+        model = ScriptedModel([
+            decision("search", query="save_project"),
+            decision("invoke", tool="save_project", inputs={}),
+            decision("search", query="export_timeline"),
+            decision("invoke", tool="export_timeline", inputs={}),
+            decision("search", query="import_asset_from_path"),
+        ])
+        access = self.grants(editor)
+        outcome = await NativeCreativeControl(
+            editor, model, max_turns=5, catalog_mode="indexed",
+            host_tool_access=access,
+            host_possible_effects={"import_asset_from_path": [
+                "project_asset_available"]},
+        ).run("Original native footage must be edited before export")
+        self.assertEqual(outcome["status"], "turn_budget_exhausted")
+        self.assertEqual(model.observed[4]["last_rejected_native_action_feedback"][
+            "validation_keyword"], "native_export_no_timeline_clips")
+        self.assertNotIn("export_timeline",
+                         [name for name, _ in editor.calls])
+        self.assertTrue(any(event.get("validation_keyword") ==
+                            "native_export_no_timeline_clips"
+                            for event in outcome["events"]))
+        self.assertTrue(audit_native_journal(
+            outcome["events"], host_tool_access=access)[
+                "journal_chain_structurally_valid"])
+
+    async def test_nonempty_native_export_still_uses_existing_host_authority(self):
+        class PhysicalClipSession(HostObservedEmptyAssetSession):
+            async def call_tool(self, name, arguments):
+                result = await super().call_tool(name, arguments)
+                if name == "get_project":
+                    snapshot = json.loads(result.content[0].text)
+                    snapshot["assetCount"] = 1
+                    snapshot["currentTimeline"]["clipCount"] = 1
+                    result.content[0].text = json.dumps(snapshot)
+                return result
+        editor = PhysicalClipSession()
+        editor.tools.extend([
+            SimpleNamespace(name="save_project", description="Save project",
+                            input_schema={"type": "object", "properties": {}}),
+            SimpleNamespace(name="export_timeline",
+                            description="Render current visual timeline",
+                            input_schema={"type": "object", "properties": {}}),
+        ])
+        model = ScriptedModel([
+            decision("search", query="save_project"),
+            decision("invoke", tool="save_project", inputs={}),
+            decision("search", query="export_timeline"),
+            decision("invoke", tool="export_timeline", inputs={}),
+        ])
+        access = self.grants(editor)
+        outcome = await NativeCreativeControl(
+            editor, model, max_turns=4, catalog_mode="indexed",
+            host_tool_access=access,
+        ).run("Native editor export after actual content")
+        self.assertEqual([name for name, _ in editor.calls
+                          if name == "export_timeline"], ["export_timeline"])
+        self.assertFalse(any(e.get("validation_keyword") ==
+                             "native_export_no_timeline_clips"
+                             for e in outcome["events"]))
+        self.assertTrue(audit_native_journal(
+            outcome["events"], host_tool_access=access)[
+                "journal_chain_structurally_valid"])
 
     async def test_no_host_producer_effect_means_no_fake_remediation_tool(self):
         editor = HostObservedEmptyAssetSession()

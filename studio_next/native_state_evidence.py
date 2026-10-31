@@ -20,6 +20,39 @@ _SOURCE_REVIEWED_NONMUTATING_PREVIEWS = frozenset({
 })
 
 
+# Exact no-write error emitted by the source-pinned Velorn 0.3.37
+# src/services/mcpActions.js:handleImportAssetFromPath *before* importAsset.
+# electron/mcpServer.js:runRendererActionTool prefixes the method name.
+# This is protocol evidence, not a creative plan, test fixture or model hint.
+_PINNED_NO_IMAGE_SEQUENCE_ERROR = (
+    "import_asset_from_path failed: No image sequence found at this path. "
+    "Point at a folder containing a numbered run, or at any one frame of it "
+    "(3+ frames, e.g. shot.1001.png)."
+)
+
+
+def pinned_forced_image_sequence_absent_error(name, native_reply):
+    """A source-attested pre-mutation failure, never an editor write ACK.
+
+    No pathname or extension is guessed. The source adapter itself determines
+    whether a forced image sequence exists; a directory ending in '.mp4' may
+    legitimately contain frames and must remain supported. Reject any
+    mismatched/malformed/extra MCP content; do not inspect private host paths.
+    """
+    if name != "import_asset_from_path":
+        return False
+    def field(value, key, default=None):
+        return value.get(key, default) if isinstance(value, dict) else (
+            getattr(value, key, default))
+    if field(native_reply, "is_error", field(native_reply, "isError")) is not True:
+        return False
+    contents = field(native_reply, "content")
+    if not isinstance(contents, (list, tuple)) or len(contents) != 1:
+        return False
+    part = contents[0]
+    return (field(part, "type") == "text" and
+            field(part, "text") == _PINNED_NO_IMAGE_SEQUENCE_ERROR)
+
 def source_reviewed_preview_is_readonly(name, inputs, native_schema):
     """Only a pinned source-guaranteed preview, never a failed native WRITE."""
     if name not in _SOURCE_REVIEWED_NONMUTATING_PREVIEWS:
