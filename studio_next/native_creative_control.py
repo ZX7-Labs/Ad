@@ -293,6 +293,48 @@ def _native_tool_hints(available):
     return hints
 
 
+def _selected_native_input_hints(tool_names, live_tools):
+    """Bounded parameter typing from granted, *currently selected* tools.
+
+    This is not a creative script or permission. A small model needn't guess
+    that width is an integer or that native preview defaults to true; the
+    complete, unchanged source-native schema remains available by describe.
+    """
+    result = []
+    for name in list(tool_names)[:8]:
+        if name not in live_tools:
+            continue
+        tool = live_tools[name]
+        schema = _field(tool, "input_schema", _field(tool, "inputSchema"))
+        if not isinstance(schema, dict) or not isinstance(schema.get("properties"), dict):
+            continue
+        entry = {"tool": name, "input_properties": []}
+        required = schema.get("required")
+        required = set(required) if isinstance(required, list) and all(
+            isinstance(item, str) for item in required) else set()
+        for key, source in list(schema["properties"].items())[:16]:
+            if not isinstance(key, str) or not isinstance(source, dict):
+                continue
+            type_name = source.get("type")
+            if (not isinstance(type_name, str) or
+                    type_name not in ("string", "integer", "number", "boolean",
+                                      "object", "array", "null")):
+                type_name = "complex_use_describe"
+            prop = {"name": key[:160], "json_type": type_name,
+                    "required": key in required}
+            if isinstance(source.get("description"), str):
+                prop["host_source_description"] = " ".join(
+                    source["description"].split())[:128]
+            candidate = {**entry, "input_properties": entry["input_properties"] + [prop]}
+            if len(_wire(result + [candidate]).encode("utf-8")) > 4096:
+                break
+            entry["input_properties"].append(prop)
+        if entry["input_properties"] and len(
+                _wire(result + [entry]).encode("utf-8")) <= 4096:
+            result.append(entry)
+    return result
+
+
 def _model_event_window(events):
     """Loss-aware, bounded model working memory over an *unaltered* journal.
 
@@ -795,6 +837,9 @@ class NativeCreativeControl:
                     "compact_tool_catalog": self.catalog_mode == "indexed",
                     "selectable_native_tools": list(self._selectable_tools),
                     "inspectable_native_tools": list(self._inspectable_tied_candidates),
+                    "host_selected_native_input_hints": (
+                        _selected_native_input_hints(self._selectable_tools, self.tools)
+                        if self.catalog_mode == "indexed" else []),
                     # After an acknowledged one-shot machine operation,
                     # reveal a compact term vocabulary grounded only in other
                     # real granted native tool names. The tiny brain chooses
