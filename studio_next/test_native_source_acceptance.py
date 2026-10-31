@@ -184,8 +184,8 @@ class PhysicalNativeSourceAcceptanceTests(unittest.TestCase):
                     self.assertFalse(
                         self.verify()["actual_original_video_used_on_native_timeline"])
 
-    def test_nonfinite_negative_or_missing_source_clip_start_cannot_prove_use(self):
-        for bad_start in (float("nan"), float("inf"), float("-inf"), -1, "0", None):
+    def test_nonfinite_or_missing_source_clip_start_cannot_prove_use(self):
+        for bad_start in (float("nan"), float("inf"), float("-inf"), "0", None):
             with self.subTest(start=repr(bad_start)):
                 self.project = copy.deepcopy(self._original_project)
                 self.project["timelines"][0]["clips"][0]["startTime"] = bad_start
@@ -198,6 +198,15 @@ class PhysicalNativeSourceAcceptanceTests(unittest.TestCase):
         self.project["timelines"][0]["clips"][0].pop("startTime")
         self.save()
         self.assertFalse(self.verify()["actual_original_video_used_on_native_timeline"])
+
+    def test_negative_start_is_not_automatically_invalid(self):
+        # A clip can cross timeline time zero: -1 start + 4 duration
+        # yields 3 seconds of visible footage. Temporal-overlap validation
+        # belongs to the independent active-duration gate.
+        self.project["timelines"][0]["clips"][0]["startTime"] = -1
+        self.save()
+        self.assertTrue(
+            self.verify()["actual_original_video_used_on_native_timeline"])
 
     def test_nonfinite_or_non_numeric_source_clip_duration_cannot_prove_use(self):
         for bad_duration in (float("nan"), float("inf"), float("-inf"), "4", None):
