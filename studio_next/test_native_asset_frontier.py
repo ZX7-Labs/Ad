@@ -151,6 +151,82 @@ class ActualHostAssetProducerFrontierTests(unittest.IsolatedAsyncioTestCase):
             result["events"], host_tool_access=access)[
                 "journal_chain_structurally_valid"])
 
+    async def test_empty_native_export_rejected_before_stateful_rpc(self):
+        # Actual Qwen run #41204331429 terminated after attempting to export
+        # a zero-clip project. The pinned Velorn source has an explicit
+        # checkExportReadiness no-visual-clip blocker before performAction.
+        editor = HostObservedEmptyAssetSession()
+        editor.tools.extend([
+            SimpleNamespace(name="save_project", description="Save project",
+                            input_schema={"type": "object", "properties": {}}),
+            SimpleNamespace(name="export_timeline",
+                            description="Render current visual timeline",
+                            input_schema={"type": "object", "properties": {}}),
+        ])
+        model = ScriptedModel([
+            decision("search", query="save_project"),
+            decision("invoke", tool="save_project", inputs={}),
+            decision("search", query="export_timeline"),
+            decision("invoke", tool="export_timeline", inputs={}),
+            decision("search", query="import_asset_from_path"),
+        ])
+        access = self.grants(editor)
+        outcome = await NativeCreativeControl(
+            editor, model, max_turns=5, catalog_mode="indexed",
+            host_tool_access=access,
+            host_possible_effects={"import_asset_from_path": [
+                "project_asset_available"]},
+        ).run("Original native footage must be edited before export")
+        self.assertEqual(outcome["status"], "turn_budget_exhausted")
+        self.assertEqual(model.observed[4]["last_rejected_native_action_feedback"][
+            "validation_keyword"], "native_export_no_timeline_clips")
+        self.assertNotIn("export_timeline",
+                         [name for name, _ in editor.calls])
+        self.assertTrue(any(event.get("validation_keyword") ==
+                            "native_export_no_timeline_clips"
+                            for event in outcome["events"]))
+        self.assertTrue(audit_native_journal(
+            outcome["events"], host_tool_access=access)[
+                "journal_chain_structurally_valid"])
+
+    async def test_nonempty_native_export_still_uses_existing_host_authority(self):
+        class PhysicalClipSession(HostObservedEmptyAssetSession):
+            async def call_tool(self, name, arguments):
+                result = await super().call_tool(name, arguments)
+                if name == "get_project":
+                    snapshot = json.loads(result.content[0].text)
+                    snapshot["assetCount"] = 1
+                    snapshot["currentTimeline"]["clipCount"] = 1
+                    result.content[0].text = json.dumps(snapshot)
+                return result
+        editor = PhysicalClipSession()
+        editor.tools.extend([
+            SimpleNamespace(name="save_project", description="Save project",
+                            input_schema={"type": "object", "properties": {}}),
+            SimpleNamespace(name="export_timeline",
+                            description="Render current visual timeline",
+                            input_schema={"type": "object", "properties": {}}),
+        ])
+        model = ScriptedModel([
+            decision("search", query="save_project"),
+            decision("invoke", tool="save_project", inputs={}),
+            decision("search", query="export_timeline"),
+            decision("invoke", tool="export_timeline", inputs={}),
+        ])
+        access = self.grants(editor)
+        outcome = await NativeCreativeControl(
+            editor, model, max_turns=4, catalog_mode="indexed",
+            host_tool_access=access,
+        ).run("Native editor export after actual content")
+        self.assertEqual([name for name, _ in editor.calls
+                          if name == "export_timeline"], ["export_timeline"])
+        self.assertFalse(any(e.get("validation_keyword") ==
+                             "native_export_no_timeline_clips"
+                             for e in outcome["events"]))
+        self.assertTrue(audit_native_journal(
+            outcome["events"], host_tool_access=access)[
+                "journal_chain_structurally_valid"])
+
     async def test_no_host_producer_effect_means_no_fake_remediation_tool(self):
         editor = HostObservedEmptyAssetSession()
         model = ScriptedModel([
